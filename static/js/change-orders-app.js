@@ -22,12 +22,14 @@
     else el.value = amount || '';
   }
 
-  const CO_STATUSES = ['Draft', 'Submitted', 'Under Review', 'Pending Owner', 'Pending Architect', 'Approved', 'Rejected', 'Void'];
-  const CO_EDITABLE_STATUSES = ['Draft', 'Submitted', 'Under Review', 'Pending Owner', 'Pending Architect', 'Rejected', 'Void'];
+  const CO_STATUSES = ['Draft', 'Submitted', 'Under Review', 'Pending Owner', 'Pending Architect', 'Pending Accounting', 'Approved', 'Rejected', 'Void'];
+  const SUB_CO_STATUSES = ['Draft', 'Submitted', 'Under Review', 'Pending Accounting', 'Approved', 'Rejected', 'Void'];
+  const CO_EDITABLE_STATUSES = ['Draft', 'Submitted', 'Under Review', 'Pending Owner', 'Pending Architect', 'Pending Accounting', 'Rejected', 'Void'];
   const PCO_STATUSES = ['Open', 'Pricing', 'Pending Review', 'Approved for CO', 'Promoted', 'Void', 'Closed'];
   const REASONS = ['Owner Request', 'Design Change', 'Unforeseen Condition', 'Code Compliance', 'Error or Omission', 'Value Engineering', 'Schedule Acceleration', 'Other'];
   const PRIORITIES = ['Low', 'Medium', 'High', 'Critical'];
   const CONTRACT_TYPES = ['Owner', 'Contractor', 'Subcontract'];
+  const SUB_CO_KINDS = ['Contract Add', 'Budget Transfer', 'Owner CO Backcharge'];
 
   const DEFAULT_COST_TYPES = ['Labor', 'Material', 'Subcontract', 'Equipment', 'General Conditions', 'Other'];
 
@@ -47,6 +49,7 @@
     filter: { search: '', status: '', priority: '' },
     rfis: [],
     commitments: [],
+    ownerChangeOrders: [],
     drawerRecord: null,
     drawerType: null,
   };
@@ -162,7 +165,19 @@
     return state.costCodes.find(c => String(c.code).replace(/[\s-]/g, '').toUpperCase() === norm) || null;
   }
 
-  function validateAllocations(allocations, { requireRows = true, requireAmount = false } = {}) {
+  function isSubCo(record) {
+    return record && (record.is_subcontract || record.contract_type === 'Subcontract' || record.contract_type === 'Subcontractor' || String(record.number || '').startsWith('SCO-'));
+  }
+
+  function ownerCos() {
+    return state.changeOrders.filter(co => !isSubCo(co));
+  }
+
+  function subCos() {
+    return state.changeOrders.filter(co => isSubCo(co));
+  }
+
+  function validateAllocations(allocations, { requireRows = true, requireAmount = false, subCoKind = null } = {}) {
     const rows = (allocations || []).filter(a => a.cost_code || a.cost_type || a.description || a.amount);
     if (requireRows && !rows.length) {
       return { ok: false, message: 'At least one cost code allocation is required (cost code, cost type, and amount).' };
@@ -172,6 +187,18 @@
       if (!row.cost_code) return { ok: false, message: `Row ${i + 1}: cost code is required.` };
       if (!row.cost_type) return { ok: false, message: `Row ${i + 1}: cost type is required.` };
       if (requireAmount && !Number(row.amount)) return { ok: false, message: `Row ${i + 1}: amount must be non-zero.` };
+    }
+    const kind = subCoKind || '';
+    if (kind === 'Budget Transfer') {
+      if (rows.length < 2) return { ok: false, message: 'Budget transfer requires at least two allocation rows (from and to cost codes).' };
+      const net = Math.round(rows.reduce((s, r) => s + (Number(r.amount) || 0), 0) * 100) / 100;
+      if (net !== 0) return { ok: false, message: `Budget transfer allocations must net to zero (current net: ${net.toLocaleString()}).` };
+      const hasPos = rows.some(r => Number(r.amount) > 0);
+      const hasNeg = rows.some(r => Number(r.amount) < 0);
+      if (!hasPos || !hasNeg) return { ok: false, message: 'Budget transfer requires at least one positive and one negative allocation row.' };
+    } else if (kind === 'Contract Add' && requireAmount) {
+      const total = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      if (total <= 0) return { ok: false, message: 'Contract add subcontractor change orders require a positive total amount.' };
     }
     return { ok: true, rows };
   }
@@ -219,7 +246,10 @@
     if (!pid) return;
     const json = await api(`/api/change-orders?project_id=${pid}`);
     state.changeOrders = json.change_orders || [];
+    state.ownerChangeOrders = ownerCos().filter(c => c.status === 'Approved' || ['Submitted', 'Pending Owner', 'Pending Architect', 'Under Review'].includes(c.status))
+      .map(c => ({ id: c.id, number: c.number, title: c.title || c.description, status: c.status, amount: c.amount }));
     renderCoTable();
+    renderSubCoTable();
   }
 
   async function loadPcos() {
@@ -237,6 +267,7 @@
       const json = await api(`/api/change-orders/link-options?project_id=${pid}`);
       state.rfis = json.rfis || [];
       state.commitments = json.commitments || [];
+      state.ownerChangeOrders = json.owner_change_orders || [];
     } catch { state.rfis = []; }
     if (!state.commitments?.length) {
       try {
@@ -248,17 +279,68 @@
   function populateLinkSelects(record) {
     const rfiSel = document.getElementById('modalLinkedRfi');
     const comSel = document.getElementById('modalLinkedCommitment');
+    const ownerSel = document.getElementById('modalLinkedOwnerCo');
     if (rfiSel) {
       rfiSel.innerHTML = '<option value="">— None —</option>' +
         state.rfis.map(r => `<option value="${r.id}" ${String(record?.linked_rfi_id) === String(r.id) ? 'selected' : ''}>${r.number} — ${r.subject || ''}</option>`).join('');
     }
+    const subCommitments = state.commitments.filter(c => (c.commitment_type || '') === 'Subcontract');
+    const commitments = isSubCo(record) || document.getElementById('modalMode')?.value === 'sub'
+      ? (subCommitments.length ? subCommitments : state.commitments)
+      : state.commitments;
     if (comSel) {
       comSel.innerHTML = '<option value="">— None —</option>' +
-        state.commitments.map((c, i) => {
+        commitments.map((c, i) => {
           const ref = c.number || `COM-${c.id || i + 1}`;
-          const label = c.description || c.title || ref;
-          return `<option value="${ref}" ${record?.linked_commitment_ref === ref ? 'selected' : ''}>${ref} — ${label}</option>`;
+          const label = c.company_name ? `${c.company_name} — ${ref}` : (c.description || c.title || ref);
+          return `<option value="${ref}" data-company-id="${esc(c.company_id || '')}" data-company-name="${esc(c.company_name || '')}" ${record?.linked_commitment_ref === ref ? 'selected' : ''}>${label}</option>`;
         }).join('');
+    }
+    if (ownerSel) {
+      ownerSel.innerHTML = '<option value="">— None (standalone) —</option>' +
+        state.ownerChangeOrders.map(c => `<option value="${c.id}" ${String(record?.linked_owner_co_id) === String(c.id) ? 'selected' : ''}>${c.number} — ${esc(c.title || '')} (${c.status})</option>`).join('');
+    }
+  }
+
+  function onSubCoKindChange() {
+    const kind = document.getElementById('modalSubCoKind')?.value || '';
+    const ownerRow = document.getElementById('modalOwnerCoRow');
+    const help = document.getElementById('allocationHelpText');
+    if (ownerRow) ownerRow.classList.toggle('hidden', kind !== 'Owner CO Backcharge');
+    if (help) {
+      help.textContent = kind === 'Budget Transfer'
+        ? 'Enter at least two rows with opposite signs that net to zero (move budget between cost codes). Does not change total contract value.'
+        : kind === 'Contract Add'
+          ? 'Positive amounts add to the subcontract commitment and Sub SOV. Link a subcontract commitment before submit.'
+          : 'Cost code, cost type, and amount are required before submit or approval. Syncs to Budget, Sub SOV, and Sage Subcontracts.';
+    }
+  }
+
+  function onLinkedCommitmentChange() {
+    const sel = document.getElementById('modalLinkedCommitment');
+    const companySel = document.getElementById('modalCompany');
+    if (!sel || !companySel || document.getElementById('modalMode')?.value !== 'sub') return;
+    const opt = sel.options[sel.selectedIndex];
+    if (!opt || !opt.value) return;
+    const cid = opt.dataset.companyId;
+    const cname = opt.dataset.companyName;
+    if (cid) {
+      for (let i = 0; i < companySel.options.length; i += 1) {
+        if (String(companySel.options[i].value) === String(cid)) {
+          companySel.selectedIndex = i;
+          onCompanyChange();
+          return;
+        }
+      }
+    }
+    if (cname) {
+      for (let i = 0; i < companySel.options.length; i += 1) {
+        if ((companySel.options[i].dataset.name || companySel.options[i].text || '').toLowerCase() === cname.toLowerCase()) {
+          companySel.selectedIndex = i;
+          onCompanyChange();
+          return;
+        }
+      }
     }
   }
 
@@ -269,7 +351,7 @@
       const res = await fetch(`/api/sage/sync-events?project_id=${pid}&limit=30`, { credentials: 'same-origin' });
       const json = await res.json();
       state.sageLog = (json.events || []).filter(e =>
-        ['ChangeOrderApproved', 'ChangeOrderSubmitted', 'PCOSubmitted', 'PCOPromoted'].includes(e.event_type)
+        ['ChangeOrderApproved', 'ChangeOrderSubmitted', 'PCOSubmitted', 'PCOPromoted', 'CommitmentChangeOrderSubmitted', 'CommitmentChangeOrderApproved'].includes(e.event_type)
       );
     } catch { state.sageLog = []; }
     renderSageBar();
@@ -280,6 +362,7 @@
       Draft: 'bg-zinc-700 text-zinc-300', Open: 'bg-sky-900/50 text-sky-300', Pricing: 'bg-indigo-900/50 text-indigo-300',
       Submitted: 'bg-amber-900/50 text-amber-300', 'Under Review': 'bg-amber-900/50 text-amber-300',
       'Pending Owner': 'bg-orange-900/50 text-orange-300', 'Pending Architect': 'bg-purple-900/50 text-purple-300',
+      'Pending Accounting': 'bg-amber-900/50 text-amber-300',
       'Pending Review': 'bg-amber-900/50 text-amber-300', 'Approved for CO': 'bg-emerald-900/50 text-emerald-300',
       Approved: 'bg-emerald-900/50 text-emerald-400', Rejected: 'bg-red-900/50 text-red-400',
       Promoted: 'bg-zinc-600 text-zinc-200', Void: 'bg-zinc-800 text-zinc-500', Closed: 'bg-zinc-800 text-zinc-500',
@@ -304,6 +387,8 @@
       statPendingTotal: fmt(s.pending_total),
       statPcoRom: fmt(s.pco_rom_total),
       statAvgDays: s.avg_approval_days ? `${s.avg_approval_days} days` : '—',
+      statTotalSubCo: s.total_sub_cos || 0,
+      statSubPending: s.sub_pending_count || 0,
     };
     Object.keys(map).forEach(id => {
       const el = document.getElementById(id);
@@ -313,7 +398,7 @@
 
   function filteredCos() {
     const { search, status, priority } = state.filter;
-    return state.changeOrders.filter(co => {
+    return ownerCos().filter(co => {
       const text = `${co.number} ${co.title} ${co.description} ${co.company_name || ''}`.toLowerCase();
       if (search && !text.includes(search.toLowerCase())) return false;
       if (status && co.status !== status) return false;
@@ -332,6 +417,66 @@
     });
   }
 
+  function filteredSubCos() {
+    const { search, status, priority } = state.filter;
+    return subCos().filter(co => {
+      const text = `${co.number} ${co.title} ${co.description} ${co.company_name || ''} ${co.sub_co_kind || ''}`.toLowerCase();
+      if (search && !text.includes(search.toLowerCase())) return false;
+      if (status && co.status !== status) return false;
+      if (priority && co.priority !== priority) return false;
+      return true;
+    });
+  }
+
+  function ownerCoLabel(ownerCoId) {
+    if (!ownerCoId) return '—';
+    const c = state.ownerChangeOrders.find(x => String(x.id) === String(ownerCoId))
+      || ownerCos().find(x => String(x.id) === String(ownerCoId));
+    return c ? `${c.number}` : `#${ownerCoId}`;
+  }
+
+  function subCoApproveStatuses() {
+    return ['Submitted', 'Pending Accounting'];
+  }
+
+  function renderSubCoTable() {
+    const tbody = document.getElementById('subCoTableBody');
+    if (!tbody) return;
+    const rows = filteredSubCos();
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="11" class="px-6 py-12 text-center text-zinc-500">No subcontractor change orders yet. Create one tied to an owner CO backcharge, contract add, or budget transfer.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(co => {
+      const showSubmit = co.status === 'Draft';
+      const showApprove = subCoApproveStatuses().includes(co.status) && canActOnBall(co.ball_in_court_role);
+      const showReject = showApprove;
+      const autoTag = co.auto_generated ? '<span class="ml-1 text-[9px] text-sky-400">AUTO</span>' : '';
+      return `
+      <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer" onclick="CasePMChangeOrders.viewCo(${co.id})">
+        <td class="px-4 py-3 font-mono text-amber-400 whitespace-nowrap">${co.number || '—'}${autoTag}</td>
+        <td class="px-4 py-3 whitespace-nowrap">${fmtDate(co.date)}</td>
+        <td class="px-4 py-3 text-xs text-zinc-300">${co.company_name || '—'}</td>
+        <td class="px-4 py-3 font-mono text-xs">${co.linked_commitment_ref || '—'}</td>
+        <td class="px-4 py-3 font-mono text-xs text-sky-400">${ownerCoLabel(co.linked_owner_co_id)}</td>
+        <td class="px-4 py-3 text-xs">${co.sub_co_kind || '—'}</td>
+        <td class="px-4 py-3 text-right font-mono">${fmt(co.amount)}</td>
+        <td class="px-4 py-3 text-center">${statusBadge(co.status)}</td>
+        <td class="px-4 py-3 text-center">${ballBadge(co.ball_in_court_role)}</td>
+        <td class="px-4 py-3 text-center text-[10px] ${co.sov_synced_at ? 'text-emerald-400' : 'text-zinc-500'}">${co.sov_synced_at ? 'SOV ✓' : (co.sage_sync_status || '—')}</td>
+        <td class="px-4 py-3 text-center" onclick="event.stopPropagation()">
+          <div class="flex items-center justify-center gap-1">
+            ${showSubmit ? `<button onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="p-1.5 text-amber-400 hover:bg-zinc-800 rounded" title="Submit"><i class="fa-solid fa-paper-plane"></i></button>` : ''}
+            ${showApprove ? `<button onclick="CasePMChangeOrders.openApprovalModal(${co.id},'approve')" class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded" title="Approve"><i class="fa-solid fa-check"></i></button>` : ''}
+            ${showReject ? `<button onclick="CasePMChangeOrders.openApprovalModal(${co.id},'reject')" class="p-1.5 text-red-400 hover:bg-zinc-800 rounded" title="Reject"><i class="fa-solid fa-times"></i></button>` : ''}
+            <button onclick="CasePMChangeOrders.editSubCo(${co.id})" class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded"><i class="fa-solid fa-edit"></i></button>
+            <button onclick="CasePMChangeOrders.deleteCo(${co.id})" class="p-1.5 text-red-400 hover:bg-zinc-800 rounded" title="Delete"><i class="fa-solid fa-trash"></i></button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
   function renderCoTable() {
     const tbody = document.getElementById('coTableBody');
     if (!tbody) return;
@@ -342,7 +487,7 @@
     }
     tbody.innerHTML = rows.map(co => {
       const showSubmit = co.status === 'Draft';
-      const showApprove = ['Submitted', 'Pending Architect', 'Pending Owner'].includes(co.status) && canActOnBall(co.ball_in_court_role);
+      const showApprove = (isSubCo(co) ? subCoApproveStatuses() : ['Submitted', 'Pending Architect', 'Pending Owner']).includes(co.status) && canActOnBall(co.ball_in_court_role);
       const showReject = showApprove;
       const approveLabel = co.status === 'Pending Owner' ? 'Final Approve' : 'Approve Step';
       return `
@@ -406,7 +551,7 @@
     el.textContent = `Sage 300 · ${latest.event_type} · ${latest.status} · ${new Date(latest.created_at).toLocaleString()}`;
   }
 
-  const CO_TAB_MODULES = { cos: 'change_orders_log', pcos: 'change_orders_pco' };
+  const CO_TAB_MODULES = { cos: 'change_orders_log', pcos: 'change_orders_pco', subs: 'change_orders_sub' };
 
   function canAccessCoTab(tab) {
     const mod = CO_TAB_MODULES[tab];
@@ -418,7 +563,8 @@
 
   function applyCoTabPermissions() {
     Object.entries(CO_TAB_MODULES).forEach(([tab, mod]) => {
-      const btn = document.getElementById(tab === 'cos' ? 'btnTabCos' : 'btnTabPcos');
+      const btnId = tab === 'cos' ? 'btnTabCos' : (tab === 'pcos' ? 'btnTabPcos' : 'btnTabSubs');
+      const btn = document.getElementById(btnId);
       if (btn) btn.classList.toggle('hidden', !canAccessCoTab(tab));
     });
     if (!canAccessCoTab(state.tab || 'cos')) {
@@ -436,12 +582,20 @@
     state.tab = tab;
     document.getElementById('tabCos').classList.toggle('hidden', tab !== 'cos');
     document.getElementById('tabPcos').classList.toggle('hidden', tab !== 'pcos');
+    document.getElementById('tabSubs').classList.toggle('hidden', tab !== 'subs');
     document.getElementById('btnTabCos').className = tab === 'cos'
       ? 'px-4 py-2 rounded-md text-sm font-medium bg-emerald-600 text-white'
       : 'px-4 py-2 rounded-md text-sm font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700';
     document.getElementById('btnTabPcos').className = tab === 'pcos'
       ? 'px-4 py-2 rounded-md text-sm font-medium bg-emerald-600 text-white'
       : 'px-4 py-2 rounded-md text-sm font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700';
+    document.getElementById('btnTabSubs').className = tab === 'subs'
+      ? 'px-4 py-2 rounded-md text-sm font-medium bg-amber-600 text-white'
+      : 'px-4 py-2 rounded-md text-sm font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700';
+    document.getElementById('btnNewSubCo')?.classList.toggle('hidden', tab !== 'subs');
+    document.getElementById('statSubCard1')?.classList.toggle('hidden', tab !== 'subs');
+    document.getElementById('statSubCard2')?.classList.toggle('hidden', tab !== 'subs');
+    if (tab === 'subs') renderSubCoTable();
   }
 
   function populateSelect(id, options, selected) {
@@ -557,8 +711,14 @@
       contract_type: document.getElementById('modalContractType')?.value,
       linked_rfi_id: document.getElementById('modalLinkedRfi')?.value || null,
       linked_commitment_ref: document.getElementById('modalLinkedCommitment')?.value || null,
+      linked_owner_co_id: document.getElementById('modalLinkedOwnerCo')?.value || null,
+      sub_co_kind: document.getElementById('modalSubCoKind')?.value || null,
       allocations: allocs,
     };
+    if (type === 'sub') {
+      base.contract_type = 'Subcontract';
+      if (!base.sub_co_kind) base.sub_co_kind = 'Contract Add';
+    }
     if (type === 'pco') {
       const payload = { ...base, estimated_amount: total || readMoney('modalAmount'), status: document.getElementById('modalStatus')?.value || 'Open' };
       if (devUnlock()) {
@@ -641,19 +801,24 @@
   function openModal(mode, record) {
     const modal = document.getElementById('coModal');
     const isPco = mode === 'pco';
-    document.getElementById('modalMode').value = mode;
+    const isSub = mode === 'sub' || isSubCo(record);
+    document.getElementById('modalMode').value = isSub ? 'sub' : mode;
     document.getElementById('modalRecordId').value = record?.id || '';
     document.getElementById('coModalHeading').textContent = record
-      ? (isPco ? `Edit PCO ${record.number}` : `Edit ${record.number}`)
-      : (isPco ? 'New Potential Change Order (PCO)' : 'New Change Order');
+      ? (isPco ? `Edit PCO ${record.number}` : (isSub ? `Edit ${record.number}` : `Edit ${record.number}`))
+      : (isPco ? 'New Potential Change Order (PCO)' : (isSub ? 'New Subcontractor Change Order (SCO)' : 'New Change Order'));
     document.getElementById('modalDateRow').classList.toggle('hidden', isPco);
-    document.getElementById('modalContractTypeRow').classList.toggle('hidden', isPco);
-    populateSelect('modalStatus', isPco ? PCO_STATUSES : (
+    document.getElementById('modalContractTypeRow').classList.toggle('hidden', isPco || isSub);
+    document.getElementById('modalSubKindRow')?.classList.toggle('hidden', !isSub);
+    document.getElementById('modalOwnerCoRow')?.classList.toggle('hidden', !isSub || (record?.sub_co_kind || 'Contract Add') !== 'Owner CO Backcharge');
+    populateSelect('modalStatus', isPco ? PCO_STATUSES : (isSub ? SUB_CO_STATUSES : (
       (record?.status === 'Approved' && !devUnlock()) ? CO_STATUSES : CO_STATUSES
-    ), record?.status || (isPco ? 'Open' : 'Draft'));
+    )), record?.status || (isPco ? 'Open' : 'Draft'));
     populateSelect('modalReason', [''].concat(REASONS), record?.reason || '');
     populateSelect('modalPriority', PRIORITIES, record?.priority || 'Medium');
-    populateSelect('modalContractType', CONTRACT_TYPES, record?.contract_type || 'Owner');
+    if (!isSub) populateSelect('modalContractType', CONTRACT_TYPES, record?.contract_type || 'Owner');
+    const kindSel = document.getElementById('modalSubCoKind');
+    if (kindSel && isSub) kindSel.value = record?.sub_co_kind || 'Contract Add';
     populateCompanySelect(record?.company_id);
     document.getElementById('modalTitle').value = record?.title || '';
     document.getElementById('modalDescription').value = record?.description || '';
@@ -687,7 +852,17 @@
       if (csel) csel.value = record.contact_name;
     }
     populateLinkSelects(record);
-    renderModalAttachmentList(record, mode);
+    if (record?.linked_owner_co_id) {
+      const ownerSel = document.getElementById('modalLinkedOwnerCo');
+      if (ownerSel) ownerSel.value = String(record.linked_owner_co_id);
+    }
+    const comSel = document.getElementById('modalLinkedCommitment');
+    if (comSel && !comSel.dataset.bound) {
+      comSel.dataset.bound = '1';
+      comSel.addEventListener('change', onLinkedCommitmentChange);
+    }
+    onSubCoKindChange();
+    renderModalAttachmentList(record, isSub ? 'co' : mode);
     renderAllocationRows();
     modal.showModal();
   }
@@ -702,16 +877,22 @@
       return;
     }
     const status = payload.status || (mode === 'pco' ? 'Open' : 'Draft');
+    const subCoKind = payload.sub_co_kind;
     const needsAlloc = mode === 'pco'
       ? !['Open', 'Draft'].includes(status)
       : status !== 'Draft';
     const allocCheck = validateAllocations(payload.allocations, {
       requireRows: needsAlloc,
-      requireAmount: needsAlloc,
+      requireAmount: needsAlloc && subCoKind !== 'Budget Transfer',
+      subCoKind,
     });
     if (!allocCheck.ok) {
       showAllocationValidation(allocCheck.message);
       alert(allocCheck.message);
+      return;
+    }
+    if (mode === 'sub' && subCoKind === 'Contract Add' && needsAlloc && !payload.linked_commitment_ref) {
+      alert('Contract add subcontractor change orders require a linked subcontract commitment.');
       return;
     }
     showAllocationValidation('');
@@ -736,6 +917,7 @@
         document.getElementById('coModal').close();
         const synced = json.sync_result && !json.sync_result.error;
         const budgetSynced = !!json.budget_sync_result;
+        if (mode === 'sub') switchTab('subs');
         if (synced) {
           toast('Saved — amounts synced to Budget & Pay Application SOV');
         } else if (budgetSynced) {
@@ -787,6 +969,7 @@
   let approvalContext = { coId: null, signPanel: null };
 
   function approvalRequiresEsign(co) {
+    if (isSubCo(co)) return false;
     const role = co?.ball_in_court_role;
     return role === 'Owner' || role === 'Architect';
   }
@@ -794,7 +977,11 @@
   function openApprovalModal(coId, intent) {
     const co = state.changeOrders.find(c => c.id === coId) || (state.drawerRecord?.id === coId ? state.drawerRecord : null);
     if (!co) return;
-    const allocCheck = validateAllocations(co.allocations || [], { requireRows: true, requireAmount: true });
+    const allocCheck = validateAllocations(co.allocations || [], {
+      requireRows: true,
+      requireAmount: co.sub_co_kind !== 'Budget Transfer',
+      subCoKind: co.sub_co_kind,
+    });
     if (!allocCheck.ok && intent !== 'reject') {
       alert(`${allocCheck.message}\n\nComplete Schedule of Values allocations before approval.`);
       return;
@@ -876,7 +1063,11 @@
   async function workflowCo(id, action, comments, esignPayload) {
     const co = state.changeOrders.find(c => c.id === id) || state.drawerRecord;
     if (!co) return;
-    const allocCheck = validateAllocations(co.allocations || [], { requireRows: true, requireAmount: true });
+    const allocCheck = validateAllocations(co.allocations || [], {
+      requireRows: true,
+      requireAmount: co.sub_co_kind !== 'Budget Transfer',
+      subCoKind: co.sub_co_kind,
+    });
     if (!allocCheck.ok && (action === 'submit' || action === 'approve')) {
       alert(`${allocCheck.message}\n\nEdit the change order and complete the Schedule of Values allocations first.`);
       return;
@@ -896,6 +1087,10 @@
       await loadChangeOrders();
       await loadDashboard();
       await loadSageLog();
+      if (json.auto_sub_change_orders?.length) {
+        toast(`Owner CO approved — ${json.auto_sub_change_orders.length} draft Sub CO(s) auto-created`);
+        switchTab('subs');
+      }
       if (state.drawerRecord && state.drawerRecord.id === id && json.change_order) {
         state.drawerRecord = json.change_order;
         renderDrawerCo(json.change_order);
@@ -949,6 +1144,8 @@
         <p><span class="text-zinc-500">Reason</span><br>${esc(co.reason || '—')}</p>
         <p><span class="text-zinc-500">Description</span><br>${esc(co.description || '—')}</p>
         ${co.source_pco_id ? `<p><span class="text-zinc-500">Source PCO</span><br>#${co.source_pco_id}</p>` : ''}
+        ${isSubCo(co) ? `<p><span class="text-zinc-500">Sub CO Type</span><br>${esc(co.sub_co_kind || '—')}${co.auto_generated ? ' <span class="text-sky-400 text-xs">(auto-generated)</span>' : ''}</p>` : ''}
+        ${co.linked_owner_co_id ? `<p><span class="text-zinc-500">Owner CO</span><br><span class="font-mono text-sky-400">${ownerCoLabel(co.linked_owner_co_id)}</span></p>` : ''}
         <p><span class="text-zinc-500">Linked RFI</span><br>${co.linked_rfi_id ? `<a href="/rfis" class="text-sky-400 hover:underline">${esc(linkedRfiLabel(co.linked_rfi_id))}</a>` : '—'}</p>
         <p><span class="text-zinc-500">Linked commitment</span><br>${esc(co.linked_commitment_ref || '—')}</p>
         <p><span class="text-zinc-500">Sage / SOV</span><br>${co.sov_synced_at ? '<span class="text-emerald-400">Synced to Budget &amp; SOV</span>' : esc(co.sage_sync_status || '—')}</p>
@@ -965,7 +1162,7 @@
         <p>${atts}</p>
       </div>`;
     const showSubmit = co.status === 'Draft';
-    const showApprove = ['Submitted', 'Pending Architect', 'Pending Owner'].includes(co.status) && canActOnBall(co.ball_in_court_role);
+    const showApprove = (isSubCo(co) ? subCoApproveStatuses() : ['Submitted', 'Pending Architect', 'Pending Owner']).includes(co.status) && canActOnBall(co.ball_in_court_role);
     document.getElementById('drawerActions').innerHTML = `
       ${showSubmit ? `<button type="button" onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit for Approval</button>` : ''}
       ${showApprove ? `<button type="button" onclick="CasePMChangeOrders.openApprovalModal(${co.id},'approve')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Review &amp; Approve</button>` : ''}
@@ -1293,6 +1490,7 @@
       state.filter.priority = priority?.value || '';
       renderCoTable();
       renderPcoTable();
+      renderSubCoTable();
     };
     if (search) search.addEventListener('input', rerender);
     if (status) status.addEventListener('change', rerender);
@@ -1360,6 +1558,10 @@
     onCompanyChange, onContactChange, onAllocCostCodeChange, updateAllocationTotal, exportExcel, printLog, openSageLog,
     newPco: () => openModal('pco', null),
     newCo: () => openModal('co', null),
+    newSubCo: () => openModal('sub', { contract_type: 'Subcontract', sub_co_kind: 'Contract Add' }),
+    editSubCo: id => api(`/api/change-orders/${id}`).then(r => openModal('sub', r)).catch(e => alert(e.message)),
+    onSubCoKindChange,
+    onLinkedCommitmentChange,
   };
 
   document.addEventListener('DOMContentLoaded', init);

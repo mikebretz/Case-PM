@@ -985,6 +985,9 @@ class ChangeOrder(db.Model):
     approval_history_json = db.Column(db.Text)
     approval_signatures_json = db.Column(db.Text)
     executed_locked = db.Column(db.Boolean, default=False)
+    linked_owner_co_id = db.Column(db.Integer, db.ForeignKey('change_order.id'), nullable=True)
+    sub_co_kind = db.Column(db.String(40))
+    auto_generated = db.Column(db.Boolean, default=False)
 
 
 class ChangeOrderAllocation(db.Model):
@@ -1746,13 +1749,21 @@ def save_uploaded_file(file, folder='photos'):
 
 # ==================== HELPER FUNCTIONS ====================
 
-def generate_next_number(prefix, model_class, doc_type=None):
+def generate_next_number(prefix, model_class, doc_type=None, project_id=None):
     """Generate next sequential number (e.g. RFI-001, CO-042) using program settings when doc_type is set."""
     from program_settings_persistence import get_numbering_prefix, format_document_number
     pad = 3
     if doc_type:
-        prefix, pad = get_numbering_prefix(doc_type)
-    last_record = model_class.query.order_by(model_class.number.desc()).first()
+        prefix, pad = get_numbering_prefix(doc_type, project_id=project_id)
+    q = model_class.query
+    if project_id is not None and hasattr(model_class, 'project_id'):
+        from program_settings_persistence import load_numbering_config, NUMBERING_DEFAULTS
+        scope = (load_numbering_config().get(doc_type or '') or NUMBERING_DEFAULTS.get(doc_type or '', {})).get('scope')
+        if scope == 'project':
+            q = q.filter_by(project_id=int(project_id))
+    if prefix and hasattr(model_class, 'number'):
+        q = q.filter(model_class.number.like(f'{prefix}-%'))
+    last_record = q.order_by(model_class.number.desc()).first()
     if last_record and last_record.number:
         try:
             last_num = int(str(last_record.number).split('-')[-1])
@@ -13158,15 +13169,20 @@ def api_change_orders_cost_codes():
 @app.route('/api/change-orders', methods=['GET'])
 @login_required
 def api_list_change_orders():
-    from co_persistence import co_to_dict
+    from co_persistence import co_to_dict, is_subcontract_co
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
     status = request.args.get('status')
+    scope = (request.args.get('scope') or '').strip().lower()
     q = ChangeOrder.query.filter_by(project_id=int(project_id))
     if status:
         q = q.filter_by(status=status)
     cos = q.order_by(ChangeOrder.created_at.desc()).all()
+    if scope == 'owner':
+        cos = [c for c in cos if not is_subcontract_co(c)]
+    elif scope == 'sub':
+        cos = [c for c in cos if is_subcontract_co(c)]
     result = []
     for co in cos:
         allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
@@ -13212,7 +13228,10 @@ def api_allocate_change_order(co_id):
 @app.route('/api/change-orders', methods=['POST'])
 @login_required
 def api_create_change_order():
-    from co_persistence import apply_co_fields, co_to_dict, run_change_order_accounting_sync, save_allocations, validate_allocations
+    from co_persistence import (
+        apply_co_fields, co_to_dict, run_change_order_accounting_sync, save_allocations,
+        validate_allocations, is_subcontract_co, compute_co_amount_from_allocations,
+    )
     try:
         body = request.get_json(silent=True) or {}
         project_id = body.get('project_id') or get_current_project_id()
@@ -13223,9 +13242,19 @@ def api_create_change_order():
             return jsonify({'error': 'description required'}), 400
         status = body.get('status') or 'Draft'
         allocations = body.get('allocations') or []
+        sub_co_kind = body.get('sub_co_kind')
+        contract_type = (body.get('contract_type') or 'Owner').strip()
+        is_sub = contract_type in ('Subcontract', 'Subcontractor')
+        if is_sub and not sub_co_kind:
+            sub_co_kind = 'Contract Add'
         if status != 'Draft':
-            allocations = validate_allocations(allocations, require_rows=True, require_amount=True)
-        number = generate_next_number('CO', ChangeOrder, doc_type='change_order')
+            allocations = validate_allocations(
+                allocations, require_rows=True, require_amount=True, sub_co_kind=sub_co_kind,
+            )
+        if is_sub:
+            number = generate_next_number('SCO', ChangeOrder, doc_type='sub_change_order', project_id=int(project_id))
+        else:
+            number = generate_next_number('CO', ChangeOrder, doc_type='change_order')
         co = ChangeOrder(
             project_id=int(project_id),
             number=number,
@@ -13233,14 +13262,18 @@ def api_create_change_order():
             status=status,
             date=_parse_change_order_date(body.get('date')),
             ball_in_court_role='Creator',
+            contract_type='Subcontract' if is_sub else (contract_type or 'Owner'),
+            sub_co_kind=sub_co_kind if is_sub else None,
             created_by_id=current_user.id,
         )
         apply_co_fields(co, body)
+        if is_sub and not co.sub_co_kind:
+            co.sub_co_kind = sub_co_kind or 'Contract Add'
         db.session.add(co)
         db.session.flush()
         if allocations:
             save_allocations(ChangeOrderAllocation, 'change_order_id', co.id, allocations, db)
-            co.amount = sum(float(a.get('amount') or 0) for a in allocations)
+            co.amount = compute_co_amount_from_allocations(allocations, co.sub_co_kind)
             if len(allocations) == 1:
                 co.cost_code = allocations[0].get('cost_code')
         sync_result = None
@@ -13281,7 +13314,10 @@ def api_create_change_order():
 @app.route('/api/change-orders/<int:co_id>', methods=['PUT'])
 @login_required
 def api_update_change_order(co_id):
-    from co_persistence import apply_co_fields, co_to_dict, run_change_order_accounting_sync, save_allocations, validate_allocations
+    from co_persistence import (
+        apply_co_fields, co_to_dict, run_change_order_accounting_sync, save_allocations,
+        validate_allocations, compute_co_amount_from_allocations,
+    )
     from developer_tools import apply_immutable_co_fields
     co = ChangeOrder.query.get_or_404(co_id)
     body = request.get_json(silent=True) or {}
@@ -13298,11 +13334,14 @@ def api_update_change_order(co_id):
         if body.get('allocations') is not None:
             status = body.get('status') or co.status
             allocations = body['allocations']
+            sub_co_kind = body.get('sub_co_kind') or getattr(co, 'sub_co_kind', None)
             if status != 'Draft':
-                allocations = validate_allocations(allocations, require_rows=True, require_amount=True)
+                allocations = validate_allocations(
+                    allocations, require_rows=True, require_amount=True, sub_co_kind=sub_co_kind,
+                )
             save_allocations(ChangeOrderAllocation, 'change_order_id', co.id, allocations, db)
             if allocations:
-                co.amount = sum(float(a.get('amount') or 0) for a in allocations)
+                co.amount = compute_co_amount_from_allocations(allocations, sub_co_kind)
                 if len(allocations) == 1:
                     co.cost_code = allocations[0].get('cost_code')
         new_status = co.status
@@ -13450,6 +13489,8 @@ def api_change_orders_link_options():
         return jsonify({'error': 'project_id required'}), 400
     rfis = RFI.query.filter_by(project_id=int(project_id)).order_by(RFI.created_at.desc()).limit(200).all()
     commitments = Commitment.query.filter_by(project_id=int(project_id)).order_by(Commitment.created_at.desc()).limit(200).all()
+    owner_cos = ChangeOrder.query.filter_by(project_id=int(project_id)).order_by(ChangeOrder.created_at.desc()).limit(200).all()
+    from co_persistence import is_subcontract_co
     return jsonify({
         'rfis': [{'id': r.id, 'number': r.number, 'subject': r.subject, 'status': r.status} for r in rfis],
         'commitments': [
@@ -13461,8 +13502,19 @@ def api_change_orders_link_options():
                 'status': c.status,
                 'amount': c.current_amount or c.original_amount,
                 'company_name': c.company_name,
+                'company_id': c.company_id,
             }
             for c in commitments
+        ],
+        'owner_change_orders': [
+            {
+                'id': c.id,
+                'number': c.number,
+                'title': getattr(c, 'title', None) or c.description,
+                'status': c.status,
+                'amount': c.amount,
+            }
+            for c in owner_cos if not is_subcontract_co(c) and c.status in ('Approved', 'Submitted', 'Pending Owner', 'Pending Architect', 'Under Review')
         ],
     })
 
@@ -13470,7 +13522,10 @@ def api_change_orders_link_options():
 @app.route('/api/change-orders/<int:co_id>/workflow', methods=['POST'])
 @login_required
 def api_change_order_workflow(co_id):
-    from co_persistence import co_workflow_action, notify_ball_in_court, co_to_dict, append_approval_history, run_change_order_accounting_sync
+    from co_persistence import (
+        co_workflow_action, notify_ball_in_court, co_to_dict, append_approval_history,
+        run_change_order_accounting_sync, auto_create_sub_cos_from_owner_co, is_subcontract_co,
+    )
     co = ChangeOrder.query.get_or_404(co_id)
     body = request.get_json(silent=True) or {}
     action = body.get('action')
@@ -13534,13 +13589,34 @@ def api_change_order_workflow(co_id):
         except Exception:
             pass
         from sage_service import create_and_process_sage_event
-        create_and_process_sage_event(
-            SageSyncEvent, Project, db, co.project_id,
-            'ChangeOrderSubmitted',
-            message=f'{co.number} submitted — ball with {co.ball_in_court_role}',
-            payload={'change_order_id': co.id, 'amount': co.amount},
-            user_id=current_user.id,
-        )
+        if is_subcontract_co(co):
+            com_type = 'Subcontract'
+            if getattr(co, 'linked_commitment_ref', None):
+                com = Commitment.query.filter_by(project_id=co.project_id, number=co.linked_commitment_ref).first()
+                if com:
+                    com_type = com.commitment_type or 'Subcontract'
+            create_and_process_sage_event(
+                SageSyncEvent, Project, db, co.project_id,
+                'CommitmentChangeOrderSubmitted',
+                message=f'{co.number} submitted — ball with {co.ball_in_court_role}',
+                payload={
+                    'change_order_id': co.id,
+                    'amount': co.amount,
+                    'commitment_type': com_type,
+                    'linked_commitment_ref': getattr(co, 'linked_commitment_ref', None),
+                    'sub_co_kind': getattr(co, 'sub_co_kind', None),
+                },
+                user_id=current_user.id,
+                Commitment=Commitment,
+            )
+        else:
+            create_and_process_sage_event(
+                SageSyncEvent, Project, db, co.project_id,
+                'ChangeOrderSubmitted',
+                message=f'{co.number} submitted — ball with {co.ball_in_court_role}',
+                payload={'change_order_id': co.id, 'amount': co.amount},
+                user_id=current_user.id,
+            )
 
     sync_result = None
     budget_sync_result = None
@@ -13578,6 +13654,20 @@ def api_change_order_workflow(co_id):
         )
         sync_result = accounting.get('sync_result')
         budget_sync_result = accounting.get('budget_sync_result') or budget_sync_result
+        if not is_subcontract_co(co):
+            auto_create_sub_cos_from_owner_co(
+                co,
+                allocs,
+                ChangeOrder,
+                ChangeOrderAllocation,
+                Commitment,
+                CommitmentAllocation,
+                db,
+                lambda prefix, model, doc_type=None, project_id=None: generate_next_number(
+                    prefix, model, doc_type=doc_type, project_id=project_id or co.project_id,
+                ),
+                current_user.id,
+            )
     elif action in ('submit', 'approve') and co.ball_in_court_role:
         notify_ball_in_court(
             co.project_id, co, User,
@@ -13620,6 +13710,14 @@ def api_change_order_workflow(co_id):
 
     db.session.commit()
     allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
+    auto_sub_cos = []
+    if final_approved and not is_subcontract_co(co):
+        auto_sub_cos = [
+            {'id': c.id, 'number': c.number, 'company_name': c.company_name}
+            for c in ChangeOrder.query.filter_by(
+                project_id=co.project_id, linked_owner_co_id=co.id, auto_generated=True,
+            ).all()
+        ]
     return jsonify({
         'ok': True,
         'new_status': new_status,
@@ -13628,6 +13726,7 @@ def api_change_order_workflow(co_id):
         'change_order': co_to_dict(co, allocs),
         'sync_result': sync_result,
         'budget_sync_result': budget_sync_result,
+        'auto_sub_change_orders': auto_sub_cos,
     })
 
 

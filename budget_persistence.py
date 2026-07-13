@@ -19,7 +19,7 @@ BUDGET_STATE_KEYS = (
     'budgetSageSyncAutoEnabled',
 )
 
-PENDING_CO_STATUSES = ('Submitted', 'Under Review', 'Pending', 'Pending Architect', 'Pending Owner')
+PENDING_CO_STATUSES = ('Submitted', 'Under Review', 'Pending', 'Pending Architect', 'Pending Owner', 'Pending Accounting')
 APPROVED_CO_STATUS = 'Approved'
 REJECTED_CO_STATUS = 'Rejected'
 

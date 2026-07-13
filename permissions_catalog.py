@@ -40,6 +40,7 @@ MODULE_SUBMODULES = {
     'change_orders': [
         ('change_orders_log', 'Change Orders'),
         ('change_orders_pco', 'PCO Log'),
+        ('change_orders_sub', 'Sub Change Orders'),
     ],
     'safety': [
         ('safety_reports', 'Observations & Incidents'),
@@ -116,7 +117,7 @@ MODULE_GROUPS = [
 
 # Modules that support approval workflow (parent keys; sub-keys inherit in UI)
 APPROVAL_MODULES = frozenset({
-    'rfis', 'submittals', 'change_orders', 'change_orders_log', 'change_orders_pco',
+    'rfis', 'submittals', 'change_orders', 'change_orders_log', 'change_orders_pco', 'change_orders_sub',
     'budget', 'commitments',
     'pay_applications', 'pay_applications_gc', 'pay_applications_sub',
     'daily_log', 'safety', 'safety_reports', 'punch_list',
@@ -242,6 +243,7 @@ ROLE_TEMPLATES = {
             'change_orders': ('edit', 'approve_reject'),
             'change_orders_log': ('edit', 'approve_reject'),
             'change_orders_pco': ('edit', 'approve_reject'),
+            'change_orders_sub': ('edit', 'approve_reject'),
             'budget': ('edit', 'approve_reject'),
             'commitments': ('edit', 'approve_reject'),
             'pay_applications': ('edit', 'approve_reject'),
@@ -293,6 +295,7 @@ ROLE_TEMPLATES = {
             'change_orders': ('view', 'approve_reject'),
             'change_orders_log': ('view', 'approve_reject'),
             'change_orders_pco': ('view', 'none'),
+            'change_orders_sub': ('view', 'approve_reject'),
             'drawings': ('view', 'none'),
             'documents': ('view', 'none'),
             'schedule': ('view', 'none'),
@@ -312,6 +315,7 @@ ROLE_TEMPLATES = {
             'change_orders': ('client_view', 'approve_reject'),
             'change_orders_log': ('client_view', 'approve_reject'),
             'change_orders_pco': ('client_view', 'none'),
+            'change_orders_sub': ('client_view', 'none'),
             'documents': ('client_view', 'none'),
             'drawings': ('client_view', 'none'),
             'daily_log': ('client_view', 'none'),
@@ -351,6 +355,7 @@ ROLE_TEMPLATES = {
             'change_orders': ('edit', 'approve_reject'),
             'change_orders_log': ('edit', 'approve_reject'),
             'change_orders_pco': ('view', 'none'),
+            'change_orders_sub': ('edit', 'approve_reject'),
             'companies': ('edit', 'none'),
             'documents': ('view', 'none'),
             'schedule': ('view', 'none'),

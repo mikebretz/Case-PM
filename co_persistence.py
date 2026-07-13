@@ -6,7 +6,11 @@ from datetime import datetime
 
 CO_STATUSES = (
     'Draft', 'Submitted', 'Under Review', 'Pending Owner', 'Pending Architect',
-    'Approved', 'Rejected', 'Void',
+    'Pending Accounting', 'Approved', 'Rejected', 'Void',
+)
+SUB_CO_KINDS = ('Contract Add', 'Budget Transfer', 'Owner CO Backcharge')
+SUB_CO_STATUSES = (
+    'Draft', 'Submitted', 'Under Review', 'Pending Accounting', 'Approved', 'Rejected', 'Void',
 )
 PCO_STATUSES = (
     'Open', 'Pricing', 'Pending Review', 'Approved for CO', 'Promoted', 'Void', 'Closed',
@@ -17,16 +21,31 @@ BALL_IN_COURT_MAP = {
     'Under Review': 'Project Manager',
     'Pending Architect': 'Architect',
     'Pending Owner': 'Owner',
+    'Pending Accounting': 'Contractor Accounting',
+    'Approved': None,
+    'Rejected': None,
+    'Void': None,
+}
+SUB_BALL_IN_COURT_MAP = {
+    'Draft': 'Creator',
+    'Submitted': 'Project Manager',
+    'Under Review': 'Project Manager',
+    'Pending Accounting': 'Contractor Accounting',
     'Approved': None,
     'Rejected': None,
     'Void': None,
 }
 
-# Sequential approval chain
+# Sequential approval chain (owner / prime contract COs)
 APPROVAL_CHAIN = (
     {'from_status': 'Submitted', 'role': 'Project Manager', 'next_status': 'Pending Architect'},
     {'from_status': 'Pending Architect', 'role': 'Architect', 'next_status': 'Pending Owner'},
     {'from_status': 'Pending Owner', 'role': 'Owner', 'next_status': 'Approved'},
+)
+# Subcontractor change order approval: PM → Contractor Accounting (no Owner/Architect e-sign)
+SUB_APPROVAL_CHAIN = (
+    {'from_status': 'Submitted', 'role': 'Project Manager', 'next_status': 'Pending Accounting'},
+    {'from_status': 'Pending Accounting', 'role': 'Contractor Accounting', 'next_status': 'Approved'},
 )
 
 ROLE_APPROVERS = {
@@ -82,6 +101,9 @@ def ensure_co_schema(engine, db):
             'approval_history_json': 'TEXT',
             'approval_signatures_json': 'TEXT',
             'executed_locked': 'INTEGER DEFAULT 0',
+            'linked_owner_co_id': 'INTEGER',
+            'sub_co_kind': 'VARCHAR(40)',
+            'auto_generated': 'INTEGER DEFAULT 0',
         }
         for name, col_type in additions.items():
             if name not in cols:
@@ -143,6 +165,19 @@ def schedule_days_to_label(days):
     return 'Significant'
 
 
+def is_subcontract_co(co):
+    ctype = (getattr(co, 'contract_type', None) or '').strip()
+    return ctype in ('Subcontract', 'Subcontractor')
+
+
+def co_ball_in_court_map(co):
+    return SUB_BALL_IN_COURT_MAP if is_subcontract_co(co) else BALL_IN_COURT_MAP
+
+
+def co_approval_chain(co):
+    return SUB_APPROVAL_CHAIN if is_subcontract_co(co) else APPROVAL_CHAIN
+
+
 def co_to_dict(co, allocations=None, revisions=None):
     allocs = allocations
     if allocs is None and hasattr(co, '_allocations_cache'):
@@ -189,6 +224,10 @@ def co_to_dict(co, allocations=None, revisions=None):
         'approval_history': _parse_json(getattr(co, 'approval_history_json', None), []),
         'approval_signatures': _parse_json(getattr(co, 'approval_signatures_json', None), []),
         'executed_locked': bool(getattr(co, 'executed_locked', False)),
+        'linked_owner_co_id': getattr(co, 'linked_owner_co_id', None),
+        'sub_co_kind': getattr(co, 'sub_co_kind', None) or ('Owner CO Backcharge' if getattr(co, 'linked_owner_co_id', None) else None),
+        'auto_generated': bool(getattr(co, 'auto_generated', False)),
+        'is_subcontract': is_subcontract_co(co),
         'allocations': [{
             'cost_code': a.cost_code,
             'cost_type': getattr(a, 'cost_type', None) or '',
@@ -292,6 +331,12 @@ def apply_co_fields(co, data):
         co.linked_rfi_id = int(data['linked_rfi_id']) if data['linked_rfi_id'] else None
     if data.get('linked_commitment_ref') is not None:
         co.linked_commitment_ref = data['linked_commitment_ref']
+    if data.get('linked_owner_co_id') is not None:
+        co.linked_owner_co_id = int(data['linked_owner_co_id']) if data['linked_owner_co_id'] else None
+    if data.get('sub_co_kind') is not None:
+        co.sub_co_kind = data['sub_co_kind']
+    if data.get('auto_generated') is not None:
+        co.auto_generated = bool(data['auto_generated'])
     if data.get('date') is not None:
         from datetime import datetime
         raw = data['date']
@@ -336,7 +381,7 @@ def normalize_allocation_rows(allocations):
     return rows
 
 
-def validate_allocations(allocations, *, require_rows=True, require_amount=False):
+def validate_allocations(allocations, *, require_rows=True, require_amount=False, sub_co_kind=None):
     rows = normalize_allocation_rows(allocations)
     if require_rows and not rows:
         raise ValueError('At least one cost code allocation is required (cost code, cost type, and amount).')
@@ -349,6 +394,22 @@ def validate_allocations(allocations, *, require_rows=True, require_amount=False
         if require_amount and item['amount'] == 0:
             raise ValueError(f'Allocation row {i}: amount must be non-zero.')
         cleaned.append(item)
+
+    kind = (sub_co_kind or '').strip()
+    if kind == 'Budget Transfer':
+        if len(cleaned) < 2:
+            raise ValueError('Budget transfer requires at least two allocation rows (from and to cost codes).')
+        net = round(sum(float(r['amount'] or 0) for r in cleaned), 2)
+        if net != 0:
+            raise ValueError(f'Budget transfer allocations must net to zero (current net: {net:,.2f}).')
+        positives = [r for r in cleaned if float(r['amount'] or 0) > 0]
+        negatives = [r for r in cleaned if float(r['amount'] or 0) < 0]
+        if not positives or not negatives:
+            raise ValueError('Budget transfer requires at least one positive and one negative allocation row.')
+    elif kind == 'Contract Add' and require_amount:
+        total = sum(float(r['amount'] or 0) for r in cleaned)
+        if total <= 0:
+            raise ValueError('Contract add subcontractor change orders require a positive total amount.')
     return cleaned
 
 
@@ -453,15 +514,22 @@ def promote_pco_to_co(
 
 def compute_dashboard_stats(ChangeOrder, PotentialChangeOrder, project_id):
     cos = ChangeOrder.query.filter_by(project_id=project_id).all()
+    owner_cos = [c for c in cos if not is_subcontract_co(c)]
+    sub_cos = [c for c in cos if is_subcontract_co(c)]
     pcos = PotentialChangeOrder.query.filter_by(project_id=project_id).all()
 
-    approved = [c for c in cos if c.status == 'Approved']
+    approved = [c for c in owner_cos if c.status == 'Approved']
     pending_statuses = {'Submitted', 'Under Review', 'Pending Owner', 'Pending Architect', 'Pending'}
-    pending = [c for c in cos if c.status in pending_statuses]
+    pending = [c for c in owner_cos if c.status in pending_statuses]
+    sub_pending_statuses = {'Submitted', 'Under Review', 'Pending Accounting', 'Pending'}
+    sub_approved = [c for c in sub_cos if c.status == 'Approved']
+    sub_pending = [c for c in sub_cos if c.status in sub_pending_statuses]
     open_pcos = [p for p in pcos if p.status not in ('Promoted', 'Void', 'Closed')]
 
     approved_total = sum(c.amount or 0 for c in approved)
     pending_total = sum(c.amount or 0 for c in pending)
+    sub_approved_total = sum(c.amount or 0 for c in sub_approved)
+    sub_pending_total = sum(c.amount or 0 for c in sub_pending)
     pco_rom = sum(p.estimated_amount or 0 for p in open_pcos)
 
     approval_days = []
@@ -471,7 +539,7 @@ def compute_dashboard_stats(ChangeOrder, PotentialChangeOrder, project_id):
     avg_days = round(sum(approval_days) / len(approval_days), 1) if approval_days else 0
 
     return {
-        'total_cos': len(cos),
+        'total_cos': len(owner_cos),
         'approved_count': len(approved),
         'pending_count': len(pending),
         'open_pco_count': len(open_pcos),
@@ -479,6 +547,11 @@ def compute_dashboard_stats(ChangeOrder, PotentialChangeOrder, project_id):
         'pending_total': pending_total,
         'pco_rom_total': pco_rom,
         'avg_approval_days': avg_days,
+        'total_sub_cos': len(sub_cos),
+        'sub_approved_count': len(sub_approved),
+        'sub_pending_count': len(sub_pending),
+        'sub_approved_total': sub_approved_total,
+        'sub_pending_total': sub_pending_total,
     }
 
 
@@ -536,8 +609,9 @@ def user_can_act_on_ball_in_court(user, role):
     return user.role in allowed
 
 
-def get_next_approval_step(current_status):
-    for step in APPROVAL_CHAIN:
+def get_next_approval_step(current_status, co=None):
+    chain = co_approval_chain(co) if co else APPROVAL_CHAIN
+    for step in chain:
         if step['from_status'] == current_status:
             return step
     return None
@@ -545,7 +619,8 @@ def get_next_approval_step(current_status):
 
 def set_ball_in_court(co, status=None):
     status = status or co.status
-    co.ball_in_court_role = BALL_IN_COURT_MAP.get(status, co.ball_in_court_role)
+    court_map = co_ball_in_court_map(co)
+    co.ball_in_court_role = court_map.get(status, co.ball_in_court_role)
 
 
 def notify_ball_in_court(project_id, co, User, title=None, description=None):
@@ -604,8 +679,17 @@ def append_approval_history(co, action, user, comment='', status_from='', status
 
 def co_workflow_action(co, action, user, User, allocations=None):
     action = (action or '').lower()
+    sub_kind = getattr(co, 'sub_co_kind', None)
     if action in ('submit', 'approve'):
-        validate_allocations(allocations or [], require_rows=True, require_amount=True)
+        validate_allocations(
+            allocations or [],
+            require_rows=True,
+            require_amount=True,
+            sub_co_kind=sub_kind,
+        )
+        if is_subcontract_co(co) and (sub_kind or '') == 'Contract Add':
+            if not (getattr(co, 'linked_commitment_ref', None) or '').strip():
+                raise ValueError('Contract add subcontractor change orders require a linked subcontract commitment.')
     if action == 'submit':
         if co.status not in ('Draft',):
             raise ValueError('Only draft change orders can be submitted')
@@ -623,7 +707,7 @@ def co_workflow_action(co, action, user, User, allocations=None):
         role = co.ball_in_court_role
         if not user_can_act_on_ball_in_court(user, role):
             raise ValueError(f'Your role cannot approve while ball is with {role}')
-        step = get_next_approval_step(co.status)
+        step = get_next_approval_step(co.status, co)
         if not step:
             raise ValueError('No approval step for current status')
         next_status = step['next_status']
@@ -673,6 +757,142 @@ def delete_change_order(
     AllocationModel.query.filter_by(change_order_id=co.id).delete()
     RevisionModel.query.filter_by(change_order_id=co.id).delete()
     db.session.delete(co)
+
+
+def compute_co_amount_from_allocations(allocations, sub_co_kind=None):
+    rows = normalize_allocation_rows(allocations)
+    if not rows:
+        return 0.0
+    kind = (sub_co_kind or '').strip()
+    if kind == 'Budget Transfer':
+        return round(sum(max(0.0, float(r.get('amount') or 0)) for r in rows), 2)
+    return round(sum(float(r.get('amount') or 0) for r in rows), 2)
+
+
+def _normalize_cost_code(code):
+    return str(code or '').replace(' ', '').replace('-', '').upper()
+
+
+def _commitment_matches_sub_alloc(commitment, alloc, CommitmentAllocation):
+    if commitment.commitment_type != 'Subcontract':
+        return False
+    code = _normalize_cost_code(getattr(alloc, 'cost_code', None) if not isinstance(alloc, dict) else alloc.get('cost_code'))
+    if not code:
+        return False
+    rows = CommitmentAllocation.query.filter_by(commitment_id=commitment.id).all()
+    for row in rows:
+        if _normalize_cost_code(row.cost_code) == code:
+            return True
+    return False
+
+
+def auto_create_sub_cos_from_owner_co(
+    owner_co,
+    allocations,
+    ChangeOrder,
+    ChangeOrderAllocation,
+    Commitment,
+    CommitmentAllocation,
+    db,
+    generate_number_fn,
+    user_id,
+):
+    """Create draft subcontractor COs when an owner CO is approved with subcontract allocations."""
+    if is_subcontract_co(owner_co):
+        return []
+    if owner_co.status != 'Approved':
+        return []
+
+    existing = ChangeOrder.query.filter_by(
+        project_id=owner_co.project_id,
+        linked_owner_co_id=owner_co.id,
+        auto_generated=True,
+    ).count()
+    if existing:
+        return []
+
+    sub_allocs = []
+    for alloc in allocations or []:
+        ctype = (getattr(alloc, 'cost_type', None) if not isinstance(alloc, dict) else alloc.get('cost_type') or '').strip()
+        if ctype.lower() != 'subcontract':
+            continue
+        amt = float(getattr(alloc, 'amount', 0) if not isinstance(alloc, dict) else alloc.get('amount') or 0)
+        if not amt:
+            continue
+        sub_allocs.append(alloc)
+    if not sub_allocs:
+        return []
+
+    commitments = Commitment.query.filter_by(project_id=owner_co.project_id).filter(
+        Commitment.commitment_type == 'Subcontract'
+    ).all()
+    if not commitments:
+        return []
+
+    linked_ref = (getattr(owner_co, 'linked_commitment_ref', None) or '').strip()
+    if linked_ref:
+        commitments = [c for c in commitments if (c.number or '').strip() == linked_ref] or commitments
+
+    buckets = {}
+    for com in commitments:
+        for alloc in sub_allocs:
+            if _commitment_matches_sub_alloc(com, alloc, CommitmentAllocation):
+                key = com.id
+                if key not in buckets:
+                    buckets[key] = {'commitment': com, 'allocations': []}
+                payload = {
+                    'cost_code': getattr(alloc, 'cost_code', None) if not isinstance(alloc, dict) else alloc.get('cost_code'),
+                    'cost_type': 'Subcontract',
+                    'amount': float(getattr(alloc, 'amount', 0) if not isinstance(alloc, dict) else alloc.get('amount') or 0),
+                    'description': getattr(alloc, 'description', '') if not isinstance(alloc, dict) else alloc.get('description', ''),
+                }
+                buckets[key]['allocations'].append(payload)
+
+    created = []
+    for bucket in buckets.values():
+        com = bucket['commitment']
+        allocs = bucket['allocations']
+        total = compute_co_amount_from_allocations(allocs, 'Owner CO Backcharge')
+        if total <= 0:
+            continue
+        sco = ChangeOrder(
+            project_id=owner_co.project_id,
+            number=generate_number_fn('SCO', ChangeOrder, doc_type='sub_change_order', project_id=owner_co.project_id),
+            title=f'{owner_co.number} — {com.company_name or com.number}',
+            description=f'Auto-generated subcontractor change order from approved owner CO {owner_co.number}',
+            amount=total,
+            reason=owner_co.reason,
+            schedule_impact=owner_co.schedule_impact,
+            schedule_impact_days=owner_co.schedule_impact_days or 0,
+            status='Draft',
+            date=datetime.utcnow().date(),
+            requested_by=owner_co.requested_by,
+            priority=owner_co.priority,
+            notes=f'Auto-created from owner CO {owner_co.number}. Review allocations and submit when ready.',
+            company_name=com.company_name,
+            company_id=com.company_id,
+            contract_type='Subcontract',
+            linked_owner_co_id=owner_co.id,
+            linked_commitment_ref=com.number,
+            sub_co_kind='Owner CO Backcharge',
+            auto_generated=True,
+            ball_in_court_role='Creator',
+            created_by_id=user_id,
+        )
+        db.session.add(sco)
+        db.session.flush()
+        for item in allocs:
+            db.session.add(ChangeOrderAllocation(
+                change_order_id=sco.id,
+                cost_code=item.get('cost_code'),
+                cost_type=item.get('cost_type') or 'Subcontract',
+                amount=float(item.get('amount') or 0),
+                description=item.get('description') or '',
+            ))
+        created.append(sco)
+    if created:
+        db.session.flush()
+    return created
 
 
 def run_change_order_accounting_sync(
@@ -730,16 +950,44 @@ def run_change_order_accounting_sync(
             co.sage_sync_status = 'sov_synced'
             if queue_sage_event and SageSyncEvent is not None and old_status != 'Approved':
                 from sage_service import create_and_process_sage_event
-                create_and_process_sage_event(
-                    SageSyncEvent,
-                    Project,
-                    db,
-                    co.project_id,
-                    'ChangeOrderApproved',
-                    message=f'Change Order {co.number} approved — accounting reconciled',
-                    payload={'change_order_id': co.id, 'amount': co.amount, 'sync': result['sync_result']},
-                    user_id=user_id,
-                )
+                if is_subcontract_co(co):
+                    com_type = 'Subcontract'
+                    if Commitment is not None and getattr(co, 'linked_commitment_ref', None):
+                        com = Commitment.query.filter_by(
+                            project_id=co.project_id,
+                            number=co.linked_commitment_ref,
+                        ).first()
+                        if com:
+                            com_type = com.commitment_type or 'Subcontract'
+                    create_and_process_sage_event(
+                        SageSyncEvent,
+                        Project,
+                        db,
+                        co.project_id,
+                        'CommitmentChangeOrderApproved',
+                        message=f'Subcontractor Change Order {co.number} approved — accounting reconciled',
+                        payload={
+                            'change_order_id': co.id,
+                            'amount': co.amount,
+                            'commitment_type': com_type,
+                            'linked_commitment_ref': getattr(co, 'linked_commitment_ref', None),
+                            'sub_co_kind': getattr(co, 'sub_co_kind', None),
+                            'sync': result['sync_result'],
+                        },
+                        user_id=user_id,
+                        Commitment=Commitment,
+                    )
+                else:
+                    create_and_process_sage_event(
+                        SageSyncEvent,
+                        Project,
+                        db,
+                        co.project_id,
+                        'ChangeOrderApproved',
+                        message=f'Change Order {co.number} approved — accounting reconciled',
+                        payload={'change_order_id': co.id, 'amount': co.amount, 'sync': result['sync_result']},
+                        user_id=user_id,
+                    )
     except Exception as exc:
         co.sage_sync_status = f'sync_error:{str(exc)[:120]}'
         result['sync_result'] = {'error': str(exc)}
