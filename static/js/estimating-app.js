@@ -1,7 +1,7 @@
 (function (global) {
   'use strict';
 
-  const state = { estimates: [], current: null, takeoffItems: [], tab: 'summary' };
+  const state = { estimates: [], current: null, takeoffItems: [], tab: 'summary', specBookSections: [], hasSpecBook: false };
 
   function pid() {
     if (global.CASEPM_ESTIMATE_CTX?.projectId) return global.CASEPM_ESTIMATE_CTX.projectId;
@@ -98,6 +98,55 @@
     document.getElementById('estTax').value = est.tax_pct ?? 0;
   }
 
+  async function loadSpecBookSections() {
+    const id = pid();
+    if (!id) {
+      state.specBookSections = [];
+      state.hasSpecBook = false;
+      return;
+    }
+    try {
+      const json = await api(`/api/estimates/spec-book-sections?project_id=${id}`);
+      state.specBookSections = json.sections || [];
+      state.hasSpecBook = !!json.has_spec_book;
+      const dl = document.getElementById('estSpecBookDatalist');
+      if (dl) {
+        dl.innerHTML = state.specBookSections.map(s =>
+          `<option value="${esc(s.code)}">${esc(s.label || s.title || s.code)}</option>`,
+        ).join('');
+      }
+    } catch (_) {
+      state.specBookSections = [];
+      state.hasSpecBook = false;
+    }
+  }
+
+  function specSectionCellHtml(value) {
+    const pick = state.specBookSections.length
+      ? `<select class="est-spec-pick w-full bg-zinc-900/80 text-[10px] text-zinc-400 border-0 border-t border-zinc-800/80 px-1.5 py-0.5 cursor-pointer hover:text-zinc-200" title="Pick from project spec book">
+          <option value="">▼ Spec book</option>
+          ${state.specBookSections.map(s => `<option value="${esc(s.code)}">${esc(s.code)}${s.title && s.title !== s.code ? ` — ${esc(s.title)}` : ''}</option>`).join('')}
+        </select>`
+      : '';
+    return `<td class="p-0 align-top min-w-[130px]">
+      <input data-f="spec_section" value="${esc(value)}" class="w-full bg-transparent border-0 px-2 py-1.5 text-sm" placeholder="09 21 00" list="estSpecBookDatalist" title="${state.hasSpecBook ? 'Type a spec # or pick from spec book below' : 'Spec section number'}">
+      ${pick}
+    </td>`;
+  }
+
+  function wireSpecSectionCells(root) {
+    (root || document).querySelectorAll('.est-spec-pick').forEach(sel => {
+      if (sel.dataset.wired) return;
+      sel.dataset.wired = '1';
+      sel.addEventListener('change', () => {
+        if (!sel.value) return;
+        const inp = sel.closest('td')?.querySelector('[data-f="spec_section"]');
+        if (inp) inp.value = sel.value;
+        sel.value = '';
+      });
+    });
+  }
+
   function readWorksheetLines() {
     const rows = [];
     document.querySelectorAll('#estWorksheetBody tr').forEach(tr => {
@@ -135,7 +184,7 @@
     body.innerHTML = lines.map((l, i) => `
       <tr data-source="${esc(l.source)}" data-source-ref="${esc(l.source_ref)}">
         <td><input data-f="cost_code" value="${esc(l.cost_code)}"></td>
-        <td><input data-f="spec_section" value="${esc(l.spec_section)}"></td>
+        ${specSectionCellHtml(l.spec_section)}
         <td><input data-f="description" value="${esc(l.description)}"></td>
         <td><select data-f="cost_type"><option ${l.cost_type === 'Subcontract' ? 'selected' : ''}>Subcontract</option><option ${l.cost_type === 'Material' ? 'selected' : ''}>Material</option><option ${l.cost_type === 'Labor' ? 'selected' : ''}>Labor</option><option ${l.cost_type === 'Equipment' ? 'selected' : ''}>Equipment</option><option ${l.cost_type === 'Other' ? 'selected' : ''}>Other</option></select></td>
         <td><input data-f="quantity" type="number" step="any" class="num" value="${l.quantity}"></td>
@@ -152,6 +201,7 @@
     body.querySelectorAll('input[data-f="quantity"], input[data-f="unit_cost"]').forEach(inp => {
       inp.addEventListener('input', recalcWsFooter);
     });
+    wireSpecSectionCells(body);
     recalcWsFooter();
   }
 
@@ -295,6 +345,7 @@
     }
     const json = await api(`/api/estimates?project_id=${id}`);
     state.estimates = json.estimates || [];
+    await loadSpecBookSections();
     if (!state.estimates.length) {
       state.current = null;
       renderEstimateSelect();
@@ -381,7 +432,7 @@
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><input data-f="cost_code" value="01-000"></td>
-      <td><input data-f="spec_section"></td>
+      ${specSectionCellHtml('')}
       <td><input data-f="description"></td>
       <td><select data-f="cost_type"><option>Subcontract</option><option>Material</option><option>Labor</option><option>Equipment</option><option>Other</option></select></td>
       <td><input data-f="quantity" type="number" step="any" class="num" value="1"></td>
@@ -393,6 +444,7 @@
     body.appendChild(tr);
     tr.querySelector('.del-line').addEventListener('click', () => { tr.remove(); recalcWsFooter(); });
     tr.querySelectorAll('input[data-f="quantity"], input[data-f="unit_cost"]').forEach(inp => inp.addEventListener('input', recalcWsFooter));
+    wireSpecSectionCells(tr);
     recalcWsFooter();
   }
 
@@ -562,5 +614,5 @@
     loadEstimates().catch(e => estAlert(e.message, 'error'));
   });
 
-  global.CasePMEstimating = { loadEstimates, setTab, state, loadCurrent, renderWorksheet, renderAll, openPackageModal };
+  global.CasePMEstimating = { loadEstimates, setTab, state, loadCurrent, renderWorksheet, renderAll, openPackageModal, loadSpecBookSections, wireSpecSectionCells };
 })(window);

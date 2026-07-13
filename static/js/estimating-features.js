@@ -338,6 +338,7 @@
     EST()._worksheetEnhanced = true;
     EST().renderWorksheet = function (est) {
       orig.call(this, est);
+      EST().wireSpecSectionCells?.(document.getElementById('estWorksheetBody'));
       document.querySelectorAll('#estWorksheetBody tr').forEach((tr, i) => {
         const line = (est.lines || [])[i];
         if (line?.id) tr.dataset.lineId = line.id;
