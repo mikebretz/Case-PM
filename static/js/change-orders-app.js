@@ -28,6 +28,16 @@
     else el.showModal();
   }
 
+  async function coPrompt(message, defaultValue = '', options = {}) {
+    if (global.CasePMDialog?.prompt) return global.CasePMDialog.prompt(message, defaultValue, options);
+    return prompt(message, defaultValue);
+  }
+
+  async function coConfirm(message, options = {}) {
+    if (global.CasePMDialog?.confirm) return global.CasePMDialog.confirm(message, options);
+    return confirm(message);
+  }
+
   const CO_STATUSES = ['Draft', 'Submitted', 'Under Review', 'Pending Owner', 'Pending Architect', 'Pending Accounting', 'Approved', 'Rejected', 'Void'];
   const SUB_CO_STATUSES = ['Draft', 'Submitted', 'Under Review', 'Pending Accounting', 'Approved', 'Rejected', 'Void'];
   const CO_EDITABLE_STATUSES = ['Draft', 'Submitted', 'Under Review', 'Pending Owner', 'Pending Architect', 'Pending Accounting', 'Rejected', 'Void'];
@@ -1098,7 +1108,7 @@
       return;
     }
     if (action === 'submit') {
-      if (!confirm(`Submit ${co.number} for approval?`)) return;
+      if (!(await coConfirm(`Submit ${co.number} for approval?`, { title: 'Submit for approval' }))) return;
     }
     try {
       const json = await api(`/api/change-orders/${id}/workflow`, {
@@ -1236,7 +1246,7 @@
       alert(`${allocCheck.message}\n\nEdit the PCO and complete cost code allocations before promoting.`);
       return;
     }
-    if (!confirm(`Promote PCO ${p.number} to a formal Change Order?`)) return;
+    if (!(await coConfirm(`Promote PCO ${p.number} to a formal Change Order?`, { title: 'Promote PCO' }))) return;
     try {
       const json = await api(`/api/pcos/${id}/promote`, { method: 'POST', body: '{}' });
       await loadPcos();
@@ -1279,9 +1289,9 @@
       ? `DELETE approved change order ${co.number}?\n\nThis is for testing only. Type DELETE to confirm.`
       : `Delete change order ${co.number}?`;
     if (approved && !unlock) {
-      const typed = window.prompt(prompt);
+      const typed = await coPrompt(prompt, '', { title: 'Confirm delete', label: 'Type DELETE to confirm' });
       if (typed !== 'DELETE') return;
-    } else if (!confirm(prompt)) {
+    } else if (!(await coConfirm(prompt, { title: 'Confirm delete', danger: true }))) {
       return;
     }
     try {
@@ -1296,7 +1306,10 @@
       toast(`${co.number} deleted`);
     } catch (err) {
       if (err.message && err.message.includes('force')) {
-        const typed = window.prompt(`${err.message}\n\nType DELETE to force-delete this approved CO for testing.`);
+        const typed = await coPrompt(`${err.message}\n\nType DELETE to force-delete this approved CO for testing.`, '', {
+          title: 'Force delete',
+          label: 'Type DELETE to confirm',
+        });
         if (typed !== 'DELETE') return;
         try {
           await api(`/api/change-orders/${id}?force=1`, { method: 'DELETE' });
