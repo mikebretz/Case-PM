@@ -64,7 +64,7 @@
     const p = global.CASEPM_PORTAL;
     if (p) {
       if (p.isAdmin === true) return true;
-      if (p.role === 'Admin') return true;
+      if (p.role === 'Admin' || p.role === 'Developer') return true;
       if (p.permissions && p.permissions.modules === '*') return true;
     }
     return false;
@@ -296,6 +296,20 @@
     return `<button type="button" onclick="event.stopPropagation(); CasePMCommitments.openReviewModal(${id})" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold whitespace-nowrap shadow-md"><i class="fa-solid fa-clipboard-check mr-1"></i>${text}</button>`;
   }
 
+  function commitmentNeedsReview(c) {
+    if (!c) return false;
+    return ['Submitted', 'Pending PM', 'Pending Accounting', 'Pending Owner'].includes(c.status) && canActOnBall(c.ball_in_court_role);
+  }
+
+  async function openCommitmentItem(id) {
+    const cached = state.commitments.find(x => x.id === id);
+    if (cached && commitmentNeedsReview(cached)) {
+      openReviewModal(id);
+      return;
+    }
+    await view(id);
+  }
+
   function renderTable() {
     const tbody = document.getElementById('comTableBody');
     if (!tbody) return;
@@ -308,7 +322,7 @@
       const showSubmit = c.status === 'Draft';
       const showApprove = ['Submitted', 'Pending PM', 'Pending Accounting', 'Pending Owner'].includes(c.status) && canActOnBall(c.ball_in_court_role);
       return `
-      <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer" onclick="CasePMCommitments.view(${c.id})">
+      <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer" onclick="CasePMCommitments.openCommitmentItem(${c.id})">
         <td class="px-4 py-3 font-mono text-emerald-400 whitespace-nowrap">${esc(c.number)}</td>
         <td class="px-4 py-3 text-xs text-zinc-400">${esc(c.commitment_type)}</td>
         <td class="px-4 py-3 max-w-[200px] truncate">${esc(c.title || c.description)}</td>
@@ -921,6 +935,7 @@
   }
 
   function openReviewModal(id) {
+    closeDrawer();
     const c = state.commitments.find(x => x.id === id) || (state.drawerRecord?.id === id ? state.drawerRecord : null);
     if (!c) {
       view(id).then(() => openReviewModal(id));
@@ -1072,12 +1087,20 @@
         <button type="button" onclick="CasePMCommitments.sendDocuSign(${c.id})" class="px-4 py-2 bg-indigo-700 hover:bg-indigo-600 rounded-md text-sm" title="Send via DocuSign for third-party certified signing"><i class="fa-solid fa-file-signature mr-1"></i>DocuSign</button>` : ''}
       <button type="button" onclick="CasePMCommitments.edit(${c.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
       ${showAdminDelete ? `<button type="button" onclick="CasePMCommitments.deleteCommitment(${c.id})" class="px-4 py-2 bg-red-900/70 hover:bg-red-800 text-red-200 rounded-md text-sm" title="${isDirectlyDeletable(c) ? 'Delete' : 'Void & delete'}"><i class="fa-solid fa-trash mr-1"></i>Delete</button>` : ''}`;
+    if (showApprove) {
+      openReviewModal(c.id);
+      return;
+    }
     openDrawer();
   }
 
   async function view(id) {
     const c = await api(`/api/commitments/${id}`);
     state.drawerRecord = c;
+    if (commitmentNeedsReview(c)) {
+      openReviewModal(id);
+      return;
+    }
     renderDrawer(c);
   }
 
@@ -1340,6 +1363,7 @@
     newCommitment: () => openModal(null),
     edit: id => api(`/api/commitments/${id}`).then(openModal).catch(e => alert(e.message)),
     view,
+    openCommitmentItem,
     closeDrawer,
     workflow,
     openReviewModal,

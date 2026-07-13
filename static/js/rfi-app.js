@@ -808,6 +808,11 @@
     try {
       const r = await api(`/api/rfis/${id}`);
       state.drawerRecord = r;
+      const actionable = r.status && !['Closed', 'Void', 'Draft'].includes(r.status);
+      if (actionable && typeof global.CasePMApprovalResponder !== 'undefined') {
+        await openResponder(id);
+        return;
+      }
       renderDrawer(r);
       document.getElementById('rfiDetailDrawer')?.classList.add('open');
       document.getElementById('rfiDrawerBackdrop')?.classList.remove('hidden');

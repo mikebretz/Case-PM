@@ -86,7 +86,7 @@
 
   function canApprove(module) {
     if (!portal) return false;
-    if (portal.role === 'Admin') return true;
+    if (portal.role === 'Admin' || portal.role === 'Developer') return true;
     return !!(portal.canApprove && portal.canApprove[module]);
   }
 
