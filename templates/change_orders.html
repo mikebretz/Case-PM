@@ -89,6 +89,9 @@
         <button type="button" onclick="CasePMChangeOrders.newCo()" class="flex items-center gap-2 px-5 py-2 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-sm font-semibold h-[38px]">
             <i class="fa-solid fa-plus"></i><span>New CO</span>
         </button>
+        <button type="button" id="btnNewSubCo" onclick="CasePMChangeOrders.newSubCo()" class="hidden flex items-center gap-2 px-5 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-semibold h-[38px]">
+            <i class="fa-solid fa-hard-hat"></i><span>New Sub CO</span>
+        </button>
     </div>
 </div>
 
@@ -103,6 +106,8 @@
         <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4"><div class="text-xs text-zinc-400">Pending Value</div><div id="statPendingTotal" class="text-lg font-semibold mt-1 text-orange-400">$0</div></div>
         <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4"><div class="text-xs text-zinc-400">PCO ROM</div><div id="statPcoRom" class="text-lg font-semibold mt-1 text-sky-300">$0</div></div>
         <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4"><div class="text-xs text-zinc-400">Avg Approval</div><div id="statAvgDays" class="text-xl font-semibold mt-1">—</div></div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4 hidden" id="statSubCard1"><div class="text-xs text-zinc-400">Sub COs</div><div id="statTotalSubCo" class="text-xl font-semibold mt-1 text-amber-400">0</div></div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4 hidden" id="statSubCard2"><div class="text-xs text-zinc-400">Sub Pending</div><div id="statSubPending" class="text-xl font-semibold mt-1 text-orange-400">0</div></div>
     </div>
 </div>
 
@@ -111,6 +116,7 @@
     <div class="flex gap-2">
         <button type="button" id="btnTabCos" onclick="CasePMChangeOrders.switchTab('cos')" class="px-4 py-2 rounded-md text-sm font-medium bg-emerald-600 text-white">Change Orders</button>
         <button type="button" id="btnTabPcos" onclick="CasePMChangeOrders.switchTab('pcos')" class="px-4 py-2 rounded-md text-sm font-medium bg-zinc-800 text-zinc-300">PCO Log</button>
+        <button type="button" id="btnTabSubs" onclick="CasePMChangeOrders.switchTab('subs')" class="px-4 py-2 rounded-md text-sm font-medium bg-zinc-800 text-zinc-300">Sub Change Orders</button>
     </div>
     <div class="flex flex-col md:flex-row gap-2 w-full lg:w-auto">
         <input type="text" id="coSearch" placeholder="Search…" class="flex-1 bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2 text-sm min-w-[180px]">
@@ -140,6 +146,31 @@
                 </tr>
             </thead>
             <tbody id="coTableBody" class="divide-y divide-zinc-800"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- SUB CHANGE ORDERS TABLE -->
+<div id="tabSubs" class="hidden flex-1 min-h-0 flex flex-col border border-zinc-700 rounded-md bg-zinc-900 mb-20 overflow-hidden">
+    <div class="px-4 py-2 border-b border-zinc-800 text-xs text-zinc-500">Commitment Change Orders (CCO) · tied to owner CO or standalone contract add / budget transfer · PM → Accounting approval · Sage Subcontracts</div>
+    <div class="flex-1 overflow-auto min-h-0">
+        <table class="w-full text-sm min-w-[1300px]">
+            <thead class="bg-zinc-800 sticky top-0 z-20 border-b border-zinc-700">
+                <tr>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">SCO #</th>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">Date</th>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">Subcontractor</th>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">Commitment</th>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">Owner CO</th>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">Kind</th>
+                    <th class="px-4 py-3 text-right text-zinc-400 font-medium">Amount</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium">Status</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium">Ball in Court</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium">Sync</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium w-32">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="subCoTableBody" class="divide-y divide-zinc-800"></tbody>
         </table>
     </div>
 </div>
@@ -272,6 +303,18 @@
                     <label class="block text-sm text-zinc-400 mb-1">Contract Type</label>
                     <select id="modalContractType" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm"></select>
                 </div>
+                <div id="modalSubKindRow" class="hidden">
+                    <label class="block text-sm text-zinc-400 mb-1">Sub CO Type <span class="text-red-400">*</span></label>
+                    <select id="modalSubCoKind" onchange="CasePMChangeOrders.onSubCoKindChange()" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                        <option value="Contract Add">Contract Add — increase subcontract value</option>
+                        <option value="Budget Transfer">Budget Transfer — move budget between cost codes</option>
+                        <option value="Owner CO Backcharge">Owner CO Backcharge — tied to approved owner CO</option>
+                    </select>
+                </div>
+                <div id="modalOwnerCoRow" class="hidden">
+                    <label class="block text-sm text-zinc-400 mb-1">Linked Owner Change Order</label>
+                    <select id="modalLinkedOwnerCo" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm"><option value="">— None (standalone) —</option></select>
+                </div>
                 <div id="modalDateRow">
                     <label class="block text-sm text-zinc-400 mb-1">CO Date</label>
                     <input type="date" id="modalDate" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
@@ -297,7 +340,7 @@
                 <div class="flex items-center justify-between gap-3 mb-2">
                     <div>
                         <div class="text-sm font-medium text-zinc-300">Schedule of Values — Cost Code Allocations</div>
-                        <div class="text-[11px] text-zinc-500 mt-0.5">Cost code, cost type, and amount are required before submit or approval. Syncs to Budget and Pay Application SOV.</div>
+                        <div class="text-[11px] text-zinc-500 mt-0.5" id="allocationHelpText">Cost code, cost type, and amount are required before submit or approval. Syncs to Budget and Pay Application SOV.</div>
                     </div>
                     <button type="button" onclick="CasePMChangeOrders.addAllocRow()" class="px-3 py-1.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md">
                         <i class="fa-solid fa-plus mr-1"></i>Add Row

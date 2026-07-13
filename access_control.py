@@ -25,6 +25,7 @@ API_PREFIX_MODULE = [
     ('/api/submittals', 'submittals'),
     ('/api/change-orders', 'change_orders'),
     ('/api/co/', 'change_orders'),
+    ('/api/pcos', 'change_orders'),
     ('/api/daily-logs', 'daily_log'),
     ('/api/weekly-reports', 'weekly_report'),
     ('/api/punch-items', 'punch_list'),

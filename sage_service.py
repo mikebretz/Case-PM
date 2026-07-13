@@ -15,6 +15,8 @@ SAGE_EVENT_MAP = {
     'PCOSubmitted': {'module': 'PCO', 'action': 'submit'},
     'PCOPromoted': {'module': 'PCO', 'action': 'promote'},
     'ChangeOrderSubmitted': {'module': 'PCO', 'action': 'submit_co'},
+    'CommitmentChangeOrderSubmitted': {'module': 'Subcontracts', 'action': 'submit_cco'},
+    'CommitmentChangeOrderApproved': {'module': 'Subcontracts', 'action': 'post_cco'},
     'BudgetSaved': {'module': 'JobCost', 'action': 'save_budget'},
     'BudgetPublished': {'module': 'JobCost', 'action': 'publish_budget'},
     'BudgetSageSync': {'module': 'JobCost', 'action': 'sync_cost_codes'},
@@ -86,14 +88,14 @@ def build_sage_payload(event_type, project_ctx, payload):
     mapping = SAGE_EVENT_MAP.get(event_type, {'module': 'General', 'action': 'sync'})
     data = payload or {}
     # Commitment events: use type-specific Sage module/action when commitment_type present
-    if event_type.startswith('Commitment') and data.get('commitment_type'):
+    if (event_type.startswith('Commitment') or event_type.startswith('CommitmentChangeOrder')) and data.get('commitment_type'):
         type_map = COMMITMENT_SAGE_TYPE_MAP.get(data['commitment_type'], {})
         if type_map:
             mapping = dict(mapping)
             mapping['module'] = type_map.get('module', mapping['module'])
-            if event_type == 'CommitmentSubmitted':
+            if event_type in ('CommitmentSubmitted', 'CommitmentChangeOrderSubmitted'):
                 mapping['action'] = type_map.get('submit', mapping['action'])
-            elif event_type in ('CommitmentApproved', 'CommitmentExecuted'):
+            elif event_type in ('CommitmentApproved', 'CommitmentExecuted', 'CommitmentChangeOrderApproved'):
                 mapping['action'] = type_map.get('post', mapping['action'])
             data = {**data, 'sage_document_type': type_map.get('doc_type')}
     return {

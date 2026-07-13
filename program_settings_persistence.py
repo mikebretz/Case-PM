@@ -60,6 +60,7 @@ NUMBERING_DEFAULTS = {
     'project': {'label': 'Projects', 'prefix': 'PRJ', 'pad': 3, 'scope': 'global'},
     'rfi': {'label': 'RFIs', 'prefix': 'RFI', 'pad': 3, 'scope': 'global'},
     'change_order': {'label': 'Change Orders', 'prefix': 'CO', 'pad': 3, 'scope': 'global'},
+    'sub_change_order': {'label': 'Subcontractor Change Orders', 'prefix': 'SCO', 'pad': 3, 'scope': 'project'},
     'pco': {'label': 'Potential Change Orders', 'prefix': 'PCO', 'pad': 3, 'scope': 'global'},
     'submittal': {'label': 'Submittals', 'prefix': 'SUB', 'pad': 3, 'scope': 'global'},
     'punch': {'label': 'Punch List', 'prefix': 'PL', 'pad': 3, 'scope': 'global'},
