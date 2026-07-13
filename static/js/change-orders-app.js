@@ -22,6 +22,12 @@
     else el.value = amount || '';
   }
 
+  function openDialog(el) {
+    if (!el) return;
+    if (global.CasePMDialog?.open) global.CasePMDialog.open(el);
+    else el.showModal();
+  }
+
   const CO_STATUSES = ['Draft', 'Submitted', 'Under Review', 'Pending Owner', 'Pending Architect', 'Pending Accounting', 'Approved', 'Rejected', 'Void'];
   const SUB_CO_STATUSES = ['Draft', 'Submitted', 'Under Review', 'Pending Accounting', 'Approved', 'Rejected', 'Void'];
   const CO_EDITABLE_STATUSES = ['Draft', 'Submitted', 'Under Review', 'Pending Owner', 'Pending Architect', 'Pending Accounting', 'Rejected', 'Void'];
@@ -879,7 +885,7 @@
     onSubCoKindChange();
     renderModalAttachmentList(record, isSub ? 'co' : mode);
     renderAllocationRows();
-    modal.showModal();
+    openDialog(modal);
   }
 
   async function saveModal(e) {
@@ -1049,7 +1055,7 @@
       signHost.classList.add('hidden');
       signHost.innerHTML = '';
     }
-    modal?.showModal();
+    openDialog(modal);
     if (intent === 'reject') commentsEl?.focus();
   }
 
@@ -1490,7 +1496,7 @@
     if (!modal) {
       modal = document.createElement('dialog');
       modal.id = 'coSageLogModal';
-      modal.className = 'bg-zinc-900 border border-zinc-700 rounded-lg p-0 text-white max-w-2xl w-full';
+      modal.className = 'modal bg-zinc-900 border border-zinc-700 rounded-lg p-0 text-white max-w-2xl w-full';
       document.body.appendChild(modal);
     }
     const rows = state.sageLog.length ? state.sageLog.map(e => `
@@ -1501,7 +1507,7 @@
     modal.innerHTML = `<div class="p-5"><div class="flex justify-between mb-4"><h3 class="font-semibold">Sage 300 PCO/CO Log</h3>
       <button onclick="document.getElementById('coSageLogModal').close()"><i class="fa-solid fa-times"></i></button></div>
       <table class="w-full text-left text-sm"><thead><tr class="text-[10px] text-zinc-500"><th>Time</th><th>Event</th><th>Status</th><th>Detail</th></tr></thead><tbody>${rows}</tbody></table></div>`;
-    modal.showModal();
+    openDialog(modal);
   }
 
   function bindFilters() {
