@@ -25,6 +25,41 @@ window.CASEPM_ESTIMATE_CTX = {
 .level-grid { display:grid; gap:0.5rem; }
 .level-card { border:1px solid #3f3f46; border-radius:0.5rem; background:#18181b; padding:1rem; }
 .level-low { outline:2px solid rgba(16,185,129,0.5); }
+.est-modal {
+  border-radius: 6px !important;
+  margin: auto !important;
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  z-index: 100000 !important;
+  max-height: min(92vh, 900px);
+  overflow: hidden;
+}
+.est-modal[open] {
+  margin: auto !important;
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+}
+.est-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #3f3f46;
+  background: #141416;
+}
+.est-modal-body { padding: 1.25rem; overflow: auto; max-height: calc(92vh - 140px); }
+.est-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.875rem 1.25rem;
+  border-top: 1px solid #3f3f46;
+  background: #09090b;
+}
 </style>
 
 <div class="est-page">
@@ -155,10 +190,13 @@ window.CASEPM_ESTIMATE_CTX = {
   </div>
 </div>
 
-<dialog id="estPackageModal" class="modal rounded-md w-full max-w-lg p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;">
-  <form id="estPackageForm" class="p-5">
-    <h3 class="text-lg font-semibold mb-4">Bid Package / RFP</h3>
-    <div class="space-y-3 text-sm">
+<dialog id="estPackageModal" class="modal est-modal rounded-md w-full max-w-lg p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;" data-casepm-draggable="true">
+  <form id="estPackageForm">
+    <div class="est-modal-head casepm-drag-handle">
+      <h3 class="text-lg font-semibold">Bid Package / RFP</h3>
+      <button type="button" id="estPackageCancel" class="text-zinc-400 hover:text-white text-xl leading-none" aria-label="Close">&times;</button>
+    </div>
+    <div class="est-modal-body space-y-3 text-sm">
       <div><label class="text-zinc-400">Title</label><input name="title" required class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></div>
       <div class="grid grid-cols-2 gap-3">
         <div><label class="text-zinc-400">Spec Section</label><input name="spec_section" placeholder="07 92 00" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></div>
@@ -167,9 +205,58 @@ window.CASEPM_ESTIMATE_CTX = {
       <div><label class="text-zinc-400">Due Date</label><input type="date" name="due_date" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></div>
       <div><label class="text-zinc-400">Scope / Instructions</label><textarea name="scope_notes" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></textarea></div>
     </div>
-    <div class="flex justify-end gap-2 mt-5">
-      <button type="button" id="estPackageCancel" class="px-4 py-2 bg-zinc-800 rounded-md">Cancel</button>
-      <button type="submit" class="px-4 py-2 bg-emerald-600 rounded-md font-medium">Create Package</button>
+    <div class="est-modal-foot">
+      <button type="button" class="estPackageCancelBtn px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md">Cancel</button>
+      <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md font-medium">Create Package</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="estNewEstimateModal" class="modal est-modal rounded-md w-full max-w-md p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;" data-casepm-draggable="true">
+  <form id="estNewEstimateForm">
+    <div class="est-modal-head casepm-drag-handle">
+      <h3 class="text-lg font-semibold">New Estimate</h3>
+      <button type="button" class="estModalClose text-zinc-400 hover:text-white text-xl leading-none" data-target="estNewEstimateModal" aria-label="Close">&times;</button>
+    </div>
+    <div class="est-modal-body text-sm space-y-3">
+      <div>
+        <label class="text-zinc-400">Title</label>
+        <input id="estNewTitle" name="title" required value="Project Estimate" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1">
+      </div>
+      <div>
+        <label class="text-zinc-400">Type</label>
+        <select id="estNewType" name="estimate_type" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1">
+          <option>Hard Bid</option>
+          <option>Budget Estimate</option>
+          <option>Design-Build</option>
+          <option>ROM</option>
+        </select>
+      </div>
+    </div>
+    <div class="est-modal-foot">
+      <button type="button" class="estModalClose px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md" data-target="estNewEstimateModal">Cancel</button>
+      <button type="submit" class="px-4 py-2 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md font-semibold">Create Estimate</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="estTakeoffModal" class="modal est-modal rounded-md w-full max-w-md p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;" data-casepm-draggable="true">
+  <form id="estTakeoffForm">
+    <div class="est-modal-head casepm-drag-handle">
+      <h3 class="text-lg font-semibold">Import Takeoff</h3>
+      <button type="button" class="estModalClose text-zinc-400 hover:text-white text-xl leading-none" data-target="estTakeoffModal" aria-label="Close">&times;</button>
+    </div>
+    <div class="est-modal-body text-sm space-y-3">
+      <p class="text-zinc-400">Import drawing measure/area markups into the estimate worksheet.</p>
+      <div>
+        <label class="text-zinc-400">Default cost code</label>
+        <input id="estTakeoffCostCode" name="cost_code" value="01-000" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1 font-mono">
+      </div>
+      <p id="estTakeoffCount" class="text-xs text-zinc-500"></p>
+    </div>
+    <div class="est-modal-foot">
+      <button type="button" class="estModalClose px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md" data-target="estTakeoffModal">Cancel</button>
+      <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md font-medium">Import Lines</button>
     </div>
   </form>
 </dialog>

@@ -1,6 +1,8 @@
 (function () {
   'use strict';
 
+  const state = { rows: [] };
+
   function pid() {
     const params = new URLSearchParams(location.search);
     return params.get('project_id') || localStorage.getItem('casepm_current_project_id');
@@ -22,12 +24,44 @@
     return json;
   }
 
+  function openDialog(el) {
+    if (!el) return;
+    if (window.CasePMDialog?.open) window.CasePMDialog.open(el);
+    else el.showModal();
+  }
+
+  function closeDialog(el) {
+    if (el && typeof el.close === 'function') el.close();
+  }
+
+  async function portalAlert(message, type = 'success') {
+    if (window.CasePMDialog?.alert) return window.CasePMDialog.alert(message, type);
+    alert(message);
+  }
+
   async function respond(invitationId, body) {
     await api(`/api/estimates/portal/${invitationId}/respond`, {
       method: 'POST',
       body: JSON.stringify(body),
     });
     await load();
+  }
+
+  function openQuoteModal(row) {
+    const inv = row.invitation;
+    const pkg = row.bid_package;
+    document.getElementById('estPortalQuoteInvId').value = inv.id;
+    document.getElementById('estPortalQuotePkgTitle').textContent = `${pkg.number} — ${pkg.title}`;
+    document.getElementById('estPortalQuoteAmount').value = '';
+    document.getElementById('estPortalQuoteNotes').value = '';
+    openDialog(document.getElementById('estPortalQuoteModal'));
+    document.getElementById('estPortalQuoteAmount').focus();
+  }
+
+  function openDeclineModal(row) {
+    document.getElementById('estPortalDeclineInvId').value = row.invitation.id;
+    document.getElementById('estPortalDeclineReason').value = 'Not bidding this scope';
+    openDialog(document.getElementById('estPortalDeclineModal'));
   }
 
   async function load() {
@@ -38,11 +72,12 @@
       return;
     }
     const { invitations } = await api(`/api/estimates/portal?project_id=${id}`);
-    if (!invitations.length) {
+    state.rows = invitations || [];
+    if (!state.rows.length) {
       el.innerHTML = '<p class="text-zinc-500 text-center py-12">No RFP invitations assigned to your company.</p>';
       return;
     }
-    el.innerHTML = invitations.map(row => {
+    el.innerHTML = state.rows.map(row => {
       const inv = row.invitation;
       const pkg = row.bid_package;
       const open = inv.status === 'Sent' || inv.status === 'Viewed';
@@ -69,39 +104,70 @@
     }).join('');
 
     el.querySelectorAll('.btn-quote').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const card = btn.closest('[data-inv]');
-        const invId = parseInt(card.dataset.inv, 10);
-        const amount = parseFloat(prompt('Quote amount ($):', '0') || '0');
-        if (!amount) return;
-        const notes = prompt('Notes (optional):', '') || '';
-        try {
-          await respond(invId, { action: 'quote', quote_amount: amount, quote_notes: notes });
-          alert('Quote submitted.');
-        } catch (e) { alert(e.message); }
+      btn.addEventListener('click', () => {
+        const invId = parseInt(btn.closest('[data-inv]').dataset.inv, 10);
+        const row = state.rows.find(r => r.invitation.id === invId);
+        if (row) openQuoteModal(row);
       });
     });
 
     el.querySelectorAll('.btn-decline').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const card = btn.closest('[data-inv]');
-        const invId = parseInt(card.dataset.inv, 10);
-        const reason = prompt('Reason (optional):', 'Not bidding this scope') || '';
-        try {
-          await respond(invId, { action: 'not_interested', reason });
-          alert('Response recorded.');
-        } catch (e) { alert(e.message); }
+      btn.addEventListener('click', () => {
+        const invId = parseInt(btn.closest('[data-inv]').dataset.inv, 10);
+        const row = state.rows.find(r => r.invitation.id === invId);
+        if (row) openDeclineModal(row);
       });
     });
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
-    const pkgId = new URLSearchParams(location.search).get('package_id');
-    load().then(() => {
-      if (pkgId) {
-        const card = document.querySelector(`[data-inv]`);
-        card?.querySelector('.btn-quote')?.click();
+  function bindEvents() {
+    document.querySelectorAll('.estPortalModalClose').forEach(btn => {
+      btn.addEventListener('click', () => closeDialog(document.getElementById(btn.getAttribute('data-target'))));
+    });
+
+    document.getElementById('estPortalQuoteForm')?.addEventListener('submit', async e => {
+      e.preventDefault();
+      const invId = parseInt(document.getElementById('estPortalQuoteInvId').value, 10);
+      const amount = parseFloat(document.getElementById('estPortalQuoteAmount').value) || 0;
+      if (!amount) {
+        await portalAlert('Enter a quote amount.', 'warning');
+        return;
+      }
+      const notes = document.getElementById('estPortalQuoteNotes').value || '';
+      try {
+        await respond(invId, { action: 'quote', quote_amount: amount, quote_notes: notes });
+        closeDialog(document.getElementById('estPortalQuoteModal'));
+        await portalAlert('Quote submitted.', 'success');
+      } catch (err) {
+        await portalAlert(err.message, 'error');
       }
     });
+
+    document.getElementById('estPortalDeclineForm')?.addEventListener('submit', async e => {
+      e.preventDefault();
+      const invId = parseInt(document.getElementById('estPortalDeclineInvId').value, 10);
+      const reason = document.getElementById('estPortalDeclineReason').value || '';
+      try {
+        await respond(invId, { action: 'not_interested', reason });
+        closeDialog(document.getElementById('estPortalDeclineModal'));
+        await portalAlert('Response recorded.', 'success');
+      } catch (err) {
+        await portalAlert(err.message, 'error');
+      }
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    if (window.CasePMDialog?.initAllDialogs) window.CasePMDialog.initAllDialogs();
+    bindEvents();
+    const pkgId = new URLSearchParams(location.search).get('package_id');
+    load().then(() => {
+      if (pkgId && state.rows.length) {
+        const row = state.rows.find(r => String(r.bid_package.id) === String(pkgId)) || state.rows[0];
+        if (row && (row.invitation.status === 'Sent' || row.invitation.status === 'Viewed')) {
+          openQuoteModal(row);
+        }
+      }
+    }).catch(err => portalAlert(err.message, 'error'));
   });
 })();

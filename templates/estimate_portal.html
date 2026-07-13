@@ -2,6 +2,42 @@
 {% block title %}Bid Portal{% endblock %}
 {% block content %}
 <script src="{{ url_for('static', filename='js/estimate-portal-app.js') }}"></script>
+<style>
+.est-portal-modal {
+  border-radius: 6px !important;
+  margin: auto !important;
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  z-index: 100000 !important;
+  max-height: min(92vh, 900px);
+}
+.est-portal-modal[open] {
+  margin: auto !important;
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+}
+.est-portal-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #3f3f46;
+  background: #141416;
+}
+.est-portal-modal-body { padding: 1.25rem; }
+.est-portal-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.875rem 1.25rem;
+  border-top: 1px solid #3f3f46;
+  background: #09090b;
+}
+</style>
 <div class="max-w-4xl mx-auto p-6">
   <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
     <div>
@@ -12,4 +48,50 @@
   </div>
   <div id="estPortalList" class="space-y-3"></div>
 </div>
+
+<dialog id="estPortalQuoteModal" class="modal est-portal-modal rounded-md w-full max-w-md p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;" data-casepm-draggable="true">
+  <form id="estPortalQuoteForm">
+    <input type="hidden" id="estPortalQuoteInvId" value="">
+    <div class="est-portal-modal-head casepm-drag-handle">
+      <h3 class="text-lg font-semibold">Submit Quote</h3>
+      <button type="button" class="estPortalModalClose text-zinc-400 hover:text-white text-xl leading-none" data-target="estPortalQuoteModal" aria-label="Close">&times;</button>
+    </div>
+    <div class="est-portal-modal-body text-sm space-y-3">
+      <p id="estPortalQuotePkgTitle" class="text-zinc-400"></p>
+      <div>
+        <label class="text-zinc-400">Quote amount ($)</label>
+        <input type="number" step="0.01" min="0" id="estPortalQuoteAmount" required class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1 font-mono">
+      </div>
+      <div>
+        <label class="text-zinc-400">Notes (optional)</label>
+        <textarea id="estPortalQuoteNotes" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></textarea>
+      </div>
+    </div>
+    <div class="est-portal-modal-foot">
+      <button type="button" class="estPortalModalClose px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md" data-target="estPortalQuoteModal">Cancel</button>
+      <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md font-medium">Submit Quote</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="estPortalDeclineModal" class="modal est-portal-modal rounded-md w-full max-w-md p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;" data-casepm-draggable="true">
+  <form id="estPortalDeclineForm">
+    <input type="hidden" id="estPortalDeclineInvId" value="">
+    <div class="est-portal-modal-head casepm-drag-handle">
+      <h3 class="text-lg font-semibold">Not Interested</h3>
+      <button type="button" class="estPortalModalClose text-zinc-400 hover:text-white text-xl leading-none" data-target="estPortalDeclineModal" aria-label="Close">&times;</button>
+    </div>
+    <div class="est-portal-modal-body text-sm space-y-3">
+      <p class="text-zinc-400">Let the GC know you are not bidding this scope. You can add an optional reason.</p>
+      <div>
+        <label class="text-zinc-400">Reason (optional)</label>
+        <textarea id="estPortalDeclineReason" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1" placeholder="Not bidding this scope"></textarea>
+      </div>
+    </div>
+    <div class="est-portal-modal-foot">
+      <button type="button" class="estPortalModalClose px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md" data-target="estPortalDeclineModal">Cancel</button>
+      <button type="submit" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md font-medium">Confirm</button>
+    </div>
+  </form>
+</dialog>
 {% endblock %}
