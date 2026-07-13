@@ -988,6 +988,13 @@ class ChangeOrder(db.Model):
     linked_owner_co_id = db.Column(db.Integer, db.ForeignKey('change_order.id'), nullable=True)
     sub_co_kind = db.Column(db.String(40))
     auto_generated = db.Column(db.Boolean, default=False)
+    change_event_id = db.Column(db.Integer, nullable=True)
+    source_rfq_id = db.Column(db.Integer, nullable=True)
+    linked_cor_id = db.Column(db.Integer, nullable=True)
+    linked_drawing_revision = db.Column(db.String(80))
+    source_cpco_id = db.Column(db.Integer, nullable=True)
+    billed_amount = db.Column(db.Float, default=0)
+    billing_variance = db.Column(db.Float, default=0)
 
 
 class ChangeOrderAllocation(db.Model):
@@ -998,6 +1005,9 @@ class ChangeOrderAllocation(db.Model):
     amount = db.Column(db.Float, default=0)
     sov_line_legacy_id = db.Column(db.String(64))
     description = db.Column(db.String(200))
+    sov_line_id = db.Column(db.String(64))
+    tax_group = db.Column(db.String(40))
+    retainage_percent = db.Column(db.Float)
 
 
 class ChangeOrderRevision(db.Model):
@@ -1036,6 +1046,11 @@ class PotentialChangeOrder(db.Model):
     linked_rfi_id = db.Column(db.Integer, db.ForeignKey('rfi.id'), nullable=True)
     linked_commitment_ref = db.Column(db.String(80))
     attachments_json = db.Column(db.Text)
+    change_event_id = db.Column(db.Integer, nullable=True)
+    contract_type = db.Column(db.String(40), default='Owner')
+    source_rfq_id = db.Column(db.Integer, nullable=True)
+    linked_cor_id = db.Column(db.Integer, nullable=True)
+    linked_drawing_revision = db.Column(db.String(80))
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -1049,6 +1064,108 @@ class PCOAllocation(db.Model):
     cost_type = db.Column(db.String(80))
     amount = db.Column(db.Float, default=0)
     description = db.Column(db.String(200))
+    sov_line_id = db.Column(db.String(64))
+    tax_group = db.Column(db.String(40))
+    sov_line_id = db.Column(db.String(64))
+    tax_group = db.Column(db.String(40))
+
+
+class ChangeEvent(db.Model):
+    __tablename__ = 'change_event'
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    number = db.Column(db.String(30))
+    title = db.Column(db.String(200))
+    description = db.Column(db.Text)
+    status = db.Column(db.String(30), default='Open')
+    reason = db.Column(db.String(200))
+    priority = db.Column(db.String(20), default='Medium')
+    schedule_impact_days = db.Column(db.Integer, default=0)
+    rom_amount = db.Column(db.Float, default=0)
+    linked_rfi_id = db.Column(db.Integer, nullable=True)
+    drawing_revision = db.Column(db.String(80))
+    drawing_sheet_id = db.Column(db.String(80))
+    contingency_release_amount = db.Column(db.Float, default=0)
+    ball_in_court_role = db.Column(db.String(80))
+    notes = db.Column(db.Text)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SubcontractorRFQ(db.Model):
+    __tablename__ = 'subcontractor_rfq'
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    change_event_id = db.Column(db.Integer, db.ForeignKey('change_event.id'), nullable=True)
+    number = db.Column(db.String(30))
+    title = db.Column(db.String(200))
+    description = db.Column(db.Text)
+    status = db.Column(db.String(30), default='Draft')
+    company_name = db.Column(db.String(200))
+    company_id = db.Column(db.String(64))
+    linked_commitment_ref = db.Column(db.String(80))
+    due_date = db.Column(db.Date)
+    quoted_amount = db.Column(db.Float, default=0)
+    quoted_at = db.Column(db.DateTime)
+    quoted_by = db.Column(db.String(150))
+    quote_notes = db.Column(db.Text)
+    linked_pco_id = db.Column(db.Integer, nullable=True)
+    linked_cpco_id = db.Column(db.Integer, nullable=True)
+    linked_sco_id = db.Column(db.Integer, nullable=True)
+    ball_in_court_role = db.Column(db.String(80))
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class RFQAllocation(db.Model):
+    __tablename__ = 'rfq_allocation'
+    id = db.Column(db.Integer, primary_key=True)
+    rfq_id = db.Column(db.Integer, db.ForeignKey('subcontractor_rfq.id'), nullable=False)
+    cost_code = db.Column(db.String(30))
+    cost_type = db.Column(db.String(80))
+    amount = db.Column(db.Float, default=0)
+    quoted_amount = db.Column(db.Float, default=0)
+    description = db.Column(db.String(200))
+    sov_line_id = db.Column(db.String(64))
+    tax_group = db.Column(db.String(40))
+
+
+class ChangeOrderRequest(db.Model):
+    __tablename__ = 'change_order_request'
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    change_event_id = db.Column(db.Integer, db.ForeignKey('change_event.id'), nullable=True)
+    number = db.Column(db.String(30))
+    title = db.Column(db.String(200))
+    description = db.Column(db.Text)
+    amount = db.Column(db.Float, default=0)
+    status = db.Column(db.String(30), default='Draft')
+    reason = db.Column(db.String(200))
+    priority = db.Column(db.String(20), default='Medium')
+    schedule_impact_days = db.Column(db.Integer, default=0)
+    linked_pco_id = db.Column(db.Integer, nullable=True)
+    change_order_id = db.Column(db.Integer, nullable=True)
+    drawing_revision = db.Column(db.String(80))
+    ball_in_court_role = db.Column(db.String(80))
+    approval_stage = db.Column(db.Integer, default=0)
+    notes = db.Column(db.Text)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CORAllocation(db.Model):
+    __tablename__ = 'cor_allocation'
+    id = db.Column(db.Integer, primary_key=True)
+    cor_id = db.Column(db.Integer, db.ForeignKey('change_order_request.id'), nullable=False)
+    cost_code = db.Column(db.String(30))
+    cost_type = db.Column(db.String(80))
+    amount = db.Column(db.Float, default=0)
+    description = db.Column(db.String(200))
+    sov_line_id = db.Column(db.String(64))
+    tax_group = db.Column(db.String(40))
 
 
 class Commitment(db.Model):
@@ -1154,6 +1271,10 @@ class SageSyncEvent(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     posted_at = db.Column(db.DateTime, nullable=True)
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    accounting_status = db.Column(db.String(30), default='pending_review')
+    accounting_reviewed_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    accounting_reviewed_at = db.Column(db.DateTime, nullable=True)
+    accounting_notes = db.Column(db.Text)
 
 
 class Submittal(db.Model):
@@ -13829,14 +13950,25 @@ def api_list_pcos():
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
     status = request.args.get('status')
+    scope = (request.args.get('scope') or '').strip().lower()
     q = PotentialChangeOrder.query.filter_by(project_id=int(project_id))
     if status:
         q = q.filter_by(status=status)
     pcos = q.order_by(PotentialChangeOrder.created_at.desc()).all()
+    if scope == 'cpco':
+        pcos = [p for p in pcos if (getattr(p, 'contract_type', None) or 'Owner') == 'Subcontract']
+    elif scope == 'owner':
+        pcos = [p for p in pcos if (getattr(p, 'contract_type', None) or 'Owner') != 'Subcontract']
     result = []
     for pco in pcos:
         allocs = PCOAllocation.query.filter_by(pco_id=pco.id).all()
-        result.append(pco_to_dict(pco, allocs))
+        item = pco_to_dict(pco, allocs)
+        item['contract_type'] = getattr(pco, 'contract_type', None) or 'Owner'
+        item['change_event_id'] = getattr(pco, 'change_event_id', None)
+        item['source_rfq_id'] = getattr(pco, 'source_rfq_id', None)
+        item['linked_cor_id'] = getattr(pco, 'linked_cor_id', None)
+        item['linked_drawing_revision'] = getattr(pco, 'linked_drawing_revision', None)
+        result.append(item)
     return jsonify({'pcos': result})
 
 
@@ -13990,6 +14122,34 @@ def api_promote_pco(pco_id):
 
 # ==================== QUICK STATS API ====================
 
+from change_event_routes import register_change_event_routes
+register_change_event_routes(app, {
+    'db': db,
+    'request': request,
+    'jsonify': jsonify,
+    'login_required': login_required,
+    'current_user': current_user,
+    'get_current_project_id': get_current_project_id,
+    'generate_next_number': generate_next_number,
+    'ChangeEvent': ChangeEvent,
+    'SubcontractorRFQ': SubcontractorRFQ,
+    'RFQAllocation': RFQAllocation,
+    'ChangeOrderRequest': ChangeOrderRequest,
+    'CORAllocation': CORAllocation,
+    'PotentialChangeOrder': PotentialChangeOrder,
+    'PCOAllocation': PCOAllocation,
+    'ChangeOrder': ChangeOrder,
+    'ChangeOrderAllocation': ChangeOrderAllocation,
+    'SageSyncEvent': SageSyncEvent,
+    'Project': Project,
+    'BudgetProjectState': BudgetProjectState,
+    'ScheduleData': ScheduleData,
+    'Commitment': Commitment,
+    'PayAppProjectState': PayAppProjectState,
+    'User': User,
+})
+
+
 @app.route('/api/stats')
 @login_required
 def api_stats():
@@ -14026,6 +14186,11 @@ with app.app_context():
             ensure_co_schema(db.engine, db)
         except Exception as _ce:
             print('CO schema:', _ce)
+        try:
+            from change_event_persistence import ensure_change_event_schema
+            ensure_change_event_schema(db.engine, db)
+        except Exception as _cee:
+            print('Change event schema:', _cee)
         try:
             from rfi_persistence import ensure_rfi_schema
             ensure_rfi_schema(db.engine, db)

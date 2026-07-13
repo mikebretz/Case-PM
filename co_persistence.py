@@ -227,12 +227,22 @@ def co_to_dict(co, allocations=None, revisions=None):
         'linked_owner_co_id': getattr(co, 'linked_owner_co_id', None),
         'sub_co_kind': getattr(co, 'sub_co_kind', None) or ('Owner CO Backcharge' if getattr(co, 'linked_owner_co_id', None) else None),
         'auto_generated': bool(getattr(co, 'auto_generated', False)),
+        'change_event_id': getattr(co, 'change_event_id', None),
+        'source_rfq_id': getattr(co, 'source_rfq_id', None),
+        'linked_cor_id': getattr(co, 'linked_cor_id', None),
+        'linked_drawing_revision': getattr(co, 'linked_drawing_revision', None),
+        'source_cpco_id': getattr(co, 'source_cpco_id', None),
+        'billed_amount': float(getattr(co, 'billed_amount', 0) or 0),
+        'billing_variance': float(getattr(co, 'billing_variance', 0) or 0),
         'is_subcontract': is_subcontract_co(co),
         'allocations': [{
             'cost_code': a.cost_code,
             'cost_type': getattr(a, 'cost_type', None) or '',
             'amount': a.amount,
             'description': getattr(a, 'description', ''),
+            'sov_line_id': getattr(a, 'sov_line_id', None),
+            'tax_group': getattr(a, 'tax_group', None),
+            'retainage_percent': getattr(a, 'retainage_percent', None),
         } for a in (allocs or [])],
         'created_at': co.created_at.isoformat() if co.created_at else None,
     }
@@ -466,6 +476,12 @@ def save_allocations(AllocationModel, parent_id_field, parent_id, allocations, d
             row.description = item.get('description', '')
         if hasattr(row, 'cost_type'):
             row.cost_type = item.get('cost_type', '')
+        if hasattr(row, 'sov_line_id') and item.get('sov_line_id'):
+            row.sov_line_id = item.get('sov_line_id')
+        if hasattr(row, 'tax_group') and item.get('tax_group'):
+            row.tax_group = item.get('tax_group')
+        if hasattr(row, 'retainage_percent') and item.get('retainage_percent') is not None:
+            row.retainage_percent = float(item.get('retainage_percent'))
         db.session.add(row)
 
 
@@ -989,6 +1005,22 @@ def run_change_order_accounting_sync(
         if new_status == 'Approved':
             co.sov_synced_at = co.sov_synced_at or datetime.utcnow()
             co.sage_sync_status = 'sov_synced'
+            if is_subcontract_co(co):
+                try:
+                    from change_event_persistence import compute_billing_variance_for_sub_cos
+                    rows = compute_billing_variance_for_sub_cos([co], PayAppProjectState, co.project_id)
+                    if rows:
+                        co.billed_amount = rows[0].get('billed', 0)
+                        co.billing_variance = rows[0].get('variance', 0)
+                except Exception:
+                    pass
+                if Commitment is not None and getattr(co, 'linked_commitment_ref', None):
+                    com = Commitment.query.filter_by(project_id=co.project_id, number=co.linked_commitment_ref).first()
+                    if com and com.retainage_percent:
+                        allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
+                        for a in allocs:
+                            if getattr(a, 'retainage_percent', None) is None:
+                                a.retainage_percent = float(com.retainage_percent or 0)
             if queue_sage_event and SageSyncEvent is not None and old_status != 'Approved':
                 from sage_service import create_and_process_sage_event
                 if is_subcontract_co(co):

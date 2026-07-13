@@ -278,7 +278,7 @@ def resolve_sub_sov_targets_for_allocation(co, sub_sov, allocation, Commitment=N
     return targets
 
 
-def apply_co_to_subcontractor_sov(state_data, company_key, amount, cost_code=None, description=None, co_number=None):
+def apply_co_to_subcontractor_sov(state_data, company_key, amount, cost_code=None, description=None, co_number=None, sov_line_id=None):
     """Add approved change order amount to a subcontractor SOV line (change_orders column)."""
     sub_sov = state_data.get('subcontractorSOV') or {}
     if not isinstance(sub_sov, dict):
@@ -294,7 +294,21 @@ def apply_co_to_subcontractor_sov(state_data, company_key, amount, cost_code=Non
     )
     applied = 0.0
 
-    if target_norm:
+    if sov_line_id:
+        for line in lines:
+            if str(line.get('id')) == str(sov_line_id):
+                if co_number and line.get('from_change_order') == co_number:
+                    return state_data, 0.0
+                line['change_orders'] = float(line.get('change_orders') or 0) + remaining
+                orig = float(line.get('original_commitment') or 0)
+                line['scheduled_value'] = orig + float(line.get('change_orders') or 0)
+                if co_number:
+                    line['from_change_order'] = co_number
+                applied = remaining
+                remaining = 0
+                break
+
+    if target_norm and remaining > 0:
         for line in lines:
             if normalize_cost_code(line.get('cost_code')) == target_norm:
                 if co_number and line.get('from_change_order') == co_number:

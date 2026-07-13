@@ -17,6 +17,13 @@ SAGE_EVENT_MAP = {
     'ChangeOrderSubmitted': {'module': 'PCO', 'action': 'submit_co'},
     'CommitmentChangeOrderSubmitted': {'module': 'Subcontracts', 'action': 'submit_cco'},
     'CommitmentChangeOrderApproved': {'module': 'Subcontracts', 'action': 'post_cco'},
+    'ChangeEventCreated': {'module': 'PCO', 'action': 'change_event'},
+    'RFQSubmitted': {'module': 'Subcontracts', 'action': 'submit_rfq'},
+    'RFQQuoted': {'module': 'Subcontracts', 'action': 'quote_rfq'},
+    'CPCOSubmitted': {'module': 'Subcontracts', 'action': 'submit_cpco'},
+    'CPCOPromoted': {'module': 'Subcontracts', 'action': 'promote_cpco'},
+    'CORSubmitted': {'module': 'PCO', 'action': 'submit_cor'},
+    'CORApproved': {'module': 'PCO', 'action': 'approve_cor'},
     'BudgetSaved': {'module': 'JobCost', 'action': 'save_budget'},
     'BudgetPublished': {'module': 'JobCost', 'action': 'publish_budget'},
     'BudgetSageSync': {'module': 'JobCost', 'action': 'sync_cost_codes'},
@@ -148,9 +155,16 @@ def create_and_process_sage_event(
     user_id=None,
     auto_process=True,
     Commitment=None,
+    require_accounting_review=False,
 ):
     ctx = _project_sage_context(Project, project_id)
     sage_payload = build_sage_payload(event_type, ctx, payload)
+
+    financial_events = {
+        'ChangeOrderApproved', 'CommitmentChangeOrderApproved', 'CommitmentApproved',
+        'G702Approved', 'SubPayAppApproved', 'CPCOPromoted', 'CORApproved',
+    }
+    needs_review = require_accounting_review or event_type in financial_events
 
     event = SageSyncEvent(
         project_id=project_id,
@@ -160,11 +174,12 @@ def create_and_process_sage_event(
         message=message or f'{event_type} queued',
         payload_json=json.dumps(sage_payload),
         created_by_id=user_id,
+        accounting_status='pending_review' if needs_review else 'accepted',
     )
     db.session.add(event)
     db.session.flush()
 
-    if auto_process:
+    if auto_process and not needs_review:
         process_sage_event(event, db, Commitment=Commitment)
 
     db.session.commit()
@@ -245,6 +260,9 @@ def sage_event_to_dict(event):
         'project_id': event.project_id,
         'event_type': event.event_type,
         'status': event.status,
+        'accounting_status': getattr(event, 'accounting_status', None) or 'accepted',
+        'accounting_notes': getattr(event, 'accounting_notes', None),
+        'accounting_reviewed_at': event.accounting_reviewed_at.isoformat() if getattr(event, 'accounting_reviewed_at', None) else None,
         'sage_job_number': event.sage_job_number,
         'message': event.message,
         'payload': json.loads(event.payload_json) if event.payload_json else None,
