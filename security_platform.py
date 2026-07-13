@@ -24,11 +24,12 @@ CSRF_EXEMPT_PREFIXES = (
     '/favicon',
     '/verify-2fa',
     '/force-change-password',
+    '/download/',
 )
 
 CSRF_EXEMPT_ENDPOINTS = frozenset({
     'login', 'logout', 'recovery_login', 'recovery_enter', 'force_change_password',
-    'verify_2fa', 'static', 'favicon',
+    'verify_2fa', 'static', 'favicon', 'download_casepm_connector',
 })
 
 
