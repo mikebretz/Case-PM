@@ -406,7 +406,33 @@
     el.textContent = `Sage 300 · ${latest.event_type} · ${latest.status} · ${new Date(latest.created_at).toLocaleString()}`;
   }
 
+  const CO_TAB_MODULES = { cos: 'change_orders_log', pcos: 'change_orders_pco' };
+
+  function canAccessCoTab(tab) {
+    const mod = CO_TAB_MODULES[tab];
+    if (!mod) return true;
+    if (typeof canAccessModule === 'function') return canAccessModule(mod, 'view');
+    const allowed = global.CASEPM_ALLOWED_MODULES || {};
+    return allowed[mod] !== false;
+  }
+
+  function applyCoTabPermissions() {
+    Object.entries(CO_TAB_MODULES).forEach(([tab, mod]) => {
+      const btn = document.getElementById(tab === 'cos' ? 'btnTabCos' : 'btnTabPcos');
+      if (btn) btn.classList.toggle('hidden', !canAccessCoTab(tab));
+    });
+    if (!canAccessCoTab(state.tab || 'cos')) {
+      const first = Object.keys(CO_TAB_MODULES).find(t => canAccessCoTab(t));
+      if (first) switchTab(first);
+    }
+  }
+
   function switchTab(tab) {
+    if (!canAccessCoTab(tab)) {
+      const first = Object.keys(CO_TAB_MODULES).find(t => canAccessCoTab(t));
+      if (!first) return;
+      tab = first;
+    }
     state.tab = tab;
     document.getElementById('tabCos').classList.toggle('hidden', tab !== 'cos');
     document.getElementById('tabPcos').classList.toggle('hidden', tab !== 'pcos');
@@ -1290,6 +1316,7 @@
     await Promise.all([loadLinkOptions(), loadDashboard(), loadChangeOrders(), loadPcos(), loadSageLog()]);
     bindFilters();
     bindAttachmentBrowse();
+    applyCoTabPermissions();
     switchTab('cos');
     global.addEventListener('casepm:approval-responded', () => {
       loadChangeOrders();

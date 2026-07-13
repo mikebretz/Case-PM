@@ -59,8 +59,41 @@
     }
   }
 
+  const SAFETY_TAB_MODULES = {
+    reports: 'safety_reports',
+    training: 'safety_training',
+    toolbox: 'safety_toolbox',
+    library: 'safety_library',
+  };
+
+  function canAccessSafetyTab(tab) {
+    const mod = SAFETY_TAB_MODULES[tab];
+    if (!mod) return true;
+    if (typeof canAccessModule === 'function') return canAccessModule(mod, 'view');
+    const allowed = global.CASEPM_ALLOWED_MODULES || {};
+    return allowed[mod] !== false;
+  }
+
+  function applySafetyTabPermissions() {
+    document.querySelectorAll('.saf-tab').forEach((t) => {
+      const tab = t.getAttribute('data-tab');
+      if (tab && SAFETY_TAB_MODULES[tab]) {
+        t.classList.toggle('hidden', !canAccessSafetyTab(tab));
+      }
+    });
+    if (!canAccessSafetyTab(state.tab || 'reports')) {
+      const first = Object.keys(SAFETY_TAB_MODULES).find(t => canAccessSafetyTab(t));
+      if (first) setTab(first);
+    }
+  }
+
   // ---------------- Tabs ----------------
   function setTab(tab) {
+    if (!canAccessSafetyTab(tab)) {
+      const first = Object.keys(SAFETY_TAB_MODULES).find(t => canAccessSafetyTab(t));
+      if (!first) return;
+      tab = first;
+    }
     state.tab = tab;
     document.querySelectorAll('.saf-tab').forEach((t) => t.classList.toggle('active', t.getAttribute('data-tab') === tab));
     el('safTabReports').classList.toggle('hidden', tab !== 'reports');
@@ -647,6 +680,7 @@
     if (el('safReportsScope')) state.reportsScope = el('safReportsScope').value;
     if (el('safToolboxScope')) state.toolboxScope = el('safToolboxScope').value;
     bind();
+    applySafetyTabPermissions();
     loadReports();
     updateScopeChrome();
   }

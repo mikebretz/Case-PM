@@ -2548,7 +2548,49 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
     }
 
     // ==================== TAB SWITCHING ====================
+    const PAY_TAB_MODULES = {
+        'previous-payapps': 'pay_applications_gc',
+        'payapp': 'pay_applications_gc',
+        'contractor-sov': 'pay_applications_gc',
+        'sub-sov': 'pay_applications_sub',
+        'sub-pay-app-tracker': 'pay_applications_sub',
+        'previous-sub-payapps': 'pay_applications_sub',
+    };
+
+    function canAccessPayTab(tab) {
+        const mod = PAY_TAB_MODULES[tab];
+        if (!mod) return true;
+        if (typeof canAccessModule === 'function') return canAccessModule(mod, 'view');
+        const allowed = window.CASEPM_ALLOWED_MODULES || {};
+        return allowed[mod] !== false;
+    }
+
+    function canUploadLienWaiver() {
+        if (typeof canAccessModule === 'function') {
+            return canAccessModule('pay_applications_lien_waivers', 'entry')
+                || canAccessModule('pay_applications_sub', 'entry')
+                || canAccessModule('pay_applications_gc', 'edit');
+        }
+        return true;
+    }
+
+    function applyPayTabPermissions() {
+        Object.keys(PAY_TAB_MODULES).forEach(tab => {
+            const btn = document.getElementById('tab-' + tab);
+            if (btn) btn.classList.toggle('hidden', !canAccessPayTab(tab));
+        });
+        if (!canAccessPayTab(currentPayAppTab)) {
+            const first = Object.keys(PAY_TAB_MODULES).find(t => canAccessPayTab(t));
+            if (first) switchPayAppTab(first);
+        }
+    }
+
     function switchPayAppTab(tab) {
+        if (!canAccessPayTab(tab)) {
+            const first = Object.keys(PAY_TAB_MODULES).find(t => canAccessPayTab(t));
+            if (first) tab = first;
+            else return;
+        }
         currentPayAppTab = tab;
 
         document.querySelectorAll('.tab-button').forEach(btn => {
@@ -9066,6 +9108,7 @@ function printSubcontractorG703(companyId) {
             const lastSub = casepmStore.getItem('lastSelectedSubSOV');
             if (lastSub) selectedSubCompanyId = canonicalSubCompanyId(lastSub);
 
+            applyPayTabPermissions();
             renderPayAppContent();
             renderSageSyncStatus();
         };

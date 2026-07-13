@@ -38,8 +38,42 @@
       (g.modules || []).forEach(([key]) => {
         modules[key] = { access: 'none', approve: 'none' };
       });
+      const subs = g.submodules || {};
+      Object.values(subs).forEach(list => {
+        (list || []).forEach(item => {
+          const key = item.key || item[0];
+          if (key) modules[key] = { access: 'none', approve: 'none' };
+        });
+      });
     });
     return { version: 2, portal, modules, global: { customized: true } };
+  }
+
+  function renderModuleRow(key, label, mp, approvalMods, indent) {
+    const showApprove = approvalMods.has(key);
+    const pad = indent ? 'pl-8' : 'px-4';
+    const labelClass = indent ? 'text-zinc-400 text-xs' : 'text-zinc-200 font-medium';
+    let row = `<tr class="border-b border-zinc-800/60 hover:bg-zinc-800/30">
+      <td class="${pad} py-2 ${labelClass}">${indent ? '↳ ' : ''}${esc(label)}</td>
+      <td class="px-3 py-2">
+        <select class="perm-access w-full max-w-[200px] bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs ${ACCESS_COLORS[mp.access] || ''}"
+                data-module="${key}" onchange="CasePMPermissionsUI.onAccessChange(this)">
+          ${(catalog.access_levels || []).map(([v, l]) =>
+            `<option value="${v}" ${mp.access === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}
+        </select>
+      </td>
+      <td class="px-3 py-2">`;
+    if (showApprove) {
+      row += `<select class="perm-approve w-full max-w-[200px] bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs"
+                      data-module="${key}" onchange="CasePMPermissionsUI.onApproveChange(this)">
+        ${(catalog.approve_levels || []).map(([v, l]) =>
+          `<option value="${v}" ${mp.approve === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}
+      </select>`;
+    } else {
+      row += `<span class="text-xs text-zinc-600">—</span>`;
+    }
+    row += `</td></tr>`;
+    return row;
   }
 
   function setMatrix(data) {
@@ -98,27 +132,14 @@
             <tbody>`;
       (group.modules || []).forEach(([key, label]) => {
         const mp = currentMatrix.modules[key] || { access: 'none', approve: 'none' };
-        const showApprove = approvalMods.has(key);
-        html += `<tr class="border-b border-zinc-800/60 hover:bg-zinc-800/30">
-          <td class="px-4 py-2 font-medium text-zinc-200">${esc(label)}</td>
-          <td class="px-3 py-2">
-            <select class="perm-access w-full max-w-[200px] bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs ${ACCESS_COLORS[mp.access] || ''}"
-                    data-module="${key}" onchange="CasePMPermissionsUI.onAccessChange(this)">
-              ${(catalog.access_levels || []).map(([v, l]) =>
-                `<option value="${v}" ${mp.access === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}
-            </select>
-          </td>
-          <td class="px-3 py-2">`;
-        if (showApprove) {
-          html += `<select class="perm-approve w-full max-w-[200px] bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs"
-                          data-module="${key}" onchange="CasePMPermissionsUI.onApproveChange(this)">
-            ${(catalog.approve_levels || []).map(([v, l]) =>
-              `<option value="${v}" ${mp.approve === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}
-          </select>`;
-        } else {
-          html += `<span class="text-xs text-zinc-600">—</span>`;
-        }
-        html += `</td></tr>`;
+        html += renderModuleRow(key, label, mp, approvalMods, false);
+        const subList = (group.submodules && group.submodules[key]) || [];
+        subList.forEach(item => {
+          const subKey = item.key || item[0];
+          const subLabel = item.label || item[1] || subKey;
+          const smp = currentMatrix.modules[subKey] || { access: 'none', approve: 'none' };
+          html += renderModuleRow(subKey, subLabel, smp, approvalMods, true);
+        });
       });
       html += `</tbody></table></div>`;
     });
