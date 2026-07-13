@@ -853,6 +853,16 @@
     <script>
     (function () {
         const allowed = {{ allowed_modules|tojson }};
+        const accessLevels = {{ module_access_levels|tojson }};
+        const ACCESS_RANK = { none: 0, client_view: 1, view: 2, entry: 3, edit: 4, admin: 5 };
+        window.CASEPM_ALLOWED_MODULES = allowed;
+        window.CASEPM_MODULE_ACCESS = accessLevels;
+        window.canAccessModule = function (moduleKey, minAccess) {
+            if (!moduleKey) return true;
+            minAccess = minAccess || 'view';
+            const level = (accessLevels || {})[moduleKey] || 'none';
+            return (ACCESS_RANK[level] || 0) >= (ACCESS_RANK[minAccess] || 0);
+        };
         if (!allowed || Object.keys(allowed).length === 0) return;
         document.querySelectorAll('[data-nav-module]').forEach(el => {
             const mod = el.getAttribute('data-nav-module');

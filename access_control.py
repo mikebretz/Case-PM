@@ -15,6 +15,8 @@ SESSION_ACTIVITY_KEY = 'casepm_last_activity'
 
 FINANCIAL_MODULES = frozenset({
     'budget', 'forecast', 'commitments', 'pay_applications',
+    'pay_applications_gc', 'pay_applications_sub', 'pay_applications_lien_waivers',
+    'companies',
 })
 
 # Longest prefixes first so specific rules win over general ones.

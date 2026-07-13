@@ -1,5 +1,5 @@
 """
-Case PM permissions catalog — modules, access levels, approval rights, role templates.
+Case PM permissions catalog — modules, sub-tabs, access levels, approval rights, role templates.
 Used by User Management (admin) and case_workflow enforcement.
 """
 from __future__ import annotations
@@ -29,6 +29,30 @@ PORTAL_TYPES = [
     ('sub', 'Subcontractor Portal'),
     ('client', 'Client View Only'),
 ]
+
+# Page tabs / sub-sections keyed by parent module
+MODULE_SUBMODULES = {
+    'pay_applications': [
+        ('pay_applications_gc', 'GC Pay Applications (G702 / G703)'),
+        ('pay_applications_sub', 'Subcontractor Pay Applications'),
+        ('pay_applications_lien_waivers', 'Lien Waivers'),
+    ],
+    'change_orders': [
+        ('change_orders_log', 'Change Orders'),
+        ('change_orders_pco', 'PCO Log'),
+    ],
+    'safety': [
+        ('safety_reports', 'Observations & Incidents'),
+        ('safety_training', 'Training & Certifications'),
+        ('safety_toolbox', 'Toolbox Meetings'),
+        ('safety_library', 'OSHA Library'),
+    ],
+}
+
+SUBMODULE_PARENT = {}
+for _parent, _subs in MODULE_SUBMODULES.items():
+    for sub_key, _ in _subs:
+        SUBMODULE_PARENT[sub_key] = _parent
 
 # Module groups for UI
 MODULE_GROUPS = [
@@ -90,10 +114,18 @@ MODULE_GROUPS = [
     },
 ]
 
-# Modules that support approval workflow
+# Modules that support approval workflow (parent keys; sub-keys inherit in UI)
 APPROVAL_MODULES = frozenset({
-    'rfis', 'submittals', 'change_orders', 'budget', 'commitments',
-    'pay_applications', 'daily_log', 'safety', 'punch_list',
+    'rfis', 'submittals', 'change_orders', 'change_orders_log', 'change_orders_pco',
+    'budget', 'commitments',
+    'pay_applications', 'pay_applications_gc', 'pay_applications_sub',
+    'daily_log', 'safety', 'safety_reports', 'punch_list',
+})
+
+FINANCIAL_MODULE_KEYS = frozenset({
+    'budget', 'forecast', 'commitments', 'pay_applications',
+    'pay_applications_gc', 'pay_applications_sub', 'pay_applications_lien_waivers',
+    'companies',
 })
 
 # Map legacy display names → module keys
@@ -127,7 +159,6 @@ LEGACY_MODULE_MAP = {
     'Notifications': 'notifications',
 }
 
-# Map workflow module display names (case_workflow) → keys
 WORKFLOW_MODULE_MAP = {
     'Pay Applications': 'pay_applications',
     'Change Orders': 'change_orders',
@@ -147,7 +178,7 @@ ACCESS_RANK = {k: i for i, (k, _) in enumerate(ACCESS_LEVELS)}
 APPROVE_RANK = {k: i for i, (k, _) in enumerate(APPROVE_LEVELS)}
 
 
-def all_module_keys():
+def parent_module_keys():
     keys = []
     for group in MODULE_GROUPS:
         for key, _ in group['modules']:
@@ -155,8 +186,33 @@ def all_module_keys():
     return keys
 
 
+def submodule_keys_for(parent: str):
+    return [k for k, _ in MODULE_SUBMODULES.get(parent, [])]
+
+
+def all_module_keys():
+    keys = []
+    for key in parent_module_keys():
+        keys.append(key)
+        keys.extend(submodule_keys_for(key))
+    return keys
+
+
 def default_module_perms(access='view', approve='none'):
     return {k: {'access': access, 'approve': approve} for k in all_module_keys()}
+
+
+def inherit_submodule_defaults(modules: dict) -> dict:
+    """Copy parent module access to sub-tabs when sub-tab not explicitly set."""
+    out = dict(modules or {})
+    for parent, subs in MODULE_SUBMODULES.items():
+        parent_perms = out.get(parent)
+        if not parent_perms:
+            continue
+        for sub_key, _ in subs:
+            if sub_key not in out:
+                out[sub_key] = dict(parent_perms)
+    return out
 
 
 def _set_modules(perms_dict, **overrides):
@@ -184,10 +240,19 @@ ROLE_TEMPLATES = {
             'rfis': ('edit', 'approve_reject'),
             'submittals': ('edit', 'approve_reject'),
             'change_orders': ('edit', 'approve_reject'),
+            'change_orders_log': ('edit', 'approve_reject'),
+            'change_orders_pco': ('edit', 'approve_reject'),
             'budget': ('edit', 'approve_reject'),
             'commitments': ('edit', 'approve_reject'),
             'pay_applications': ('edit', 'approve_reject'),
+            'pay_applications_gc': ('edit', 'approve_reject'),
+            'pay_applications_sub': ('edit', 'approve_reject'),
+            'pay_applications_lien_waivers': ('edit', 'none'),
             'companies': ('edit', 'none'),
+            'safety_reports': ('edit', 'approve_reject'),
+            'safety_training': ('edit', 'none'),
+            'safety_toolbox': ('edit', 'none'),
+            'safety_library': ('view', 'none'),
             'users': ('view', 'none'),
             'program_settings': ('view', 'none'),
             'audit_log': ('view', 'none'),
@@ -205,6 +270,10 @@ ROLE_TEMPLATES = {
             'photos': ('edit', 'none'),
             'punch_list': ('edit', 'approve'),
             'safety': ('edit', 'approve_reject'),
+            'safety_reports': ('edit', 'approve_reject'),
+            'safety_training': ('edit', 'none'),
+            'safety_toolbox': ('edit', 'none'),
+            'safety_library': ('view', 'none'),
             'inspections': ('edit', 'none'),
             'deliveries': ('entry', 'none'),
             'rfis': ('entry', 'none'),
@@ -222,6 +291,8 @@ ROLE_TEMPLATES = {
             'rfis': ('edit', 'approve_reject'),
             'submittals': ('edit', 'approve_reject'),
             'change_orders': ('view', 'approve_reject'),
+            'change_orders_log': ('view', 'approve_reject'),
+            'change_orders_pco': ('view', 'none'),
             'drawings': ('view', 'none'),
             'documents': ('view', 'none'),
             'schedule': ('view', 'none'),
@@ -230,43 +301,91 @@ ROLE_TEMPLATES = {
     },
     'Owner': {
         'portal': 'consultant',
-        'description': 'Owner/client — approvals on COs and pay apps, read-only elsewhere',
-        'modules': _set_modules(default_module_perms('none', 'none'), **{
+        'description': 'Owner/client — broad read access; no financial modules',
+        'global': {'hide_financials': True},
+        'modules': _set_modules(default_module_perms('client_view', 'none'), **{
             'dashboard': ('client_view', 'none'),
             'projects': ('client_view', 'none'),
-            'change_orders': ('client_view', 'approve_reject'),
-            'pay_applications': ('client_view', 'approve_reject'),
-            'rfis': ('client_view', 'none'),
             'schedule': ('client_view', 'none'),
+            'rfis': ('client_view', 'none'),
+            'submittals': ('client_view', 'none'),
+            'change_orders': ('client_view', 'approve_reject'),
+            'change_orders_log': ('client_view', 'approve_reject'),
+            'change_orders_pco': ('client_view', 'none'),
             'documents': ('client_view', 'none'),
+            'drawings': ('client_view', 'none'),
+            'daily_log': ('client_view', 'none'),
+            'weekly_report': ('client_view', 'none'),
+            'photos': ('client_view', 'none'),
+            'punch_list': ('client_view', 'none'),
+            'safety': ('client_view', 'none'),
+            'safety_reports': ('client_view', 'none'),
+            'inspections': ('client_view', 'none'),
+            'meeting_minutes': ('client_view', 'none'),
             'email': ('edit', 'none'),
+            'budget': ('none', 'none'),
+            'forecast': ('none', 'none'),
+            'commitments': ('none', 'none'),
+            'pay_applications': ('none', 'none'),
+            'pay_applications_gc': ('none', 'none'),
+            'pay_applications_sub': ('none', 'none'),
+            'pay_applications_lien_waivers': ('none', 'none'),
+            'companies': ('none', 'none'),
+            'users': ('none', 'none'),
+            'program_settings': ('none', 'none'),
+            'audit_log': ('none', 'none'),
         }),
     },
     'Contractor Accounting': {
         'portal': 'staff',
-        'description': 'Financial modules with approval on pay apps, COs, commitments',
+        'description': 'GC financial modules — budget, commitments, full pay applications',
         'modules': _set_modules(default_module_perms('none', 'none'), **{
             'dashboard': ('view', 'none'),
             'budget': ('edit', 'approve_reject'),
             'forecast': ('edit', 'none'),
             'commitments': ('edit', 'approve_reject'),
             'pay_applications': ('edit', 'approve_reject'),
+            'pay_applications_gc': ('edit', 'approve_reject'),
+            'pay_applications_sub': ('edit', 'approve_reject'),
+            'pay_applications_lien_waivers': ('edit', 'none'),
             'change_orders': ('edit', 'approve_reject'),
+            'change_orders_log': ('edit', 'approve_reject'),
+            'change_orders_pco': ('view', 'none'),
             'companies': ('edit', 'none'),
             'documents': ('view', 'none'),
             'schedule': ('view', 'none'),
             'email': ('edit', 'none'),
         }),
     },
-    'Company User': {
+    'Subcontractor Accountant': {
         'portal': 'sub',
-        'description': 'Subcontractor portal — pay apps, submittals, RFIs, documents',
+        'description': 'Sub financial — enter sub pay apps and upload lien waivers only',
         'modules': _set_modules(default_module_perms('none', 'none'), **{
             'pay_applications': ('entry', 'submit'),
-            'submittals': ('entry', 'submit'),
-            'rfis': ('entry', 'submit'),
+            'pay_applications_sub': ('entry', 'submit'),
+            'pay_applications_lien_waivers': ('entry', 'none'),
+            'pay_applications_gc': ('none', 'none'),
             'documents': ('view', 'none'),
+            'email': ('view', 'none'),
+        }),
+    },
+    'Company User': {
+        'portal': 'sub',
+        'description': 'Subcontractor PM — RFIs, submittals, project info; no GC financials',
+        'modules': _set_modules(default_module_perms('none', 'none'), **{
+            'dashboard': ('view', 'none'),
+            'projects': ('client_view', 'none'),
+            'schedule': ('view', 'none'),
+            'rfis': ('entry', 'submit'),
+            'submittals': ('entry', 'submit'),
+            'documents': ('view', 'none'),
+            'drawings': ('view', 'none'),
+            'punch_list': ('view', 'none'),
             'email': ('edit', 'none'),
+            'pay_applications': ('none', 'none'),
+            'pay_applications_gc': ('none', 'none'),
+            'pay_applications_sub': ('none', 'none'),
+            'pay_applications_lien_waivers': ('none', 'none'),
         }),
     },
     'Viewer': {
@@ -278,12 +397,22 @@ ROLE_TEMPLATES = {
 
 
 def catalog_for_ui():
+    groups = []
+    for group in MODULE_GROUPS:
+        g = dict(group)
+        g['submodules'] = {
+            parent: [{'key': k, 'label': lbl} for k, lbl in MODULE_SUBMODULES.get(parent, [])]
+            for parent, _ in group['modules']
+            if parent in MODULE_SUBMODULES
+        }
+        groups.append(g)
     return {
-        'groups': MODULE_GROUPS,
+        'groups': groups,
         'access_levels': ACCESS_LEVELS,
         'approve_levels': APPROVE_LEVELS,
         'portal_types': PORTAL_TYPES,
         'approval_modules': sorted(APPROVAL_MODULES),
+        'submodules': MODULE_SUBMODULES,
         'role_templates': {
             role: {
                 'portal': tpl['portal'],
@@ -299,6 +428,8 @@ def normalize_legacy_permissions(raw):
     if not raw:
         return None
     if isinstance(raw, dict) and raw.get('version') == 2:
+        raw = dict(raw)
+        raw['modules'] = inherit_submodule_defaults(raw.get('modules') or {})
         return raw
     modules = default_module_perms('none', 'none')
     legacy_access = {
@@ -326,6 +457,7 @@ def normalize_legacy_permissions(raw):
                 'access': legacy_access.get(perms.get('access'), perms.get('access', 'none')),
                 'approve': legacy_approve.get(perms.get('approve'), perms.get('approve', 'none')),
             }
+    modules = inherit_submodule_defaults(modules)
     return {
         'version': 2,
         'portal': 'staff',
@@ -336,11 +468,14 @@ def normalize_legacy_permissions(raw):
 
 def permissions_from_role(role):
     tpl = ROLE_TEMPLATES.get(role or 'Viewer', ROLE_TEMPLATES['Viewer'])
+    modules = inherit_submodule_defaults({k: dict(v) for k, v in tpl['modules'].items()})
+    global_opts = dict(tpl.get('global') or {})
+    global_opts['from_role'] = role
     return {
         'version': 2,
         'portal': tpl['portal'],
-        'modules': {k: dict(v) for k, v in tpl['modules'].items()},
-        'global': {'from_role': role},
+        'modules': modules,
+        'global': global_opts,
     }
 
 

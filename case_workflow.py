@@ -247,16 +247,34 @@ def user_module_perms(user, module):
             return {'access': 'edit', 'approve': 'none'}
         return {'access': 'view' if perms.get('modules') == 'view' else 'none', 'approve': 'none'}
     key = _resolve_module_key(module)
-    return modules.get(key, {'access': 'none', 'approve': 'none'})
+    if key in modules:
+        return modules.get(key, {'access': 'none', 'approve': 'none'})
+    # Inherit from parent module when checking a sub-tab key
+    from permissions_catalog import SUBMODULE_PARENT
+    parent = SUBMODULE_PARENT.get(key)
+    if parent and parent in modules:
+        return dict(modules.get(parent, {'access': 'none', 'approve': 'none'}))
+    return {'access': 'none', 'approve': 'none'}
+
+
+def _direct_module_access_rank(user, module):
+    from permissions_catalog import ACCESS_RANK
+    mp = user_module_perms(user, module)
+    return ACCESS_RANK.get(mp.get('access', 'none'), 0)
 
 
 def user_has_module_access(user, module, min_access='view'):
-    from permissions_catalog import ACCESS_RANK
+    from permissions_catalog import ACCESS_RANK, submodule_keys_for
     if user.role in ('Admin', 'Developer'):
         return True
-    mp = user_module_perms(user, module)
-    level = mp.get('access', 'none')
-    return ACCESS_RANK.get(level, 0) >= ACCESS_RANK.get(min_access, 0)
+    key = _resolve_module_key(module)
+    if _direct_module_access_rank(user, key) >= ACCESS_RANK.get(min_access, 0):
+        return True
+    # Parent page access if any sub-tab is allowed
+    for sub_key in submodule_keys_for(key):
+        if _direct_module_access_rank(user, sub_key) >= ACCESS_RANK.get(min_access, 0):
+            return True
+    return False
 
 
 def user_can_approve(user, module, action='approve'):

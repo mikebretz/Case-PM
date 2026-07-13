@@ -760,7 +760,7 @@ def inject_developer_flag():
     ep = request.endpoint or ''
     page_module = ENDPOINT_TO_MODULE.get(ep, 'app')
     if not getattr(current_user, 'is_authenticated', False):
-        return {'is_developer': False, 'developer_unlock_mode': False, 'page_module': page_module, 'is_admin_user': False, 'can_access_module': lambda m, min_access='view': False, 'allowed_modules': {}, 'user_security_flags': {'hide_financials': False, 'client_portal_only': False}, 'security_settings': {'session_timeout_minutes': 60, 'warn_before_logout_minutes': 5}}
+        return {'is_developer': False, 'developer_unlock_mode': False, 'page_module': page_module, 'is_admin_user': False, 'can_access_module': lambda m, min_access='view': False, 'allowed_modules': {}, 'module_access_levels': {}, 'user_security_flags': {'hide_financials': False, 'client_portal_only': False}, 'security_settings': {'session_timeout_minutes': 60, 'warn_before_logout_minutes': 5}}
     try:
         from developer_tools import is_developer, developer_unlock_active
         dev = is_developer(current_user)
@@ -779,7 +779,7 @@ def inject_developer_flag():
         pass
     try:
         from access_control import FINANCIAL_MODULES, user_global_flags
-        from case_workflow import user_has_module_access
+        from case_workflow import user_has_module_access, user_module_perms
         from permissions_catalog import all_module_keys
         flags = user_global_flags(current_user)
         def can_access_module(module_key, min_access='view'):
@@ -788,15 +788,22 @@ def inject_developer_flag():
             if flags.get('hide_financials') and module_key in FINANCIAL_MODULES:
                 return False
             return user_has_module_access(current_user, module_key, min_access)
+        all_keys = all_module_keys()
         allowed_modules = (
-            {k: True for k in all_module_keys()}
+            {k: True for k in all_keys}
             if is_privileged else
-            {k: can_access_module(k, 'view') for k in all_module_keys()}
+            {k: can_access_module(k, 'view') for k in all_keys}
+        )
+        module_access_levels = (
+            {k: 'admin' for k in all_keys}
+            if is_privileged else
+            {k: user_module_perms(current_user, k).get('access', 'none') for k in all_keys}
         )
     except Exception:
         def can_access_module(module_key, min_access='view'):
             return True
         allowed_modules = {}
+        module_access_levels = {}
     return {
         'is_developer': dev,
         'developer_unlock_mode': unlock,
@@ -804,6 +811,7 @@ def inject_developer_flag():
         'is_admin_user': is_privileged,
         'can_access_module': can_access_module,
         'allowed_modules': allowed_modules,
+        'module_access_levels': module_access_levels,
         'user_security_flags': flags,
         'security_settings': security_settings,
     }
