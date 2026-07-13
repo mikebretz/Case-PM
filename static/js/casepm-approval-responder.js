@@ -372,6 +372,7 @@
       modal()?.close();
       destroySignPanel();
       global.dispatchEvent(new CustomEvent('casepm:approval-responded', { detail: result }));
+      await applyFinancialSyncFromResult(result);
       if (moduleName === 'RFIs' && global.CasePMRfis) {
         if (typeof global.CasePMRfis.refresh === 'function') await global.CasePMRfis.refresh();
         else if (global.CasePMRfis.view) await global.CasePMRfis.view(entityId).catch(() => {});
@@ -391,6 +392,24 @@
   function toast(msg) {
     if (typeof global.showToast === 'function') global.showToast(msg);
     else console.log(msg);
+  }
+
+  async function applyFinancialSyncFromResult(result) {
+    if (!result) return;
+    if (typeof global.CasePMAccountingReconcile !== 'undefined') {
+      global.CasePMAccountingReconcile.applyReconcileResult(result);
+    } else {
+      if (result.budget_sync_result && typeof global.CasePMBudgetSync !== 'undefined') {
+        global.CasePMBudgetSync.applyBudgetSyncResult(result.budget_sync_result);
+      }
+      if (result.sync_result && typeof global.CasePMPayAppSync !== 'undefined') {
+        global.CasePMPayAppSync.applyCoSyncResult(result.sync_result);
+      }
+    }
+    if (result.final_approved && result.module === 'Pay Applications' && typeof global.CasePMPayAppSync !== 'undefined') {
+      await global.CasePMPayAppSync.refreshFromServer().catch(() => {});
+      global.dispatchEvent(new CustomEvent('casepm:payapp-state-refreshed', { detail: result }));
+    }
   }
 
   function openLocal(opts) {

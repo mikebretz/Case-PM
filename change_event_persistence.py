@@ -367,7 +367,7 @@ def apply_rfq_fields(rfq, data):
 def apply_cor_fields(cor, data):
     for field in ('title', 'description', 'reason', 'priority', 'notes', 'drawing_revision', 'ball_in_court_role', 'status'):
         if data.get(field) is not None:
-            setattr(cor, data[field])
+            setattr(cor, field, data[field])
     if data.get('amount') is not None:
         cor.amount = float(data['amount'])
     if data.get('schedule_impact_days') is not None:
@@ -643,7 +643,7 @@ def apply_contingency_release(BudgetProjectState, project_id, amount, db):
         if released >= float(amount):
             break
     if released:
-        save_budget_state(BudgetProjectState, project_id, state, db)
+        save_budget_state(BudgetProjectState, db, project_id, state)
     return {'released': released}
 
 
@@ -670,7 +670,7 @@ def apply_partial_budget_line(BudgetProjectState, project_id, cost_code, cost_ty
             'actual': 0,
         })
         state['budgetLines'] = lines
-    save_budget_state(BudgetProjectState, project_id, state, db)
+    save_budget_state(BudgetProjectState, db, project_id, state)
     return {'added': not found, 'cost_code': cost_code}
 
 

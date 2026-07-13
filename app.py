@@ -3526,43 +3526,17 @@ def api_update_rfi(rfi_id):
 @app.route('/api/rfis/<int:rfi_id>/workflow', methods=['POST'])
 @login_required
 def api_rfi_workflow(rfi_id):
-    from rfi_persistence import workflow_rfi, rfi_to_dict, add_response, get_linked_records
-    from workflow_responder import execute_rfi_action, get_rfi_responder_context, notify_rfi_ball_in_court, notify_rfi_update
+    from rfi_persistence import rfi_to_dict, get_linked_records
+    from workflow_responder import execute_rfi_action
     rfi = RFI.query.get_or_404(rfi_id)
     body = request.get_json(silent=True) or {}
     action = body.get('action')
-    user_name = f'{current_user.first_name} {current_user.last_name}'.strip() or current_user.email
     try:
-        if action == 'respond':
-            execute_rfi_action(rfi, 'respond', current_user, User, {
-                'comment': body.get('body', ''),
-                'is_official': bool(body.get('is_official')),
-                'attachments': body.get('attachments') or [],
-            })
-        else:
-            workflow_rfi(rfi, action, user_name)
-            if action == 'submit':
-                notify_rfi_ball_in_court(
-                    rfi, User,
-                    title=f'{rfi.number} — response needed',
-                    description=rfi.question or rfi.subject or 'Please review and respond to this RFI.',
-                )
-                notify_rfi_update(
-                    rfi, User,
-                    title=f'{rfi.number} — submitted for review',
-                    description='This RFI was sent for review.',
-                    actor_id=current_user.id,
-                    event='submit',
-                )
-            elif action == 'close':
-                notify_rfi_update(
-                    rfi, User,
-                    title=f'{rfi.number} — closed',
-                    description=rfi.official_answer or 'This RFI has been closed.',
-                    actor_id=current_user.id,
-                )
-            elif action in ('return_to_assignee', 'return_to_manager'):
-                notify_rfi_ball_in_court(rfi, User)
+        execute_rfi_action(rfi, action, current_user, User, {
+            'comment': body.get('comment') or body.get('body') or '',
+            'is_official': bool(body.get('is_official')),
+            'attachments': body.get('attachments') or [],
+        })
         db.session.commit()
         linked_cos, linked_pcos = get_linked_records(rfi.id, ChangeOrder, PotentialChangeOrder)
         return jsonify({'ok': True, 'rfi': rfi_to_dict(rfi, linked_cos, linked_pcos)})

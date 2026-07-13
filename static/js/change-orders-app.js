@@ -1737,7 +1737,9 @@
     bindAttachmentBrowse();
     applyCoTabPermissions();
     switchTab('cos');
-    global.addEventListener('casepm:approval-responded', () => {
+    global.addEventListener('casepm:approval-responded', async (e) => {
+      const detail = e.detail || {};
+      if (!detail.local) await applyCoSync(detail);
       loadChangeOrders();
       loadDashboard();
     });
@@ -1774,7 +1776,8 @@
     saveModal,
     editCo: id => api(`/api/change-orders/${id}`).then(openModal.bind(null, 'co')).catch(e => alert(e.message)),
     editPco: id => api(`/api/pcos/${id}`).then(openModal.bind(null, 'pco')).catch(e => alert(e.message)),
-    viewCo, viewPco, openCoItem, openPcoItem, workflowCo, pcoWorkflow, openPcoReviewModal, resyncSov, openApprovalModal, confirmApprovalAction, closeDrawer, promotePco, deleteCo,
+    viewCo, viewPco, openCoItem, openPcoItem, workflowCo, pcoWorkflow, openPcoReviewModal,
+    applyCoSync, resyncSov, openApprovalModal, confirmApprovalAction, closeDrawer, promotePco, deleteCo,
     uploadPcoAttachment, uploadPcoDrawerAttachment,
     addAllocRow: () => { state.allocationRows.push({ cost_code: '', cost_type: '', amount: 0, description: '' }); renderAllocationRows(); },
     removeAllocRow: idx => { state.allocationRows.splice(idx, 1); renderAllocationRows(); },

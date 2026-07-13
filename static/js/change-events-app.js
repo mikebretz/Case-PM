@@ -126,10 +126,13 @@
         { action: 'reject', label: 'Void Event', requires_comment: true, style: 'danger' },
       ],
       onSubmit: async (action, comment) => {
-        await api(`/api/change-events/${id}/workflow`, {
+        const json = await api(`/api/change-events/${id}/workflow`, {
           method: 'POST',
           body: JSON.stringify({ action, comments: comment }),
         });
+        if (json.final && typeof global.CasePMBudgetSync !== 'undefined') {
+          await global.CasePMBudgetSync.loadFromServer().catch(() => {});
+        }
         await loadChangeEvents();
         if (action === 'reject') CO.closeDrawer();
         else await viewChangeEvent(id);
