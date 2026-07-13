@@ -793,7 +793,7 @@ def register_workflow(app, _db, models):
                     'description': getattr(a, 'description', ''),
                 } for a in allocs]
                 if request.method == 'GET':
-                    ctx = get_co_responder_context(co, current_user, alloc_payload)
+                    ctx = get_co_responder_context(co, current_user, allocs)
                     return jsonify({'ok': True, **ctx})
                 body = request.get_json(silent=True) or {}
                 workflow_deps = {
@@ -815,7 +815,7 @@ def register_workflow(app, _db, models):
                     ChangeOrderAllocation, workflow_deps=workflow_deps,
                 )
                 db.session.commit()
-                ctx = get_co_responder_context(co, current_user, alloc_payload)
+                ctx = get_co_responder_context(co, current_user, allocs)
                 return jsonify({
                     'ok': True,
                     'action': action,

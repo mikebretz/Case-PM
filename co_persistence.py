@@ -194,6 +194,29 @@ def co_approval_chain(co):
     return SUB_APPROVAL_CHAIN if is_subcontract_co(co) else APPROVAL_CHAIN
 
 
+def _allocation_row(a):
+    """Normalize ORM allocation or plain dict for API responses."""
+    if isinstance(a, dict):
+        return {
+            'cost_code': a.get('cost_code'),
+            'cost_type': a.get('cost_type') or '',
+            'amount': a.get('amount'),
+            'description': a.get('description', ''),
+            'sov_line_id': a.get('sov_line_id'),
+            'tax_group': a.get('tax_group'),
+            'retainage_percent': a.get('retainage_percent'),
+        }
+    return {
+        'cost_code': a.cost_code,
+        'cost_type': getattr(a, 'cost_type', None) or '',
+        'amount': a.amount,
+        'description': getattr(a, 'description', ''),
+        'sov_line_id': getattr(a, 'sov_line_id', None),
+        'tax_group': getattr(a, 'tax_group', None),
+        'retainage_percent': getattr(a, 'retainage_percent', None),
+    }
+
+
 def co_to_dict(co, allocations=None, revisions=None):
     allocs = allocations
     if allocs is None and hasattr(co, '_allocations_cache'):
@@ -251,15 +274,7 @@ def co_to_dict(co, allocations=None, revisions=None):
         'billed_amount': float(getattr(co, 'billed_amount', 0) or 0),
         'billing_variance': float(getattr(co, 'billing_variance', 0) or 0),
         'is_subcontract': is_subcontract_co(co),
-        'allocations': [{
-            'cost_code': a.cost_code,
-            'cost_type': getattr(a, 'cost_type', None) or '',
-            'amount': a.amount,
-            'description': getattr(a, 'description', ''),
-            'sov_line_id': getattr(a, 'sov_line_id', None),
-            'tax_group': getattr(a, 'tax_group', None),
-            'retainage_percent': getattr(a, 'retainage_percent', None),
-        } for a in (allocs or [])],
+        'allocations': [_allocation_row(a) for a in (allocs or [])],
         'created_at': co.created_at.isoformat() if co.created_at else None,
     }
 
