@@ -89,6 +89,94 @@ SCHEDULE_IMPACT_OPTIONS = {
 }
 
 
+def _sqlite_has_global_number_unique(engine):
+    from sqlalchemy import text
+
+    with engine.connect() as conn:
+        rows = conn.execute(text("PRAGMA index_list('change_order')")).fetchall()
+        for row in rows:
+            if not row[2]:
+                continue
+            name = row[1]
+            cols = conn.execute(text(f'PRAGMA index_info("{name}")')).fetchall()
+            if [c[2] for c in cols] == ['number']:
+                return True
+    return False
+
+
+def _migrate_change_order_project_number(engine, db):
+    """Replace global unique change_order.number with (project_id, number) scope."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    if 'change_order' not in inspector.get_table_names():
+        return
+
+    if not _sqlite_has_global_number_unique(engine):
+        try:
+            db.session.execute(text(
+                'CREATE UNIQUE INDEX IF NOT EXISTS uq_change_order_project_number '
+                'ON change_order (project_id, number)'
+            ))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+        return
+
+    cols = inspector.get_columns('change_order')
+    col_names = [c['name'] for c in cols]
+
+    def _sqlite_col_def(col):
+        name = col['name']
+        raw = str(col.get('type', '')).upper()
+        if 'INT' in raw:
+            sql_type = 'INTEGER'
+        elif 'FLOAT' in raw or 'REAL' in raw or 'NUMERIC' in raw:
+            sql_type = 'FLOAT'
+        elif 'BOOL' in raw:
+            sql_type = 'INTEGER'
+        elif 'DATETIME' in raw or 'TIMESTAMP' in raw:
+            sql_type = 'DATETIME'
+        elif 'DATE' in raw:
+            sql_type = 'DATE'
+        elif 'TEXT' in raw:
+            sql_type = 'TEXT'
+        else:
+            sql_type = 'VARCHAR(255)'
+        nullable = '' if col.get('nullable', True) else ' NOT NULL'
+        if name == 'id':
+            return 'id INTEGER PRIMARY KEY'
+        if name == 'number':
+            return 'number VARCHAR(30) NOT NULL'
+        return f'{name} {sql_type}{nullable}'
+
+    ddl = ', '.join(_sqlite_col_def(c) for c in cols)
+    col_list = ', '.join(col_names)
+    try:
+        db.session.execute(text('PRAGMA foreign_keys=OFF'))
+        db.session.execute(text('DROP TABLE IF EXISTS change_order__new'))
+        db.session.execute(text(f'CREATE TABLE change_order__new ({ddl})'))
+        db.session.execute(text(
+            f'INSERT INTO change_order__new ({col_list}) SELECT {col_list} FROM change_order'
+        ))
+        db.session.execute(text('DROP TABLE change_order'))
+        db.session.execute(text('ALTER TABLE change_order__new RENAME TO change_order'))
+        db.session.execute(text(
+            'CREATE UNIQUE INDEX IF NOT EXISTS uq_change_order_project_number '
+            'ON change_order (project_id, number)'
+        ))
+        db.session.execute(text('PRAGMA foreign_keys=ON'))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(text('PRAGMA foreign_keys=ON'))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+        raise
+
+
 def ensure_co_schema(engine, db):
     from sqlalchemy import inspect, text
 
@@ -125,6 +213,7 @@ def ensure_co_schema(engine, db):
             if name not in cols:
                 db.session.execute(text(f'ALTER TABLE change_order ADD COLUMN {name} {col_type}'))
         db.session.commit()
+        _migrate_change_order_project_number(engine, db)
 
     if 'change_order_allocation' in tables:
         cols = {c['name'] for c in inspector.get_columns('change_order_allocation')}
@@ -547,7 +636,7 @@ def promote_pco_to_co(
 
     co = ChangeOrder(
         project_id=pco.project_id,
-        number=generate_number_fn('CO', ChangeOrder),
+        number=generate_number_fn('CO', ChangeOrder, doc_type='change_order', project_id=pco.project_id),
         title=pco.title,
         description=pco.description or pco.title or 'Change Order from PCO',
         amount=total,

@@ -984,7 +984,10 @@ class DrawingMarkup(db.Model):
 class ChangeOrder(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     project_id = db.Column(db.Integer, db.ForeignKey('project.id'))
-    number = db.Column(db.String(30), unique=True)
+    number = db.Column(db.String(30), nullable=False)
+    __table_args__ = (
+        db.UniqueConstraint('project_id', 'number', name='uq_change_order_project_number'),
+    )
     description = db.Column(db.Text, nullable=False)
     amount = db.Column(db.Float)
     reason = db.Column(db.String(200))
@@ -4282,7 +4285,7 @@ def create_change_order():
             flash('Description and Project are required.', 'error')
             return redirect_with_project('change_orders_page')
 
-        number = generate_next_number('CO', ChangeOrder, doc_type='change_order')
+        number = generate_next_number('CO', ChangeOrder, doc_type='change_order', project_id=fields.get('project_id'))
         co = ChangeOrder(
             number=number,
             created_by_id=current_user.id,
@@ -14282,7 +14285,7 @@ def api_create_change_order():
         if is_sub:
             number = generate_next_number('SCO', ChangeOrder, doc_type='sub_change_order', project_id=int(project_id))
         else:
-            number = generate_next_number('CO', ChangeOrder, doc_type='change_order')
+            number = generate_next_number('CO', ChangeOrder, doc_type='change_order', project_id=int(project_id))
         co = ChangeOrder(
             project_id=int(project_id),
             number=number,
