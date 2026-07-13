@@ -104,7 +104,7 @@ SECURITY_DEFAULTS = {
     'trust_x_forwarded_proto': False,
     'hsts_max_age': 0,
     'allowed_hosts': '',
-    'enforce_project_membership': False,
+    'enforce_project_membership': True,
     'require_2fa_for_admins': False,
     'session_cookie_hours': 12,
 }

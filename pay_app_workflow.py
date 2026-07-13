@@ -153,13 +153,6 @@ def _billing_amount_from_sov_state(state):
         total_retainage += (contract_completed + co_completed) * retainage_rate
     if total_current > 0:
         return round(total_current - total_retainage, 2)
-    period = state.get('currentPayAppPeriod') or {}
-    for key in ('amountDue', 'amount_due', 'paymentDue', 'payment_due'):
-        if period.get(key) is not None:
-            try:
-                return float(period.get(key) or 0)
-            except (TypeError, ValueError):
-                pass
     return 0.0
 
 
@@ -290,19 +283,25 @@ def validate_sub_pay_app_lien_waiver(state, company_key, body=None):
         raise ValueError('Lien waiver is required before this subcontractor pay application can proceed')
 
 
-def g702_workflow_action(period, action, user, amount=0):
+def g702_workflow_action(period, action, user, amount=0, cumulative_amount=0):
+    from financial_security import effective_threshold_amount, OWNER_THRESHOLD as THRESHOLD
     action = (action or '').lower()
+    threshold_total = effective_threshold_amount(amount, cumulative_amount)
     if action == 'submit':
         if (period.get('status') or 'Draft') != 'Draft':
             raise ValueError('Only draft pay applications can be submitted')
+        if user.role not in (
+            'Project Manager', 'Admin', 'Developer', 'Contractor Accounting', 'Company User',
+        ):
+            raise ValueError('Only Project Manager or authorized staff can submit G702 pay applications')
         period['status'] = 'Submitted'
         period['submitted_at'] = datetime.utcnow().isoformat() + 'Z'
         period['ball_in_court_role'] = G702_BALL_IN_COURT['Submitted']
         return period['status'], False
     if action == 'reject':
+        from financial_security import workflow_reject_authorized
         role = period.get('ball_in_court_role') or 'Project Manager'
-        if not user_can_act_on_ball_in_court(user, role) and user.role not in ('Admin', 'Developer'):
-            raise ValueError(f'Cannot reject while ball is with {role}')
+        workflow_reject_authorized(user, role, user_can_act_fn=user_can_act_on_ball_in_court)
         period['status'] = 'Draft'
         period['ball_in_court_role'] = G702_BALL_IN_COURT['Draft']
         period.pop('submitted_at', None)
@@ -315,9 +314,9 @@ def g702_workflow_action(period, action, user, amount=0):
         for step in G702_APPROVAL_CHAIN:
             if step['from_status'] == status and step['role'] == role:
                 next_status = step['next_status']
-                if next_status == 'Pending Owner' and amount < OWNER_CO_APPROVAL_THRESHOLD:
+                if next_status == 'Pending Owner' and threshold_total < THRESHOLD:
                     next_status = 'Pending Accounting'
-                if next_status == 'Pending Accounting' and amount < OWNER_CO_APPROVAL_THRESHOLD:
+                if next_status == 'Pending Accounting' and threshold_total < THRESHOLD:
                     next_status = 'Approved'
                 period['status'] = next_status
                 period['ball_in_court_role'] = G702_BALL_IN_COURT.get(next_status)
@@ -349,6 +348,8 @@ def sub_sov_workflow_action(state, company_key, action, user):
     if action == 'submit':
         if status not in ('Draft', 'Rejected'):
             raise ValueError('Sub SOV can only be submitted from Draft or Rejected')
+        if user.role not in ('Subcontractor Accountant', 'Subcontractor', 'Project Manager', 'Admin', 'Developer'):
+            raise ValueError('Only subcontractor or Project Manager can submit sub SOV')
         entry['status'] = 'Pending Approval'
         entry['ball_in_court_role'] = SUB_SOV_BALL['Pending Approval']
         entry['submitted_at'] = datetime.utcnow().isoformat() + 'Z'
@@ -388,6 +389,8 @@ def sub_pay_app_workflow_action(state, company_key, action, user, body=None):
 
     if action == 'submit':
         validate_sub_pay_app_lien_waiver(state, company_key, body)
+        if user.role not in ('Subcontractor Accountant', 'Subcontractor', 'Project Manager', 'Admin', 'Developer'):
+            raise ValueError('Only subcontractor or Project Manager can submit sub pay applications')
         if not pending and not body.get('pending_entry'):
             raise ValueError('No pending sub pay app submission found')
         if body.get('pending_entry'):
@@ -575,8 +578,16 @@ def process_pay_app_workflow(
             validate_g702_submit_gates(state)
         amount = _g702_amount_from_state(state, body)
         threshold_amount = _g702_threshold_amount(state)
+        cumulative = 0.0
+        if action == 'approve' and PayAppProjectState is not None:
+            from financial_security import cumulative_g702_approved_this_month
+            cumulative = cumulative_g702_approved_this_month(
+                project_id, PayAppProjectState, exclude_period=period.get('periodNumber'),
+            )
         new_status, final_approved = g702_workflow_action(
-            period, action, user, amount=threshold_amount if action == 'approve' else amount,
+            period, action, user,
+            amount=threshold_amount,
+            cumulative_amount=cumulative if action == 'approve' else 0,
         )
         state['currentPayAppPeriod'] = period
         append_pay_app_approval_history(
@@ -607,8 +618,10 @@ def process_pay_app_workflow(
                 entity_type='g702', entity_key=entity_id, User=User,
             )
         elif action == 'approve' and final_approved:
-            if body.get('state_patch') and isinstance(body['state_patch'], dict):
-                for k, v in body['state_patch'].items():
+            from financial_security import allowed_g702_state_patch
+            patch = allowed_g702_state_patch(body.get('state_patch'))
+            if patch:
+                for k, v in patch.items():
                     state[k] = v
             sage_result = run_pay_app_accounting_sync(
                 project_id, user.id,

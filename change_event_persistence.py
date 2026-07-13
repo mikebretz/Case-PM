@@ -335,9 +335,11 @@ def sage_event_to_dict(event):
 
 
 def apply_change_event_fields(ce, data):
-    for field in ('title', 'description', 'reason', 'priority', 'notes', 'drawing_revision', 'drawing_sheet_id', 'ball_in_court_role', 'status'):
+    for field in ('title', 'description', 'reason', 'priority', 'notes', 'drawing_revision', 'drawing_sheet_id'):
         if data.get(field) is not None:
             setattr(ce, field, data[field])
+    if data.get('status') is not None or data.get('ball_in_court_role') is not None:
+        pass  # workflow only
     if data.get('rom_amount') is not None:
         ce.rom_amount = float(data['rom_amount'])
     if data.get('schedule_impact_days') is not None:
@@ -350,9 +352,11 @@ def apply_change_event_fields(ce, data):
 
 def apply_rfq_fields(rfq, data):
     for field in ('title', 'description', 'company_name', 'company_id', 'linked_commitment_ref',
-                  'quote_notes', 'quoted_by', 'ball_in_court_role', 'status'):
+                  'quote_notes', 'quoted_by'):
         if data.get(field) is not None:
             setattr(rfq, field, data[field])
+    if data.get('status') is not None or data.get('ball_in_court_role') is not None:
+        pass  # workflow only
     if data.get('change_event_id') is not None:
         rfq.change_event_id = int(data['change_event_id']) if data['change_event_id'] else None
     if data.get('quoted_amount') is not None:
@@ -365,9 +369,11 @@ def apply_rfq_fields(rfq, data):
 
 
 def apply_cor_fields(cor, data):
-    for field in ('title', 'description', 'reason', 'priority', 'notes', 'drawing_revision', 'ball_in_court_role', 'status'):
+    for field in ('title', 'description', 'reason', 'priority', 'notes', 'drawing_revision'):
         if data.get(field) is not None:
             setattr(cor, field, data[field])
+    if data.get('status') is not None or data.get('ball_in_court_role') is not None:
+        pass  # workflow only
     if data.get('amount') is not None:
         cor.amount = float(data['amount'])
     if data.get('schedule_impact_days') is not None:
@@ -451,6 +457,8 @@ def change_event_workflow_action(ce, action, user):
         ce.ball_in_court_role = CHANGE_EVENT_BALL.get('Pricing')
         return ce.status, False
     if action == 'reject':
+        from financial_security import workflow_reject_authorized
+        workflow_reject_authorized(user, ce.ball_in_court_role, user_can_act_fn=user_can_act_on_ball_in_court)
         ce.status = 'Void'
         ce.ball_in_court_role = None
         return ce.status, False
@@ -470,8 +478,15 @@ def change_event_workflow_action(ce, action, user):
     raise ValueError('action must be submit, approve, or reject')
 
 
-def cor_workflow_action(cor, action, user):
+def cor_workflow_action(cor, action, user, body=None, ChangeOrderRequest=None, CORAllocation=None):
     from co_persistence import user_can_act_on_ball_in_court, OWNER_CO_APPROVAL_THRESHOLD
+    from financial_security import (
+        authoritative_cor_amount,
+        cumulative_approved_cor_amount,
+        effective_threshold_amount,
+        workflow_reject_authorized,
+        OWNER_THRESHOLD,
+    )
     action = (action or '').lower()
     if action == 'submit':
         if cor.status != 'Draft':
@@ -480,6 +495,7 @@ def cor_workflow_action(cor, action, user):
         cor.ball_in_court_role = 'Project Manager'
         return cor.status, False
     if action == 'reject':
+        workflow_reject_authorized(user, cor.ball_in_court_role, user_can_act_fn=user_can_act_on_ball_in_court)
         cor.status = 'Rejected'
         cor.ball_in_court_role = None
         return cor.status, False
@@ -487,13 +503,23 @@ def cor_workflow_action(cor, action, user):
         role = cor.ball_in_court_role or 'Project Manager'
         if not user_can_act_on_ball_in_court(user, role):
             raise ValueError(f'Cannot approve while ball is with {role}')
+        if role == 'Owner':
+            body = body or {}
+            if not body.get('signature_attestation'):
+                raise ValueError('Electronic signature attestation is required for Owner COR approvals.')
+            from user_signature_persistence import verify_user_signature_attestation
+            verify_user_signature_attestation(user, (body.get('signature_hash') or '').strip())
         for step in COR_APPROVAL_CHAIN:
             if step['from_status'] == cor.status and step['role'] == role:
                 next_status = step['next_status']
-                amount = float(cor.amount or 0)
-                if next_status == 'Pending Owner' and amount < OWNER_CO_APPROVAL_THRESHOLD:
+                base = authoritative_cor_amount(cor, CORAllocation=CORAllocation)
+                cumulative = cumulative_approved_cor_amount(
+                    cor.project_id, ChangeOrderRequest, exclude_cor_id=getattr(cor, 'id', None),
+                ) if ChangeOrderRequest else 0.0
+                amount = effective_threshold_amount(base, cumulative)
+                if next_status == 'Pending Owner' and amount < OWNER_THRESHOLD:
                     next_status = 'Pending Accounting'
-                if next_status == 'Pending Accounting' and amount < OWNER_CO_APPROVAL_THRESHOLD:
+                if next_status == 'Pending Accounting' and amount < OWNER_THRESHOLD:
                     next_status = 'Approved'
                 cor.status = next_status
                 cor.approval_stage = (getattr(cor, 'approval_stage', 0) or 0) + 1

@@ -337,11 +337,20 @@ def register_change_event_routes(app, deps):
     def api_cor_workflow(cor_id):
         from change_event_persistence import cor_workflow_action, cor_to_dict, promote_cor_to_pco, link_change_event_schedule_impact
         from sage_service import create_and_process_sage_event
+        from financial_security import require_financial_project_access
         cor = ChangeOrderRequest.query.get_or_404(cor_id)
+        try:
+            require_financial_project_access(current_user, cor.project_id, Project)
+        except (ValueError, PermissionError) as exc:
+            return deps['jsonify']({'error': str(exc)}), 403
         body = deps['request'].get_json(silent=True) or {}
         action = body.get('action')
         try:
-            new_status, final = cor_workflow_action(cor, action, current_user)
+            new_status, final = cor_workflow_action(
+                cor, action, current_user, body=body,
+                ChangeOrderRequest=ChangeOrderRequest,
+                CORAllocation=CORAllocation,
+            )
         except ValueError as exc:
             return deps['jsonify']({'error': str(exc)}), 400
         pco = None
@@ -411,6 +420,11 @@ def register_change_event_routes(app, deps):
     @login_required
     def api_sage_accounting_review(event_id):
         from change_event_persistence import accept_sage_event_for_export, reject_sage_event, sage_event_to_dict
+        from financial_security import require_accounting_role
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return deps['jsonify']({'error': str(exc)}), 403
         event = SageSyncEvent.query.get_or_404(event_id)
         body = deps['request'].get_json(silent=True) or {}
         action = (body.get('action') or '').lower()

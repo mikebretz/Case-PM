@@ -4310,80 +4310,10 @@ def create_change_order():
 @app.route('/change-orders/<int:co_id>/update-status', methods=['POST'])
 @login_required
 def update_change_order_status(co_id):
-    co = ChangeOrder.query.get_or_404(co_id)
-    data = request.get_json(silent=True) or {}
-    new_status = data.get('status') or request.form.get('status')
-    if not new_status:
-        return jsonify({'success': False, 'message': 'No status provided'}), 400
-
-    old_status = co.status
-    co.status = new_status
-    from co_persistence import BALL_IN_COURT_MAP
-    co.ball_in_court_role = BALL_IN_COURT_MAP.get(new_status, co.ball_in_court_role)
-    if new_status == 'Submitted' and not co.submitted_at:
-        co.submitted_at = datetime.utcnow()
-
-    write_audit(
-        'Updated Change Order Status',
-        f"CO {co.number or co.id}: '{old_status}' → '{new_status}'",
-        module='change_orders',
-        category='approve' if new_status == 'Approved' else ('reject' if new_status == 'Rejected' else 'update'),
-        change_order_id=co.id,
-        target_type='ChangeOrder',
-        target_id=co.id,
-        entity_ref=co.number or f'CO-{co.id}',
-        project_id=co.project_id,
-        severity='warning' if new_status == 'Rejected' else 'info',
-    )
-
-    if new_status in ('Submitted', 'Under Review'):
-        try:
-            from case_workflow import create_approval
-            create_approval(
-                project_id=co.project_id,
-                module='Change Orders',
-                entity_type='ChangeOrder',
-                entity_id=co.id,
-                title=f'Change Order {co.number or co.id} requires approval',
-                description=co.description or '',
-                action_url=f'/change-orders?project_id={co.project_id}&open=1&respond=1&co_id={co.id}',
-                payload={'amount': co.amount, 'status': new_status},
-            )
-        except Exception:
-            pass
-
-    sync_result = None
-    budget_sync_result = None
-    if new_status == 'Approved' and old_status != 'Approved':
-        co.approved_at = datetime.utcnow()
-        co.approved_by_id = current_user.id
-
-    from co_persistence import run_change_order_accounting_sync
-    accounting = run_change_order_accounting_sync(
-        co, old_status, new_status, current_user.id,
-        ChangeOrder=ChangeOrder,
-        ChangeOrderAllocation=ChangeOrderAllocation,
-        PayAppProjectState=PayAppProjectState,
-        ScheduleData=ScheduleData,
-        Project=Project,
-        BudgetProjectState=BudgetProjectState,
-        db=db,
-        Commitment=Commitment,
-        CommitmentAllocation=CommitmentAllocation,
-        SageSyncEvent=SageSyncEvent,
-        queue_sage_event=(new_status == 'Approved' and old_status != 'Approved'),
-    )
-    sync_result = accounting.get('sync_result')
-    budget_sync_result = accounting.get('budget_sync_result')
-
-    db.session.commit()
     return jsonify({
-        'success': True,
-        'new_status': new_status,
-        'sov_synced': new_status == 'Approved' and sync_result and not sync_result.get('error'),
-        'sync_result': sync_result,
-        'budget_sync_result': budget_sync_result,
-    })
+        'success': False,
+        'message': 'This endpoint is disabled. Use POST /api/change-orders/<id>/workflow instead.',
+    }), 410
 
 
 # ==================== SUBMITTAL ROUTES ====================
@@ -10658,14 +10588,17 @@ def api_get_commitment(commitment_id):
 @login_required
 def api_create_commitment():
     from commitment_persistence import apply_commitment_fields, commitment_to_dict, save_allocations, validate_budget_headroom
+    from financial_security import require_financial_project_access, assert_draft_create_status, strip_workflow_fields
     try:
-        body = request.get_json(silent=True) or {}
+        body = strip_workflow_fields(request.get_json(silent=True) or {})
         project_id = body.get('project_id') or get_current_project_id()
         if not project_id:
             return jsonify({'error': 'project_id required'}), 400
+        project_id = require_financial_project_access(current_user, project_id, Project)
         description = (body.get('description') or body.get('title') or '').strip()
         if not description:
             return jsonify({'error': 'description required'}), 400
+        assert_draft_create_status(body.get('status') or 'Draft', entity_label='Commitment')
         ctype = body.get('commitment_type') or 'Purchase Order'
         number = body.get('number') or generate_commitment_number(ctype, project_id)
         c = Commitment(
@@ -10673,7 +10606,7 @@ def api_create_commitment():
             number=number,
             description=description,
             commitment_type=ctype,
-            status=body.get('status') or 'Draft',
+            status='Draft',
             date=_parse_commitment_date(body.get('date')),
             ball_in_court_role='Creator',
             created_by_id=current_user.id,
@@ -10699,8 +10632,14 @@ def api_create_commitment():
 @login_required
 def api_update_commitment(commitment_id):
     from commitment_persistence import apply_commitment_fields, commitment_to_dict, save_allocations, validate_budget_headroom
+    from financial_security import require_financial_project_access, assert_mutable_commitment, strip_workflow_fields
     c = Commitment.query.get_or_404(commitment_id)
-    body = request.get_json(silent=True) or {}
+    try:
+        require_financial_project_access(current_user, c.project_id, Project)
+        assert_mutable_commitment(c, developer_unlock=_developer_unlock_bypass())
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403 if isinstance(exc, PermissionError) else 400
+    body = strip_workflow_fields(request.get_json(silent=True) or {})
     old_type = c.commitment_type
     apply_commitment_fields(c, body)
     new_type = body.get('commitment_type') or c.commitment_type
@@ -10759,7 +10698,9 @@ def api_commitment_workflow(commitment_id):
     body = request.get_json(silent=True) or {}
     action = body.get('action')
     try:
-        new_status, final_approved = commitment_workflow_action(c, action, current_user, body=body)
+        new_status, final_approved = commitment_workflow_action(
+            c, action, current_user, body=body, CommitmentAllocation=CommitmentAllocation,
+        )
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
 
@@ -13827,19 +13768,23 @@ def api_get_budget_state():
 @app.route('/api/budget/state', methods=['PUT'])
 @login_required
 def api_save_budget_state():
-    from budget_persistence import merge_state_patch, save_budget_state as persist_state, get_budget_state as load_state, push_budget_contract_to_project
+    from budget_persistence import save_budget_state as persist_state, get_budget_state as load_state, push_budget_contract_to_project
+    from financial_security import require_financial_project_access, sanitize_budget_state
     body = request.get_json(silent=True) or {}
     project_id = body.get('project_id') or get_current_project_id()
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
-    project_id = int(project_id)
+    try:
+        project_id = require_financial_project_access(current_user, project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     patch = body.get('data') or body.get('patch') or {}
     full_replace = bool(body.get('full_replace'))
     record, existing = load_state(BudgetProjectState, project_id)
     if full_replace:
-        merged = patch
+        merged = sanitize_budget_state({}, patch)
     else:
-        merged = merge_state_patch(existing, patch)
+        merged = sanitize_budget_state(existing, patch)
     record = persist_state(BudgetProjectState, db, project_id, merged, current_user.id)
     project_updated = False
     budget_contract = merged.get('budgetContractAmount')
@@ -14009,19 +13954,23 @@ def api_get_pay_app_state():
 @app.route('/api/pay-applications/state', methods=['PUT'])
 @login_required
 def api_save_pay_app_state():
-    from pay_app_persistence import merge_state_patch, save_pay_app_state as persist_state, get_pay_app_state as load_state
+    from pay_app_persistence import get_pay_app_state as load_state, save_pay_app_state as persist_state
+    from financial_security import require_financial_project_access, sanitize_pay_app_state
     body = request.get_json(silent=True) or {}
     project_id = body.get('project_id') or get_current_project_id()
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
-    project_id = int(project_id)
+    try:
+        project_id = require_financial_project_access(current_user, project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     patch = body.get('data') or body.get('patch') or {}
     full_replace = bool(body.get('full_replace'))
     record, existing = load_state(PayAppProjectState, project_id)
     if full_replace:
-        merged = patch
+        merged = sanitize_pay_app_state(existing, patch)
     else:
-        merged = merge_state_patch(existing, patch)
+        merged = sanitize_pay_app_state(existing, patch)
     record = persist_state(PayAppProjectState, db, project_id, merged, current_user.id)
     reconcile_result = None
     try:
@@ -14051,12 +14000,19 @@ def api_save_pay_app_state():
 @app.route('/api/pay-applications/import-local', methods=['POST'])
 @login_required
 def api_import_pay_app_local():
-    from pay_app_persistence import save_pay_app_state as persist_state
+    from pay_app_persistence import save_pay_app_state as persist_state, get_pay_app_state as load_state
+    from financial_security import require_financial_project_access, sanitize_pay_app_state
     body = request.get_json(silent=True) or {}
     project_id = body.get('project_id') or get_current_project_id()
     data = body.get('data')
     if not project_id or not isinstance(data, dict):
         return jsonify({'error': 'project_id and data required'}), 400
+    try:
+        project_id = require_financial_project_access(current_user, project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    _, existing = load_state(PayAppProjectState, project_id)
+    data = sanitize_pay_app_state(existing, data)
     record = persist_state(PayAppProjectState, db, int(project_id), data, current_user.id)
     return jsonify({'ok': True, 'version': record.version})
 
@@ -14260,18 +14216,21 @@ def api_allocate_change_order(co_id):
 @login_required
 def api_create_change_order():
     from co_persistence import (
-        apply_co_fields, co_to_dict, run_change_order_accounting_sync, save_allocations,
+        apply_co_fields, co_to_dict, save_allocations,
         validate_allocations, is_subcontract_co, compute_co_amount_from_allocations,
     )
+    from financial_security import require_financial_project_access, assert_draft_create_status, strip_workflow_fields
     try:
-        body = request.get_json(silent=True) or {}
+        body = strip_workflow_fields(request.get_json(silent=True) or {})
         project_id = body.get('project_id') or get_current_project_id()
         if not project_id:
             return jsonify({'error': 'project_id required'}), 400
+        project_id = require_financial_project_access(current_user, project_id, Project)
         description = (body.get('description') or body.get('title') or '').strip()
         if not description:
             return jsonify({'error': 'description required'}), 400
-        status = body.get('status') or 'Draft'
+        assert_draft_create_status(body.get('status') or 'Draft', entity_label='Change order')
+        status = 'Draft'
         allocations = body.get('allocations') or []
         sub_co_kind = body.get('sub_co_kind')
         contract_type = (body.get('contract_type') or 'Owner').strip()
@@ -14309,23 +14268,6 @@ def api_create_change_order():
                 co.cost_code = allocations[0].get('cost_code')
         sync_result = None
         budget_sync_result = None
-        if status == 'Approved':
-            co.approved_by_id = current_user.id
-            accounting = run_change_order_accounting_sync(
-                co, 'Draft', status, current_user.id,
-                ChangeOrder=ChangeOrder,
-                ChangeOrderAllocation=ChangeOrderAllocation,
-                PayAppProjectState=PayAppProjectState,
-                ScheduleData=ScheduleData,
-                Project=Project,
-                BudgetProjectState=BudgetProjectState,
-                db=db,
-                Commitment=Commitment,
-                CommitmentAllocation=CommitmentAllocation,
-                SageSyncEvent=SageSyncEvent,
-            )
-            sync_result = accounting.get('sync_result')
-            budget_sync_result = accounting.get('budget_sync_result')
         db.session.commit()
         allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
         return jsonify({
@@ -14346,27 +14288,35 @@ def api_create_change_order():
 @login_required
 def api_update_change_order(co_id):
     from co_persistence import (
-        apply_co_fields, co_to_dict, run_change_order_accounting_sync, save_allocations,
+        apply_co_fields, co_to_dict, save_allocations,
         validate_allocations, compute_co_amount_from_allocations,
     )
     from developer_tools import apply_immutable_co_fields
+    from financial_security import (
+        require_financial_project_access,
+        assert_mutable_change_order,
+        assert_co_allocation_edit_allowed,
+        strip_workflow_fields,
+    )
     co = ChangeOrder.query.get_or_404(co_id)
-    body = request.get_json(silent=True) or {}
-    old_status = co.status
-    sync_result = None
-    budget_sync_result = None
+    try:
+        require_financial_project_access(current_user, co.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    body = strip_workflow_fields(request.get_json(silent=True) or {})
     unlock = _developer_unlock_bypass()
     try:
+        assert_mutable_change_order(co, developer_unlock=unlock)
+        assert_co_allocation_edit_allowed(co, body, developer_unlock=unlock)
         apply_co_fields(co, body)
         if unlock:
             apply_immutable_co_fields(co, body)
             if body.get('executed_locked') is False:
                 co.executed_locked = False
         if body.get('allocations') is not None:
-            status = body.get('status') or co.status
             allocations = body['allocations']
             sub_co_kind = body.get('sub_co_kind') or getattr(co, 'sub_co_kind', None)
-            if status != 'Draft':
+            if co.status != 'Draft':
                 allocations = validate_allocations(
                     allocations, require_rows=True, require_amount=True, sub_co_kind=sub_co_kind,
                 )
@@ -14375,45 +14325,6 @@ def api_update_change_order(co_id):
                 co.amount = compute_co_amount_from_allocations(allocations, sub_co_kind)
                 if len(allocations) == 1:
                     co.cost_code = allocations[0].get('cost_code')
-        new_status = co.status
-        if new_status == 'Approved' and old_status != 'Approved':
-            co.approved_by_id = current_user.id
-        if new_status == 'Approved' or (
-            new_status in ('Submitted', 'Under Review', 'Pending Architect', 'Pending Owner')
-            and old_status not in ('Submitted', 'Under Review', 'Pending Architect', 'Pending Owner')
-        ) or new_status == 'Rejected':
-            accounting = run_change_order_accounting_sync(
-                co, old_status, new_status, current_user.id,
-                ChangeOrder=ChangeOrder,
-                ChangeOrderAllocation=ChangeOrderAllocation,
-                PayAppProjectState=PayAppProjectState,
-                ScheduleData=ScheduleData,
-                Project=Project,
-                BudgetProjectState=BudgetProjectState,
-                db=db,
-                Commitment=Commitment,
-                CommitmentAllocation=CommitmentAllocation,
-                SageSyncEvent=SageSyncEvent,
-                queue_sage_event=(new_status == 'Approved' and old_status != 'Approved'),
-            )
-            sync_result = accounting.get('sync_result')
-            budget_sync_result = accounting.get('budget_sync_result')
-        elif new_status == 'Approved' and old_status == 'Approved' and body.get('allocations') is not None:
-            accounting = run_change_order_accounting_sync(
-                co, old_status, new_status, current_user.id,
-                ChangeOrder=ChangeOrder,
-                ChangeOrderAllocation=ChangeOrderAllocation,
-                PayAppProjectState=PayAppProjectState,
-                ScheduleData=ScheduleData,
-                Project=Project,
-                BudgetProjectState=BudgetProjectState,
-                db=db,
-                Commitment=Commitment,
-                CommitmentAllocation=CommitmentAllocation,
-                SageSyncEvent=SageSyncEvent,
-                queue_sage_event=False,
-            )
-            sync_result = accounting.get('sync_result')
         db.session.commit()
     except ValueError as exc:
         db.session.rollback()
@@ -14422,9 +14333,6 @@ def api_update_change_order(co_id):
     return jsonify({
         'ok': True,
         'change_order': co_to_dict(co, allocs),
-        'sync_result': sync_result,
-        'budget_sync_result': budget_sync_result,
-        'accounting_synced': bool(sync_result or budget_sync_result),
     })
 
 
@@ -14804,41 +14712,9 @@ def api_pco_workflow(pco_id):
 @app.route('/api/pcos/<int:pco_id>/update-status', methods=['POST'])
 @login_required
 def api_update_pco_status(pco_id):
-    from co_persistence import pco_to_dict
-    from sage_service import create_and_process_sage_event
-    pco = PotentialChangeOrder.query.get_or_404(pco_id)
-    body = request.get_json(silent=True) or {}
-    new_status = body.get('status')
-    if not new_status:
-        return jsonify({'error': 'status required'}), 400
-    old_status = pco.status
-    pco.status = new_status
-    if new_status == 'Pending Review':
-        pco.ball_in_court_role = 'Project Manager'
-        try:
-            from case_workflow import create_approval
-            create_approval(
-                project_id=pco.project_id,
-                module='Change Orders',
-                entity_type='PCO',
-                entity_id=pco.id,
-                title=f'PCO {pco.number} — {pco.title}',
-                description=pco.description or '',
-                action_url=f'/change-orders?project_id={pco.project_id}',
-                payload={'estimated_amount': pco.estimated_amount, 'status': new_status, 'type': 'pco'},
-            )
-        except Exception:
-            pass
-        create_and_process_sage_event(
-            SageSyncEvent, Project, db, pco.project_id,
-            'PCOSubmitted',
-            message=f'PCO {pco.number} submitted for review',
-            payload={'pco_id': pco.id, 'estimated_amount': pco.estimated_amount},
-            user_id=current_user.id,
-        )
-    db.session.commit()
-    allocs = PCOAllocation.query.filter_by(pco_id=pco.id).all()
-    return jsonify({'ok': True, 'pco': pco_to_dict(pco, allocs), 'old_status': old_status})
+    return jsonify({
+        'error': 'This endpoint is disabled. Use POST /api/pcos/<id>/workflow instead.',
+    }), 410
 
 
 @app.route('/api/pcos/<int:pco_id>/promote', methods=['POST'])

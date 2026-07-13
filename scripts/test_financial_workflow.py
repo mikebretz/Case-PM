@@ -90,6 +90,50 @@ class ReconcileCanonicalKeyTests(unittest.TestCase):
         self.assertEqual(len(merged), 1)
 
 
+class PutBypassTests(unittest.TestCase):
+    def test_strip_workflow_fields_removes_status(self):
+        from financial_security import strip_workflow_fields
+        cleaned = strip_workflow_fields({'status': 'Approved', 'title': 'Test'})
+        self.assertNotIn('status', cleaned)
+        self.assertEqual(cleaned['title'], 'Test')
+
+    def test_sanitize_pay_app_blocks_status_spoof(self):
+        from financial_security import sanitize_pay_app_state
+        existing = {
+            'currentPayAppPeriod': {'periodNumber': 1, 'status': 'Draft', 'ball_in_court_role': 'Creator'},
+            'subSOVStatus': {'101': {'status': 'Draft'}},
+        }
+        patch = {
+            'currentPayAppPeriod': {'periodNumber': 1, 'status': 'Approved', 'ball_in_court_role': None},
+            'subSOVStatus': {'101': {'status': 'Approved'}},
+        }
+        merged = sanitize_pay_app_state(existing, patch)
+        self.assertEqual(merged['currentPayAppPeriod']['status'], 'Draft')
+        self.assertEqual(merged['subSOVStatus']['101']['status'], 'Draft')
+
+    def test_sanitize_pay_app_strips_amount_due(self):
+        from financial_security import sanitize_pay_app_state
+        merged = sanitize_pay_app_state(
+            {'currentPayAppPeriod': {'periodNumber': 1, 'status': 'Draft'}},
+            {'currentPayAppPeriod': {'periodNumber': 1, 'amount_due': 1000}},
+        )
+        self.assertNotIn('amount_due', merged['currentPayAppPeriod'])
+
+    def test_apply_co_fields_ignores_status(self):
+        import app as app_module
+        from app import ChangeOrder, db
+        from co_persistence import apply_co_fields
+        with app_module.app.app_context():
+            co = ChangeOrder(project_id=1, number='T-1', description='t', status='Draft')
+            apply_co_fields(co, {'status': 'Approved', 'ball_in_court_role': None})
+            self.assertEqual(co.status, 'Draft')
+
+    def test_assert_draft_create_status_blocks_approved(self):
+        from financial_security import assert_draft_create_status
+        with self.assertRaises(ValueError):
+            assert_draft_create_status('Approved')
+
+
 class ChangeOrderNumberScopeTests(unittest.TestCase):
     def test_same_co_number_allowed_on_different_projects(self):
         import app as app_module

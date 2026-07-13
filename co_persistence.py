@@ -457,7 +457,8 @@ def apply_co_fields(co, data):
     if data.get('description') is not None:
         co.description = data['description']
     if data.get('amount') is not None:
-        co.amount = float(data['amount'])
+        if co.status in ('Draft', 'Rejected'):
+            co.amount = float(data['amount'])
     if data.get('reason') is not None:
         co.reason = data['reason']
     if data.get('priority') is not None:
@@ -469,7 +470,7 @@ def apply_co_fields(co, data):
     if data.get('requested_by') is not None:
         co.requested_by = data['requested_by']
     if data.get('status') is not None:
-        co.status = data['status']
+        pass  # status changes only via /workflow
     if data.get('revision') is not None:
         co.revision = int(data['revision'])
     if data.get('company_name') is not None:
@@ -493,7 +494,7 @@ def apply_co_fields(co, data):
         co.schedule_impact = data['schedule_impact']
         co.schedule_impact_days = schedule_impact_to_days(data['schedule_impact'])
     if data.get('ball_in_court_role') is not None:
-        co.ball_in_court_role = data['ball_in_court_role']
+        pass  # ball-in-court only via /workflow
     if data.get('attachments') is not None:
         co.attachments_json = json.dumps(data['attachments'])
     if data.get('linked_rfi_id') is not None:
@@ -518,16 +519,18 @@ def apply_co_fields(co, data):
 
 def apply_pco_fields(pco, data):
     for field in ('title', 'description', 'reason', 'priority', 'notes', 'cost_code', 'requested_by',
-                  'company_name', 'company_id', 'contact_name', 'contact_email', 'contact_phone', 'ball_in_court_role',
+                  'company_name', 'company_id', 'contact_name', 'contact_email', 'contact_phone',
                   'linked_commitment_ref'):
         if data.get(field) is not None:
             setattr(pco, field, data[field])
+    if data.get('ball_in_court_role') is not None:
+        pass  # workflow only
     if data.get('linked_rfi_id') is not None:
         pco.linked_rfi_id = int(data['linked_rfi_id']) if data['linked_rfi_id'] else None
     if data.get('estimated_amount') is not None:
         pco.estimated_amount = float(data['estimated_amount'])
     if data.get('status') is not None:
-        pco.status = data['status']
+        pass  # status only via /workflow
     if data.get('schedule_impact_days') is not None:
         pco.schedule_impact_days = int(data['schedule_impact_days'])
 
@@ -621,8 +624,8 @@ def promote_pco_to_co(
         raise ValueError('PCO not found')
     if pco.change_order_id:
         raise ValueError('PCO already promoted')
-    if pco.status not in ('Approved for CO', 'Pending Review', 'Pricing', 'Open'):
-        pass  # allow promote from most states
+    if pco.status not in ('Approved for CO',):
+        raise ValueError('PCO must be Approved for CO before promotion')
 
     allocs = PCOAllocation.query.filter_by(pco_id=pco.id).all()
     total = sum(a.amount for a in allocs) if allocs else (pco.estimated_amount or 0)
@@ -799,14 +802,24 @@ def get_next_pco_approval_step(current_status):
     return None
 
 
-def _resolve_co_next_status(co, default_next):
-    """Skip Owner approval for owner COs below threshold (Procore-style)."""
+def _resolve_co_next_status(co, default_next, ChangeOrder=None, ChangeOrderAllocation=None):
+    """Skip Owner approval for owner COs below threshold (per-transaction + monthly cumulative)."""
     if is_subcontract_co(co):
         return default_next
-    amount = float(co.amount or 0)
-    if default_next == 'Pending Owner' and amount < OWNER_CO_APPROVAL_THRESHOLD:
+    from financial_security import (
+        authoritative_co_amount,
+        cumulative_approved_owner_co_amount,
+        effective_threshold_amount,
+        OWNER_THRESHOLD,
+    )
+    base = authoritative_co_amount(co, ChangeOrderAllocation=ChangeOrderAllocation)
+    cumulative = cumulative_approved_owner_co_amount(
+        co.project_id, ChangeOrder, exclude_co_id=getattr(co, 'id', None),
+    ) if ChangeOrder and co.project_id else 0.0
+    amount = effective_threshold_amount(base, cumulative)
+    if default_next == 'Pending Owner' and amount < OWNER_THRESHOLD:
         return 'Pending Accounting'
-    if default_next == 'Pending Accounting' and amount < OWNER_CO_APPROVAL_THRESHOLD:
+    if default_next == 'Pending Accounting' and amount < OWNER_THRESHOLD:
         return 'Approved'
     return default_next
 
@@ -869,7 +882,7 @@ def append_approval_history(co, action, user, comment='', status_from='', status
         co.notes = f'{prefix}\n{co.notes}'.strip() if co.notes else prefix
 
 
-def co_workflow_action(co, action, user, User, allocations=None):
+def co_workflow_action(co, action, user, User, allocations=None, ChangeOrder=None, ChangeOrderAllocation=None):
     action = (action or '').lower()
     sub_kind = getattr(co, 'sub_co_kind', None)
     if action in ('submit', 'approve'):
@@ -888,12 +901,18 @@ def co_workflow_action(co, action, user, User, allocations=None):
     if action == 'submit':
         if co.status not in ('Draft',):
             raise ValueError('Only draft change orders can be submitted')
+        if not user_can_act_on_ball_in_court(user, 'Creator') and user.role not in (
+            'Project Manager', 'Admin', 'Developer', 'Company User',
+        ):
+            raise ValueError('Only the creator or Project Manager can submit this change order')
         co.status = 'Submitted'
         co.approval_stage = 0
         set_ball_in_court(co)
         return co.status, False
 
     if action == 'reject':
+        from financial_security import workflow_reject_authorized
+        workflow_reject_authorized(user, co.ball_in_court_role, user_can_act_fn=user_can_act_on_ball_in_court)
         co.status = 'Rejected'
         co.ball_in_court_role = None
         return co.status, False
@@ -905,7 +924,11 @@ def co_workflow_action(co, action, user, User, allocations=None):
         step = get_next_approval_step(co.status, co)
         if not step:
             raise ValueError('No approval step for current status')
-        next_status = _resolve_co_next_status(co, step['next_status'])
+        next_status = _resolve_co_next_status(
+            co, step['next_status'],
+            ChangeOrder=ChangeOrder,
+            ChangeOrderAllocation=ChangeOrderAllocation,
+        )
         co.status = next_status
         co.approval_stage = (co.approval_stage or 0) + 1
         set_ball_in_court(co)
@@ -951,6 +974,8 @@ def pco_workflow_action(pco, action, user, User, allocations=None):
         set_pco_ball_in_court(pco)
         return pco.status, False
     if action == 'reject':
+        from financial_security import workflow_reject_authorized
+        workflow_reject_authorized(user, pco.ball_in_court_role or 'Project Manager', user_can_act_fn=user_can_act_on_ball_in_court)
         pco.status = 'Void'
         pco.ball_in_court_role = None
         return pco.status, False
@@ -1357,7 +1382,11 @@ def process_change_order_workflow(
         from user_signature_persistence import verify_user_signature_attestation
         verify_user_signature_attestation(user, (body.get('signature_hash') or '').strip())
 
-    new_status, final_approved = co_workflow_action(co, action, user, User, alloc_payload)
+    new_status, final_approved = co_workflow_action(
+        co, action, user, User, alloc_payload,
+        ChangeOrder=ChangeOrder,
+        ChangeOrderAllocation=ChangeOrderAllocation,
+    )
     append_approval_history(co, action, user, comments, old_status, new_status)
 
     if action == 'approve' and old_ball_role in ('Owner', 'Architect'):

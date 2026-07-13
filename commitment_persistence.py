@@ -207,16 +207,23 @@ def commitment_to_dict(commitment, allocations=None):
 
 
 def apply_commitment_fields(commitment, data):
+    workflow_blocked = {
+        'status', 'ball_in_court_role', 'invoiced_amount', 'budget_validated',
+        'signature_status', 'docusign_status', 'sage_sync_status',
+    }
     for field in (
-        'title', 'description', 'commitment_type', 'status', 'notes', 'company_name', 'company_id',
+        'title', 'description', 'commitment_type', 'notes', 'company_name', 'company_id',
         'contact_name', 'contact_email', 'contact_phone', 'aia_form', 'payment_terms', 'scope_of_work',
-        'ball_in_court_role', 'signature_method', 'signature_status', 'docusign_envelope_id',
-        'docusign_status', 'signed_document_url', 'sage_sync_status', 'billing_type',
+        'signature_method', 'docusign_envelope_id',
+        'signed_document_url', 'billing_type',
         'insurance_requirements', 'owner_name', 'contractor_name', 'architect_engineer', 'freight_terms',
         'external_document_provider', 'external_document_id', 'external_document_url', 'catina_project_id',
     ):
         if data.get(field) is not None:
             setattr(commitment, field, data[field])
+    for blocked in workflow_blocked:
+        if data.get(blocked) is not None:
+            pass  # workflow / reconcile only
     if data.get('original_amount') is not None:
         commitment.original_amount = float(data['original_amount'])
     if data.get('approved_changes') is not None:
@@ -228,9 +235,9 @@ def apply_commitment_fields(commitment, data):
     if data.get('retainage_percent') is not None:
         commitment.retainage_percent = float(data['retainage_percent'])
     if data.get('invoiced_amount') is not None:
-        commitment.invoiced_amount = float(data['invoiced_amount'])
+        pass  # reconcile only
     if data.get('budget_validated') is not None:
-        commitment.budget_validated = bool(data['budget_validated'])
+        pass  # workflow only
     if data.get('date') is not None:
         commitment.date = _parse_date(data['date'])
     if data.get('executed_date') is not None:
@@ -315,16 +322,22 @@ def get_next_approval_step(commitment):
     return None
 
 
-def _resolve_next_status(commitment, default_next):
-    amount = float(commitment.current_amount or commitment.original_amount or 0)
-    if default_next == 'Pending Owner' and amount < OWNER_APPROVAL_THRESHOLD:
+def _resolve_next_status(commitment, default_next, CommitmentAllocation=None):
+    from financial_security import (
+        authoritative_commitment_amount,
+        effective_threshold_amount,
+        OWNER_THRESHOLD,
+    )
+    base = authoritative_commitment_amount(commitment, CommitmentAllocation=CommitmentAllocation)
+    amount = effective_threshold_amount(base, 0.0)
+    if default_next == 'Pending Owner' and amount < OWNER_THRESHOLD:
         return 'Approved'
     if default_next == 'Pending Accounting' and commitment.commitment_type == 'Purchase Order' and amount < 25000:
         return 'Approved'
     return default_next
 
 
-def commitment_workflow_action(commitment, action, user, body=None):
+def commitment_workflow_action(commitment, action, user, body=None, CommitmentAllocation=None):
     action = (action or '').lower()
     body = body or {}
     if action == 'submit':
@@ -336,6 +349,8 @@ def commitment_workflow_action(commitment, action, user, body=None):
         return commitment.status, False
 
     if action == 'reject':
+        from financial_security import workflow_reject_authorized
+        workflow_reject_authorized(user, commitment.ball_in_court_role, user_can_act_fn=user_can_act_on_ball_in_court)
         commitment.status = 'Rejected'
         commitment.ball_in_court_role = None
         return commitment.status, False
@@ -347,7 +362,7 @@ def commitment_workflow_action(commitment, action, user, body=None):
         step = get_next_approval_step(commitment)
         if not step:
             raise ValueError('No approval step for current status')
-        next_status = _resolve_next_status(commitment, step['next_status'])
+        next_status = _resolve_next_status(commitment, step['next_status'], CommitmentAllocation=CommitmentAllocation)
         commitment.status = next_status
         commitment.approval_stage = (commitment.approval_stage or 0) + 1
         set_ball_in_court(commitment)
