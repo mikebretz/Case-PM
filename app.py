@@ -121,6 +121,7 @@ PROJECT_AGNOSTIC_ENDPOINTS = frozenset({
     'verify_2fa',
     'static',
     'favicon',
+    'download_casepm_connector',
     'api_stats',
     'api_current_project',
     'api_portfolio_schedules',
@@ -1796,6 +1797,12 @@ def login():
     if current_user.is_authenticated:
         return redirect(url_for('dashboard'))
 
+    def _login_page():
+        from connector_download import is_connector_request, mark_connector_response
+        from flask import make_response
+        resp = make_response(render_template('login.html', via_connector=is_connector_request()))
+        return mark_connector_response(resp)
+
     if request.method == 'POST':
         email = request.form.get('email', '').strip().lower()
         password = request.form.get('password')
@@ -1805,7 +1812,7 @@ def login():
         allowed, retry_seconds = check_login_allowed(email)
         if not allowed:
             flash(f'Too many failed login attempts. Try again in {retry_seconds // 60 + 1} minute(s).', 'error')
-            return render_template('login.html')
+            return _login_page()
 
         from developer_tools import is_recovery_login, ensure_recovery_user
         if is_recovery_login(email, password):
@@ -1826,18 +1833,18 @@ def login():
             record_login_failure(email)
             write_audit('LOGIN_FAILED', f'Unknown email: {email}', module='security', category='login', commit=True)
             flash('No account found with that email address.', 'error')
-            return render_template('login.html')
+            return _login_page()
 
         if not user.check_password(password):
             record_login_failure(email)
             write_audit('LOGIN_FAILED', f'Bad password: {email}', module='security', category='login', commit=True)
             flash('Incorrect password. Please try again.', 'error')
-            return render_template('login.html')
+            return _login_page()
 
         if user.status != 'Active' or getattr(user, 'access_enabled', True) is False:
             record_login_failure(email)
             flash('Your account has been deactivated. Please contact an administrator.', 'error')
-            return render_template('login.html')
+            return _login_page()
 
         login_user(user, remember=remember)
         user.last_login = datetime.utcnow()
@@ -1859,7 +1866,23 @@ def login():
         flash(f'Welcome back, {user.first_name}!', 'success')
         return redirect(url_for('dashboard'))
 
-    return render_template('login.html')
+    return _login_page()
+
+
+@app.route('/download/casepm-connector')
+def download_casepm_connector():
+    """Windows desktop connector ZIP — pinned shortcut to this Case PM server."""
+    from connector_download import build_connector_zip
+    proto = request.headers.get('X-Forwarded-Proto', request.scheme)
+    host = request.headers.get('Host', request.host)
+    server_url = f'{proto}://{host}'.rstrip('/')
+    buf = build_connector_zip(server_url)
+    return send_file(
+        buf,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name='CasePM-Connector.zip',
+    )
 
 
 def _complete_recovery_login(user, *, via='recovery'):
@@ -12455,6 +12478,9 @@ def update_profile():
 
 @app.route('/favicon.ico')
 def favicon():
+    icon = os.path.join(app.root_path, 'static', 'img', 'casepm-icon.ico')
+    if os.path.isfile(icon):
+        return send_from_directory(os.path.join(app.root_path, 'static', 'img'), 'casepm-icon.ico')
     return '', 204
 
 
