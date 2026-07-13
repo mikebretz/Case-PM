@@ -30,8 +30,13 @@
         padding-bottom: 6px !important;
     }
 .companies-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 1rem 1rem 0; overflow: hidden; box-sizing: border-box; }
-    .companies-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; max-width: 1600px; margin: 0 auto; width: 100%; }
+    .companies-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; width: 100%; max-width: none; }
+    #companiesTableWrap { width: 100%; }
+    #companiesTableWrap table { width: 100%; table-layout: auto; }
     #companiesTableWrap thead th { position: sticky; top: 0; z-index: 10; background: #27272a; }
+    #companiesTableWrap .col-bidding { min-width: 7.5rem; width: 7.5rem; white-space: nowrap; }
+    #companiesTableWrap .col-divisions { min-width: 5.5rem; max-width: 10rem; }
+    #companiesTableWrap .bid-badge { display: inline-block; white-space: nowrap; font-size: 11px; padding: 2px 8px; border-radius: 4px; }
 </style>
 
 <div class="companies-page">
@@ -124,9 +129,10 @@
                 <thead class="bg-zinc-800 text-zinc-400">
                     <tr>
                         <th class="px-6 py-4 text-left font-medium">Company Name</th>
-                        <th class="px-4 py-4 text-left font-medium w-32">Type</th>
-                        <th class="px-4 py-4 text-center font-medium w-24">Bidding</th>
-                        <th class="px-6 py-4 text-left font-medium">Primary Contact</th>
+                        <th class="px-4 py-4 text-left font-medium w-28">Type</th>
+                        <th class="px-3 py-4 text-center font-medium col-bidding">Bidding</th>
+                        <th class="px-3 py-4 text-left font-medium col-divisions">Divisions</th>
+                        <th class="px-4 py-4 text-left font-medium">Primary Contact</th>
                         <th class="px-4 py-4 text-left font-medium w-36">Financial Contact</th>
                         <th class="px-4 py-4 text-left font-medium w-28 whitespace-nowrap">Sage #</th>
                         <th class="px-4 py-4 text-left font-medium w-36 whitespace-nowrap">Phone</th>
@@ -807,10 +813,11 @@ function renderCompaniesTable(filteredCompanies = null) {
         let financialContactName = getContactUserName(company, 'financial');
 
         row.innerHTML = `
-            <td class="px-6 py-4 font-medium">${company.company_name}</td>
-            <td class="px-4 py-4 text-zinc-400 w-28">${company.company_type || ''}</td>
-            <td class="px-4 py-4 text-center">${getBiddingBadge(company)}</td>
-            <td class="px-6 py-4 text-zinc-300">${primaryContactName}</td>
+            <td class="px-4 py-3 font-medium">${company.company_name}</td>
+            <td class="px-3 py-3 text-zinc-400">${company.company_type || ''}</td>
+            <td class="px-3 py-3 text-center col-bidding">${getBiddingBadge(company)}</td>
+            <td class="px-3 py-3 col-divisions">${formatCompanyDivisions(company)}</td>
+            <td class="px-4 py-3 text-zinc-300">${primaryContactName}</td>
             <td class="px-4 py-4 text-zinc-300">${financialContactName}</td>
             <td class="px-4 py-4 text-zinc-400 font-mono text-xs">${getSageNumber(company) || '—'}</td>
             <td class="px-4 py-4 text-zinc-400 w-36 whitespace-nowrap">${formatPhoneDisplay(company.primary_phone)}</td>
@@ -850,9 +857,25 @@ function getCOIStatus(cois) {
 function getBiddingBadge(company) {
     const t = company.company_type || company.type || '';
     if (t !== 'Subcontractor' && t !== 'Supplier') return `<span class="text-xs text-zinc-600">—</span>`;
-    if ((company.status || 'Active') !== 'Active') return `<span class="text-xs px-2 py-0.5 rounded bg-zinc-700 text-zinc-400">Inactive</span>`;
-    if (company.actively_bidding === false) return `<span class="text-xs px-2 py-0.5 rounded bg-amber-900/50 text-amber-400">Not bidding</span>`;
-    return `<span class="text-xs px-2 py-0.5 rounded bg-sky-900/50 text-sky-400">Bidding</span>`;
+    if ((company.status || 'Active') !== 'Active') return `<span class="bid-badge bg-zinc-700 text-zinc-400">Inactive</span>`;
+    if (company.actively_bidding === false) return `<span class="bid-badge bg-amber-900/50 text-amber-400">Not bidding</span>`;
+    return `<span class="bid-badge bg-sky-900/50 text-sky-400">Bidding</span>`;
+}
+
+function formatCompanyDivisions(company) {
+    const specs = company.spec_sections || [];
+    if (!specs.length) return '<span class="text-zinc-600">—</span>';
+    const divs = [...new Set(specs.map(s => {
+        const parts = String(s).trim().split(/\s+/);
+        return (parts[0] || '').padStart(2, '0').slice(0, 2);
+    }).filter(Boolean))].sort();
+    const label = divs.join(', ');
+    return `<span class="text-xs font-mono text-zinc-300" title="${escapeHtml(label)}">${escapeHtml(label)}</span>`;
+}
+
+function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 }
 
 function updateSummaryCards() {

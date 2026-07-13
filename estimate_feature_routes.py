@@ -495,6 +495,42 @@ def register_estimate_feature_routes(app, deps):
         db.session.commit()
         return deps['jsonify']({'ok': True, 'updated': updated})
 
+    # --- Spec book sections for worksheet ---
+    @app.route('/api/estimates/spec-book-sections', methods=['GET'])
+    @login_required
+    def api_spec_book_sections():
+        import os
+        from flask import current_app
+        from csi_catalog import CSI_SPEC_SECTIONS, normalize_spec_code
+
+        project_id = deps['request'].args.get('project_id', type=int) or get_current_project_id()
+        if not project_id:
+            return deps['jsonify']({'error': 'project_id required'}), 400
+        upload_root = current_app.config.get('UPLOAD_FOLDER', 'uploads')
+        folder = os.path.join(upload_root, 'spec_books', str(project_id))
+        meta_path = os.path.join(folder, 'meta.json')
+        pdf_path = os.path.join(folder, 'spec_book.pdf')
+        if not os.path.isfile(meta_path) or not os.path.isfile(pdf_path):
+            return deps['jsonify']({'has_spec_book': False, 'sections': [], 'filename': None})
+        try:
+            with open(meta_path, encoding='utf-8') as fh:
+                meta = json.load(fh)
+        except (OSError, json.JSONDecodeError):
+            return deps['jsonify']({'has_spec_book': False, 'sections': [], 'filename': None})
+        section_map = meta.get('contentSectionPageMap') or meta.get('sectionPageMap') or {}
+        csi_titles = {normalize_spec_code(s['code']): s['title'] for s in CSI_SPEC_SECTIONS}
+        sections = []
+        for code in sorted(section_map.keys(), key=lambda c: normalize_spec_code(c)):
+            norm = normalize_spec_code(code)
+            title = csi_titles.get(norm) or code
+            sections.append({'code': code, 'title': title, 'label': f'{code} — {title}'})
+        return deps['jsonify']({
+            'has_spec_book': True,
+            'filename': meta.get('filename'),
+            'page_count': meta.get('pageCount', 0),
+            'sections': sections,
+        })
+
     # --- Takeoff finish templates & live expansion ---
     @app.route('/api/estimates/takeoff-finish-templates', methods=['GET'])
     @login_required
