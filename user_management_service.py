@@ -51,6 +51,7 @@ def filter_users_for_actor(users, actor):
 
 
 def ensure_user_admin_schema(db):
+    from user_extended_prefs import ensure_user_extended_schema
     from sqlalchemy import inspect, text
     inspector = inspect(db.engine)
     if 'user' not in inspector.get_table_names():
@@ -71,6 +72,7 @@ def ensure_user_admin_schema(db):
         if col not in cols:
             db.session.execute(text(f'ALTER TABLE user ADD COLUMN {col} {ddl}'))
     db.session.commit()
+    ensure_user_extended_schema(db)
 
 
 def _portal_for_role(role: str | None) -> str:
@@ -156,6 +158,8 @@ def _apply_extended_profile_fields(user, body: dict) -> None:
         )
     if 'certifications' in body and hasattr(user, 'certifications_json'):
         user.certifications_json = _certifications_to_json(body.get('certifications'))
+    from user_extended_prefs import apply_extended_prefs
+    apply_extended_prefs(user, body)
 
 
 def _parse_phones(user) -> list[dict]:
@@ -185,6 +189,8 @@ def _phones_to_json(phones: list | None) -> str | None:
 
 
 def serialize_user(user, *, include_permissions: bool = False, actor=None) -> dict:
+    from user_extended_prefs import serialize_extended_prefs
+    from user_profile_persistence import profile_image_url
     role = user.role or 'Viewer'
     if actor and not _actor_can_see_developer_users(actor) and role == DEVELOPER_ROLE:
         return None
@@ -222,7 +228,9 @@ def serialize_user(user, *, include_permissions: bool = False, actor=None) -> di
         'portalType': _portal_for_role(role),
         'projectCount': _project_count_for_user(user.id),
         'totpEnabled': bool(getattr(user, 'totp_enabled', False)),
+        'profileImage': profile_image_url(user, admin=True) or '',
     }
+    payload.update(serialize_extended_prefs(user))
     if include_permissions:
         from user_permissions_persistence import get_user_permissions
         payload['permissions'] = get_user_permissions(user)

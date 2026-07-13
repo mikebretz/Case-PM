@@ -28,9 +28,12 @@ def ensure_user_profile_schema(db):
     os.makedirs(PROFILE_IMAGE_DIR, exist_ok=True)
 
 
-def profile_image_url(user):
+def profile_image_url(user, *, admin=False):
     path = getattr(user, 'profile_image_path', None)
     if path and os.path.isfile(path):
+        uid = getattr(user, 'id', None)
+        if admin and uid:
+            return f'/api/users/{uid}/profile-image?v={int(os.path.getmtime(path))}'
         return f'/api/users/me/profile-image?v={int(os.path.getmtime(path))}'
     return None
 
