@@ -744,10 +744,29 @@ const SPEC_BOOK_STORE = 'books';
 const SPEC_BOOK_DB_VERSION = 2;
 
 function getSubmittalProjectId() {
+    const resolved = resolveSubmittalProjectId();
+    return resolved != null ? String(resolved) : '0';
+}
+
+function resolveSubmittalProjectId() {
     const ctx = window.SUBMITTAL_PROJECT_CTX;
-    if (ctx && ctx.id != null && ctx.id !== 'null') return String(ctx.id);
+    if (ctx && ctx.id != null && ctx.id !== 'null') {
+        const fromCtx = parseInt(ctx.id, 10);
+        if (fromCtx > 0) return fromCtx;
+    }
     const stored = localStorage.getItem('casepm_current_project_id');
-    return stored || '0';
+    if (stored) {
+        const fromStorage = parseInt(stored, 10);
+        if (fromStorage > 0) return fromStorage;
+    }
+    return null;
+}
+
+function isLikelyWrongSpecBookFilename(filename) {
+    const name = String(filename || '').toLowerCase();
+    if (!name) return false;
+    if (/\.(xlsx?|csv)$/i.test(name)) return true;
+    return /submittal\s*(log|register|schedule|spreadsheet)|register\.xls/i.test(name);
 }
 
 function getSpecBookStorageId() {
@@ -1258,6 +1277,7 @@ function bindSubmittalDocumentPickers() {
     if (attContainer && window.CasePMDocPicker) {
         window.CasePMDocPicker.addBrowseButton(attContainer, {
             title: 'Attach from Documents',
+            getProjectId: () => resolveSubmittalProjectId(),
             onPick: async (docs, ids) => {
                 if (!currentModalItem) return;
                 let sid = currentModalItem.serverId;
@@ -1281,21 +1301,61 @@ function bindSubmittalDocumentPickers() {
             multiple: false,
             accept: 'pdf',
             className: 'px-4 py-2 text-sm font-medium bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-lg text-zinc-200',
+            getProjectId: () => resolveSubmittalProjectId(),
+            projectRequiredMessage: 'Select a project first, then choose a specifications PDF from Documents.',
             onPick: async (docs) => {
                 const doc = docs[0];
                 if (!doc) return;
-                try {
-                    const res = await fetch(`/api/documents/${doc.id}/download`, { credentials: 'same-origin' });
-                    if (!res.ok) throw new Error('Could not download document');
-                    const buf = await res.arrayBuffer();
-                    const name = doc.name || doc.original_filename || doc.filename || 'Specifications.pdf';
-                    document.getElementById('specBookProgress')?.classList.remove('hidden');
-                    await processSpecBookFromArrayBuffer(buf, name, { fromDocuments: true });
-                } catch (e) {
-                    showCenteredAlert(e.message || 'Could not load document', 'error');
-                }
+                await setSpecBookFromDocument(doc.id, doc.name || doc.original_filename || doc.filename);
             },
         });
+    }
+}
+
+async function setSpecBookFromDocument(documentId, displayName) {
+    const pid = resolveSubmittalProjectId();
+    if (!pid) {
+        showCenteredAlert('Select a project first, then choose a specifications PDF from Documents.', 'warning');
+        return;
+    }
+    const name = displayName || 'Specifications.pdf';
+    if (isLikelyWrongSpecBookFilename(name)) {
+        showCenteredAlert('That file looks like a submittal log spreadsheet, not the specifications book. Choose the project specifications PDF instead.', 'warning');
+        return;
+    }
+    if (!name.toLowerCase().endsWith('.pdf')) {
+        showCenteredAlert('Please select a PDF specifications book.', 'warning');
+        return;
+    }
+    if (!window.pdfjsLib) {
+        showCenteredAlert('PDF library failed to load. Please refresh the page and try again.', 'error');
+        return;
+    }
+    try {
+        document.getElementById('specBookProgress')?.classList.remove('hidden');
+        setSpecBookProgress(5, 'Importing specifications PDF from Documents...');
+        const res = await fetch('/api/submittals/spec-book/from-document', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ project_id: pid, document_id: documentId }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || 'Could not use document as specifications book');
+        invalidateSpecBookPdfCache();
+        specBookPdfDoc = null;
+        await loadSpecBookFromServer();
+        const bytes = await ensureSpecBookPdfBytes();
+        if (!bytes) throw new Error('Specifications book file is missing after import');
+        await processSpecBookFromArrayBuffer(bytes, json.filename || name, {
+            saveArchive: true,
+            fromDocuments: true,
+        });
+        showCenteredAlert('Specifications book loaded from Documents.', 'success');
+    } catch (e) {
+        console.error('Spec book from document error:', e);
+        showCenteredAlert(e.message || 'Could not load document', 'error');
+        setSpecBookProgress(0, 'Error importing specifications book');
     }
 }
 
@@ -1773,6 +1833,10 @@ function setSpecBookProgress(pct, label) {
 async function processSpecBookFile(file) {
     if (!file.name.toLowerCase().endsWith('.pdf')) {
         showCenteredAlert('Please upload a PDF specifications book.', 'warning');
+        return;
+    }
+    if (isLikelyWrongSpecBookFilename(file.name)) {
+        showCenteredAlert('That file looks like a submittal log spreadsheet. Upload the project specifications book PDF instead.', 'warning');
         return;
     }
     if (!window.pdfjsLib) {
@@ -3175,8 +3239,13 @@ async function loadSpecBookFromServer() {
         revokeSpecBookBlobUrl();
         invalidateSpecBookPdfCache();
         const blob = new Blob([bytes], { type: 'application/pdf' });
+        const loadedFilename = json.filename;
+        if (isLikelyWrongSpecBookFilename(loadedFilename)) {
+            console.warn('Ignoring misidentified submittal log saved as specifications book:', loadedFilename);
+            return null;
+        }
         specBookArchive = {
-            filename: json.filename,
+            filename: loadedFilename,
             uploadedAt: json.uploadedAt,
             pageCount: json.pageCount,
             sectionPageMap: json.sectionPageMap || {},
@@ -3289,8 +3358,14 @@ async function loadSpecBookArchive() {
             return null;
         }
         const blob = new Blob([bytes], { type: 'application/pdf' });
+        const loadedFilename = record.filename || meta.filename;
+        if (isLikelyWrongSpecBookFilename(loadedFilename)) {
+            console.warn('Ignoring misidentified submittal log saved as specifications book:', loadedFilename);
+            specBookArchive = null;
+            return null;
+        }
         specBookArchive = {
-            filename: record.filename || meta.filename,
+            filename: loadedFilename,
             uploadedAt: record.uploadedAt || meta.uploadedAt,
             pageCount: record.pageCount || meta.pageCount,
             sectionPageMap: record.sectionPageMap || meta.sectionPageMap || {},
@@ -3314,7 +3389,19 @@ function updateSpecBookLoadedBadge() {
     if (!badge) return;
     if (specBookArchive && specBookArchive.filename) {
         badge.classList.remove('hidden');
-        if (nameEl) nameEl.textContent = specBookArchive.filename;
+        if (nameEl) {
+            if (isLikelyWrongSpecBookFilename(specBookArchive.filename)) {
+                nameEl.textContent = 'Wrong file linked — upload specifications PDF';
+                badge.title = 'The saved file looks like a submittal log spreadsheet. Upload the project specifications book PDF.';
+                badge.classList.remove('border-emerald-800', 'bg-emerald-950/40');
+                badge.classList.add('border-amber-700', 'bg-amber-950/40');
+            } else {
+                nameEl.textContent = specBookArchive.filename;
+                badge.title = 'Specifications book is saved and linked to imported submittals';
+                badge.classList.remove('border-amber-700', 'bg-amber-950/40');
+                badge.classList.add('border-emerald-800', 'bg-emerald-950/40');
+            }
+        }
     } else {
         badge.classList.add('hidden');
     }
@@ -3618,6 +3705,13 @@ async function ensureSpecBookReadyForViewer() {
     await ensureSpecBookArchiveLoaded();
     if (!specBookArchive) {
         showCenteredAlert('No specifications book on file. Use Upload Specs Book (PDF) to add one.', 'warning');
+        return false;
+    }
+    if (isLikelyWrongSpecBookFilename(specBookArchive.filename)) {
+        showCenteredAlert(
+            'The file on file looks like a submittal log spreadsheet, not the specifications book. Use Upload Specs Book (PDF) to select the project specifications PDF from Documents.',
+            'warning'
+        );
         return false;
     }
     const bytes = await ensureSpecBookPdfBytes();

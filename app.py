@@ -4152,6 +4152,56 @@ def serve_submittal_attachment(submittal_id, filename):
     return send_from_directory(folder, filename)
 
 
+def _pdf_bytes_valid(file_bytes):
+    return bool(file_bytes) and len(file_bytes) >= 4 and file_bytes[:4] == b'%PDF'
+
+
+def _save_spec_book_bytes(project_id, file_bytes, display_name, original_filename, *, source_document_id=None, section_page_map=None, page_count=0):
+    """Write spec_book.pdf + meta.json for a project."""
+    if not _pdf_bytes_valid(file_bytes):
+        raise ValueError('PDF file required')
+
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'spec_books', str(project_id))
+    os.makedirs(folder, exist_ok=True)
+    pdf_path = os.path.join(folder, 'spec_book.pdf')
+    with open(pdf_path, 'wb') as fh:
+        fh.write(file_bytes)
+
+    meta = {
+        'filename': secure_filename(display_name) or display_name or 'spec_book.pdf',
+        'uploadedAt': datetime.utcnow().isoformat() + 'Z',
+        'pageCount': int(page_count or 0),
+        'sectionPageMap': section_page_map or {},
+    }
+    if source_document_id:
+        meta['source'] = 'documents'
+        meta['sourceDocumentId'] = int(source_document_id)
+    else:
+        meta['source'] = 'upload'
+
+    with open(os.path.join(folder, 'meta.json'), 'w', encoding='utf-8') as fh:
+        json.dump(meta, fh)
+
+    try:
+        _mirror_to_system_folder(
+            int(project_id), file_bytes, meta['filename'], original_filename, 'specifications', 'Specification',
+            {'spec_book': True},
+        )
+        _notify_documents_team(
+            int(project_id),
+            'Specifications book filed',
+            f'"{meta["filename"]}" was archived to Documents › Specifications.',
+            f'/documents?project_id={project_id}',
+        )
+    except Exception:
+        pass
+
+    meta['ok'] = True
+    meta['found'] = True
+    meta['url'] = url_for('serve_spec_book_pdf', project_id=int(project_id))
+    return meta
+
+
 @app.route('/api/submittals/spec-book', methods=['GET'])
 @login_required
 def api_get_spec_book():
@@ -4185,10 +4235,9 @@ def api_upload_spec_book():
     if not allowed_file(file.filename) or not file.filename.lower().endswith('.pdf'):
         return jsonify({'error': 'PDF file required'}), 400
 
-    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'spec_books', str(project_id))
-    os.makedirs(folder, exist_ok=True)
-    pdf_path = os.path.join(folder, 'spec_book.pdf')
-    file.save(pdf_path)
+    file_bytes = file.read()
+    if not _pdf_bytes_valid(file_bytes):
+        return jsonify({'error': 'Invalid PDF file'}), 400
 
     section_map_raw = request.form.get('sectionPageMap') or '{}'
     try:
@@ -4196,33 +4245,61 @@ def api_upload_spec_book():
     except json.JSONDecodeError:
         section_page_map = {}
 
-    meta = {
-        'filename': secure_filename(file.filename) or file.filename,
-        'uploadedAt': datetime.utcnow().isoformat() + 'Z',
-        'pageCount': int(request.form.get('pageCount') or 0),
-        'sectionPageMap': section_page_map,
-    }
-    with open(os.path.join(folder, 'meta.json'), 'w', encoding='utf-8') as fh:
-        json.dump(meta, fh)
+    meta = _save_spec_book_bytes(
+        project_id,
+        file_bytes,
+        secure_filename(file.filename) or file.filename,
+        file.filename,
+        section_page_map=section_page_map,
+        page_count=int(request.form.get('pageCount') or 0),
+    )
+    return jsonify(meta)
 
+
+@app.route('/api/submittals/spec-book/from-document', methods=['POST'])
+@login_required
+def api_set_spec_book_from_document():
+    """Copy a PDF from project Documents to the specifications book slot."""
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
     try:
-        with open(pdf_path, 'rb') as fh:
-            fb = fh.read()
-        _mirror_to_system_folder(
-            int(project_id), fb, meta['filename'], file.filename, 'specifications', 'Specification',
-            {'spec_book': True},
-        )
-        _notify_documents_team(
-            int(project_id),
-            'Specifications book filed',
-            f'"{meta["filename"]}" was archived to Documents › Specifications.',
-            f'/documents?project_id={project_id}',
-        )
-    except Exception:
-        pass
+        document_id = int(body.get('document_id'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'document_id required'}), 400
 
-    meta['ok'] = True
-    meta['url'] = url_for('serve_spec_book_pdf', project_id=int(project_id))
+    Project.query.get_or_404(project_id)
+    doc = Document.query.get_or_404(document_id)
+    if int(doc.project_id) != int(project_id):
+        return jsonify({'error': 'Document must belong to this project'}), 400
+    if doc.deleted_at:
+        return jsonify({'error': 'Document is deleted'}), 400
+
+    name = (doc.original_filename or doc.name or doc.filename or '').lower()
+    mime = (doc.mime_type or '').lower()
+    if not (name.endswith('.pdf') or mime == 'application/pdf'):
+        return jsonify({'error': 'PDF file required'}), 400
+    if name.endswith(('.xlsx', '.xls', '.csv')) or 'submittal log' in name or 'submittal register' in name:
+        return jsonify({'error': 'Submittal log spreadsheets cannot be used as the specifications book'}), 400
+
+    src_path = os.path.join(app.config['UPLOAD_FOLDER'], 'documents', str(doc.project_id), doc.filename)
+    if not os.path.isfile(src_path):
+        return jsonify({'error': 'Document file not found on disk'}), 404
+
+    with open(src_path, 'rb') as fh:
+        file_bytes = fh.read()
+    if not _pdf_bytes_valid(file_bytes):
+        return jsonify({'error': 'Invalid PDF file'}), 400
+
+    display_name = doc.original_filename or doc.name or doc.filename
+    meta = _save_spec_book_bytes(
+        project_id,
+        file_bytes,
+        display_name,
+        doc.original_filename or doc.filename,
+        source_document_id=doc.id,
+    )
     return jsonify(meta)
 
 
