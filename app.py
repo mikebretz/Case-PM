@@ -1872,36 +1872,24 @@ def login():
 
 @app.route('/download/casepm-connector')
 def download_casepm_connector():
-    """Case PM Desktop HTA — runs when opened, installs to Documents\\Case PM Desktop."""
-    from connector_download import build_connector_hta
-    proto = request.headers.get('X-Forwarded-Proto', request.scheme)
-    host = request.headers.get('Host', request.host)
-    server_url = f'{proto}://{host}'.rstrip('/')
-    buf = build_connector_hta(server_url)
-    inline = request.args.get('run') == '1' or request.args.get('inline') == '1'
-    return send_file(
-        buf,
-        mimetype='application/hta',
-        as_attachment=not inline,
-        download_name='Case PM Desktop.hta',
-    )
-
-
-@app.route('/download/casepm-connector.vbs')
-def download_casepm_connector_vbs():
-    """VBS fallback if HTA is blocked."""
+    """Case PM Desktop VBS — double-click to set up Documents folder + desktop shortcut."""
     from connector_download import build_connector_installer
     proto = request.headers.get('X-Forwarded-Proto', request.scheme)
     host = request.headers.get('Host', request.host)
     server_url = f'{proto}://{host}'.rstrip('/')
     buf = build_connector_installer(server_url)
-    inline = request.args.get('run') == '1'
     return send_file(
         buf,
         mimetype='application/octet-stream',
-        as_attachment=not inline,
+        as_attachment=True,
         download_name='Case PM Desktop.vbs',
     )
+
+
+@app.route('/download/casepm-connector.vbs')
+def download_casepm_connector_vbs():
+    """Alias for the desktop connector VBS download."""
+    return download_casepm_connector()
 
 
 def _complete_recovery_login(user, *, via='recovery'):

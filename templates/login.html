@@ -215,7 +215,7 @@
             <p class="text-sm text-zinc-400 mb-2 leading-relaxed">
                 Creates <span class="text-zinc-300">Documents\Case PM Desktop</span> and puts the Case PM icon on your desktop.
             </p>
-            <p class="text-xs text-zinc-500 mb-4">If Windows asks to run the file, click <span class="text-zinc-400">Open</span>.</p>
+            <p class="text-xs text-zinc-500 mb-4">Downloads <span class="text-zinc-400">Case PM Desktop.vbs</span> — open it and click OK.</p>
             <div class="flex gap-2 justify-center">
                 <button type="button" id="connectorModalNo"
                         class="px-4 py-2 rounded-md text-sm text-zinc-400 hover:text-zinc-200">Cancel</button>
@@ -233,7 +233,7 @@
 
             var btn = document.getElementById('connectorAddBtn');
             var modal = document.getElementById('connectorModal');
-            var htaUrl = {{ url_for('download_casepm_connector', run=1) | tojson }};
+            var downloadUrl = {{ url_for('download_casepm_connector') | tojson }};
             if (!btn || !modal) return;
 
             function closeModal() { modal.classList.add('hidden'); }
@@ -241,7 +241,12 @@
 
             function launchInstaller() {
                 closeModal();
-                window.location.href = htaUrl;
+                var a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = 'Case PM Desktop.vbs';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
             }
 
             btn.addEventListener('click', openModal);
