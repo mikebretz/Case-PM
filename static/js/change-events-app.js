@@ -39,6 +39,16 @@
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
+  async function cePrompt(message, defaultValue = '', options = {}) {
+    if (global.CasePMDialog?.prompt) return global.CasePMDialog.prompt(message, defaultValue, options);
+    return prompt(message, defaultValue);
+  }
+
+  async function ceConfirm(message, options = {}) {
+    if (global.CasePMDialog?.confirm) return global.CasePMDialog.confirm(message, options);
+    return confirm(message);
+  }
+
   function statusBadge(status) {
     if (CO.statusBadge) return CO.statusBadge(status);
     return `<span class="text-xs">${esc(status)}</span>`;
@@ -207,20 +217,20 @@
   }
 
   async function newChangeEvent() {
-    const title = prompt('Change Event title:');
+    const title = await cePrompt('Change Event title:', '', { title: 'New Change Event' });
     if (!title) return;
-    const rom = parseFloat(prompt('ROM amount (owner estimate):', '0') || '0') || 0;
+    const rom = parseFloat((await cePrompt('ROM amount (owner estimate):', '0', { title: 'New Change Event' })) || '0') || 0;
     await api('/api/change-events', { method: 'POST', body: JSON.stringify({ project_id: pid(), title, rom_amount: rom }) });
     await loadChangeEvents();
   }
 
   async function newRfq() {
-    const title = prompt('RFQ title:');
+    const title = await cePrompt('RFQ title:', '', { title: 'New RFQ' });
     if (!title) return;
-    const company = prompt('Subcontractor company name:') || '';
-    const commitment = prompt('Linked commitment # (optional):') || '';
-    const costCode = prompt('Cost code:') || '';
-    const amount = parseFloat(prompt('Estimated amount:', '0') || '0') || 0;
+    const company = (await cePrompt('Subcontractor company name:', '', { title: 'New RFQ' })) || '';
+    const commitment = (await cePrompt('Linked commitment # (optional):', '', { title: 'New RFQ' })) || '';
+    const costCode = (await cePrompt('Cost code:', '', { title: 'New RFQ' })) || '';
+    const amount = parseFloat((await cePrompt('Estimated amount:', '0', { title: 'New RFQ' })) || '0') || 0;
     await api('/api/rfqs', {
       method: 'POST',
       body: JSON.stringify({
@@ -232,10 +242,10 @@
   }
 
   async function newCor() {
-    const title = prompt('COR title:');
+    const title = await cePrompt('COR title:', '', { title: 'New COR' });
     if (!title) return;
-    const amount = parseFloat(prompt('Amount:', '0') || '0') || 0;
-    const drawing = prompt('Drawing revision (optional):') || '';
+    const amount = parseFloat((await cePrompt('Amount:', '0', { title: 'New COR' })) || '0') || 0;
+    const drawing = (await cePrompt('Drawing revision (optional):', '', { title: 'New COR' })) || '';
     await api('/api/cors', {
       method: 'POST',
       body: JSON.stringify({
@@ -257,7 +267,7 @@
 
   async function openRfqQuote(id) {
     const r = ext.rfqs.find(x => x.id === id);
-    const amt = parseFloat(prompt(`Quote amount for ${r?.number}:`, r?.allocations?.[0]?.amount || '0') || '0') || 0;
+    const amt = parseFloat((await cePrompt(`Quote amount for ${r?.number}:`, r?.allocations?.[0]?.amount || '0', { title: 'RFQ Quote' })) || '0') || 0;
     const allocs = (r?.allocations || []).map(a => ({ ...a, quoted_amount: amt }));
     await api(`/api/rfqs/${id}/workflow`, { method: 'POST', body: JSON.stringify({ action: 'quote', allocations: allocs.length ? allocs : [{ cost_code: '01-0000', cost_type: 'Subcontract', amount: amt, quoted_amount: amt }] }) });
     await loadRfqs();
@@ -270,14 +280,14 @@
   }
 
   async function promoteCpco(id) {
-    if (!confirm('Promote CPCO to Subcontractor Change Order (SCO)?')) return;
+    if (!(await ceConfirm('Promote CPCO to Subcontractor Change Order (SCO)?', { title: 'Promote CPCO' }))) return;
     await api(`/api/pcos/${id}/promote-cpco`, { method: 'POST', body: '{}' });
     await Promise.all([loadCpcos(), CO.loadChangeOrders ? CO.loadChangeOrders() : null]);
     if (CO.switchTab) CO.switchTab('subs');
   }
 
   async function erpReview(id, action) {
-    const notes = action === 'reject' ? (prompt('Rejection notes:') || '') : '';
+    const notes = action === 'reject' ? ((await cePrompt('Rejection notes:', '', { title: 'Reject ERP Event' })) || '') : '';
     await api(`/api/sage/sync-events/${id}/accounting`, { method: 'POST', body: JSON.stringify({ action, notes }) });
     await loadErpQueue();
   }
