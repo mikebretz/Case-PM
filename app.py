@@ -1871,17 +1871,17 @@ def login():
 
 @app.route('/download/casepm-connector')
 def download_casepm_connector():
-    """Windows desktop connector ZIP — pinned shortcut to this Case PM server."""
-    from connector_download import build_connector_zip
+    """One-click Windows installer — adds a pinned Case PM desktop shortcut."""
+    from connector_download import build_connector_installer
     proto = request.headers.get('X-Forwarded-Proto', request.scheme)
     host = request.headers.get('Host', request.host)
     server_url = f'{proto}://{host}'.rstrip('/')
-    buf = build_connector_zip(server_url)
+    buf = build_connector_installer(server_url)
     return send_file(
         buf,
-        mimetype='application/zip',
+        mimetype='application/octet-stream',
         as_attachment=True,
-        download_name='CasePM-Connector.zip',
+        download_name='Install Case PM Connector.bat',
     )
 
 
