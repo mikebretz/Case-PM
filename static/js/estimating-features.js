@@ -48,6 +48,7 @@
     el.innerHTML = `
       <div class="grid grid-cols-2 gap-2 text-sm">
         <div class="flex justify-between"><span class="text-zinc-500">Direct</span><span class="font-mono">${fmt(fb.direct_cost)}</span></div>
+        ${fb.alternates_total > 0 ? `<div class="flex justify-between text-zinc-400"><span>Alternates (separate)</span><span class="font-mono">${fmt(fb.alternates_total)}</span></div>` : ''}
         <div class="flex justify-between"><span class="text-zinc-500">Contingency</span><span class="font-mono">${fmt(fb.contingency)}</span></div>
         <div class="flex justify-between"><span class="text-zinc-500">Overhead</span><span class="font-mono">${fmt(fb.overhead)}</span></div>
         <div class="flex justify-between"><span class="text-zinc-500">Profit</span><span class="font-mono">${fmt(fb.profit)}</span></div>
@@ -156,22 +157,65 @@
   }
 
   async function loadTakeoffLive() {
-    const frame = document.getElementById('estTakeoffFrame');
     const list = document.getElementById('estTakeoffLiveList');
     if (!estId()) return;
     const data = await apiJson(`/api/estimates/${estId()}/takeoff-live`);
-    if (frame) frame.src = data.drawings_url || '/drawings';
     if (list) {
       list.innerHTML = (data.items || []).map(i => `
-        <tr class="takeoff-row hover:bg-zinc-800 cursor-pointer" data-mid="${i.markup_id}">
+        <tr class="takeoff-row hover:bg-zinc-800 cursor-pointer" data-did="${i.drawing_id}" data-mid="${i.markup_id}">
           <td class="px-2 py-1 font-mono text-sky-400 text-xs">${esc(i.sheet_number)}</td>
           <td class="px-2 py-1 text-xs">${esc(i.description)}</td>
           <td class="px-2 py-1 text-right font-mono text-xs">${i.quantity}</td>
-        </tr>`).join('') || '<tr><td colspan="3" class="p-4 text-zinc-500 text-sm">No markups</td></tr>';
+        </tr>`).join('') || '<tr><td colspan="3" class="p-4 text-zinc-500 text-sm">No markups — use measure/area tools in the viewer</td></tr>';
       list.querySelectorAll('.takeoff-row').forEach(row => row.addEventListener('click', () => {
-        if (frame) frame.src = `${data.drawings_url}&markup_id=${row.dataset.mid}`;
+        const did = parseInt(row.dataset.did, 10);
+        if (global._estTakeoffViewer && did) {
+          const sel = document.querySelector('.ett-drawing-select');
+          if (sel) sel.value = String(did);
+          global._estTakeoffViewer.refresh?.();
+        }
       }));
     }
+    initTakeoffViewer(data);
+  }
+
+  function initTakeoffViewer(liveData) {
+    const root = document.getElementById('estTakeoffViewer');
+    if (!root || !global.CasePMEstimateTakeoff || !estId()) return;
+    if (!global._estTakeoffViewer) {
+      global._estTakeoffViewer = global.CasePMEstimateTakeoff.init(root, {
+        projectId: pid(),
+        estimateId: estId(),
+        drawingId: liveData?.drawings?.[0]?.id,
+      });
+    } else {
+      global._estTakeoffViewer.refresh?.();
+    }
+  }
+
+  async function loadSettingsForm() {
+    const id = estId();
+    if (!id) return;
+    const settings = await apiJson(`/api/estimates/${id}/settings`);
+    const auto = document.getElementById('estAwardAutoCommitment');
+    const mode = document.getElementById('estRfpNotifyMode');
+    if (auto) auto.checked = !!settings.award_auto_commitment;
+    if (mode) mode.value = settings.rfp_notify_mode || 'both';
+  }
+
+  async function saveSettings() {
+    const id = estId();
+    if (!id) return;
+    await apiJson(`/api/estimates/${id}/settings`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        award_auto_commitment: !!document.getElementById('estAwardAutoCommitment')?.checked,
+        rfp_notify_mode: document.getElementById('estRfpNotifyMode')?.value || 'both',
+      }),
+    });
+    const json = await apiJson(`/api/estimates/${id}/settings`);
+    if (EST()?.state?.current) EST().state.current.settings = json;
+    await alert('Preferences saved.', 'success');
   }
 
   async function runBulkEdit() {
@@ -199,14 +243,10 @@
   }
 
   async function lookupUnitCost(costCode) {
-    const [hist, rs] = await Promise.all([
-      apiJson(`/api/estimates/cost-history?cost_code=${encodeURIComponent(costCode)}&project_id=${pid()}`),
-      apiJson(`/api/estimates/rsmeans-lookup?spec_section=${encodeURIComponent(costCode)}`),
-    ]);
-    let msg = '';
-    if (hist.history?.[0]) msg += `History: ${fmt(hist.history[0].unit_cost)} / ${hist.history[0].unit}\n`;
-    if (rs.found) msg += `RSMeans: ${fmt(rs.unit_cost)} / ${rs.unit} — ${rs.description}`;
-    await alert(msg || 'No pricing data found.', msg ? 'info' : 'warning');
+    const hist = await apiJson(`/api/estimates/cost-history?cost_code=${encodeURIComponent(costCode)}&project_id=${pid()}`);
+    const row = hist.history?.[0];
+    const msg = row ? `History: ${fmt(row.unit_cost)} / ${row.unit} — ${row.description || ''}` : '';
+    await alert(msg || 'No historical pricing found for this cost code.', msg ? 'info' : 'warning');
   }
 
   async function runAiScope() {
@@ -297,7 +337,11 @@
       await alert(`Forecast ROM set to ${fmt(json.estimate_rom)}`, 'success');
     });
     document.getElementById('estContingencyDraw')?.addEventListener('click', async () => {
-      const amt = parseFloat(prompt('Contingency release amount:', '0') || '0');
+      const amtStr = global.CasePMDialog?.prompt
+        ? await global.CasePMDialog.prompt('Contingency release amount ($):', '0', { title: 'Contingency Drawdown' })
+        : prompt('Contingency release amount:', '0');
+      if (amtStr == null) return;
+      const amt = parseFloat(amtStr) || 0;
       if (!amt) return;
       await apiJson(`/api/estimates/${estId()}/contingency-drawdown`, { method: 'POST', body: JSON.stringify({ amount: amt, note: 'Estimate contingency release' }) });
       await alert('Contingency drawdown applied to budget.', 'success');
@@ -311,14 +355,29 @@
     document.getElementById('estAiScopePreview')?.addEventListener('click', () => runAiScope().catch(e => alert(e.message, 'error')));
     document.getElementById('estAiScopeApply')?.addEventListener('click', () => applyAiScope().catch(e => alert(e.message, 'error')));
     document.getElementById('estRefreshTakeoffLive')?.addEventListener('click', () => loadTakeoffLive().catch(() => {}));
+    document.getElementById('estRefreshTakeoff')?.addEventListener('click', () => {
+      loadTakeoffLive().catch(() => {});
+      EST()?.loadTakeoffPreview?.();
+    });
+    document.getElementById('estPopoutTakeoff')?.addEventListener('click', () => {
+      const q = new URLSearchParams({ project_id: pid(), estimate_id: estId() });
+      const sel = document.querySelector('.ett-drawing-select');
+      if (sel?.value) q.set('drawing_id', sel.value);
+      window.open(`/estimating/takeoff-popout?${q}`, 'casepm-est-takeoff', 'width=1200,height=800,resizable=yes');
+    });
+    document.getElementById('estSaveSettings')?.addEventListener('click', () => saveSettings().catch(e => alert(e.message, 'error')));
   }
 
   function onTabChange(tab) {
-    if (tab === 'summary') loadFeeBreakdown();
+    if (tab === 'summary') { loadFeeBreakdown(); loadSettingsForm(); }
     if (tab === 'library') loadLibrary();
     if (tab === 'alternates') loadAlternates();
     if (tab === 'award') loadMappings();
-    if (tab === 'takeoff') loadTakeoffLive();
+    if (tab === 'takeoff') {
+      global._estTakeoffViewer = null;
+      loadTakeoffLive();
+      EST()?.loadTakeoffPreview?.();
+    }
     if (tab === 'tools') loadSnapshots();
   }
 
@@ -348,6 +407,6 @@
   document.addEventListener('DOMContentLoaded', () => setTimeout(init, 100));
 
   global.CasePMEstimatingFeatures = {
-    loadFeeBreakdown, loadLibrary, loadSnapshots, loadTakeoffLive, onTabChange,
+    loadFeeBreakdown, loadLibrary, loadSnapshots, loadTakeoffLive, loadSettingsForm, onTabChange,
   };
 })(window);

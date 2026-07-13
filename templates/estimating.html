@@ -12,6 +12,8 @@ window.CASEPM_ESTIMATE_CTX = {
 <script src="{{ url_for('static', filename='js/budget-sync.js') }}"></script>
 <script src="{{ url_for('static', filename='js/estimating-app.js') }}"></script>
 <script src="{{ url_for('static', filename='js/estimating-features.js') }}"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="{{ url_for('static', filename='js/estimate-takeoff-viewer.js') }}"></script>
 
 <style>
 .est-page { display:flex; flex-direction:column; flex:1; min-height:0; width:100%; padding:1rem 1rem 0; overflow:hidden; box-sizing:border-box; }
@@ -61,6 +63,8 @@ window.CASEPM_ESTIMATE_CTX = {
   border-top: 1px solid #3f3f46;
   background: #09090b;
 }
+.ett-wrap { min-height: 280px; }
+#estTakeoffViewer { min-height: 320px; }
 </style>
 
 <div class="est-page">
@@ -125,8 +129,23 @@ window.CASEPM_ESTIMATE_CTX = {
           <div><label class="text-zinc-500 text-xs">Tax %</label><input type="number" step="0.1" id="estTax" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></div>
         </div>
         <p class="text-xs text-zinc-500 mt-4">Workflow mirrors Procore, Buildertrend, Sage Estimating, and CoConstruct: precon estimate → bid packages → vendor quotes → award → original budget.</p>
+        <div class="mt-4 pt-4 border-t border-zinc-800">
+          <h4 class="text-sm font-medium mb-3">Workflow Preferences</h4>
+          <div class="space-y-3 text-sm">
+            <label class="flex items-center gap-2"><input type="checkbox" id="estAwardAutoCommitment" class="rounded"> Auto-create commitment draft when a bid package is awarded</label>
+            <div>
+              <label class="text-zinc-500 text-xs">RFP notifications</label>
+              <select id="estRfpNotifyMode" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1">
+                <option value="both">In-app and email</option>
+                <option value="in_app">In-app only</option>
+                <option value="email">Email only</option>
+                <option value="none">None (manual)</option>
+              </select>
+            </div>
+            <button type="button" id="estSaveSettings" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Save Preferences</button>
+          </div>
+        </div>
         <div class="flex gap-2 mt-4 flex-wrap">
-          <a href="/drawings" class="text-sm text-sky-400 hover:underline">Open Drawings for takeoff →</a>
           <a href="/documents" class="text-sm text-sky-400 hover:underline">Specs & drawings in Documents →</a>
         </div>
       </div>
@@ -167,26 +186,29 @@ window.CASEPM_ESTIMATE_CTX = {
   </div>
 
   <div id="estPanelTakeoff" class="est-panel hidden flex-1 min-h-0 flex flex-col mb-20">
-    <div class="flex gap-2 mb-2 flex-wrap flex-shrink-0">
-      <input type="text" id="estTakeoffSearch" placeholder="Search takeoff items…" class="flex-1 bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm">
-      <button type="button" id="estRefreshTakeoff" class="px-4 py-2 bg-zinc-800 rounded-md text-sm">List</button>
-      <button type="button" id="estRefreshTakeoffLive" class="px-4 py-2 bg-zinc-800 rounded-md text-sm">Live Viewer</button>
+    <div class="flex gap-2 mb-2 flex-wrap flex-shrink-0 items-center">
+      <span class="text-sm text-zinc-400">Measure on drawings without leaving estimating</span>
+      <button type="button" id="estPopoutTakeoff" class="px-3 py-2 bg-sky-800 hover:bg-sky-700 rounded-md text-sm ml-auto"><i class="fa-solid fa-up-right-from-square mr-1"></i>Pop Out Takeoff</button>
+      <button type="button" id="estRefreshTakeoff" class="px-4 py-2 bg-zinc-800 rounded-md text-sm">Refresh List</button>
       <button type="button" id="estImportTakeoff" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Import to Worksheet</button>
     </div>
     <div class="grid lg:grid-cols-2 gap-3 flex-1 min-h-0">
-      <iframe id="estTakeoffFrame" class="w-full min-h-[280px] border border-zinc-700 rounded-md bg-zinc-950" title="Drawings takeoff viewer"></iframe>
-      <div class="overflow-auto border border-zinc-700 rounded-md bg-zinc-900 min-h-[200px]">
-        <table class="w-full text-sm">
-          <thead class="bg-zinc-800 sticky top-0"><tr>
-            <th class="px-2 py-2 text-left text-zinc-400 text-xs">Sheet</th>
-            <th class="px-2 py-2 text-left text-zinc-400 text-xs">Description</th>
-            <th class="px-2 py-2 text-right text-zinc-400 text-xs">Qty</th>
-          </tr></thead>
-          <tbody id="estTakeoffLiveList"></tbody>
-        </table>
+      <div id="estTakeoffViewer" class="min-h-[320px]"></div>
+      <div class="flex flex-col min-h-0 gap-2">
+        <input type="text" id="estTakeoffSearch" placeholder="Search takeoff items…" class="bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm flex-shrink-0">
+        <div class="overflow-auto border border-zinc-700 rounded-md bg-zinc-900 flex-1 min-h-0">
+          <table class="w-full text-sm">
+            <thead class="bg-zinc-800 sticky top-0"><tr>
+              <th class="px-2 py-2 text-left text-zinc-400 text-xs">Sheet</th>
+              <th class="px-2 py-2 text-left text-zinc-400 text-xs">Description</th>
+              <th class="px-2 py-2 text-right text-zinc-400 text-xs">Qty</th>
+            </tr></thead>
+            <tbody id="estTakeoffLiveList"></tbody>
+          </table>
+        </div>
       </div>
     </div>
-    <div class="mt-2 overflow-auto border border-zinc-700 rounded-md bg-zinc-900 max-h-40">
+    <div class="mt-2 overflow-auto border border-zinc-700 rounded-md bg-zinc-900 max-h-32 flex-shrink-0">
       <table class="w-full text-sm">
         <tbody id="estTakeoffBody" class="divide-y divide-zinc-800"></tbody>
       </table>

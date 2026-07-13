@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Takeoff — Pop Out{% endblock %}
+{% block content %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+window.CASEPM_ESTIMATE_TAKEOFF_CTX = {
+  projectId: {{ project_id or 'null' }},
+  estimateId: {{ estimate_id or 'null' }},
+  drawingId: {{ drawing_id or 'null' }},
+  popout: true,
+};
+</script>
+<script src="{{ url_for('static', filename='js/estimate-takeoff-viewer.js') }}"></script>
+<style>
+.takeoff-popout-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0.5rem;
+  overflow: hidden;
+}
+.takeoff-popout-page #estTakeoffPopoutRoot {
+  flex: 1;
+  min-height: 0;
+}
+</style>
+<div class="takeoff-popout-page">
+  <div class="flex items-center justify-between mb-2 flex-shrink-0">
+    <div>
+      <div class="text-lg font-semibold text-white">Estimating Takeoff</div>
+      <div class="text-xs text-zinc-500">Connected to main estimating window — changes sync live</div>
+    </div>
+    <button type="button" onclick="window.close()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded text-sm">Close</button>
+  </div>
+  <div id="estTakeoffPopoutRoot" class="min-h-0 flex-1"></div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const ctx = window.CASEPM_ESTIMATE_TAKEOFF_CTX || {};
+  if (!ctx.estimateId) {
+    document.getElementById('estTakeoffPopoutRoot').innerHTML = '<p class="text-zinc-500 p-4">Open from Estimating → Takeoff tab.</p>';
+    return;
+  }
+  window.CasePMEstimateTakeoff.init('#estTakeoffPopoutRoot', {
+    projectId: ctx.projectId,
+    estimateId: ctx.estimateId,
+    drawingId: ctx.drawingId,
+    popout: true,
+  });
+});
+</script>
+{% endblock %}

@@ -15,6 +15,8 @@ def register_estimate_routes(app, deps):
     BidQuoteLine = deps['BidQuoteLine']
     BudgetProjectState = deps['BudgetProjectState']
     EstimateBudgetMapping = deps.get('EstimateBudgetMapping')
+    EstimateAlternate = deps.get('EstimateAlternate')
+    Commitment = deps.get('Commitment')
     Company = deps['Company']
     Drawing = deps['Drawing']
     DrawingMarkup = deps['DrawingMarkup']
@@ -26,6 +28,7 @@ def register_estimate_routes(app, deps):
             estimate_to_dict, estimate_line_to_dict, bid_package_to_dict,
             invitation_to_dict, recalc_estimate_totals,
         )
+        from estimate_features import get_estimate_settings
         lines = EstimateLine.query.filter_by(estimate_id=est.id).order_by(EstimateLine.sort_order, EstimateLine.id).all()
         packages = BidPackage.query.filter_by(estimate_id=est.id).order_by(BidPackage.number).all()
         pkg_payload = []
@@ -41,9 +44,14 @@ def register_estimate_routes(app, deps):
                 ]))
             pkg_lines = [estimate_line_to_dict(l) for l in lines if l.bid_package_id == pkg.id]
             pkg_payload.append(bid_package_to_dict(pkg, inv_payload, pkg_lines))
-        recalc_estimate_totals(Estimate, EstimateLine, est.id)
+        recalc_estimate_totals(Estimate, EstimateLine, est.id, EstimateAlternate)
         db.session.flush()
-        return estimate_to_dict(est, [estimate_line_to_dict(l) for l in lines], pkg_payload)
+        return estimate_to_dict(
+            est,
+            [estimate_line_to_dict(l) for l in lines],
+            pkg_payload,
+            settings=get_estimate_settings(est),
+        )
 
     @app.route('/api/estimates', methods=['GET'])
     @login_required
@@ -81,7 +89,7 @@ def register_estimate_routes(app, deps):
         db.session.flush()
         if body.get('lines'):
             save_estimate_lines(EstimateLine, est.id, body['lines'], db)
-        recalc_estimate_totals(Estimate, EstimateLine, est.id)
+        recalc_estimate_totals(Estimate, EstimateLine, est.id, EstimateAlternate)
         db.session.commit()
         return deps['jsonify']({'ok': True, 'estimate': _load_estimate_detail(est)})
 
@@ -94,7 +102,7 @@ def register_estimate_routes(app, deps):
         apply_estimate_fields(est, body)
         if 'lines' in body:
             save_estimate_lines(EstimateLine, est.id, body['lines'], db)
-        recalc_estimate_totals(Estimate, EstimateLine, est.id)
+        recalc_estimate_totals(Estimate, EstimateLine, est.id, EstimateAlternate)
         db.session.commit()
         return deps['jsonify']({'ok': True, 'estimate': _load_estimate_detail(est)})
 
@@ -108,7 +116,7 @@ def register_estimate_routes(app, deps):
         line = EstimateLine(estimate_id=estimate_id, sort_order=sort)
         apply_estimate_line_fields(line, body)
         db.session.add(line)
-        recalc_estimate_totals(Estimate, EstimateLine, estimate_id)
+        recalc_estimate_totals(Estimate, EstimateLine, estimate_id, EstimateAlternate)
         db.session.commit()
         return deps['jsonify']({'ok': True, 'line': estimate_line_to_dict(line)})
 
@@ -128,7 +136,7 @@ def register_estimate_routes(app, deps):
             bid_package_id=body.get('bid_package_id'),
             default_cost_code=body.get('cost_code') or '01-000',
         )
-        recalc_estimate_totals(Estimate, EstimateLine, est.id)
+        recalc_estimate_totals(Estimate, EstimateLine, est.id, EstimateAlternate)
         db.session.commit()
         return deps['jsonify']({
             'ok': True,
@@ -230,7 +238,15 @@ def register_estimate_routes(app, deps):
                 inv.sent_at = now
                 sent.append(inv)
         if body.get('send_notifications', True):
-            notify_bid_invitations(pkg.project_id, sent, pkg, User)
+            est = Estimate.query.get(pkg.estimate_id)
+            from estimate_features import get_estimate_settings
+            notify_mode = body.get('notify_mode') or (get_estimate_settings(est).get('rfp_notify_mode') if est else 'both')
+            notify_bid_invitations(
+                pkg.project_id, sent, pkg, User,
+                notify_mode=notify_mode,
+                estimate=est,
+                Project=Project,
+            )
         pkg.status = 'Open'
         db.session.commit()
         return deps['jsonify']({'ok': True, 'sent': len(sent), 'invitations': [invitation_to_dict(i) for i in invitations]})
@@ -255,8 +271,25 @@ def register_estimate_routes(app, deps):
         pkg.awarded_invitation_id = inv.id
         pkg.status = 'Awarded'
         db.session.commit()
+        commitment_id = None
+        est = Estimate.query.get(pkg.estimate_id)
+        if est:
+            from estimate_features import get_estimate_settings, award_to_commitment_draft
+            if get_estimate_settings(est).get('award_auto_commitment') and Commitment:
+                try:
+                    c = award_to_commitment_draft(
+                        BidPackage, BidInvitation, Commitment,
+                        deps.get('CommitmentAllocation'),
+                        db, pkg.id, generate_next_number, current_user.id,
+                    )
+                    commitment_id = c.id
+                except Exception:
+                    db.session.rollback()
         invs = BidInvitation.query.filter_by(bid_package_id=pkg.id).all()
-        return deps['jsonify']({'ok': True, 'bid_package': bid_package_to_dict(pkg, [invitation_to_dict(i) for i in invs])})
+        payload = {'ok': True, 'bid_package': bid_package_to_dict(pkg, [invitation_to_dict(i) for i in invs])}
+        if commitment_id:
+            payload['commitment_id'] = commitment_id
+        return deps['jsonify'](payload)
 
     @app.route('/api/estimates/<int:estimate_id>/leveling', methods=['GET'])
     @login_required
