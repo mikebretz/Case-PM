@@ -238,6 +238,44 @@ def co_to_dict(co, allocations=None, revisions=None):
     }
 
 
+def enrich_co_dict_links(co_dict, ChangeOrder, owner_co=None):
+    """Attach linked owner CO summary and child subcontractor COs for API responses."""
+    if not co_dict or ChangeOrder is None:
+        return co_dict
+    owner_id = co_dict.get('linked_owner_co_id')
+    if owner_id:
+        owner = owner_co if owner_co is not None else ChangeOrder.query.get(int(owner_id))
+        if owner:
+            co_dict['linked_owner_co'] = {
+                'id': owner.id,
+                'number': owner.number,
+                'title': getattr(owner, 'title', None) or owner.description,
+                'amount': owner.amount or 0,
+                'status': owner.status,
+            }
+            if co_dict.get('amount') is not None:
+                co_dict['owner_sub_variance'] = round(float(co_dict.get('amount') or 0) - float(owner.amount or 0), 2)
+    if not co_dict.get('is_subcontract'):
+        subs = ChangeOrder.query.filter_by(linked_owner_co_id=co_dict.get('id')).order_by(
+            ChangeOrder.created_at.desc()
+        ).all()
+        co_dict['linked_sub_change_orders'] = [{
+            'id': s.id,
+            'number': s.number,
+            'title': getattr(s, 'title', None) or s.description,
+            'amount': s.amount or 0,
+            'status': s.status,
+            'company_name': getattr(s, 'company_name', None),
+            'sub_co_kind': getattr(s, 'sub_co_kind', None),
+            'auto_generated': bool(getattr(s, 'auto_generated', False)),
+        } for s in subs]
+        if subs and co_dict.get('amount') is not None:
+            sub_total = sum(float(s.amount or 0) for s in subs)
+            co_dict['linked_sub_total'] = round(sub_total, 2)
+            co_dict['owner_sub_variance'] = round(float(co_dict.get('amount') or 0) - sub_total, 2)
+    return co_dict
+
+
 def pco_to_dict(pco, allocations=None):
     allocs = allocations
     return {
@@ -690,6 +728,9 @@ def co_workflow_action(co, action, user, User, allocations=None):
         if is_subcontract_co(co) and (sub_kind or '') == 'Contract Add':
             if not (getattr(co, 'linked_commitment_ref', None) or '').strip():
                 raise ValueError('Contract add subcontractor change orders require a linked subcontract commitment.')
+        if is_subcontract_co(co) and (sub_kind or '') == 'Owner CO Backcharge':
+            if not getattr(co, 'linked_owner_co_id', None):
+                raise ValueError('Owner CO backcharge subcontractor change orders require a linked owner change order.')
     if action == 'submit':
         if co.status not in ('Draft',):
             raise ValueError('Only draft change orders can be submitted')

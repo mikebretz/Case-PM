@@ -304,15 +304,15 @@
 
   function onSubCoKindChange() {
     const kind = document.getElementById('modalSubCoKind')?.value || '';
-    const ownerRow = document.getElementById('modalOwnerCoRow');
     const help = document.getElementById('allocationHelpText');
-    if (ownerRow) ownerRow.classList.toggle('hidden', kind !== 'Owner CO Backcharge');
     if (help) {
       help.textContent = kind === 'Budget Transfer'
         ? 'Enter at least two rows with opposite signs that net to zero (move budget between cost codes). Does not change total contract value.'
         : kind === 'Contract Add'
           ? 'Positive amounts add to the subcontract commitment and Sub SOV. Link a subcontract commitment before submit.'
-          : 'Cost code, cost type, and amount are required before submit or approval. Syncs to Budget, Sub SOV, and Sage Subcontracts.';
+          : kind === 'Owner CO Backcharge'
+            ? 'Link the approved owner CO below. Allocations should mirror the owner CO subcontract cost codes being backcharged to this sub.'
+            : 'Cost code, cost type, and amount are required before submit or approval. Syncs to Budget, Sub SOV, and Sage Subcontracts.';
     }
   }
 
@@ -428,11 +428,24 @@
     });
   }
 
-  function ownerCoLabel(ownerCoId) {
+  function ownerCoLabel(ownerCoId, co) {
     if (!ownerCoId) return '—';
+    if (co?.linked_owner_co?.number) {
+      return co.linked_owner_co.number;
+    }
     const c = state.ownerChangeOrders.find(x => String(x.id) === String(ownerCoId))
       || ownerCos().find(x => String(x.id) === String(ownerCoId));
     return c ? `${c.number}` : `#${ownerCoId}`;
+  }
+
+  function ownerCoLink(ownerCoId, co) {
+    if (!ownerCoId) return '—';
+    const label = ownerCoLabel(ownerCoId, co);
+    return `<button type="button" class="font-mono text-sky-400 hover:underline" onclick="event.stopPropagation(); CasePMChangeOrders.viewCo(${ownerCoId})">${esc(label)}</button>`;
+  }
+
+  function subCoLink(subId, number) {
+    return `<button type="button" class="font-mono text-amber-400 hover:underline" onclick="event.stopPropagation(); CasePMChangeOrders.viewCo(${subId})">${esc(number)}</button>`;
   }
 
   function subCoApproveStatuses() {
@@ -458,7 +471,7 @@
         <td class="px-4 py-3 whitespace-nowrap">${fmtDate(co.date)}</td>
         <td class="px-4 py-3 text-xs text-zinc-300">${co.company_name || '—'}</td>
         <td class="px-4 py-3 font-mono text-xs">${co.linked_commitment_ref || '—'}</td>
-        <td class="px-4 py-3 font-mono text-xs text-sky-400">${ownerCoLabel(co.linked_owner_co_id)}</td>
+        <td class="px-4 py-3 font-mono text-xs text-sky-400">${ownerCoLink(co.linked_owner_co_id, co)}</td>
         <td class="px-4 py-3 text-xs">${co.sub_co_kind || '—'}</td>
         <td class="px-4 py-3 text-right font-mono">${fmt(co.amount)}</td>
         <td class="px-4 py-3 text-center">${statusBadge(co.status)}</td>
@@ -482,7 +495,7 @@
     if (!tbody) return;
     const rows = filteredCos();
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="10" class="px-6 py-12 text-center text-zinc-500">No change orders found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" class="px-6 py-12 text-center text-zinc-500">No change orders found.</td></tr>';
       return;
     }
     tbody.innerHTML = rows.map(co => {
@@ -490,6 +503,7 @@
       const showApprove = (isSubCo(co) ? subCoApproveStatuses() : ['Submitted', 'Pending Architect', 'Pending Owner']).includes(co.status) && canActOnBall(co.ball_in_court_role);
       const showReject = showApprove;
       const approveLabel = co.status === 'Pending Owner' ? 'Final Approve' : 'Approve Step';
+      const subCount = (co.linked_sub_change_orders || []).length;
       return `
       <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer" onclick="CasePMChangeOrders.viewCo(${co.id})">
         <td class="px-4 py-3 font-mono text-emerald-400 whitespace-nowrap">${co.number || '—'}</td>
@@ -499,6 +513,7 @@
         <td class="px-4 py-3 font-mono text-xs">${co.cost_code || (co.allocations?.[0]?.cost_code) || '—'}</td>
         <td class="px-4 py-3 text-right font-mono">${fmt(co.amount)}</td>
         <td class="px-4 py-3 text-center">${statusBadge(co.status)}</td>
+        <td class="px-4 py-3 text-center">${subCount ? `<span class="text-[10px] text-amber-400 font-medium">${subCount} SCO</span>` : '<span class="text-zinc-600">—</span>'}</td>
         <td class="px-4 py-3 text-center">${ballBadge(co.ball_in_court_role)}</td>
         <td class="px-4 py-3 text-center text-[10px] ${co.sov_synced_at ? 'text-emerald-400' : 'text-zinc-500'}">${co.sov_synced_at ? 'SOV ✓' : (co.sage_sync_status || '—')}</td>
         <td class="px-4 py-3 text-center" onclick="event.stopPropagation()">
@@ -810,7 +825,7 @@
     document.getElementById('modalDateRow').classList.toggle('hidden', isPco);
     document.getElementById('modalContractTypeRow').classList.toggle('hidden', isPco || isSub);
     document.getElementById('modalSubKindRow')?.classList.toggle('hidden', !isSub);
-    document.getElementById('modalOwnerCoRow')?.classList.toggle('hidden', !isSub || (record?.sub_co_kind || 'Contract Add') !== 'Owner CO Backcharge');
+    document.getElementById('modalOwnerCoRow')?.classList.toggle('hidden', !isSub);
     populateSelect('modalStatus', isPco ? PCO_STATUSES : (isSub ? SUB_CO_STATUSES : (
       (record?.status === 'Approved' && !devUnlock()) ? CO_STATUSES : CO_STATUSES
     )), record?.status || (isPco ? 'Open' : 'Draft'));
@@ -893,6 +908,10 @@
     }
     if (mode === 'sub' && subCoKind === 'Contract Add' && needsAlloc && !payload.linked_commitment_ref) {
       alert('Contract add subcontractor change orders require a linked subcontract commitment.');
+      return;
+    }
+    if (mode === 'sub' && subCoKind === 'Owner CO Backcharge' && needsAlloc && !payload.linked_owner_co_id) {
+      alert('Owner CO backcharge subcontractor change orders require a linked owner change order.');
       return;
     }
     showAllocationValidation('');
@@ -1145,7 +1164,12 @@
         <p><span class="text-zinc-500">Description</span><br>${esc(co.description || '—')}</p>
         ${co.source_pco_id ? `<p><span class="text-zinc-500">Source PCO</span><br>#${co.source_pco_id}</p>` : ''}
         ${isSubCo(co) ? `<p><span class="text-zinc-500">Sub CO Type</span><br>${esc(co.sub_co_kind || '—')}${co.auto_generated ? ' <span class="text-sky-400 text-xs">(auto-generated)</span>' : ''}</p>` : ''}
-        ${co.linked_owner_co_id ? `<p><span class="text-zinc-500">Owner CO</span><br><span class="font-mono text-sky-400">${ownerCoLabel(co.linked_owner_co_id)}</span></p>` : ''}
+        ${co.linked_owner_co_id ? `<p><span class="text-zinc-500">Linked Owner CO</span><br>${ownerCoLink(co.linked_owner_co_id, co)}${co.linked_owner_co?.amount != null ? ` <span class="text-zinc-500 text-xs">(${fmt(co.linked_owner_co.amount)} ${esc(co.linked_owner_co.status || '')})</span>` : ''}</p>` : ''}
+        ${isSubCo(co) && co.owner_sub_variance != null && co.linked_owner_co_id ? `<p><span class="text-zinc-500">Variance vs Owner CO</span><br><span class="font-mono ${co.owner_sub_variance >= 0 ? 'text-amber-400' : 'text-red-400'}">${fmt(co.owner_sub_variance)}</span> <span class="text-[10px] text-zinc-500">(sub − owner)</span></p>` : ''}
+        ${!isSubCo(co) && (co.linked_sub_change_orders || []).length ? `<div class="mt-2"><div class="text-xs text-zinc-500 uppercase tracking-wide mb-1">Linked Sub Change Orders</div>
+          <div class="space-y-1">${co.linked_sub_change_orders.map(s => `<div class="flex justify-between gap-2 text-xs"><span>${subCoLink(s.id, s.number)}${s.auto_generated ? ' <span class="text-sky-400">AUTO</span>' : ''} · ${esc(s.company_name || '')}</span><span class="font-mono">${fmt(s.amount)}</span><span>${statusBadge(s.status)}</span></div>`).join('')}
+          ${co.owner_sub_variance != null ? `<div class="text-xs mt-2 pt-2 border-t border-zinc-800 flex justify-between"><span class="text-zinc-500">Owner vs linked sub total</span><span class="font-mono ${co.owner_sub_variance >= 0 ? 'text-emerald-400' : 'text-red-400'}">${fmt(co.owner_sub_variance)}</span></div>` : ''}
+        </div>` : ''}
         <p><span class="text-zinc-500">Linked RFI</span><br>${co.linked_rfi_id ? `<a href="/rfis" class="text-sky-400 hover:underline">${esc(linkedRfiLabel(co.linked_rfi_id))}</a>` : '—'}</p>
         <p><span class="text-zinc-500">Linked commitment</span><br>${esc(co.linked_commitment_ref || '—')}</p>
         <p><span class="text-zinc-500">Sage / SOV</span><br>${co.sov_synced_at ? '<span class="text-emerald-400">Synced to Budget &amp; SOV</span>' : esc(co.sage_sync_status || '—')}</p>
@@ -1167,7 +1191,7 @@
       ${showSubmit ? `<button type="button" onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit for Approval</button>` : ''}
       ${showApprove ? `<button type="button" onclick="CasePMChangeOrders.openApprovalModal(${co.id},'approve')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Review &amp; Approve</button>` : ''}
       ${co.status === 'Approved' ? `<button type="button" onclick="CasePMChangeOrders.resyncSov(${co.id})" class="px-4 py-2 bg-violet-800 hover:bg-violet-700 rounded-md text-sm">Re-sync to Pay App / Sub SOV</button>` : ''}
-      ${canApprove() ? `<button type="button" onclick="CasePMChangeOrders.editCo(${co.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
+      ${canApprove() ? `<button type="button" onclick="CasePMChangeOrders.${isSubCo(co) ? 'editSubCo' : 'editCo'}(${co.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
       <button type="button" onclick="CasePMChangeOrders.deleteCo(${co.id})" class="px-4 py-2 bg-red-950 hover:bg-red-900 border border-red-800 rounded-md text-sm text-red-300">Delete</button>` : ''}`;
     openDrawer();
   }
