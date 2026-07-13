@@ -122,6 +122,7 @@ PROJECT_AGNOSTIC_ENDPOINTS = frozenset({
     'static',
     'favicon',
     'download_casepm_connector',
+    'download_casepm_connector_vbs',
     'api_stats',
     'api_current_project',
     'api_portfolio_schedules',
@@ -1871,17 +1872,35 @@ def login():
 
 @app.route('/download/casepm-connector')
 def download_casepm_connector():
-    """One-click Windows installer — adds a pinned Case PM desktop shortcut."""
+    """Case PM Desktop HTA — runs when opened, installs to Documents\\Case PM Desktop."""
+    from connector_download import build_connector_hta
+    proto = request.headers.get('X-Forwarded-Proto', request.scheme)
+    host = request.headers.get('Host', request.host)
+    server_url = f'{proto}://{host}'.rstrip('/')
+    buf = build_connector_hta(server_url)
+    inline = request.args.get('run') == '1' or request.args.get('inline') == '1'
+    return send_file(
+        buf,
+        mimetype='application/hta',
+        as_attachment=not inline,
+        download_name='Case PM Desktop.hta',
+    )
+
+
+@app.route('/download/casepm-connector.vbs')
+def download_casepm_connector_vbs():
+    """VBS fallback if HTA is blocked."""
     from connector_download import build_connector_installer
     proto = request.headers.get('X-Forwarded-Proto', request.scheme)
     host = request.headers.get('Host', request.host)
     server_url = f'{proto}://{host}'.rstrip('/')
     buf = build_connector_installer(server_url)
+    inline = request.args.get('run') == '1'
     return send_file(
         buf,
         mimetype='application/octet-stream',
-        as_attachment=True,
-        download_name='Add Case PM to Desktop.vbs',
+        as_attachment=not inline,
+        download_name='Case PM Desktop.vbs',
     )
 
 
@@ -12478,6 +12497,9 @@ def update_profile():
 
 @app.route('/favicon.ico')
 def favicon():
+    icon = os.path.join(app.root_path, 'static', 'img', 'casepm-desktop-icon.ico')
+    if os.path.isfile(icon):
+        return send_from_directory(os.path.join(app.root_path, 'static', 'img'), 'casepm-desktop-icon.ico')
     icon = os.path.join(app.root_path, 'static', 'img', 'casepm-icon.ico')
     if os.path.isfile(icon):
         return send_from_directory(os.path.join(app.root_path, 'static', 'img'), 'casepm-icon.ico')

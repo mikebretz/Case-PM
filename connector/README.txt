@@ -1,9 +1,14 @@
-Case PM Desktop Connector (v1.4)
+Case PM Desktop Connector (v2.0)
 ================================
 
-Uses pure VBScript (no oversized PowerShell command line).
+Click **Add Case PM to Desktop** on the login page.
 
-Flow:
-  1. Yes/No on the login page
-  2. Open "Add Case PM to Desktop.vbs" when the browser asks
-  3. Yes/No on Windows — downloads icon from server, desktop shortcut created
+1. OK on the login popup
+2. Windows opens **Case PM Desktop.hta** (click Open if asked)
+3. OK on the Windows prompt — installs to:
+   Documents\Case PM Desktop\
+4. Desktop shortcut **Case PM** is created
+
+Icon: static/img/casepm-desktop-icon.ico
+
+Regenerate: python scripts/generate_casepm_icon.py

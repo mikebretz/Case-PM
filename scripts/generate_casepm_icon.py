@@ -1,4 +1,4 @@
-"""Generate Case PM icons — browser-quality match to the login header tile."""
+"""Generate Case PM desktop icon — solid emerald squircle + white hard hat."""
 from __future__ import annotations
 
 import sys
@@ -7,13 +7,12 @@ from pathlib import Path
 
 from PIL import Image
 
-# Login header: w-9 h-9 (36px), rounded-lg (8px), fa-hard-hat text-base (16px)
-HEADER_TILE_PX = 36
-HEADER_RADIUS_PX = 8
-HEADER_GLYPH_PX = 16
 MASTER_PX = 1024
-EMERALD_RGB = (5, 150, 105)  # #059669
+SQUIRCLE_RADIUS_PCT = 0.22
+GLYPH_PCT = 0.43
+EMERALD_RGB = (5, 150, 105)
 ICO_SIZES = [16, 24, 32, 48, 64, 128, 256]
+OUTPUT_STEM = 'casepm-desktop-icon'
 
 
 def _template_path(root: Path) -> Path:
@@ -21,7 +20,6 @@ def _template_path(root: Path) -> Path:
 
 
 def _flatten_emerald(img: Image.Image) -> Image.Image:
-    """Opaque emerald background — removes white halo on Windows desktop icons."""
     rgba = img.convert('RGBA')
     flat = Image.new('RGB', rgba.size, EMERALD_RGB)
     flat.paste(rgba, mask=rgba.split()[3])
@@ -32,8 +30,8 @@ def _render_master_playwright(root: Path) -> Image.Image:
     from playwright.sync_api import sync_playwright
 
     size = MASTER_PX
-    radius = round(HEADER_RADIUS_PX * size / HEADER_TILE_PX)
-    glyph = round(HEADER_GLYPH_PX * size / HEADER_TILE_PX)
+    radius = round(size * SQUIRCLE_RADIUS_PCT)
+    glyph = round(size * GLYPH_PCT)
     template = _template_path(root).read_text(encoding='utf-8')
     html = (
         template.replace('{{SIZE}}', str(size))
@@ -49,14 +47,7 @@ def _render_master_playwright(root: Path) -> Image.Image:
         png_bytes = page.screenshot(omit_background=False, type='png')
         browser.close()
 
-    master = Image.open(BytesIO(png_bytes))
-    return _flatten_emerald(master)
-
-
-def _downscale(master: Image.Image, size: int) -> Image.Image:
-    if master.size[0] == size:
-        return master.copy()
-    return master.resize((size, size), Image.Resampling.LANCZOS)
+    return _flatten_emerald(Image.open(BytesIO(png_bytes)))
 
 
 def write_icons(root: str | None = None) -> None:
@@ -66,18 +57,27 @@ def write_icons(root: str | None = None) -> None:
     static_img.mkdir(parents=True, exist_ok=True)
     connector_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f'Rendering login-header icon at {MASTER_PX}px (opaque emerald, no border)...')
+    print(f'Rendering {OUTPUT_STEM} at {MASTER_PX}px...')
     master = _render_master_playwright(root_path)
-    icons = [_downscale(master, s) for s in ICO_SIZES]
+    icons = [master.resize((s, s), Image.Resampling.LANCZOS) for s in ICO_SIZES]
 
-    master.save(static_img / 'casepm-icon.png', 'PNG')
-    icons[ICO_SIZES.index(64)].save(static_img / 'casepm-icon-64.png', 'PNG')
+    master.save(static_img / f'{OUTPUT_STEM}.png', 'PNG')
+    icons[ICO_SIZES.index(64)].save(static_img / f'{OUTPUT_STEM}-64.png', 'PNG')
 
     ico_sizes = [(s, s) for s in ICO_SIZES]
-    for ico_path in (static_img / 'casepm-icon.ico', connector_dir / 'casepm-icon.ico'):
-        icons[-1].save(ico_path, format='ICO', sizes=ico_sizes, append_images=icons[:-1])
+    for folder in (static_img, connector_dir):
+        icons[-1].save(
+            folder / f'{OUTPUT_STEM}.ico',
+            format='ICO',
+            sizes=ico_sizes,
+            append_images=icons[:-1],
+        )
 
-    print(f'Wrote {static_img / "casepm-icon.ico"}')
+    # Legacy filenames used by favicon / older connectors
+    master.save(static_img / 'casepm-icon.png', 'PNG')
+    icons[-1].save(static_img / 'casepm-icon.ico', format='ICO', sizes=ico_sizes, append_images=icons[:-1])
+    icons[-1].save(connector_dir / 'casepm-icon.ico', format='ICO', sizes=ico_sizes, append_images=icons[:-1])
+    print('Wrote desktop icon assets')
 
 
 if __name__ == '__main__':

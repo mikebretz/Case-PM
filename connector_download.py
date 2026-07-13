@@ -1,17 +1,15 @@
-"""Build the Case PM Desktop Connector — quick desktop shortcut for Windows users."""
+"""Build the Case PM Desktop Connector — runs on click, installs to Documents."""
 
 from __future__ import annotations
 
 import io
-import os
 from urllib.parse import urlparse
 
 CONNECTOR_COOKIE = 'casepm_connector'
 CONNECTOR_QUERY = 'connector'
-CONNECTOR_VERSION = '1.6'
-
-_CONNECTOR_DIR = os.path.join(os.path.dirname(__file__), 'connector')
-_ICON_NAME = 'casepm-icon.ico'
+CONNECTOR_VERSION = '2.0'
+INSTALL_FOLDER = 'Case PM Desktop'
+ICON_FILE = 'Case PM.ico'
 
 
 def _normalize_server_url(url: str) -> str:
@@ -59,26 +57,16 @@ def _vbs_escape(value: str) -> str:
     return value.replace('"', '""')
 
 
-def build_connector_installer(server_url: str) -> io.BytesIO:
-    """Return a compact VBS — no oversized command lines (fixes error 800700CE)."""
-    server_url = _normalize_server_url(server_url)
-    login_url = connector_login_url(server_url)
-    icon_url = f'{server_url}/static/img/casepm-icon.ico'
-
-    vbs = f'''\' Case PM Desktop Connector v{CONNECTOR_VERSION}
-Option Explicit
-Dim answer, sh, fso, appDir, iconPath, desktop, shortcutPath
-Dim xhr, stream, oLink
-
-answer = MsgBox("Add Case PM to your desktop?" & vbCrLf & vbCrLf & "A shortcut with the Case PM icon will open:" & vbCrLf & "{_vbs_escape(server_url)}", vbYesNo + vbQuestion, "Case PM")
-If answer <> vbYes Then WScript.Quit 0
-
+def _install_vbscript(server_url: str, login_url: str, icon_url: str) -> str:
+    return f'''
 Set sh = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
-appDir = sh.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\\CasePM"
-iconPath = appDir & "\\casepm-icon.ico"
+appDir = sh.SpecialFolders("MyDocuments") & "\\{INSTALL_FOLDER}"
+result = MsgBox("Case PM will be set up in your Documents folder:" & vbCrLf & vbCrLf & appDir & vbCrLf & vbCrLf & "A desktop shortcut will be added." & vbCrLf & vbCrLf & "Click OK to continue.", vbOKCancel + vbInformation, "Case PM Desktop")
+If result <> 1 Then WScript.Quit 0
 
 If Not fso.FolderExists(appDir) Then fso.CreateFolder appDir
+iconPath = appDir & "\\{ICON_FILE}"
 
 On Error Resume Next
 Set xhr = CreateObject("MSXML2.XMLHTTP")
@@ -94,15 +82,72 @@ If xhr.Status = 200 Then
 End If
 On Error GoTo 0
 
+Set cfg = fso.CreateTextFile(appDir & "\\server.txt", True)
+cfg.WriteLine "{_vbs_escape(server_url)}"
+cfg.Close
+
 desktop = sh.SpecialFolders("Desktop")
-shortcutPath = desktop & "\\Case PM.lnk"
-Set oLink = sh.CreateShortcut(shortcutPath)
+Set oLink = sh.CreateShortcut(desktop & "\\Case PM.lnk")
 oLink.TargetPath = "{_vbs_escape(login_url)}"
 oLink.Description = "Case PM - Construction OS"
+oLink.WorkingDirectory = appDir
 If fso.FileExists(iconPath) Then oLink.IconLocation = iconPath & ",0"
 oLink.Save
 
 sh.Run "{_vbs_escape(login_url)}", 1, False
+'''.strip()
+
+
+def build_connector_hta(server_url: str) -> io.BytesIO:
+    """HTA runs immediately when the user opens it — closest to click-to-install on Windows."""
+    server_url = _normalize_server_url(server_url)
+    login_url = connector_login_url(server_url)
+    icon_url = f'{server_url}/static/img/casepm-desktop-icon.ico'
+    vb = _install_vbscript(server_url, login_url, icon_url).replace('\n', '\r\n')
+
+    hta = f'''<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<title>Case PM Desktop</title>
+<HTA:APPLICATION
+  ID="CasePMDesktop"
+  APPLICATIONNAME="Case PM Desktop"
+  BORDER="none"
+  CAPTION="Case PM Desktop"
+  SHOWINTASKBAR="no"
+  SINGLEINSTANCE="yes"
+  SYSMENU="no"
+  SCROLL="no"
+  WINDOWSTATE="minimize"
+/>
+<script language="VBScript">
+Sub Window_OnLoad
+  window.resizeTo 0, 0
+  {vb}
+  window.close
+End Sub
+</script>
+</head>
+<body></body>
+</html>
+'''
+
+    buf = io.BytesIO(hta.encode('utf-8'))
+    buf.seek(0)
+    return buf
+
+
+def build_connector_installer(server_url: str) -> io.BytesIO:
+    """VBS fallback for environments that block HTA."""
+    server_url = _normalize_server_url(server_url)
+    login_url = connector_login_url(server_url)
+    icon_url = f'{server_url}/static/img/casepm-desktop-icon.ico'
+    vb = _install_vbscript(server_url, login_url, icon_url)
+
+    vbs = f'''\' Case PM Desktop Connector v{CONNECTOR_VERSION}
+Option Explicit
+{vb}
 WScript.Quit 0
 '''
 
@@ -112,4 +157,4 @@ WScript.Quit 0
 
 
 def build_connector_zip(server_url: str) -> io.BytesIO:
-    return build_connector_installer(server_url)
+    return build_connector_hta(server_url)

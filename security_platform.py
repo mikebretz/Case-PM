@@ -30,6 +30,7 @@ CSRF_EXEMPT_PREFIXES = (
 CSRF_EXEMPT_ENDPOINTS = frozenset({
     'login', 'logout', 'recovery_login', 'recovery_enter', 'force_change_password',
     'verify_2fa', 'static', 'favicon', 'download_casepm_connector',
+    'download_casepm_connector_vbs',
 })
 
 
