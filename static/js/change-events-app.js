@@ -66,6 +66,7 @@
   }
 
   function openCorReviewModal(id) {
+    if (CO.closeDrawer) CO.closeDrawer();
     const c = ext.cors.find(x => x.id === id);
     if (!c || typeof global.CasePMApprovalResponder === 'undefined') {
       corWorkflow(id, 'approve', c?.status === 'Pending Accounting');
@@ -100,6 +101,7 @@
   }
 
   async function openCeReviewModal(id) {
+    if (CO.closeDrawer) CO.closeDrawer();
     let e = ext.changeEvents.find(x => x.id === id);
     if (!e) {
       try { e = await api(`/api/change-events/${id}`); } catch { return; }
@@ -136,6 +138,7 @@
   }
 
   function openErpReviewModal(id) {
+    if (CO.closeDrawer) CO.closeDrawer();
     const ev = ext.erpEvents.find(x => x.id === id);
     if (!ev || typeof global.CasePMApprovalResponder === 'undefined') {
       erpReview(id, 'accept');

@@ -674,7 +674,7 @@ def get_budget_cost_codes(BudgetProjectState, project_id):
 def user_can_act_on_ball_in_court(user, role):
     if not user or not role:
         return False
-    if user.role == 'Admin':
+    if user.role in ('Admin', 'Developer'):
         return True
     allowed = ROLE_APPROVERS.get(role, (role,))
     return user.role in allowed

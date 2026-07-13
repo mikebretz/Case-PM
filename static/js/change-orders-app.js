@@ -83,8 +83,25 @@
 
   function canActOnBall(role) {
     if (!role) return false;
-    if (userRole() === 'Admin') return true;
-    return (ROLE_MAP[role] || [role]).includes(userRole());
+    const roleName = userRole();
+    if (roleName === 'Admin' || roleName === 'Developer') return true;
+    return (ROLE_MAP[role] || [role]).includes(roleName);
+  }
+
+  function coApprovableStatuses(co) {
+    return isSubCo(co)
+      ? subCoApproveStatuses()
+      : ['Submitted', 'Pending Architect', 'Pending Owner', 'Pending Accounting'];
+  }
+
+  function coNeedsReview(co) {
+    if (!co) return false;
+    return coApprovableStatuses(co).includes(co.status) && canActOnBall(co.ball_in_court_role);
+  }
+
+  function pcoNeedsReview(p) {
+    if (!p) return false;
+    return ['Pricing', 'Pending Review'].includes(p.status) && canActOnBall(p.ball_in_court_role);
   }
 
   function projectId() {
@@ -485,7 +502,7 @@
       const variance = co.billing_variance != null ? co.billing_variance : null;
       const varianceCls = variance == null ? 'text-zinc-500' : (variance === 0 ? 'text-emerald-400' : (variance > 0 ? 'text-amber-400' : 'text-red-400'));
       return `
-      <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer" onclick="CasePMChangeOrders.viewCo(${co.id})">
+      <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer" onclick="CasePMChangeOrders.openCoItem(${co.id})">
         <td class="px-4 py-3 font-mono text-amber-400 whitespace-nowrap">${co.number || '—'}${autoTag}</td>
         <td class="px-4 py-3 whitespace-nowrap">${fmtDate(co.date)}</td>
         <td class="px-4 py-3 text-xs text-zinc-300">${co.company_name || '—'}</td>
@@ -530,7 +547,7 @@
       const approveLabel = co.status === 'Pending Owner' ? 'Final Approve' : 'Approve Step';
       const subCount = (co.linked_sub_change_orders || []).length;
       return `
-      <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer" onclick="CasePMChangeOrders.viewCo(${co.id})">
+      <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer" onclick="CasePMChangeOrders.openCoItem(${co.id})">
         <td class="px-4 py-3 font-mono text-emerald-400 whitespace-nowrap">${co.number || '—'}</td>
         <td class="px-4 py-3 whitespace-nowrap">${fmtDate(co.date)}</td>
         <td class="px-4 py-3 max-w-[200px] truncate">${co.title || co.description}</td>
@@ -561,7 +578,7 @@
       return;
     }
     tbody.innerHTML = rows.map(p => `
-      <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer" onclick="CasePMChangeOrders.viewPco(${p.id})">
+      <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer" onclick="CasePMChangeOrders.openPcoItem(${p.id})">
         <td class="px-4 py-3 font-mono text-sky-400 whitespace-nowrap">${p.number}</td>
         <td class="px-4 py-3 max-w-[240px] truncate">${p.title}</td>
         <td class="px-4 py-3 text-xs text-zinc-400">${p.company_name || '—'}</td>
@@ -1027,6 +1044,7 @@
   }
 
   function openApprovalModal(coId, intent) {
+    closeDrawer();
     const co = state.changeOrders.find(c => c.id === coId) || (state.drawerRecord?.id === coId ? state.drawerRecord : null);
     if (!co) return;
     const allocCheck = validateAllocations(co.allocations || [], {
@@ -1236,10 +1254,11 @@
       ${canApprove() ? `<button type="button" onclick="CasePMChangeOrders.${isSubCo(co) ? 'editSubCo' : 'editCo'}(${co.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
       <button type="button" onclick="CasePMChangeOrders.deleteCo(${co.id})" class="px-4 py-2 bg-red-950 hover:bg-red-900 border border-red-800 rounded-md text-sm text-red-300">Delete</button>` : ''}
       <button type="button" onclick="CasePMChangeOrders.closeDrawer()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm text-zinc-400">Close</button>`;
-    openDrawer();
-    if (showApprove && new URLSearchParams(location.search).get('respond') === '1') {
-      setTimeout(() => openApprovalModal(co.id, 'approve'), 300);
+    if (showApprove) {
+      openApprovalModal(co.id, 'approve');
+      return;
     }
+    openDrawer();
   }
 
   function renderDrawerPco(p) {
@@ -1288,10 +1307,15 @@
       ${p.status !== 'Promoted' && p.status !== 'Void' ? `<button type="button" onclick="CasePMChangeOrders.promotePco(${p.id})" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Promote to CO</button>` : ''}
       <button type="button" onclick="CasePMChangeOrders.editPco(${p.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
       <button type="button" onclick="CasePMChangeOrders.closeDrawer()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm text-zinc-400">Close</button>`;
+    if (showApprove) {
+      openPcoReviewModal(p.id);
+      return;
+    }
     openDrawer();
   }
 
   function openPcoReviewModal(pcoId) {
+    closeDrawer();
     const p = state.pcos.find(x => x.id === pcoId) || (state.drawerRecord?.id === pcoId ? state.drawerRecord : null);
     if (!p) return;
     if (typeof global.CasePMApprovalResponder === 'undefined') {
@@ -1386,11 +1410,33 @@
     } catch (err) { alert(err.message); }
   }
 
+  async function openCoItem(id) {
+    const cached = state.changeOrders.find(c => c.id === id);
+    if (cached && coNeedsReview(cached)) {
+      openApprovalModal(id, 'approve');
+      return;
+    }
+    await viewCo(id);
+  }
+
+  async function openPcoItem(id) {
+    const cached = state.pcos.find(p => p.id === id);
+    if (cached && pcoNeedsReview(cached)) {
+      openPcoReviewModal(id);
+      return;
+    }
+    await viewPco(id);
+  }
+
   async function viewCo(id) {
     try {
       const co = await api(`/api/change-orders/${id}`);
       state.drawerRecord = co;
       state.drawerType = 'co';
+      if (coNeedsReview(co)) {
+        openApprovalModal(id, 'approve');
+        return;
+      }
       renderDrawerCo(co);
     } catch (err) {
       alert(err.message);
@@ -1402,6 +1448,10 @@
       const p = await api(`/api/pcos/${id}`);
       state.drawerRecord = p;
       state.drawerType = 'pco';
+      if (pcoNeedsReview(p)) {
+        openPcoReviewModal(id);
+        return;
+      }
       renderDrawerPco(p);
     } catch (err) {
       alert(err.message);
@@ -1724,7 +1774,7 @@
     saveModal,
     editCo: id => api(`/api/change-orders/${id}`).then(openModal.bind(null, 'co')).catch(e => alert(e.message)),
     editPco: id => api(`/api/pcos/${id}`).then(openModal.bind(null, 'pco')).catch(e => alert(e.message)),
-    viewCo, viewPco, workflowCo, pcoWorkflow, openPcoReviewModal, resyncSov, openApprovalModal, confirmApprovalAction, closeDrawer, promotePco, deleteCo,
+    viewCo, viewPco, openCoItem, openPcoItem, workflowCo, pcoWorkflow, openPcoReviewModal, resyncSov, openApprovalModal, confirmApprovalAction, closeDrawer, promotePco, deleteCo,
     uploadPcoAttachment, uploadPcoDrawerAttachment,
     addAllocRow: () => { state.allocationRows.push({ cost_code: '', cost_type: '', amount: 0, description: '' }); renderAllocationRows(); },
     removeAllocRow: idx => { state.allocationRows.splice(idx, 1); renderAllocationRows(); },

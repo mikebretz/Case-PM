@@ -134,7 +134,7 @@ def g702_workflow_action(period, action, user, amount=0):
         return period['status'], False
     if action == 'reject':
         role = period.get('ball_in_court_role') or 'Project Manager'
-        if not user_can_act_on_ball_in_court(user, role) and user.role != 'Admin':
+        if not user_can_act_on_ball_in_court(user, role) and user.role not in ('Admin', 'Developer'):
             raise ValueError(f'Cannot reject while ball is with {role}')
         period['status'] = 'Draft'
         period['ball_in_court_role'] = G702_BALL_IN_COURT['Draft']
