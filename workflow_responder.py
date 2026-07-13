@@ -71,6 +71,10 @@ def co_deep_link(project_id, co_id):
     return f'/change-orders?project_id={project_id}&open=1&respond=1&co_id={co_id}'
 
 
+def pay_app_deep_link(project_id, period_number):
+    return f'/pay-applications?project_id={project_id}&open=1&respond=1&pay_entity=g702&period={period_number}'
+
+
 def user_can_act_on_rfi_ball(user, role):
     if not user or not role:
         return False
@@ -394,3 +398,46 @@ def execute_co_action(co, action, user, User, body=None, ChangeOrderAllocation=N
         developer_unlock_bypass=deps.get('developer_unlock_bypass', False),
     )
     return action, co_to_dict(co, allocations=result.get('alloc_payload') or []), result
+
+
+def get_pay_app_responder_context(project_id, period, user, state):
+    from pay_app_workflow import get_g702_responder_context
+    return get_g702_responder_context(project_id, period, user, state)
+
+
+def execute_pay_app_action(project_id, period, action, user, User, body=None, workflow_deps=None):
+    from pay_app_workflow import process_pay_app_workflow
+
+    body = body or {}
+    action = (action or '').lower()
+    if action not in ('submit', 'approve', 'reject'):
+        raise ValueError(f'Unsupported pay application action: {action}')
+
+    deps = workflow_deps or {}
+    record, state = deps.get('get_state')()
+    if not state:
+        state = {}
+    period_num = (period or {}).get('periodNumber')
+    result = process_pay_app_workflow(
+        project_id,
+        'g702',
+        period_num,
+        action,
+        user,
+        User,
+        body,
+        state,
+        PayAppProjectState=deps['PayAppProjectState'],
+        db=deps['db'],
+        ChangeOrder=deps.get('ChangeOrder'),
+        ChangeOrderAllocation=deps.get('ChangeOrderAllocation'),
+        BudgetProjectState=deps.get('BudgetProjectState'),
+        Commitment=deps.get('Commitment'),
+        CommitmentAllocation=deps.get('CommitmentAllocation'),
+        Project=deps.get('Project'),
+        SageSyncEvent=deps.get('SageSyncEvent'),
+    )
+    from pay_app_persistence import save_pay_app_state
+    save_pay_app_state(deps['PayAppProjectState'], deps['db'], project_id, result['state'], user.id)
+    ctx = get_pay_app_responder_context(project_id, result['state'].get('currentPayAppPeriod'), user, result['state'])
+    return action, ctx, result
