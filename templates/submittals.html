@@ -1997,9 +1997,11 @@ function parseSpecBookFooter(text) {
     const raw = String(text || '').replace(/\s+/g, ' ').trim();
     if (!raw) return null;
     const patterns = [
-        /(\d{2}\s+\d{2}\s+\d{2})\s*[-–—]\s*(\d+)\s*$/i,
-        /(\d{6})\s*[-–—]\s*(\d+)\s*$/i,
-        /(\d{2}\s+\d{2}\s+\d{2})\s+(\d+)\s*$/i,
+        /(\d{2}\s+\d{2}\s+\d{2})\s*[-–—]\s*(\d+)\b/i,
+        /(\d{2}\s*\d{2}\s*\d{2})\s*[-–—]\s*(\d+)\b/i,
+        /(\d{6})\s*[-–—]\s*(\d+)\b/i,
+        /(\d{2}\s+\d{2}\s+\d{2})\s+(\d+)\b/i,
+        /(\d{6})\s+(\d+)\b/i,
     ];
     for (const re of patterns) {
         const m = raw.match(re);
@@ -2010,7 +2012,7 @@ function parseSpecBookFooter(text) {
             };
         }
     }
-    const anywhere = raw.match(/(\d{2}\s+\d{2}\s+\d{2}|\d{6})\s*[-–—]\s*(\d+)/i);
+    const anywhere = raw.match(/(\d{2}\s*\d{2}\s*\d{2}|\d{6})\s*[-–—]\s*(\d+)/i);
     if (anywhere) {
         return {
             section: normalizeSpecSectionNumber(anywhere[1]),
@@ -2026,8 +2028,8 @@ async function extractPdfPageFooterSection(page, fullText) {
         const viewport = page.getViewport({ scale: 1 });
         const pageH = viewport.height;
         const pageW = viewport.width;
-        const bottomY = pageH * 0.14;
-        const rightX = pageW * 0.42;
+        const bottomY = pageH * 0.2;
+        const rightX = pageW * 0.33;
 
         const bottomItems = (content.items || [])
             .filter(it => it.str && String(it.str).trim())
@@ -2036,12 +2038,16 @@ async function extractPdfPageFooterSection(page, fullText) {
                 x: it.transform[4],
                 y: it.transform[5],
             }))
-            .filter(it => it.y <= bottomY && it.x >= rightX)
+            .filter(it => it.y <= bottomY);
+
+        const rightBottomItems = bottomItems
+            .filter(it => it.x >= rightX)
             .sort((a, b) => (Math.abs(a.y - b.y) > 2 ? a.y - b.y : a.x - b.x));
 
         const footerCandidates = [
-            bottomItems.map(it => it.str).join(' '),
-            bottomItems.slice().reverse().map(it => it.str).join(' '),
+            rightBottomItems.map(it => it.str).join(' '),
+            rightBottomItems.slice().reverse().map(it => it.str).join(' '),
+            bottomItems.sort((a, b) => (Math.abs(a.y - b.y) > 2 ? a.y - b.y : a.x - b.x)).map(it => it.str).join(' '),
         ];
         for (const candidate of footerCandidates) {
             const parsed = parseSpecBookFooter(candidate);
@@ -2052,45 +2058,37 @@ async function extractPdfPageFooterSection(page, fullText) {
     }
 
     const lines = String(fullText || '').split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
-    for (let i = lines.length - 1; i >= Math.max(0, lines.length - 6); i--) {
+    for (let i = lines.length - 1; i >= Math.max(0, lines.length - 8); i--) {
         const parsed = parseSpecBookFooter(lines[i]);
         if (parsed) return parsed;
     }
     return null;
 }
 
-function buildSectionMapsFromFooters(pageFooterRows, pageCount) {
-    const pageFooters = (pageFooterRows || []).filter(row => row?.section);
+function buildSectionMapsFromFooters(pageFooterRows) {
+    const pageFooters = (pageFooterRows || [])
+        .filter(row => row?.section)
+        .sort((a, b) => a.page - b.page);
     const sectionPageMap = {};
     const sectionPageLists = {};
 
     pageFooters.forEach(({ page, section, sectionPage }) => {
         if (!sectionPageLists[section]) sectionPageLists[section] = [];
-        if (!sectionPageLists[section].some(entry => entry.page === page)) {
-            sectionPageLists[section].push({ page, sectionPage });
+        if (!sectionPageLists[section].includes(page)) {
+            sectionPageLists[section].push(page);
+        }
+        if (sectionPage === 1) {
+            sectionPageMap[section] = page;
+        } else if (!sectionPageMap[section]) {
+            sectionPageMap[section] = page;
         }
     });
 
-    Object.entries(sectionPageLists).forEach(([section, entries]) => {
-        entries.sort((a, b) => a.page - b.page);
-        const pageOne = entries.find(entry => entry.sectionPage === 1);
-        sectionPageMap[section] = pageOne ? pageOne.page : entries[0].page;
-
-        const pages = entries.map(entry => entry.page);
-        const min = Math.min(...pages);
-        const max = Math.max(...pages);
-        const filled = [];
-        for (let p = min; p <= max; p++) filled.push(p);
-        sectionPageLists[section] = filled;
-    });
-
-    const ordered = Object.entries(sectionPageMap)
-        .map(([section, startPage]) => ({ section, startPage }))
-        .sort((a, b) => a.startPage - b.startPage);
-    ordered.forEach((entry, idx) => {
-        const nextStart = ordered[idx + 1]?.startPage;
-        if (!nextStart) return;
-        sectionPageLists[entry.section] = (sectionPageLists[entry.section] || []).filter(p => p < nextStart);
+    Object.entries(sectionPageLists).forEach(([section, pages]) => {
+        sectionPageLists[section] = pages.slice().sort((a, b) => a - b);
+        if (!sectionPageMap[section]) {
+            sectionPageMap[section] = sectionPageLists[section][0];
+        }
     });
 
     return {
@@ -2104,10 +2102,10 @@ function buildSpecBookSectionMaps(pageTexts) {
     const pageFooterRows = (pageTexts || [])
         .map(({ page, footer }) => footer ? { page, section: footer.section, sectionPage: footer.sectionPage } : null)
         .filter(Boolean);
-    const footerMaps = buildSectionMapsFromFooters(pageFooterRows, pageTexts.length);
+    const footerMaps = buildSectionMapsFromFooters(pageFooterRows);
     const headerMap = buildSectionPageMap(pageTexts);
 
-    if (Object.keys(footerMaps.sectionPageMap).length >= 3) {
+    if (pageFooterRows.length >= 3) {
         return footerMaps;
     }
 
@@ -3548,15 +3546,29 @@ function getNextSpecSectionInBook(specSection, map) {
 
 let specBookContentMapPromise = null;
 
-async function ensureContentSectionPageMap() {
+function hasSpecBookFooterMaps() {
+    const lists = specBookArchive?.sectionFooterMap?.sectionPageLists;
+    return !!(lists && Object.keys(lists).length && Array.isArray(specBookArchive?.pageFooters) && specBookArchive.pageFooters.length);
+}
+
+async function ensureSpecBookFooterMaps() {
     if (!specBookArchive) return {};
-    if (specBookArchive.contentSectionPageMap) return specBookArchive.contentSectionPageMap;
+    if (hasSpecBookFooterMaps()) {
+        return specBookArchive.sectionFooterMap.sectionPageLists;
+    }
     if (!specBookContentMapPromise) {
         specBookContentMapPromise = rebuildContentSectionPageMap().finally(() => {
             specBookContentMapPromise = null;
         });
     }
-    return specBookContentMapPromise;
+    await specBookContentMapPromise;
+    return specBookArchive?.sectionFooterMap?.sectionPageLists || {};
+}
+
+async function ensureContentSectionPageMap() {
+    if (!specBookArchive) return {};
+    await ensureSpecBookFooterMaps();
+    return specBookArchive.contentSectionPageMap || specBookArchive.sectionPageMap || {};
 }
 
 async function rebuildContentSectionPageMap() {
@@ -3644,6 +3656,31 @@ function resolveSpecBookPageForSubmittal(item) {
     return map[sec] || 1;
 }
 
+function resolveSectionPagesFromPageFooters(specSection) {
+    const sec = normalizeSpecSectionNumber(specSection);
+    const rows = (specBookArchive?.pageFooters || []).filter(row => normalizeSpecSectionNumber(row.section) === sec);
+    if (!rows.length) return null;
+    const pages = rows.map(row => row.page).sort((a, b) => a - b);
+    return {
+        startPage: pages[0],
+        endPage: pages[pages.length - 1],
+        pageCount: pages.length,
+        pdfPages: pages,
+    };
+}
+
+function getSpecBookSectionNavPages(sectionPageRange) {
+    if (!sectionPageRange) return [];
+    if (Array.isArray(sectionPageRange.pdfPages) && sectionPageRange.pdfPages.length) {
+        return sectionPageRange.pdfPages.slice();
+    }
+    const start = Math.max(1, Number(sectionPageRange.startPage) || 1);
+    const end = Math.max(start, Number(sectionPageRange.endPage) || start);
+    const pages = [];
+    for (let p = start; p <= end; p++) pages.push(p);
+    return pages;
+}
+
 function resolveSpecBookPageRangeForSection(specSection) {
     const sec = normalizeSpecSectionNumber(specSection);
     const maxPage = Number(specBookArchive?.pageCount) || 1;
@@ -3658,6 +3695,9 @@ function resolveSpecBookPageRangeForSection(specSection) {
             pdfPages: pages,
         };
     }
+
+    const fromFooters = resolveSectionPagesFromPageFooters(sec);
+    if (fromFooters) return fromFooters;
 
     const map = getContentSectionPageMap();
     const startPage = Math.max(1, Number(map[sec]) || 1);
@@ -3677,10 +3717,15 @@ function resolveSpecBookPageRangeForSection(specSection) {
 function formatSpecBookPageLabel({ specSection, paragraph, safePage, maxPage, sectionPageRange }) {
     const footer = getSpecBookFooterForPage(safePage);
     const sectionText = `Section ${specSection || '—'}${paragraph ? ` • ¶ ${paragraph}` : ''}`;
+    const navPages = getSpecBookSectionNavPages(sectionPageRange);
     if (footer && footer.section === normalizeSpecSectionNumber(specSection)) {
-        const total = sectionPageRange ? sectionPageRange.pageCount : null;
+        const total = navPages.length || (sectionPageRange ? sectionPageRange.pageCount : null);
         const totalText = total ? ` of ${total}` : '';
-        return `${sectionText} — ${footer.section} - ${footer.sectionPage}${totalText} (spec book p. ${safePage})`;
+        return `${sectionText} — ${footer.section} - ${footer.sectionPage}${totalText}`;
+    }
+    if (navPages.length > 1) {
+        const sectionIndex = Math.max(1, navPages.indexOf(safePage) + 1);
+        return `${sectionText} — Page ${sectionIndex} of ${navPages.length} (spec book pp. ${navPages[0]}–${navPages[navPages.length - 1]})`;
     }
     if (sectionPageRange && sectionPageRange.endPage > sectionPageRange.startPage) {
         const sectionIndex = safePage - sectionPageRange.startPage + 1;
@@ -3735,10 +3780,17 @@ async function openSpecSectionFromSubmittal(id) {
 async function viewSpecSectionInSpecBook(item) {
     if (!item?.specSection) return;
     if (!(await ensureSpecBookReadyForViewer())) return;
-    await ensureContentSectionPageMap();
+    await ensureSpecBookFooterMaps();
 
-    const range = resolveSpecBookPageRangeForSection(item.specSection);
-    if (!range.startPage || range.startPage < 1) {
+    const sec = normalizeSpecSectionNumber(item.specSection);
+    let range = resolveSpecBookPageRangeForSection(item.specSection);
+    const hasFooterPages = !!(specBookArchive?.sectionFooterMap?.sectionPageLists?.[sec]?.length)
+        || (specBookArchive?.pageFooters || []).some(row => normalizeSpecSectionNumber(row.section) === sec);
+    if (!hasFooterPages) {
+        await rebuildContentSectionPageMap();
+        range = resolveSpecBookPageRangeForSection(item.specSection);
+    }
+    if (!range.startPage || range.startPage < 1 || !range.pdfPages?.length) {
         showCenteredAlert(`Could not locate section ${item.specSection} in the specifications book body. Try re-uploading the spec book PDF.`, 'warning');
         return;
     }
@@ -3786,11 +3838,22 @@ async function openSpecBookViewer({ page, title, subtitle, specSection, paragrap
     }
 
     const maxPage = pdf.numPages || specBookArchive.pageCount || 1;
-    const rangeStart = Math.max(1, Number(sectionPageRange?.startPage) || 1);
-    const rangeEnd = Math.max(rangeStart, Math.min(Number(sectionPageRange?.endPage) || maxPage, maxPage));
-    const boundedRange = sectionPageRange ? { startPage: rangeStart, endPage: rangeEnd } : null;
-    const pageNum = Math.max(rangeStart, Math.min(Number(page) || rangeStart, rangeEnd));
+    const navPages = getSpecBookSectionNavPages(sectionPageRange);
+    const rangeStart = navPages.length ? navPages[0] : Math.max(1, Number(sectionPageRange?.startPage) || 1);
+    const rangeEnd = navPages.length ? navPages[navPages.length - 1] : Math.max(rangeStart, Math.min(Number(sectionPageRange?.endPage) || maxPage, maxPage));
+    const boundedRange = sectionPageRange ? {
+        startPage: rangeStart,
+        endPage: rangeEnd,
+        pageCount: navPages.length || sectionPageRange.pageCount,
+        pdfPages: navPages.length ? navPages : sectionPageRange.pdfPages,
+    } : null;
+    const pageNum = navPages.length
+        ? (navPages.includes(Number(page)) ? Number(page) : navPages[0])
+        : Math.max(rangeStart, Math.min(Number(page) || rangeStart, rangeEnd));
     specBookViewerState.page = pageNum;
+    const navIdx = navPages.length ? navPages.indexOf(pageNum) : -1;
+    const prevDisabled = navPages.length ? navIdx <= 0 : pageNum <= rangeStart;
+    const nextDisabled = navPages.length ? navIdx < 0 || navIdx >= navPages.length - 1 : pageNum >= rangeEnd;
 
     document.querySelectorAll('.submittal-spec-viewer').forEach(el => {
         el.close();
@@ -3810,8 +3873,8 @@ async function openSpecBookViewer({ page, title, subtitle, specSection, paragrap
                 <div id="specBookPageLabel" class="text-xs text-sky-400 mt-0.5 font-mono">${escapeSubmittalHtml(formatSpecBookPageLabel({ specSection, paragraph, safePage: pageNum, maxPage, sectionPageRange: boundedRange }))}</div>
             </div>
             <div class="flex items-center gap-2 flex-shrink-0">
-                <button type="button" id="specBookPrevBtn" class="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded text-xs" ${pageNum <= rangeStart ? 'disabled' : ''}>Prev</button>
-                <button type="button" id="specBookNextBtn" class="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded text-xs" ${pageNum >= rangeEnd ? 'disabled' : ''}>Next</button>
+                <button type="button" id="specBookPrevBtn" class="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded text-xs" ${prevDisabled ? 'disabled' : ''}>Prev</button>
+                <button type="button" id="specBookNextBtn" class="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded text-xs" ${nextDisabled ? 'disabled' : ''}>Next</button>
             </div>
         </div>
         <div class="p-4 bg-zinc-950 overflow-auto" style="max-height: calc(90vh - 130px);">
@@ -3844,8 +3907,8 @@ async function openSpecBookViewer({ page, title, subtitle, specSection, paragrap
     makeSubmittalModalDraggable(modal);
 
     specBookViewerState.modal = modal;
-    modal.querySelector('#specBookPrevBtn')?.addEventListener('click', () => jumpSpecBookPage(pageNum - 1));
-    modal.querySelector('#specBookNextBtn')?.addEventListener('click', () => jumpSpecBookPage(pageNum + 1));
+    modal.querySelector('#specBookPrevBtn')?.addEventListener('click', () => jumpSpecBookPageRelative(-1));
+    modal.querySelector('#specBookNextBtn')?.addEventListener('click', () => jumpSpecBookPageRelative(1));
 
     await renderSpecBookViewerPage(pageNum, { specSection, paragraph, maxPage, sectionPageRange: boundedRange });
 }
@@ -3868,11 +3931,20 @@ async function renderSpecBookViewerPage(pageNum, ctx = {}) {
     try {
         const pdf = await getSpecBookPdfDocument();
         const maxPage = pdf.numPages || specBookArchive?.pageCount || 1;
-        const rangeStart = Math.max(1, Number(ctx.sectionPageRange?.startPage) || 1);
-        const rangeEnd = Math.max(rangeStart, Math.min(Number(ctx.sectionPageRange?.endPage) || maxPage, maxPage));
-        const safePage = ctx.sectionPageRange
-            ? Math.max(rangeStart, Math.min(pageNum, rangeEnd))
-            : Math.max(1, Math.min(pageNum, maxPage));
+        const navPages = getSpecBookSectionNavPages(ctx.sectionPageRange);
+        let safePage = Math.max(1, Math.min(Number(pageNum) || 1, maxPage));
+        if (navPages.length) {
+            let idx = navPages.indexOf(safePage);
+            if (idx < 0) {
+                idx = navPages.findIndex(p => p >= safePage);
+                if (idx < 0) idx = navPages.length - 1;
+            }
+            safePage = navPages[idx];
+        } else if (ctx.sectionPageRange) {
+            const rangeStart = Math.max(1, Number(ctx.sectionPageRange.startPage) || 1);
+            const rangeEnd = Math.max(rangeStart, Math.min(Number(ctx.sectionPageRange.endPage) || maxPage, maxPage));
+            safePage = Math.max(rangeStart, Math.min(safePage, rangeEnd));
+        }
         specBookViewerState.page = safePage;
 
         if (!canvas) throw new Error('PDF canvas not found');
@@ -3897,8 +3969,14 @@ async function renderSpecBookViewerPage(pageNum, ctx = {}) {
                 sectionPageRange
             });
         }
-        if (prevBtn) prevBtn.disabled = safePage <= (sectionPageRange?.startPage || 1);
-        if (nextBtn) nextBtn.disabled = safePage >= (sectionPageRange?.endPage || maxPage);
+        if (navPages.length) {
+            const navIdx = navPages.indexOf(safePage);
+            if (prevBtn) prevBtn.disabled = navIdx <= 0;
+            if (nextBtn) nextBtn.disabled = navIdx < 0 || navIdx >= navPages.length - 1;
+        } else {
+            if (prevBtn) prevBtn.disabled = safePage <= (sectionPageRange?.startPage || 1);
+            if (nextBtn) nextBtn.disabled = safePage >= (sectionPageRange?.endPage || maxPage);
+        }
     } catch (err) {
         console.error('Spec book page render error:', err);
         if (loading) loading.classList.add('hidden');
@@ -3908,6 +3986,22 @@ async function renderSpecBookViewerPage(pageNum, ctx = {}) {
             errorEl.classList.remove('hidden');
         }
     }
+}
+
+function jumpSpecBookPageRelative(delta) {
+    const modal = specBookViewerState.modal || document.querySelector('.submittal-spec-viewer');
+    if (!modal || !specBookArchive) return;
+    const ctx = modal._specBookContext || {};
+    const navPages = getSpecBookSectionNavPages(ctx.sectionPageRange);
+    const current = specBookViewerState.page || navPages[0] || 1;
+    if (!navPages.length) {
+        jumpSpecBookPage(current + delta);
+        return;
+    }
+    let idx = navPages.indexOf(current);
+    if (idx < 0) idx = 0;
+    const nextIdx = Math.max(0, Math.min(navPages.length - 1, idx + delta));
+    renderSpecBookViewerPage(navPages[nextIdx], ctx);
 }
 
 function jumpSpecBookPage(page) {
