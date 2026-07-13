@@ -181,6 +181,7 @@
     setChk('maint_db_vacuum', m.db_vacuum_enabled !== false);
     set('maint_log_retention', m.log_retention_days || 90);
     set('maint_temp_cleanup', m.temp_upload_cleanup_days || 14);
+    setChk('maint_notify_backup_fail', m.notify_admin_on_backup_failure !== false);
     updateCloudProviderFields();
     const statusEl = document.getElementById('backupLastRunStatus');
     const summaryEl = document.getElementById('backupLastRunSummary');
@@ -215,7 +216,7 @@
         db_vacuum_enabled: document.getElementById('maint_db_vacuum')?.checked,
         log_retention_days: parseInt(document.getElementById('maint_log_retention')?.value || '90', 10),
         temp_upload_cleanup_days: parseInt(document.getElementById('maint_temp_cleanup')?.value || '14', 10),
-        notify_admin_on_backup_failure: true,
+        notify_admin_on_backup_failure: document.getElementById('maint_notify_backup_fail')?.checked !== false,
       },
     };
     await api('/api/program-settings/backup', {
@@ -466,13 +467,259 @@
     });
   }
 
-  async function pushEmailToServer(settings) {
-    if (!settings) return;
-    await api('/api/program-settings/email', {
+  async function loadDocumentsForm() {
+    const { documents: d } = await api('/api/program-settings/documents');
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ''; };
+    const setChk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
+    setChk('docShareApproval', d.share_requires_approval);
+    set('docDefaultExpiry', d.default_share_expiry_days || 30);
+    set('docMaxExpiry', d.max_share_expiry_days || 365);
+    set('docRetentionYears', d.retention_years || 7);
+  }
+
+  async function saveDocumentsForm(e) {
+    e.preventDefault();
+    const payload = {
+      share_requires_approval: document.getElementById('docShareApproval')?.checked,
+      default_share_expiry_days: parseInt(document.getElementById('docDefaultExpiry')?.value || '30', 10),
+      max_share_expiry_days: parseInt(document.getElementById('docMaxExpiry')?.value || '365', 10),
+      retention_years: parseInt(document.getElementById('docRetentionYears')?.value || '7', 10),
+    };
+    await api('/api/program-settings/documents', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: settings }),
+      body: JSON.stringify(payload),
     });
+    CasePMDialog?.alert('Document defaults saved.', 'success');
+  }
+
+  async function loadEstimatingForm() {
+    const { estimating: est } = await api('/api/program-settings/estimating');
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ''; };
+    const setChk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
+    set('estRfpNotifyMode', est.rfp_notify_mode || 'both');
+    set('estReminderHours', est.reminder_hours_before || 48);
+    setChk('estAwardAutoCommitment', est.award_auto_commitment);
+    setChk('estBudgetMappingAuto', est.budget_mapping_auto !== false);
+    setChk('estAiScope', est.ai_scope_enabled !== false);
+    setChk('estFeeBreakdown', est.fee_breakdown_visible !== false);
+  }
+
+  async function saveEstimatingForm(e) {
+    e.preventDefault();
+    const payload = {
+      rfp_notify_mode: document.getElementById('estRfpNotifyMode')?.value || 'both',
+      reminder_hours_before: parseInt(document.getElementById('estReminderHours')?.value || '48', 10),
+      award_auto_commitment: document.getElementById('estAwardAutoCommitment')?.checked,
+      budget_mapping_auto: document.getElementById('estBudgetMappingAuto')?.checked,
+      ai_scope_enabled: document.getElementById('estAiScope')?.checked,
+      fee_breakdown_visible: document.getElementById('estFeeBreakdown')?.checked,
+    };
+    await api('/api/program-settings/estimating', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    CasePMDialog?.alert('Estimating defaults saved.', 'success');
+  }
+
+  async function loadInspectionsForm() {
+    const json = await api('/api/program-settings/inspections');
+    const insp = json.inspections || {};
+    const options = json.reminder_options || [];
+    const host = document.getElementById('inspReminderOffsets');
+    const selected = new Set(insp.reminder_offsets || []);
+    if (host) {
+      host.innerHTML = options.map((opt) => `
+        <label class="flex items-center gap-2 cursor-pointer border border-zinc-800 rounded-md p-3">
+          <input type="checkbox" class="insp-offset accent-emerald-600" value="${escapeHtml(opt.key)}" ${selected.has(opt.key) ? 'checked' : ''}>
+          <span class="text-zinc-300">${escapeHtml(opt.label)}</span>
+        </label>`).join('');
+    }
+    const setChk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
+    setChk('inspNotifyCreator', insp.notify_creator !== false);
+    setChk('inspNotifyPm', insp.default_notify_pm !== false);
+  }
+
+  async function saveInspectionsForm(e) {
+    e.preventDefault();
+    const offsets = [];
+    document.querySelectorAll('#inspReminderOffsets .insp-offset:checked').forEach((el) => offsets.push(el.value));
+    const payload = {
+      reminder_offsets: offsets.length ? offsets : ['morning_of', '1h'],
+      notify_creator: document.getElementById('inspNotifyCreator')?.checked,
+      default_notify_pm: document.getElementById('inspNotifyPm')?.checked,
+    };
+    await api('/api/program-settings/inspections', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    CasePMDialog?.alert('Inspection defaults saved.', 'success');
+  }
+
+  async function loadNotificationsForm() {
+    const json = await api('/api/program-settings/notifications');
+    const n = json.notifications || {};
+    const catalog = json.modules_catalog || [];
+    const setChk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
+    setChk('notifEmailEnabled', n.email_enabled !== false);
+    setChk('notifInAppEnabled', n.in_app_enabled !== false);
+    const digest = document.getElementById('notifDigest');
+    if (digest) digest.value = n.digest || 'immediate';
+    setChk('notifQuietHours', n.quiet_hours_enabled);
+    const qs = document.getElementById('notifQuietStart');
+    const qe = document.getElementById('notifQuietEnd');
+    if (qs) qs.value = n.quiet_hours_start || '22:00';
+    if (qe) qe.value = n.quiet_hours_end || '07:00';
+    setChk('notifWeekendDigest', n.weekend_digest_only);
+    const modules = n.modules || {};
+    const tbody = document.getElementById('notifModulesTable');
+    if (tbody) {
+      tbody.innerHTML = catalog.map((row) => `
+        <tr data-mod-key="${row.key}">
+          <td class="py-2 px-2 text-zinc-300">${escapeHtml(row.label)}</td>
+          <td class="py-2 px-2">
+            <select class="notif-mod-mode bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-xs">
+              <option value="both" ${modules[row.key] === 'both' ? 'selected' : ''}>In-app + email</option>
+              <option value="in_app" ${modules[row.key] === 'in_app' ? 'selected' : ''}>In-app only</option>
+              <option value="email" ${modules[row.key] === 'email' ? 'selected' : ''}>Email only</option>
+              <option value="none" ${modules[row.key] === 'none' ? 'selected' : ''}>None</option>
+            </select>
+          </td>
+        </tr>`).join('');
+    }
+  }
+
+  async function saveNotificationsForm(e) {
+    e.preventDefault();
+    const modules = {};
+    document.querySelectorAll('#notifModulesTable tr[data-mod-key]').forEach((tr) => {
+      modules[tr.dataset.modKey] = tr.querySelector('.notif-mod-mode')?.value || 'both';
+    });
+    const payload = {
+      email_enabled: document.getElementById('notifEmailEnabled')?.checked,
+      in_app_enabled: document.getElementById('notifInAppEnabled')?.checked,
+      digest: document.getElementById('notifDigest')?.value || 'immediate',
+      quiet_hours_enabled: document.getElementById('notifQuietHours')?.checked,
+      quiet_hours_start: document.getElementById('notifQuietStart')?.value || '22:00',
+      quiet_hours_end: document.getElementById('notifQuietEnd')?.value || '07:00',
+      weekend_digest_only: document.getElementById('notifWeekendDigest')?.checked,
+      modules,
+    };
+    await api('/api/program-settings/notifications', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    CasePMDialog?.alert('Notification defaults saved.', 'success');
+  }
+
+  async function loadRegionalForm() {
+    const json = await api('/api/program-settings/regional');
+    const r = json.regional || {};
+    const localeSel = document.getElementById('regLocale');
+    if (localeSel && !localeSel.options.length) {
+      (json.locale_options || []).forEach(([val, label]) => localeSel.add(new Option(label, val)));
+    }
+    const dateSel = document.getElementById('regDateFormat');
+    if (dateSel && !dateSel.options.length) {
+      (json.date_format_options || []).forEach(([val, label]) => dateSel.add(new Option(label, val)));
+    }
+    if (localeSel) localeSel.value = r.default_locale || 'en-US';
+    if (dateSel) dateSel.value = r.default_date_format || 'MDY';
+    const tz = document.getElementById('regTimezone');
+    if (tz) tz.value = r.default_timezone || 'America/New_York';
+  }
+
+  async function saveRegionalForm(e) {
+    e.preventDefault();
+    const payload = {
+      default_locale: document.getElementById('regLocale')?.value || 'en-US',
+      default_date_format: document.getElementById('regDateFormat')?.value || 'MDY',
+      default_timezone: document.getElementById('regTimezone')?.value || 'America/New_York',
+    };
+    await api('/api/program-settings/regional', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    CasePMDialog?.alert('Regional defaults saved.', 'success');
+  }
+
+  async function loadWorkflowForm() {
+    const { workflow: w } = await api('/api/program-settings/workflow');
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ''; };
+    const setChk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
+    setChk('wfDailyWeather', w.require_daily_log_weather);
+    setChk('wfDailyManpower', w.require_manpower_on_daily_log);
+    set('wfDefaultRole', w.default_new_user_role || 'Company User');
+    set('wfDefaultLicense', w.default_license_tier || '');
+    set('wfArchiveDays', w.auto_archive_inactive_users_days || 0);
+  }
+
+  async function saveWorkflowForm(e) {
+    e.preventDefault();
+    const payload = {
+      require_daily_log_weather: document.getElementById('wfDailyWeather')?.checked,
+      require_manpower_on_daily_log: document.getElementById('wfDailyManpower')?.checked,
+      default_new_user_role: document.getElementById('wfDefaultRole')?.value || 'Company User',
+      default_license_tier: document.getElementById('wfDefaultLicense')?.value || '',
+      auto_archive_inactive_users_days: parseInt(document.getElementById('wfArchiveDays')?.value || '0', 10),
+    };
+    await api('/api/program-settings/workflow', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    CasePMDialog?.alert('Workflow defaults saved.', 'success');
+  }
+
+  function integrationStatusBadge(ok, label) {
+    const cls = ok ? 'text-emerald-400' : 'text-zinc-500';
+    const icon = ok ? 'fa-circle-check' : 'fa-circle-xmark';
+    return `<span class="${cls}"><i class="fa-solid ${icon} mr-1"></i>${escapeHtml(label)}</span>`;
+  }
+
+  async function loadIntegrationsPanel() {
+    const host = document.getElementById('integrationsStatusBody');
+    if (!host) return;
+    try {
+      const json = await api('/api/program-settings/integrations');
+      const i = json.integrations || {};
+      const sage = json.sage || {};
+      const aia = i.aia || {};
+      const docusign = i.docusign || {};
+      host.innerHTML = `
+        <div class="settings-card">
+          <div class="font-medium text-white mb-2">Sage 300 CRE</div>
+          <div class="space-y-1 text-xs">
+            <div>Database: <span class="text-zinc-300 font-mono">${escapeHtml(sage.sage_database || '—')}</span></div>
+            <div>Company: <span class="text-zinc-300 font-mono">${escapeHtml(sage.sage_company_code || '—')}</span></div>
+            <div class="mt-2">${integrationStatusBadge(i.sage_api_url_set, 'API URL configured')}</div>
+            <div>${integrationStatusBadge(i.sage_api_key_set, 'API key configured')}</div>
+            <div class="mt-1">${integrationStatusBadge(i.sage_live, 'Live connection ready')}</div>
+          </div>
+        </div>
+        <div class="settings-card">
+          <div class="font-medium text-white mb-2">DocuSign</div>
+          <div class="text-xs">${integrationStatusBadge(docusign.configured, docusign.configured ? 'Configured' : 'Not configured')}</div>
+          ${docusign.base_url ? `<div class="text-xs text-zinc-500 mt-1">${escapeHtml(docusign.base_url)}</div>` : ''}
+        </div>
+        <div class="settings-card">
+          <div class="font-medium text-white mb-2">AIA Billing</div>
+          <div class="text-xs">${integrationStatusBadge(aia.catina?.configured, aia.catina?.configured ? 'Catina configured' : 'Not configured')}</div>
+        </div>
+        <div class="settings-card">
+          <div class="font-medium text-white mb-2">Security</div>
+          <div class="space-y-1 text-xs">
+            <div>${integrationStatusBadge(i.secret_key_from_env, 'Secret key from environment')}</div>
+            <div class="text-zinc-500">Deployment: ${escapeHtml(i.deployment_env || 'default')}</div>
+          </div>
+        </div>`;
+    } catch (err) {
+      host.innerHTML = `<div class="settings-card text-red-400">Could not load: ${escapeHtml(err.message)}</div>`;
+    }
   }
 
   function previewNumber(key, prefix, pad) {
@@ -592,6 +839,7 @@
     setChk('force_https', s.force_https);
     setChk('trust_x_forwarded_proto', s.trust_x_forwarded_proto);
     set('hsts_max_age', s.hsts_max_age || 0);
+    set('session_cookie_hours', s.session_cookie_hours || 12);
     loadSecurityAuditSummary();
   }
 
@@ -634,6 +882,7 @@
       force_https: document.getElementById('force_https')?.checked,
       trust_x_forwarded_proto: document.getElementById('trust_x_forwarded_proto')?.checked,
       hsts_max_age: parseInt(document.getElementById('hsts_max_age')?.value || '0', 10),
+      session_cookie_hours: parseInt(document.getElementById('session_cookie_hours')?.value || '12', 10),
     };
     if (payload.deployment_mode === 'cloud') {
       payload.behind_reverse_proxy = true;
@@ -655,5 +904,12 @@
     syncEmailFromServer, pushEmailToServer,
     loadNumberingForm, saveNumberingForm, loadPayAppsForm, savePayAppsForm,
     loadPayAppDefaultsForModule, loadSecurityForm, saveSecurityForm,
+    loadDocumentsForm, saveDocumentsForm,
+    loadEstimatingForm, saveEstimatingForm,
+    loadInspectionsForm, saveInspectionsForm,
+    loadNotificationsForm, saveNotificationsForm,
+    loadRegionalForm, saveRegionalForm,
+    loadWorkflowForm, saveWorkflowForm,
+    loadIntegrationsPanel,
   };
 })(window);

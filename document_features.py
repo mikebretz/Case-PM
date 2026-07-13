@@ -16,20 +16,37 @@ def file_content_hash(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _program_document_defaults() -> dict[str, Any]:
+    try:
+        from program_settings_persistence import load_document_defaults
+        return load_document_defaults()
+    except Exception:
+        return {}
+
+
 def project_document_settings(project) -> dict[str, Any]:
+    program = _program_document_defaults()
     details = project.get_details() if project and hasattr(project, 'get_details') else {}
     docs = details.get('documents') or {}
+    default_expiry = int(program.get('default_share_expiry_days') or DEFAULT_SHARE_EXPIRY_DAYS)
+    max_expiry = int(program.get('max_share_expiry_days') or MAX_SHARE_EXPIRY_DAYS)
+    retention = int(program.get('retention_years') or DEFAULT_RETENTION_YEARS)
+    share_key = 'share_requires_approval'
+    if share_key in docs:
+        share_requires_approval = bool(docs[share_key])
+    else:
+        share_requires_approval = bool(program.get(share_key, False))
     return {
-        'share_requires_approval': bool(docs.get('share_requires_approval', False)),
+        'share_requires_approval': share_requires_approval,
         'default_share_expiry_days': min(
-            int(docs.get('default_share_expiry_days') or DEFAULT_SHARE_EXPIRY_DAYS),
+            int(docs.get('default_share_expiry_days') or default_expiry),
             MAX_SHARE_EXPIRY_DAYS,
         ),
         'max_share_expiry_days': min(
-            int(docs.get('max_share_expiry_days') or MAX_SHARE_EXPIRY_DAYS),
+            int(docs.get('max_share_expiry_days') or max_expiry),
             MAX_SHARE_EXPIRY_DAYS,
         ),
-        'retention_years': int(docs.get('retention_years') or DEFAULT_RETENTION_YEARS),
+        'retention_years': int(docs.get('retention_years') or retention),
     }
 
 

@@ -89,15 +89,20 @@ def ensure_estimate_schema(engine, db):
 
 
 def get_estimate_settings(est):
+    try:
+        from program_settings_persistence import load_estimating_defaults
+        program = load_estimating_defaults()
+    except Exception:
+        program = {}
     base = {
-        'fee_breakdown_visible': True,
+        'fee_breakdown_visible': bool(program.get('fee_breakdown_visible', True)),
         'contingency_remaining': None,
         'rfp_email_template': DEFAULT_RFP_TEMPLATE,
-        'budget_mapping_auto': True,
-        'award_auto_commitment': False,
-        'rfp_notify_mode': 'both',
-        'ai_scope_enabled': True,
-        'reminder_hours_before': 48,
+        'budget_mapping_auto': bool(program.get('budget_mapping_auto', True)),
+        'award_auto_commitment': bool(program.get('award_auto_commitment', False)),
+        'rfp_notify_mode': program.get('rfp_notify_mode') or 'both',
+        'ai_scope_enabled': bool(program.get('ai_scope_enabled', True)),
+        'reminder_hours_before': int(program.get('reminder_hours_before') or 48),
     }
     merged = _parse_json(getattr(est, 'settings_json', None), {})
     base.update(merged)

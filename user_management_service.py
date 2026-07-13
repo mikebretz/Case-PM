@@ -261,6 +261,33 @@ def generate_temp_password(length: int = 14) -> str:
             return pwd
 
 
+def _apply_program_defaults_for_new_user(user, body: dict) -> None:
+    """Apply program-wide defaults when creating a user without explicit values."""
+    try:
+        from program_settings_persistence import (
+            load_notification_defaults,
+            load_regional_defaults,
+            load_workflow_defaults,
+        )
+        from user_extended_prefs import merge_notification_prefs
+    except Exception:
+        return
+    workflow = load_workflow_defaults()
+    regional = load_regional_defaults()
+    if not (body.get('licenseTier') or body.get('license_tier')) and hasattr(user, 'license_tier'):
+        tier = (workflow.get('default_license_tier') or '').strip()
+        if tier:
+            user.license_tier = tier
+    if 'locale' not in body and hasattr(user, 'locale'):
+        user.locale = regional.get('default_locale') or 'en-US'
+    if 'dateFormat' not in body and 'date_format_pref' not in body and hasattr(user, 'date_format_pref'):
+        user.date_format_pref = regional.get('default_date_format') or 'MDY'
+    if 'timezone' not in body and hasattr(user, 'timezone'):
+        user.timezone = regional.get('default_timezone') or 'America/New_York'
+    if 'notificationPrefs' not in body and hasattr(user, 'notification_prefs_json'):
+        user.notification_prefs_json = json.dumps(merge_notification_prefs(load_notification_defaults()))
+
+
 def create_user(db, User, Company, body: dict, *, actor_id: int | None = None, actor=None) -> tuple[object, str | None]:
     """Create user. Returns (user, temp_password_if_set)."""
     first = (body.get('firstName') or body.get('first_name') or '').strip()
@@ -273,7 +300,13 @@ def create_user(db, User, Company, body: dict, *, actor_id: int | None = None, a
     if User.query.filter_by(email=email).first():
         raise ValueError('A user with this email already exists.')
 
-    role = body.get('role') or 'Viewer'
+    role = body.get('role')
+    if not role:
+        try:
+            from program_settings_persistence import load_workflow_defaults
+            role = load_workflow_defaults().get('default_new_user_role') or 'Company User'
+        except Exception:
+            role = 'Company User'
     _validate_role_change(actor, role)
     access_enabled = body.get('accessEnabled', True)
     status = body.get('status') or ('Active' if access_enabled else 'Inactive')
@@ -315,6 +348,7 @@ def create_user(db, User, Company, body: dict, *, actor_id: int | None = None, a
     if hasattr(user, 'access_enabled'):
         user.access_enabled = bool(access_enabled)
     _apply_extended_profile_fields(user, body)
+    _apply_program_defaults_for_new_user(user, body)
 
     perms = body.get('permissions') or body.get('permissions_v2')
     if perms and perms.get('version') == 2:

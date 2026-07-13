@@ -12675,6 +12675,117 @@ def api_program_settings_pay_apps():
     return jsonify({'ok': True, 'pay_apps': saved})
 
 
+@app.route('/api/program-settings/documents', methods=['GET', 'PUT'])
+@login_required
+@admin_required
+def api_program_settings_documents():
+    from program_settings_persistence import load_document_defaults, save_document_defaults
+    if request.method == 'GET':
+        return jsonify({'ok': True, 'documents': load_document_defaults()})
+    body = request.get_json(silent=True) or {}
+    saved = save_document_defaults(body.get('documents') or body)
+    write_audit('Updated document defaults', 'Program document settings', module='program_settings', category='settings', commit=True)
+    return jsonify({'ok': True, 'documents': saved})
+
+
+@app.route('/api/program-settings/notifications', methods=['GET', 'PUT'])
+@login_required
+@admin_required
+def api_program_settings_notifications():
+    from program_settings_persistence import load_notification_defaults, save_notification_defaults
+    from user_extended_prefs import NOTIFICATION_MODULES
+    if request.method == 'GET':
+        return jsonify({
+            'ok': True,
+            'notifications': load_notification_defaults(),
+            'modules_catalog': [{'key': k, 'label': lbl} for k, lbl in NOTIFICATION_MODULES],
+        })
+    body = request.get_json(silent=True) or {}
+    saved = save_notification_defaults(body.get('notifications') or body)
+    write_audit('Updated notification defaults', 'Program notification settings', module='program_settings', category='settings', commit=True)
+    return jsonify({'ok': True, 'notifications': saved})
+
+
+@app.route('/api/program-settings/estimating', methods=['GET', 'PUT'])
+@login_required
+@admin_required
+def api_program_settings_estimating():
+    from program_settings_persistence import load_estimating_defaults, save_estimating_defaults
+    from estimate_features import RFP_NOTIFY_MODES
+    if request.method == 'GET':
+        return jsonify({
+            'ok': True,
+            'estimating': load_estimating_defaults(),
+            'notify_modes': list(RFP_NOTIFY_MODES),
+        })
+    body = request.get_json(silent=True) or {}
+    saved = save_estimating_defaults(body.get('estimating') or body)
+    write_audit('Updated estimating defaults', 'Program estimating settings', module='program_settings', category='settings', commit=True)
+    return jsonify({'ok': True, 'estimating': saved})
+
+
+@app.route('/api/program-settings/inspections', methods=['GET', 'PUT'])
+@login_required
+@admin_required
+def api_program_settings_inspections():
+    from program_settings_persistence import load_inspection_defaults, save_inspection_defaults
+    from inspection_reminders import REMINDER_OPTIONS
+    if request.method == 'GET':
+        return jsonify({
+            'ok': True,
+            'inspections': load_inspection_defaults(),
+            'reminder_options': list(REMINDER_OPTIONS),
+        })
+    body = request.get_json(silent=True) or {}
+    saved = save_inspection_defaults(body.get('inspections') or body)
+    write_audit('Updated inspection defaults', 'Program inspection settings', module='program_settings', category='settings', commit=True)
+    return jsonify({'ok': True, 'inspections': saved})
+
+
+@app.route('/api/program-settings/regional', methods=['GET', 'PUT'])
+@login_required
+@admin_required
+def api_program_settings_regional():
+    from program_settings_persistence import load_regional_defaults, save_regional_defaults
+    from user_extended_prefs import LOCALE_OPTIONS, DATE_FORMAT_OPTIONS
+    if request.method == 'GET':
+        return jsonify({
+            'ok': True,
+            'regional': load_regional_defaults(),
+            'locale_options': list(LOCALE_OPTIONS),
+            'date_format_options': list(DATE_FORMAT_OPTIONS),
+        })
+    body = request.get_json(silent=True) or {}
+    saved = save_regional_defaults(body.get('regional') or body)
+    write_audit('Updated regional defaults', 'Program locale settings', module='program_settings', category='settings', commit=True)
+    return jsonify({'ok': True, 'regional': saved})
+
+
+@app.route('/api/program-settings/workflow', methods=['GET', 'PUT'])
+@login_required
+@admin_required
+def api_program_settings_workflow():
+    from program_settings_persistence import load_workflow_defaults, save_workflow_defaults
+    if request.method == 'GET':
+        return jsonify({'ok': True, 'workflow': load_workflow_defaults()})
+    body = request.get_json(silent=True) or {}
+    saved = save_workflow_defaults(body.get('workflow') or body)
+    write_audit('Updated workflow defaults', 'Program workflow settings', module='program_settings', category='settings', commit=True)
+    return jsonify({'ok': True, 'workflow': saved})
+
+
+@app.route('/api/program-settings/integrations', methods=['GET'])
+@login_required
+@admin_required
+def api_program_settings_integrations():
+    from program_settings_persistence import integrations_status, load_sage_defaults
+    return jsonify({
+        'ok': True,
+        'integrations': integrations_status(),
+        'sage': load_sage_defaults(),
+    })
+
+
 @app.route('/api/program-settings/sage/test', methods=['POST'])
 @login_required
 @admin_required
