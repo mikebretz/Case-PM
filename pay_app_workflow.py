@@ -111,22 +111,27 @@ def notify_pay_app_ball(project_id, role, *, title, description, entity_type, en
         pass
 
 
-def _g702_amount_from_state(state, body):
-    body = body or {}
+def _retainage_rate_from_state(state):
     state = state or {}
-    if body.get('amount_due') is not None:
-        return float(body.get('amount_due') or 0)
-    rollup = body.get('rollup') or {}
-    grand = rollup.get('grand') or {}
-    if grand:
-        try:
-            return float(grand.get('thisPeriod') or 0) + float(grand.get('materials') or 0) + float(grand.get('changeOrders', {}).get('thisPeriod') or 0) - float(grand.get('retainage') or 0)
-        except (TypeError, ValueError):
-            pass
+    for key in ('payAppRetainagePercent', 'retainageRate', 'retainage_rate'):
+        raw = state.get(key)
+        if raw is not None and str(raw).strip() != '':
+            try:
+                val = float(raw)
+                return val / 100.0 if val > 1 else val
+            except (TypeError, ValueError):
+                pass
+    return 0.10
 
+
+def _billing_amount_from_sov_state(state):
+    """Compute G702 billing amount from persisted SOV + billing lines only (authorization-safe)."""
+    state = state or {}
     billing_lines = state.get('payAppBillingLines') or {}
+    if isinstance(billing_lines, list):
+        billing_lines = {}
     contractor_sov = state.get('contractorSOV') or []
-    retainage_rate = float(state.get('retainageRate') or state.get('retainage_rate') or 0.10)
+    retainage_rate = _retainage_rate_from_state(state)
     total_current = 0.0
     total_retainage = 0.0
     for line in contractor_sov:
@@ -146,10 +151,8 @@ def _g702_amount_from_state(state, body):
         co_completed = co_work
         total_current += contract_completed + co_completed
         total_retainage += (contract_completed + co_completed) * retainage_rate
-
     if total_current > 0:
         return round(total_current - total_retainage, 2)
-
     period = state.get('currentPayAppPeriod') or {}
     for key in ('amountDue', 'amount_due', 'paymentDue', 'payment_due'):
         if period.get(key) is not None:
@@ -158,6 +161,133 @@ def _g702_amount_from_state(state, body):
             except (TypeError, ValueError):
                 pass
     return 0.0
+
+
+def _g702_amount_from_state(state, body):
+    """Amount for Sage payloads / reporting — may use client rollup when billing lines are empty."""
+    body = body or {}
+    billing_amt = _billing_amount_from_sov_state(state)
+    if billing_amt > 0:
+        return billing_amt
+    rollup = body.get('rollup') or {}
+    grand = rollup.get('grand') or {}
+    if grand:
+        try:
+            return float(grand.get('thisPeriod') or 0) + float(grand.get('materials') or 0) + float(grand.get('changeOrders', {}).get('thisPeriod') or 0) - float(grand.get('retainage') or 0)
+        except (TypeError, ValueError):
+            pass
+    if body.get('amount_due') is not None:
+        return float(body.get('amount_due') or 0)
+    return 0.0
+
+
+def _g702_threshold_amount(state):
+    """Amount used for approval-threshold decisions — never trusts client request body."""
+    return _billing_amount_from_sov_state(state)
+
+
+def _sub_sov_status(state, company_key):
+    sub_status = state.get('subSOVStatus') or {}
+    key = str(company_key)
+    entry = sub_status.get(key) or sub_status.get(company_key)
+    if isinstance(entry, str):
+        return entry
+    if isinstance(entry, dict):
+        return (entry.get('status') or '').strip()
+    return ''
+
+
+def _sub_pay_app_entry_for_period(state, company_key, period_num):
+    history = state.get('subPayAppHistory') or {}
+    key = str(company_key)
+    company_hist = history.get(key) or history.get(company_key) or {}
+    if not isinstance(company_hist, dict):
+        return None
+    for hist_key, entry in company_hist.items():
+        if not isinstance(entry, dict):
+            continue
+        if entry.get('archived'):
+            continue
+        period_match = str(entry.get('periodNumber') or hist_key) == str(period_num)
+        if period_match:
+            return entry
+    pending = (state.get('subPendingSubmissions') or {}).get(key) or (state.get('subPendingSubmissions') or {}).get(company_key)
+    if isinstance(pending, dict) and str(pending.get('periodNumber') or '') == str(period_num):
+        return pending
+    return None
+
+
+def _has_sub_lien_waiver(state, company_key, period_num, entry=None):
+    waivers = state.get('subLienWaivers') or {}
+    for k in (str(company_key), company_key):
+        bucket = waivers.get(k) or {}
+        for pkey in (str(period_num), period_num):
+            w = bucket.get(pkey)
+            if isinstance(w, dict) and (w.get('filename') or w.get('dataUrl')):
+                return True
+    entry = entry or _sub_pay_app_entry_for_period(state, company_key, period_num)
+    if isinstance(entry, dict):
+        lw = entry.get('lienWaiver') or {}
+        if lw.get('filename') or lw.get('dataUrl'):
+            return True
+    return False
+
+
+def validate_g702_submit_gates(state):
+    """Server-side enforcement for pay app compliance gates before G702 submit."""
+    state = state or {}
+    period = state.get('currentPayAppPeriod') or {}
+    period_num = period.get('periodNumber')
+    if period_num is None:
+        raise ValueError('Pay application period is not configured')
+
+    require_all_subs = state.get('requireAllSubPayAppsBeforeG702Submit')
+    if require_all_subs is None:
+        require_all_subs = True
+    require_lien = state.get('requireLienWaiverOnSubPayApp')
+    if require_lien is None:
+        require_lien = True
+
+    sub_sov = state.get('subcontractorSOV') or {}
+    missing_pay_apps = []
+    missing_waivers = []
+
+    for company_key in sub_sov.keys():
+        if _sub_sov_status(state, company_key) != 'Approved':
+            continue
+        entry = _sub_pay_app_entry_for_period(state, company_key, period_num)
+        if require_all_subs:
+            if not entry or (entry.get('status') or 'Draft') in ('Draft', 'Rejected', 'Void'):
+                missing_pay_apps.append(str(company_key))
+        if require_lien and entry and (entry.get('status') or '') not in ('', 'Draft', 'Rejected', 'Void'):
+            if not _has_sub_lien_waiver(state, company_key, period_num, entry):
+                missing_waivers.append(str(company_key))
+
+    if missing_pay_apps:
+        names = ', '.join(missing_pay_apps[:8])
+        extra = f' (+{len(missing_pay_apps) - 8} more)' if len(missing_pay_apps) > 8 else ''
+        raise ValueError(
+            f'Cannot submit G702: subcontractors with approved SOVs missing pay applications for period {period_num}: {names}{extra}'
+        )
+    if missing_waivers:
+        names = ', '.join(missing_waivers[:8])
+        extra = f' (+{len(missing_waivers) - 8} more)' if len(missing_waivers) > 8 else ''
+        raise ValueError(
+            f'Cannot submit G702: lien waivers required for period {period_num} — missing for: {names}{extra}'
+        )
+
+
+def validate_sub_pay_app_lien_waiver(state, company_key, body=None):
+    """Block sub pay app submit/approve when lien waiver is required but missing."""
+    if state.get('requireLienWaiverOnSubPayApp') is False:
+        return
+    body = body or {}
+    entry = body.get('pending_entry') or {}
+    period_num = entry.get('periodNumber') or body.get('period_number')
+    if period_num is None:
+        period_num = (state.get('currentPayAppPeriod') or {}).get('periodNumber')
+    if not _has_sub_lien_waiver(state, company_key, period_num, entry):
+        raise ValueError('Lien waiver is required before this subcontractor pay application can proceed')
 
 
 def g702_workflow_action(period, action, user, amount=0):
@@ -257,6 +387,7 @@ def sub_pay_app_workflow_action(state, company_key, action, user, body=None):
     company_hist = history.get(cid) or history.get(company_key) or {}
 
     if action == 'submit':
+        validate_sub_pay_app_lien_waiver(state, company_key, body)
         if not pending and not body.get('pending_entry'):
             raise ValueError('No pending sub pay app submission found')
         if body.get('pending_entry'):
@@ -296,6 +427,7 @@ def sub_pay_app_workflow_action(state, company_key, action, user, body=None):
     if action == 'approve':
         if not user_can_act_on_ball_in_court(user, 'Project Manager'):
             raise ValueError('Only Project Manager can approve sub pay apps')
+        validate_sub_pay_app_lien_waiver(state, company_key, body)
         entry = pending or body.get('pending_entry')
         if not entry:
             raise ValueError('No sub pay app pending approval')
@@ -439,8 +571,13 @@ def process_pay_app_workflow(
         if entity_key and str(period.get('periodNumber')) != str(entity_key):
             raise ValueError('Pay application period mismatch')
         old_status = period.get('status') or 'Draft'
+        if action == 'submit':
+            validate_g702_submit_gates(state)
         amount = _g702_amount_from_state(state, body)
-        new_status, final_approved = g702_workflow_action(period, action, user, amount=amount)
+        threshold_amount = _g702_threshold_amount(state)
+        new_status, final_approved = g702_workflow_action(
+            period, action, user, amount=threshold_amount if action == 'approve' else amount,
+        )
         state['currentPayAppPeriod'] = period
         append_pay_app_approval_history(
             state, 'g702', period.get('periodNumber'), action, user, comments, old_status, new_status,

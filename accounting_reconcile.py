@@ -29,6 +29,56 @@ def _canonical_company_key(company_id=None, company_name=None):
     return (company_name or '').strip()
 
 
+def _canon_sub_sov_key(key, commitments):
+    """Map any subcontractor SOV dict key to a single canonical vendor key."""
+    raw = str(key).strip() if key is not None else ''
+    if not raw:
+        return raw
+    for com in commitments or []:
+        if getattr(com, 'commitment_type', None) != 'Subcontract':
+            continue
+        cid = str(getattr(com, 'company_id', None) or '').strip()
+        cname = (getattr(com, 'company_name', None) or '').strip()
+        if raw == cid or raw == cname:
+            return _canonical_company_key(com.company_id, com.company_name)
+    return raw
+
+
+def _remap_nested_company_buckets(nested, commitments):
+    """Collapse nested dicts keyed by company id/name into canonical vendor keys."""
+    if isinstance(nested, defaultdict):
+        remapped = defaultdict(nested.default_factory)
+    else:
+        remapped = {}
+    for key, value in (nested or {}).items():
+        canon = _canon_sub_sov_key(key, commitments)
+        if canon not in remapped:
+            if isinstance(value, dict):
+                remapped[canon] = dict(value)
+            else:
+                remapped[canon] = value
+            continue
+        if isinstance(value, dict) and isinstance(remapped[canon], dict):
+            for inner_key, inner_val in value.items():
+                if isinstance(inner_val, dict) and isinstance(remapped[canon].get(inner_key), dict):
+                    bucket = remapped[canon][inner_key]
+                    bucket['amount'] = float(bucket.get('amount') or 0) + float(inner_val.get('amount') or 0)
+                    for num in inner_val.get('co_numbers') or []:
+                        if num and num not in bucket.setdefault('co_numbers', []):
+                            bucket['co_numbers'].append(num)
+                    if inner_val.get('description'):
+                        bucket['description'] = inner_val['description']
+                elif isinstance(inner_val, (int, float)):
+                    remapped[canon][inner_key] = float(remapped[canon].get(inner_key) or 0) + float(inner_val or 0)
+                else:
+                    remapped[canon][inner_key] = inner_val
+        elif isinstance(value, (int, float)) and isinstance(remapped[canon], (int, float)):
+            remapped[canon] = float(remapped[canon]) + float(value)
+        else:
+            remapped[canon] = value
+    return remapped
+
+
 def _match_company_keys(company_id=None, company_name=None):
     """All dict keys that may refer to the same vendor in pay-app state."""
     keys = []
@@ -426,16 +476,14 @@ def compute_sub_sov_derivatives(cos, commitments, co_alloc_map, com_alloc_map, e
         if com.status not in APPROVED_COMMITMENT_STATUSES:
             continue
         canon = _canonical_company_key(com.company_id, com.company_name)
-        keys = _find_sub_sov_keys_for_company(sub_sov, com.company_id, com.company_name) or [canon]
         for alloc in com_alloc_map.get(com.id, []):
             code = alloc.cost_code
             if not code:
                 continue
             norm = normalize_cost_code(code)
             amt = float(alloc.amount or 0)
-            for key in keys:
-                originals[key][norm] += amt
-                display_codes[key][norm] = code
+            originals[canon][norm] += amt
+            display_codes[canon][norm] = code
 
     for co in cos:
         if co.status != APPROVED_CO_STATUS:
@@ -454,13 +502,17 @@ def compute_sub_sov_derivatives(cos, commitments, co_alloc_map, com_alloc_map, e
             if not amt:
                 continue
             for key in targets:
-                bucket = changes[key][norm]
+                canon = _canon_sub_sov_key(key, commitments)
+                bucket = changes[canon][norm]
                 bucket['amount'] += amt
                 if co.number and co.number not in bucket['co_numbers']:
                     bucket['co_numbers'].append(co.number)
                 bucket['description'] = getattr(alloc, 'description', None) or co.description
-                display_codes[key][norm] = getattr(alloc, 'cost_code', None) or co.cost_code
+                display_codes[canon][norm] = getattr(alloc, 'cost_code', None) or co.cost_code
 
+    originals = _remap_nested_company_buckets(originals, commitments)
+    changes = _remap_nested_company_buckets(changes, commitments)
+    display_codes = _remap_nested_company_buckets(display_codes, commitments)
     return originals, changes, display_codes
 
 
@@ -519,7 +571,7 @@ def apply_sub_sov_reconcile(state, originals, changes, display_codes):
             new_lines.append(line)
         sub_sov[company_key] = new_lines
 
-    state['subcontractorSOV'] = sub_sov
+    state['subcontractorSOV'] = normalize_sub_sov_keys(sub_sov)
     return state
 
 

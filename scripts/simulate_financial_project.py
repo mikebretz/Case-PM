@@ -370,9 +370,9 @@ def run_simulation(name: str, trade_mix: list, app_models) -> SimResult:
 
     # --- Owner change orders (3 scenarios) ---
     co_specs = [
-        (f'{ts}-{name[:4]}-CO-001', 'Owner scope add — electrical', '16-100', 450_000),
-        (f'{ts}-{name[:4]}-CO-002', 'Owner deduct — finishes', '09-250', -120_000),
-        (f'{ts}-{name[:4]}-CO-003', 'Pending CO — HVAC upgrade', '15-100', 280_000),
+        (f'{name[:4]}-CO-001', 'Owner scope add — electrical', '16-100', 450_000),
+        (f'{name[:4]}-CO-002', 'Owner deduct — finishes', '09-250', -120_000),
+        (f'{name[:4]}-CO-003', 'Pending CO — HVAC upgrade', '15-100', 280_000),
     ]
     for num, title, code, amt in co_specs:
         co = ChangeOrder(
@@ -416,6 +416,7 @@ def run_simulation(name: str, trade_mix: list, app_models) -> SimResult:
     _, pay_state = get_pay_app_state(PayAppProjectState, project.id)
     sub_sov = pay_state.get('subcontractorSOV') or {}
     sub_hist = pay_state.get('subPayAppHistory') or {}
+    sub_lien = pay_state.get('subLienWaivers') or {}
     total_sub_billed = 0.0
     for company_key, lines in sub_sov.items():
         period_amt = 0.0
@@ -425,18 +426,24 @@ def run_simulation(name: str, trade_mix: list, app_models) -> SimResult:
             line['work_this_period'] = bill
             line['billed_to_date'] = float(line.get('billed_to_date') or 0) + bill
             period_amt += bill
-        sub_hist.setdefault(company_key, {})['1'] = {
+        entry = {
             'status': 'Draft',
             'periodNumber': 1,
             'totalBilledThisPeriod': period_amt,
             'workThisPeriod': period_amt,
         }
-        sub_pay_app_workflow_action(pay_state, company_key, 'submit', users['sub'], {'pending_entry': sub_hist[company_key]['1']})
-        sub_pay_app_workflow_action(pay_state, company_key, 'approve', users['pm'], {'pending_entry': sub_hist[company_key]['1']})
+        sub_hist.setdefault(company_key, {})['1'] = entry
+        sub_lien.setdefault(company_key, {})['1'] = {
+            'filename': f'lien-waiver-{company_key}-p1.pdf',
+            'uploadedDate': '2026-01-15',
+        }
+        pay_state['subLienWaivers'] = sub_lien
+        sub_pay_app_workflow_action(pay_state, company_key, 'submit', users['sub'], {'pending_entry': entry})
+        sub_pay_app_workflow_action(pay_state, company_key, 'approve', users['pm'], {'pending_entry': entry})
         sub_hist[company_key]['1']['status'] = 'Approved'
         total_sub_billed += period_amt
-        # Intentionally skip lien waiver to test enforcement gap
     pay_state['subPayAppHistory'] = sub_hist
+    pay_state['subLienWaivers'] = sub_lien
     pay_state['subcontractorSOV'] = sub_sov
     save_pay_app_state(PayAppProjectState, db, project.id, pay_state, user_id=None)
     reconcile_project_accounting(
@@ -470,7 +477,7 @@ def run_simulation(name: str, trade_mix: list, app_models) -> SimResult:
         pay_state = g702_result['state']
         period = pay_state.get('currentPayAppPeriod') or period
         billing_amt = round(CONTRACT_VALUE * 0.12 * (1 - RETAINAGE_PCT / 100), 2)
-        # Approve through chain — test $50K threshold skip with low amount param
+        # Spoofed low amount_due must NOT bypass Owner/Accounting on large billing
         approve_result = process_pay_app_workflow(
             project.id, 'g702', period.get('periodNumber'), 'approve', users['pm'], User,
             {'amount_due': 45_000}, pay_state,
@@ -481,30 +488,27 @@ def run_simulation(name: str, trade_mix: list, app_models) -> SimResult:
         )
         pay_state = approve_result['state']
         period = pay_state.get('currentPayAppPeriod') or period
-        if approve_result.get('final_approved'):
-            result.add('info', 'pay_app', 'G702 period 1 skipped Owner/Accounting (under $50K threshold) — by design')
-        elif period.get('status') == 'Pending Owner':
-            for actor in (users['owner'], users['acct']):
-                approve_result = process_pay_app_workflow(
-                    project.id, 'g702', period.get('periodNumber'), 'approve', actor, User,
-                    {'amount_due': billing_amt}, approve_result['state'],
-                    PayAppProjectState=PayAppProjectState, db=db,
-                    ChangeOrder=ChangeOrder, ChangeOrderAllocation=ChangeOrderAllocation,
-                    BudgetProjectState=BudgetProjectState, Commitment=Commitment,
-                    CommitmentAllocation=CommitmentAllocation, Project=Project, SageSyncEvent=SageSyncEvent,
-                )
-                pay_state = approve_result['state']
-                period = pay_state.get('currentPayAppPeriod') or period
-                if approve_result.get('final_approved'):
-                    break
+        if approve_result.get('final_approved') and billing_amt >= 50_000:
+            result.add('critical', 'authorization', 'G702 approved without Owner/Accounting despite billing over $50K threshold')
+        elif period.get('status') in ('Pending Owner', 'Pending Accounting'):
+            result.add('info', 'pay_app', 'G702 correctly requires Owner/Accounting for large billing (spoofed amount_due ignored)')
+        for actor in (users['owner'], users['acct']):
+            if approve_result.get('final_approved'):
+                break
+            approve_result = process_pay_app_workflow(
+                project.id, 'g702', period.get('periodNumber'), 'approve', actor, User,
+                {'amount_due': 45_000}, approve_result['state'],
+                PayAppProjectState=PayAppProjectState, db=db,
+                ChangeOrder=ChangeOrder, ChangeOrderAllocation=ChangeOrderAllocation,
+                BudgetProjectState=BudgetProjectState, Commitment=Commitment,
+                CommitmentAllocation=CommitmentAllocation, Project=Project, SageSyncEvent=SageSyncEvent,
+            )
+            pay_state = approve_result['state']
+            period = pay_state.get('currentPayAppPeriod') or period
         save_pay_app_state(PayAppProjectState, db, project.id, pay_state, user_id=None)
         result.metrics['g702_status'] = period.get('status')
     except Exception as exc:
         result.add('critical', 'pay_app', f'G702 workflow failed: {exc}')
-
-    # --- G702 without lien waivers / sub pay apps check (server-side gap) ---
-    if pay_state.get('requireAllSubPayAppsBeforeG702Submit') and not pay_state.get('subLienWaivers'):
-        result.add('warning', 'authorization', 'G702 submitted without lien waivers while requireLienWaiverOnSubPayApp=true — server does not block (UI-only enforcement)')
 
     # --- Company key split test ---
     _, pay_state = get_pay_app_state(PayAppProjectState, project.id)
