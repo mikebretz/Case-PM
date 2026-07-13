@@ -13,6 +13,7 @@ window.CASEPM_ESTIMATE_CTX = {
 <script src="{{ url_for('static', filename='js/estimating-app.js') }}"></script>
 <script src="{{ url_for('static', filename='js/estimating-features.js') }}"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="{{ url_for('static', filename='js/csi-catalog.js') }}"></script>
 <script src="{{ url_for('static', filename='js/estimate-takeoff-viewer.js') }}"></script>
 
 <style>
@@ -195,6 +196,23 @@ window.CASEPM_ESTIMATE_CTX = {
     <div class="grid lg:grid-cols-2 gap-3 flex-1 min-h-0">
       <div id="estTakeoffViewer" class="min-h-[320px]"></div>
       <div class="flex flex-col min-h-0 gap-2">
+        <div class="bg-zinc-900 border border-zinc-700 rounded-md p-2 flex-shrink-0">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-xs font-medium text-zinc-300">Live takeoff lines</span>
+            <button type="button" id="estApplyLiveTakeoff" class="px-2 py-1 bg-emerald-700 hover:bg-emerald-600 rounded text-xs">Add to worksheet</button>
+          </div>
+          <p class="text-[10px] text-zinc-500 mb-2">Finish templates expand walls into drywall, paint, base, etc. as you measure.</p>
+          <div class="overflow-auto max-h-28 border border-zinc-800 rounded">
+            <table class="w-full text-xs">
+              <thead class="bg-zinc-800 sticky top-0"><tr>
+                <th class="px-2 py-1 text-left text-zinc-500">Description</th>
+                <th class="px-2 py-1 text-right text-zinc-500">Qty</th>
+                <th class="px-2 py-1 text-left text-zinc-500">Unit</th>
+              </tr></thead>
+              <tbody id="estTakeoffLiveLinesBody"><tr><td colspan="3" class="p-2 text-zinc-600">Measure on drawing to see lines here</td></tr></tbody>
+            </table>
+          </div>
+        </div>
         <input type="text" id="estTakeoffSearch" placeholder="Search takeoff items…" class="bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm flex-shrink-0">
         <div class="overflow-auto border border-zinc-700 rounded-md bg-zinc-900 flex-1 min-h-0">
           <table class="w-full text-sm">
@@ -285,22 +303,24 @@ window.CASEPM_ESTIMATE_CTX = {
 
 <dialog id="estPackageModal" class="modal est-modal rounded-md w-full max-w-lg p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;" data-casepm-draggable="true">
   <form id="estPackageForm">
+    <input type="hidden" name="package_id" id="estPackageId">
     <div class="est-modal-head casepm-drag-handle">
-      <h3 class="text-lg font-semibold">Bid Package / RFP</h3>
+      <h3 id="estPackageModalTitle" class="text-lg font-semibold">Bid Package / RFP</h3>
       <button type="button" id="estPackageCancel" class="text-zinc-400 hover:text-white text-xl leading-none" aria-label="Close">&times;</button>
     </div>
     <div class="est-modal-body space-y-3 text-sm">
       <div><label class="text-zinc-400">Title</label><input name="title" required class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></div>
       <div class="grid grid-cols-2 gap-3">
-        <div><label class="text-zinc-400">Spec Section</label><input name="spec_section" placeholder="07 92 00" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></div>
-        <div><label class="text-zinc-400">Division</label><input name="division" placeholder="07" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></div>
+        <div><label class="text-zinc-400">Division</label><select name="division" id="estPkgDivision" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></select></div>
+        <div><label class="text-zinc-400">Spec Section</label><select name="spec_section" id="estPkgSpecSection" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></select></div>
       </div>
       <div><label class="text-zinc-400">Due Date</label><input type="date" name="due_date" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></div>
-      <div><label class="text-zinc-400">Scope / Instructions</label><textarea name="scope_notes" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></textarea></div>
+      <div><label class="text-zinc-400">Basic Details</label><textarea name="description" rows="2" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1" placeholder="Package summary for vendors…"></textarea></div>
+      <div><label class="text-zinc-400">Scope / Instructions</label><textarea name="scope_notes" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1" placeholder="Bid instructions, inclusions, exclusions…"></textarea></div>
     </div>
     <div class="est-modal-foot">
       <button type="button" class="estPackageCancelBtn px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md">Cancel</button>
-      <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md font-medium">Create Package</button>
+      <button type="submit" id="estPackageSubmitBtn" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md font-medium">Create Package</button>
     </div>
   </form>
 </dialog>

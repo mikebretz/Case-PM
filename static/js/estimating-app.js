@@ -198,10 +198,12 @@
               <div class="text-xs text-zinc-500 mt-1">Spec ${esc(p.spec_section || '—')} · Due ${p.due_date || '—'} · ${esc(p.status)}</div>
             </div>
             <div class="flex gap-2 flex-wrap">
+              <button type="button" class="px-3 py-1.5 bg-zinc-700 rounded text-sm edit-pkg" data-id="${p.id}">Edit</button>
               <button type="button" class="px-3 py-1.5 bg-zinc-800 rounded text-sm mass-invite" data-id="${p.id}">Mass Invite Vendors</button>
               <button type="button" class="px-3 py-1.5 bg-emerald-700 rounded text-sm send-rfp" data-id="${p.id}">Send RFP Emails</button>
             </div>
           </div>
+          ${p.description ? `<p class="text-sm text-zinc-300 mt-2">${esc(p.description)}</p>` : ''}
           ${p.scope_notes ? `<p class="text-sm text-zinc-400 mt-2">${esc(p.scope_notes)}</p>` : ''}
           <table class="w-full text-sm mt-3">
             <thead><tr class="text-zinc-500 text-xs"><th class="text-left">Vendor</th><th class="text-left">Email</th><th class="text-center">Status</th><th class="text-right">Quote</th><th></th></tr></thead>
@@ -212,6 +214,7 @@
 
     el.querySelectorAll('.mass-invite').forEach(btn => btn.addEventListener('click', () => massInvite(btn.dataset.id, true)));
     el.querySelectorAll('.send-rfp').forEach(btn => btn.addEventListener('click', () => massInvite(btn.dataset.id, false)));
+    el.querySelectorAll('.edit-pkg').forEach(btn => btn.addEventListener('click', () => openPackageModal(parseInt(btn.dataset.id, 10))));
     el.querySelectorAll('.award-inv').forEach(btn => btn.addEventListener('click', async () => {
       try {
         await api(`/api/estimates/bid-packages/${btn.dataset.pkg}/award`, {
@@ -443,6 +446,56 @@
     if (global.CasePMBudgetSync?.reload) global.CasePMBudgetSync.reload();
   }
 
+  async function initPackageModalCsi() {
+    if (!global.CasePMCsiCatalog) return;
+    const divSel = document.getElementById('estPkgDivision');
+    const specSel = document.getElementById('estPkgSpecSection');
+    await CasePMCsiCatalog.fillDivisionSelect(divSel);
+    await CasePMCsiCatalog.fillSpecSelect(specSel, divSel?.value);
+    if (!divSel.dataset.wired) {
+      CasePMCsiCatalog.wireDivisionSpecPair(divSel, specSel, () => {
+        const spec = specSel.value;
+        const title = document.querySelector('#estPackageForm [name="title"]');
+        if (title && spec && !title.value.trim()) {
+          const opt = specSel.selectedOptions[0];
+          if (opt) title.value = opt.textContent.split('—').slice(1).join('—').trim() || spec;
+        }
+      });
+      divSel.dataset.wired = '1';
+    }
+  }
+
+  async function openPackageModal(packageId) {
+    const form = document.getElementById('estPackageForm');
+    const modal = document.getElementById('estPackageModal');
+    if (!form || !modal) return;
+    form.reset();
+    document.getElementById('estPackageId').value = '';
+    document.getElementById('estPackageModalTitle').textContent = 'New Bid Package / RFP';
+    document.getElementById('estPackageSubmitBtn').textContent = 'Create Package';
+    if (packageId) {
+      const pkg = (state.current?.bid_packages || []).find(p => p.id === packageId);
+      if (pkg) {
+        document.getElementById('estPackageId').value = String(pkg.id);
+        document.getElementById('estPackageModalTitle').textContent = 'Edit Bid Package / RFP';
+        document.getElementById('estPackageSubmitBtn').textContent = 'Save Package';
+        form.title.value = pkg.title || '';
+        form.description.value = pkg.description || '';
+        form.scope_notes.value = pkg.scope_notes || '';
+        form.due_date.value = pkg.due_date || '';
+      }
+    }
+    await initPackageModalCsi();
+    const pkg = packageId ? (state.current?.bid_packages || []).find(p => p.id === packageId) : null;
+    if (pkg) {
+      const divSel = document.getElementById('estPkgDivision');
+      const specSel = document.getElementById('estPkgSpecSection');
+      if (pkg.division) divSel.value = String(pkg.division).padStart(2, '0').slice(0, 2);
+      await CasePMCsiCatalog.fillSpecSelect(specSel, divSel.value, pkg.spec_section);
+    }
+    openDialog(modal);
+  }
+
   function bindModalClosers() {
     document.querySelectorAll('.estModalClose').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -472,18 +525,25 @@
     document.getElementById('estAddLine')?.addEventListener('click', addLine);
     document.getElementById('estSaveLines')?.addEventListener('click', () => saveLines().catch(e => estAlert(e.message, 'error')));
     document.getElementById('estLineSearch')?.addEventListener('input', () => renderWorksheet(state.current || { lines: [] }));
-    document.getElementById('estNewPackage')?.addEventListener('click', () => openDialog(document.getElementById('estPackageModal')));
+    document.getElementById('estNewPackage')?.addEventListener('click', () => openPackageModal().catch(e => estAlert(e.message, 'error')));
     document.getElementById('estPackageForm')?.addEventListener('submit', async e => {
       e.preventDefault();
       if (!state.current?.id) return;
       const fd = new FormData(e.target);
       const body = Object.fromEntries(fd.entries());
-      await api(`/api/estimates/${state.current.id}/bid-packages`, { method: 'POST', body: JSON.stringify(body) });
+      const pkgId = body.package_id;
+      delete body.package_id;
+      if (pkgId) {
+        await api(`/api/estimates/bid-packages/${pkgId}`, { method: 'PUT', body: JSON.stringify(body) });
+        await estAlert('Bid package updated.', 'success');
+      } else {
+        await api(`/api/estimates/${state.current.id}/bid-packages`, { method: 'POST', body: JSON.stringify(body) });
+        await estAlert('Bid package created.', 'success');
+      }
       closeDialog(document.getElementById('estPackageModal'));
       e.target.reset();
       await loadCurrent();
       setTab('rfp');
-      await estAlert('Bid package created.', 'success');
     });
     document.getElementById('estRefreshTakeoff')?.addEventListener('click', () => loadTakeoffPreview().catch(e => estAlert(e.message, 'error')));
     document.getElementById('estTakeoffSearch')?.addEventListener('input', () => loadTakeoffPreview().catch(() => {}));
@@ -502,5 +562,5 @@
     loadEstimates().catch(e => estAlert(e.message, 'error'));
   });
 
-  global.CasePMEstimating = { loadEstimates, setTab, state, loadCurrent, renderWorksheet, renderAll };
+  global.CasePMEstimating = { loadEstimates, setTab, state, loadCurrent, renderWorksheet, renderAll, openPackageModal };
 })(window);

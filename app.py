@@ -4062,11 +4062,17 @@ def estimating_page():
 def estimating_takeoff_popout():
     return render_template(
         'estimating_takeoff_popout.html',
-        active_project=get_active_project(),
         project_id=request.args.get('project_id', type=int) or get_current_project_id(),
         estimate_id=request.args.get('estimate_id', type=int),
         drawing_id=request.args.get('drawing_id', type=int),
     )
+
+
+@app.route('/api/csi/catalog', methods=['GET'])
+@login_required
+def api_csi_catalog():
+    from csi_catalog import catalog_payload
+    return jsonify(catalog_payload())
 
 
 @app.route('/estimate-portal')
@@ -5821,10 +5827,14 @@ def create_schedule_task():
 @app.route('/companies')
 @login_required
 def companies_page():
-    from companies_persistence import ensure_company_schema
+    from companies_persistence import ensure_company_schema, serialize_company
     ensure_company_schema(db)
     companies = Company.query.order_by(Company.name.asc()).all()
-    companies_for_js = [{'id': c.id, 'name': c.name, 'type': c.type or '', 'server_id': c.id} for c in companies]
+    companies_for_js = []
+    for c in companies:
+        row = serialize_company(c)
+        row['server_id'] = c.id
+        companies_for_js.append(row)
     return render_template('companies.html', companies=companies, companies_for_js=companies_for_js)
 
 

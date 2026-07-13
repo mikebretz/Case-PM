@@ -2,6 +2,7 @@
 
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="{{ url_for('static', filename='js/csi-catalog.js') }}"></script>
 
 <style>
     #companyModal input, #companyModal select, #companyModal textarea {
@@ -109,6 +110,11 @@
                 <option value="Inactive">Inactive</option>
                 <option value="Blacklisted">Blacklisted</option>
             </select>
+            <select id="biddingFilter" class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
+                <option value="">All Bidding</option>
+                <option value="bidding">Actively Bidding</option>
+                <option value="not_bidding">Not Bidding</option>
+            </select>
             <button onclick="clearCompanyFilters()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Clear Filters</button>
         </div>
 
@@ -119,6 +125,7 @@
                     <tr>
                         <th class="px-6 py-4 text-left font-medium">Company Name</th>
                         <th class="px-4 py-4 text-left font-medium w-32">Type</th>
+                        <th class="px-4 py-4 text-center font-medium w-24">Bidding</th>
                         <th class="px-6 py-4 text-left font-medium">Primary Contact</th>
                         <th class="px-4 py-4 text-left font-medium w-36">Financial Contact</th>
                         <th class="px-4 py-4 text-left font-medium w-28 whitespace-nowrap">Sage #</th>
@@ -240,6 +247,18 @@
                             <input type="email" id="primary_email" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                     </div>
+                </div>
+
+                <!-- Estimating & RFP -->
+                <div class="mb-6" id="estimatingRfpSection">
+                    <h3 class="font-semibold text-emerald-400 mb-1">Estimating &amp; RFP</h3>
+                    <p class="text-xs text-zinc-500 mb-3">Tag CSI spec sections this sub/vendor bids on. Used when mass-inviting from Estimating bid packages.</p>
+                    <label class="flex items-center gap-2 text-sm mb-3 cursor-pointer">
+                        <input type="checkbox" id="actively_bidding" class="accent-emerald-600" checked>
+                        <span class="font-medium">Actively bidding</span>
+                        <span class="text-xs text-zinc-500">— keep Active in directory but exclude from auto RFP invites when unchecked</span>
+                    </label>
+                    <div id="csiSpecSectionsList" class="bg-zinc-800 border border-zinc-700 rounded-md p-3 max-h-72 overflow-auto text-sm"></div>
                 </div>
 
                 <!-- Contacts -->
@@ -790,6 +809,7 @@ function renderCompaniesTable(filteredCompanies = null) {
         row.innerHTML = `
             <td class="px-6 py-4 font-medium">${company.company_name}</td>
             <td class="px-4 py-4 text-zinc-400 w-28">${company.company_type || ''}</td>
+            <td class="px-4 py-4 text-center">${getBiddingBadge(company)}</td>
             <td class="px-6 py-4 text-zinc-300">${primaryContactName}</td>
             <td class="px-4 py-4 text-zinc-300">${financialContactName}</td>
             <td class="px-4 py-4 text-zinc-400 font-mono text-xs">${getSageNumber(company) || '—'}</td>
@@ -825,6 +845,14 @@ function getCOIStatus(cois) {
     return hasExpired 
         ? `<span class="text-xs px-2 py-0.5 rounded bg-red-900/60 text-red-400">Expired</span>` 
         : `<span class="text-xs px-2 py-0.5 rounded bg-emerald-900/60 text-emerald-400">Current</span>`;
+}
+
+function getBiddingBadge(company) {
+    const t = company.company_type || company.type || '';
+    if (t !== 'Subcontractor' && t !== 'Supplier') return `<span class="text-xs text-zinc-600">—</span>`;
+    if ((company.status || 'Active') !== 'Active') return `<span class="text-xs px-2 py-0.5 rounded bg-zinc-700 text-zinc-400">Inactive</span>`;
+    if (company.actively_bidding === false) return `<span class="text-xs px-2 py-0.5 rounded bg-amber-900/50 text-amber-400">Not bidding</span>`;
+    return `<span class="text-xs px-2 py-0.5 rounded bg-sky-900/50 text-sky-400">Bidding</span>`;
 }
 
 function updateSummaryCards() {
@@ -917,14 +945,19 @@ function filterCompanies() {
     const search = document.getElementById('searchInput').value.toLowerCase().trim();
     const type = document.getElementById('typeFilter').value;
     const status = document.getElementById('statusFilter').value;
+    const bidding = document.getElementById('biddingFilter')?.value || '';
 
     const filtered = companies.filter(c => {
         const matchSearch = c.company_name.toLowerCase().includes(search) || 
                            (c.trade && c.trade.toLowerCase().includes(search)) ||
-                           (getSageNumber(c) && getSageNumber(c).toLowerCase().includes(search));
+                           (getSageNumber(c) && getSageNumber(c).toLowerCase().includes(search)) ||
+                           (c.spec_sections || []).some(s => s.toLowerCase().includes(search));
         const matchType = !type || c.company_type === type;
         const matchStatus = !status || c.status === status;
-        return matchSearch && matchType && matchStatus;
+        const matchBidding = !bidding ||
+            (bidding === 'bidding' && c.actively_bidding !== false && (c.status || 'Active') === 'Active') ||
+            (bidding === 'not_bidding' && c.actively_bidding === false);
+        return matchSearch && matchType && matchStatus && matchBidding;
     });
     renderCompaniesTable(filtered);
 }
@@ -933,6 +966,7 @@ function clearCompanyFilters() {
     document.getElementById('searchInput').value = '';
     document.getElementById('typeFilter').value = '';
     document.getElementById('statusFilter').value = '';
+    if (document.getElementById('biddingFilter')) document.getElementById('biddingFilter').value = '';
     renderCompaniesTable(companies);
 }
 
@@ -1031,6 +1065,11 @@ function showAddCompanyModal() {
     originalCompanyData = null;
     // Show linked users section (empty for new company)
     setTimeout(() => { renderLinkedUsersForCompany(''); updateSageNumberHint(); }, 120);
+    const bidEl = document.getElementById('actively_bidding');
+    if (bidEl) bidEl.checked = true;
+    if (window.CasePMCsiCatalog) {
+        CasePMCsiCatalog.renderSpecCheckboxList(document.getElementById('csiSpecSectionsList'), []);
+    }
     const statusEl = document.getElementById('sage_lookup_status');
     if (statusEl) { statusEl.classList.add('hidden'); statusEl.textContent = ''; }
 }
@@ -1072,6 +1111,8 @@ function saveCompany(e) {
         financial_email: document.getElementById('financial_email')?.value.trim() || '',
         tax_id: document.getElementById('tax_id').value.trim(),
         status: document.getElementById('status').value,
+        actively_bidding: document.getElementById('actively_bidding')?.checked !== false,
+        spec_sections: window.CasePMCsiCatalog?.readSelectedSpecCodes(document.getElementById('csiSpecSectionsList')) || [],
         billing_address: document.getElementById('billing_address').value.trim(),
         shipping_address: document.getElementById('shipping_address').value.trim(),
         license_number: document.getElementById('license_number').value.trim(),
@@ -1250,6 +1291,11 @@ function editCompany(id) {
     document.getElementById('financial_email').value = company.financial_email || '';
     document.getElementById('tax_id').value = company.tax_id || '';
     document.getElementById('status').value = company.status || 'Active';
+    const bidEl = document.getElementById('actively_bidding');
+    if (bidEl) bidEl.checked = company.actively_bidding !== false;
+    if (window.CasePMCsiCatalog) {
+        CasePMCsiCatalog.renderSpecCheckboxList(document.getElementById('csiSpecSectionsList'), company.spec_sections || []);
+    }
     document.getElementById('billing_address').value = company.billing_address || '';
     document.getElementById('shipping_address').value = company.shipping_address || '';
     document.getElementById('license_number').value = company.license_number || '';
@@ -2226,18 +2272,34 @@ function mergeServerCompaniesIntoLocal() {
     if (!CASEPM_SERVER_COMPANIES?.length) return;
     let changed = false;
     CASEPM_SERVER_COMPANIES.forEach(sc => {
-        const exists = companies.some(c => (c.company_name || '').toLowerCase() === (sc.name || '').toLowerCase());
-        if (!exists && sc.name) {
+        const nameKey = (sc.name || sc.company_name || '').toLowerCase();
+        let local = companies.find(c => (c.server_id && sc.server_id && c.server_id === sc.server_id) || (c.company_name || '').toLowerCase() === nameKey);
+        if (local) {
+            ['spec_sections', 'actively_bidding', 'trade', 'status', 'primary_email', 'primary_phone'].forEach(k => {
+                if (sc[k] !== undefined && sc[k] !== null) {
+                    if (JSON.stringify(local[k]) !== JSON.stringify(sc[k])) {
+                        local[k] = sc[k];
+                        changed = true;
+                    }
+                }
+            });
+            if (!local.server_id && sc.server_id) { local.server_id = sc.server_id; changed = true; }
+            return;
+        }
+        if (nameKey) {
             companies.push({
-                id: sc.id || Date.now() + Math.floor(Math.random() * 1000),
-                server_id: sc.id || sc.server_id || null,
-                company_name: sc.name,
-                company_type: sc.type || 'Client',
-                status: 'Active',
+                id: sc.id || sc.server_id || Date.now() + Math.floor(Math.random() * 1000),
+                server_id: sc.server_id || sc.id || null,
+                company_name: sc.name || sc.company_name,
+                company_type: sc.type || sc.company_type || 'Client',
+                status: sc.status || 'Active',
+                actively_bidding: sc.actively_bidding !== false,
+                spec_sections: sc.spec_sections || [],
+                trade: sc.trade || '',
                 contacts: [],
                 cois: [],
-                primary_contact_user_id: null,
-                financial_contact_user_id: null,
+                primary_contact_user_id: sc.primary_contact_user_id || null,
+                financial_contact_user_id: sc.financial_contact_user_id || null,
             });
             changed = true;
         }
@@ -2286,6 +2348,8 @@ function initializeCompaniesPage() {
     if (typeFilter) typeFilter.addEventListener('change', filterCompanies);
     const statusFilter = document.getElementById('statusFilter');
     if (statusFilter) statusFilter.addEventListener('change', filterCompanies);
+    const biddingFilter = document.getElementById('biddingFilter');
+    if (biddingFilter) biddingFilter.addEventListener('change', filterCompanies);
 }
 
 window.onload = initializeCompaniesPage;
