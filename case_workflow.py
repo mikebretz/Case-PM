@@ -828,6 +828,54 @@ def register_workflow(app, _db, models):
                     **ctx,
                 })
 
+            if module_key in ('pay_applications', 'pay_app', 'payapp', 'g702'):
+                from pay_app_persistence import get_pay_app_state
+                from workflow_responder import get_pay_app_responder_context, execute_pay_app_action
+                PayAppProjectState = models.get('PayAppProjectState')
+                if not PayAppProjectState:
+                    return jsonify({'error': 'Pay application module unavailable'}), 500
+                project_id = request.args.get('project_id', type=int) or (
+                    models.get('get_current_project_id')() if models.get('get_current_project_id') else None
+                )
+                if not project_id:
+                    return jsonify({'error': 'project_id required'}), 400
+                record, state = get_pay_app_state(PayAppProjectState, project_id)
+                period = (state or {}).get('currentPayAppPeriod') or {}
+                if entity_id and str(period.get('periodNumber')) != str(entity_id):
+                    for hist in (state or {}).get('payAppHistory') or []:
+                        if str(hist.get('periodNumber')) == str(entity_id):
+                            period = hist.get('period') or period
+                            break
+                if request.method == 'GET':
+                    ctx = get_pay_app_responder_context(project_id, period, current_user, state)
+                    return jsonify({'ok': True, **ctx})
+                body = request.get_json(silent=True) or {}
+                workflow_deps = {
+                    'PayAppProjectState': PayAppProjectState,
+                    'db': db,
+                    'ChangeOrder': models.get('ChangeOrder'),
+                    'ChangeOrderAllocation': models.get('ChangeOrderAllocation'),
+                    'BudgetProjectState': models.get('BudgetProjectState'),
+                    'Commitment': models.get('Commitment'),
+                    'CommitmentAllocation': models.get('CommitmentAllocation'),
+                    'Project': models.get('Project'),
+                    'SageSyncEvent': models.get('SageSyncEvent'),
+                    'get_state': lambda: get_pay_app_state(PayAppProjectState, project_id),
+                }
+                action, ctx, wf_result = execute_pay_app_action(
+                    project_id, period, body.get('action'), current_user, User, body,
+                    workflow_deps=workflow_deps,
+                )
+                db.session.commit()
+                return jsonify({
+                    'ok': True,
+                    'action': action,
+                    'new_status': wf_result.get('new_status'),
+                    'final_approved': wf_result.get('final_approved'),
+                    'sage_result': wf_result.get('sage_result'),
+                    **ctx,
+                })
+
             return jsonify({'error': f'Unsupported module: {module}'}), 400
         except ValueError as exc:
             db.session.rollback()

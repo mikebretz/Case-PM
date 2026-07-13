@@ -62,6 +62,7 @@ ENDPOINT_TO_MODULE = {
     'rfis_page': 'rfis',
     'change_orders_page': 'change_orders',
     'rfq_portal_page': 'change_orders',
+    'pay_applications_page': 'pay_applications',
     'update_change_order_status': 'change_orders',
     'submittals_page': 'submittals',
     'punch_list_page': 'punch_list',

@@ -10,6 +10,9 @@
     co: 'co',
     change_order: 'co',
     change_orders: 'co',
+    pay_applications: 'pay_applications',
+    pay_app: 'pay_applications',
+    g702: 'pay_applications',
   };
 
   let ctx = null;
@@ -75,7 +78,7 @@
     if (!items.length) {
       return '<p class="text-sm text-zinc-500">No comments yet.</p>';
     }
-    if (module === 'Change Orders') {
+    if (module === 'Change Orders' || module === 'Pay Applications') {
       return items.map(entry => `
         <div class="border border-zinc-700 rounded-md p-3 text-sm">
           <div class="flex justify-between text-xs text-zinc-500 mb-1">
@@ -112,6 +115,12 @@
 
   function renderSummary(data) {
     const s = data.summary || {};
+    if (data.module === 'Pay Applications') {
+      return `
+        <div class="flex justify-between text-sm"><span class="text-zinc-500">Period</span><span class="font-mono">#${esc(s.period_number)}</span></div>
+        <div class="flex justify-between text-sm"><span class="text-zinc-500">Dates</span><span class="text-xs">${esc(s.period_start || '')} — ${esc(s.period_end || '')}</span></div>
+        <div class="flex justify-between text-sm"><span class="text-zinc-500">Status</span><span>${esc(data.status)}</span></div>`;
+    }
     if (data.module === 'Change Orders') {
       const alloc = (s.allocations || []).map(a =>
         `<div class="flex justify-between gap-3 text-xs"><span class="font-mono text-emerald-400">${esc(a.cost_code)}</span><span class="text-zinc-400">${esc(a.cost_type || '')}</span><span class="font-mono">${fmtMoney(a.amount)}</span></div>`
@@ -325,6 +334,11 @@
         if (global.CasePMChangeOrders.loadChangeOrders) await global.CasePMChangeOrders.loadChangeOrders?.();
         if (global.CasePMChangeOrders.viewCo) await global.CasePMChangeOrders.viewCo(ctx.entity_id).catch(() => {});
       }
+      if (ctx.module === 'Pay Applications') {
+        if (typeof global.CasePMPayAppSync !== 'undefined') await global.CasePMPayAppSync.refreshFromServer();
+        if (typeof reloadPayAppStateFromStorage === 'function') reloadPayAppStateFromStorage();
+        if (typeof renderPayAppContent === 'function') renderPayAppContent();
+      }
     } catch (err) {
       alert(err.message || 'Could not complete action.');
     }
@@ -335,11 +349,13 @@
     else console.log(msg);
   }
 
-  async function open(module, entityId) {
+  async function open(module, entityId, options) {
     if (typeof global.CasePMWorkflow !== 'undefined') {
       await global.CasePMWorkflow.loadPortal().catch(() => {});
     }
-    const path = `/api/workflow/respond/${modulePath(module)}/${entityId}`;
+    let path = `/api/workflow/respond/${modulePath(module)}/${entityId}`;
+    const opts = options || {};
+    if (opts.project_id) path += `?project_id=${encodeURIComponent(opts.project_id)}`;
     const data = await api(path);
     pendingFiles = [];
     paint(data);

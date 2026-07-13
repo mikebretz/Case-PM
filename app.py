@@ -13265,6 +13265,64 @@ def api_import_pay_app_local():
     return jsonify({'ok': True, 'version': record.version})
 
 
+@app.route('/api/pay-applications/workflow', methods=['POST'])
+@login_required
+def api_pay_app_workflow():
+    from pay_app_persistence import get_pay_app_state, save_pay_app_state
+    from pay_app_workflow import process_pay_app_workflow
+
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    project_id = int(project_id)
+    entity_type = body.get('entity_type') or 'g702'
+    entity_key = body.get('entity_key') or body.get('period_number') or body.get('company_id')
+    action = body.get('action')
+    if not action:
+        return jsonify({'error': 'action required'}), 400
+
+    record, state = get_pay_app_state(PayAppProjectState, project_id)
+    if not record:
+        state = {}
+
+    try:
+        result = process_pay_app_workflow(
+            project_id,
+            entity_type,
+            entity_key,
+            action,
+            current_user,
+            User,
+            body,
+            state,
+            PayAppProjectState=PayAppProjectState,
+            db=db,
+            ChangeOrder=ChangeOrder,
+            ChangeOrderAllocation=ChangeOrderAllocation,
+            BudgetProjectState=BudgetProjectState,
+            Commitment=Commitment,
+            CommitmentAllocation=CommitmentAllocation,
+            Project=Project,
+            SageSyncEvent=SageSyncEvent,
+        )
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 400
+
+    record = save_pay_app_state(PayAppProjectState, db, project_id, result['state'], current_user.id)
+    db.session.commit()
+    return jsonify({
+        'ok': True,
+        'new_status': result.get('new_status'),
+        'final_approved': result.get('final_approved'),
+        'ball_in_court_role': result.get('ball_in_court_role'),
+        'sage_result': result.get('sage_result'),
+        'state': result.get('state'),
+        'version': record.version,
+    })
+
+
 # ==================== SAGE 300 SYNC API ====================
 
 @app.route('/api/sage/sync-events', methods=['GET'])
@@ -14082,6 +14140,7 @@ with app.app_context():
                 prefix, model, doc_type=doc_type, project_id=project_id,
             ),
             'developer_unlock_bypass': _developer_unlock_bypass,
+            'get_current_project_id': get_current_project_id,
         })
         db.create_all()
         cw.ensure_workflow_schema(db.engine)

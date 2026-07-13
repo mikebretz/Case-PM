@@ -4,6 +4,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="{{ url_for('static', filename='js/casepm-workflow.js') }}"></script>
 <script src="{{ url_for('static', filename='js/pay-app-sync.js') }}"></script>
+<script src="{{ url_for('static', filename='js/pay-app-workflow.js') }}"></script>
 <script src="{{ url_for('static', filename='js/accounting-reconcile.js') }}"></script>
 
 <style>
@@ -243,6 +244,35 @@
 
     <button onclick="switchPayAppTab('previous-sub-payapps')" id="tab-previous-sub-payapps"
             class="tab-button px-6 py-2 text-sm font-medium text-zinc-400 hover:text-white">Previous Sub Pay Apps</button>
+
+    <button onclick="switchPayAppTab('erp')" id="tab-erp"
+            class="tab-button px-6 py-2 text-sm font-medium text-zinc-400 hover:text-white nav-staff-only">ERP / Sage Queue</button>
+</div>
+
+<!-- ERP QUEUE PANEL -->
+<div id="payAppErpPanel" class="hidden border border-zinc-700 rounded-md bg-zinc-900 mt-3 flex-shrink-0">
+    <div class="px-4 py-3 border-b border-zinc-800 flex justify-between items-center">
+        <div>
+            <div class="text-sm font-semibold text-white">ERP / Sage Queue</div>
+            <div class="text-xs text-zinc-500">Pay app events require Contractor Accounting review before posting to Sage.</div>
+        </div>
+        <button type="button" onclick="CasePMPayAppWorkflow.renderErpTable('payAppErpTableBody')" class="text-xs text-emerald-400 hover:underline">Refresh</button>
+    </div>
+    <div class="overflow-x-auto max-h-[420px]">
+        <table class="w-full text-sm">
+            <thead class="bg-zinc-800 text-zinc-400 text-xs uppercase">
+                <tr>
+                    <th class="px-4 py-2 text-left">When</th>
+                    <th class="px-4 py-2 text-left">Event</th>
+                    <th class="px-4 py-2 text-left">Accounting</th>
+                    <th class="px-4 py-2 text-left">Message</th>
+                    <th class="px-4 py-2 text-left">Job #</th>
+                    <th class="px-4 py-2 text-center">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="payAppErpTableBody"></tbody>
+        </table>
+    </div>
 </div>
 
 <!-- SUMMARY CARDS -->
@@ -1227,6 +1257,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         el.innerHTML = `
             <span class="text-xs ${statusColor}"><i class="fa-solid fa-database mr-1"></i>Sage 300 · ${latest.eventType} · ${latest.status}</span>
             <span class="text-[10px] text-zinc-500 ml-2">${new Date(latest.timestamp).toLocaleString()}</span>
+            <button type="button" onclick="switchPayAppTab('erp')" class="text-[10px] text-violet-400 hover:text-violet-300 ml-2 underline">ERP queue</button>
             <button type="button" onclick="openSageSyncLogModal()" class="text-[10px] text-sky-400 hover:text-sky-300 ml-2 underline">View log</button>`;
     }
 
@@ -2527,10 +2558,14 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
     }
 
     function isCurrentUserApprover() {
+        const ball = currentPayAppPeriod && currentPayAppPeriod.ball_in_court_role;
+        if (ball && typeof CasePMPayAppWorkflow !== 'undefined') {
+            return CasePMPayAppWorkflow.canActOnBall(ball);
+        }
         if (typeof CasePMWorkflow !== 'undefined' && window.CASEPM_PORTAL) {
             return CasePMWorkflow.canApprove('Pay Applications');
         }
-        return true;
+        return false;
     }
 
     // ==================== AUDIT LOGGING ====================
@@ -2555,6 +2590,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         'sub-sov': 'pay_applications_sub',
         'sub-pay-app-tracker': 'pay_applications_sub',
         'previous-sub-payapps': 'pay_applications_sub',
+        'erp': 'pay_applications_gc',
     };
 
     function canAccessPayTab(tab) {
@@ -2627,13 +2663,25 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
         const tablePanel = document.getElementById('payAppTablePanel');
         const trackerPanel = document.getElementById('payAppTrackerPanel');
+        const erpPanel = document.getElementById('payAppErpPanel');
         const trackerSplit = document.getElementById('payAppTrackerSplit');
         if (trackerSplit) trackerSplit.innerHTML = '';
 
         const onTrackerTab = currentPayAppTab === 'sub-pay-app-tracker';
-        if (tablePanel) tablePanel.classList.toggle('is-hidden', onTrackerTab);
+        const onErpTab = currentPayAppTab === 'erp';
+        if (tablePanel) tablePanel.classList.toggle('is-hidden', onTrackerTab || onErpTab);
         if (trackerPanel) trackerPanel.classList.toggle('is-active', onTrackerTab);
+        if (erpPanel) erpPanel.classList.toggle('hidden', !onErpTab);
+        if (cardsContainer) cardsContainer.classList.toggle('hidden', onErpTab);
+        if (workflowBar) workflowBar.classList.toggle('hidden', onErpTab);
         renderSageSyncStatus();
+
+        if (onErpTab) {
+            if (typeof CasePMPayAppWorkflow !== 'undefined') {
+                CasePMPayAppWorkflow.renderErpTable('payAppErpTableBody');
+            }
+            return;
+        }
 
         if (currentPayAppTab === 'payapp') {
             renderPayApplicationTab(cardsContainer, thead, tbody, workflowBar);
@@ -3135,8 +3183,12 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
         // Workflow buttons (clean, tab-specific)
         const status = currentPayAppPeriod.status;
+        const ball = currentPayAppPeriod.ball_in_court_role;
         let workflowHTML = `<div class="workflow-bar px-4 py-3 flex items-center gap-3 flex-wrap">`;
         workflowHTML += `<div class="text-xs text-zinc-400 mr-2">Workflow:</div>`;
+        if (ball) {
+            workflowHTML += `<span class="px-2 py-1 bg-sky-950 border border-sky-800 text-sky-300 text-xs rounded">Ball: ${ball}</span>`;
+        }
 
         if (status === 'Draft') {
             workflowHTML += `<button onclick="submitPayApplication()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-paper-plane"></i> Submit for Review</button>`;
@@ -3168,12 +3220,13 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                     <button onclick="removeMainLienWaiver()" class="px-2 py-0.5 text-xs bg-red-700 hover:bg-red-600 rounded">Remove</button>
                 </div>`;
             }
-        } else if (status === 'Submitted' || status === 'Under Review') {
+        } else if ((typeof CasePMPayAppWorkflow !== 'undefined' ? CasePMPayAppWorkflow.g702ApprovableStatuses() : ['Submitted', 'Under Review', 'Pending Owner', 'Pending Accounting']).includes(status)) {
             if (isCurrentUserApprover()) {
-                workflowHTML += `<button onclick="approvePayApplication()" class="px-5 py-2 bg-red-600 hover:bg-red-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-check"></i> Approve Application</button>`;
+                const finalStep = status === 'Pending Accounting';
+                workflowHTML += `<button onclick="approvePayApplication()" class="px-5 py-2 bg-red-600 hover:bg-red-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-check"></i> ${finalStep ? 'Final Approve' : 'Approve Step'}</button>`;
                 workflowHTML += `<button onclick="requestRevisionPayApplication()" class="px-5 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-redo"></i> Request Revision</button>`;
             } else {
-                workflowHTML += `<span class="px-4 py-1.5 bg-sky-900/60 text-sky-300 text-sm rounded-md">Awaiting approver review</span>`;
+                workflowHTML += `<span class="px-4 py-1.5 bg-sky-900/60 text-sky-300 text-sm rounded-md">Awaiting ${ball || 'approver'} review (${status})</span>`;
             }
         } else if (status === 'Approved') {
             workflowHTML += `<span class="px-4 py-1.5 bg-emerald-900/60 text-emerald-400 text-sm rounded-md font-medium">Approved — Payment can be processed</span>`;
@@ -3707,7 +3760,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         renderPayAppContent();
     }
 
-    function submitPayApplication() {
+    async function submitPayApplication() {
         if (!currentPayAppPeriod) return;
 
         // === ORIGINAL CONTRACT AMOUNT VALIDATION (Only checks Original column, NOT Change Orders) ===
@@ -3778,31 +3831,22 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             return;
         }
 
-        currentPayAppPeriod.status = "Submitted";
-        casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
-        logPayAppAudit('APPLICATION_SUBMITTED', { periodNumber: currentPayAppPeriod.periodNumber, validatedAgainstProjectOriginal: originalContractAmount });
-        queueSageSync('G702Submitted', { periodNumber: currentPayAppPeriod.periodNumber }, `G702 period ${currentPayAppPeriod.periodNumber} submitted — queued for Sage progress billing review`);
-        renderPayAppContent();
-        if (typeof CasePMWorkflow !== 'undefined') {
-            const billingSnapshot = {};
-            contractorSOV.forEach(line => {
-                const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
-                const subMin = getCurrentSubBilledThisPeriodForCode(line.cost_code);
-                billingSnapshot[line.id] = {
-                    workThisPeriod: Math.max(billing.workThisPeriod || 0, subMin),
-                    materialsStored: billing.materialsStored || 0,
-                    coWorkThisPeriod: billing.coWorkThisPeriod || 0,
-                };
+        try {
+            const rollup = typeof computeG703Rollup === 'function' ? computeG703Rollup() : {};
+            await CasePMPayAppWorkflow.workflow('g702', 'submit', {
+                entity_key: currentPayAppPeriod.periodNumber,
+                rollup,
+                amount_due: rollup.grand ? (rollup.grand.thisPeriod + rollup.grand.materials + (rollup.changeOrders?.thisPeriod || 0) - rollup.grand.retainage) : 0,
             });
-            CasePMWorkflow.onG702Submitted(currentPayAppPeriod, {
-                contractorSOV: JSON.parse(JSON.stringify(contractorSOV || [])),
-                billingLines: billingSnapshot,
-                budgetContractAmount: budgetContractAmount,
-            }).catch(e => console.warn('Workflow', e));
+            reloadPayAppStateFromStorage();
+            logPayAppAudit('APPLICATION_SUBMITTED', { periodNumber: currentPayAppPeriod.periodNumber, validatedAgainstProjectOriginal: originalContractAmount });
+            renderPayAppContent();
+        } catch (err) {
+            showCenteredAlert(err.message || 'Submit failed', 'error');
         }
     }
 
-    function approvePayApplication() {
+    async function approvePayApplication() {
         if (!currentPayAppPeriod) return;
 
         // Create a historical snapshot of the current billing state
@@ -3842,72 +3886,63 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             })
         };
 
-        // Add to history if not already present
-        const existingIndex = payAppHistory.findIndex(p => p.periodNumber === currentPayAppPeriod.periodNumber);
-        if (existingIndex === -1) {
-            payAppHistory.unshift({
-                id: Date.now(),
-                periodNumber: currentPayAppPeriod.periodNumber,
-                periodStart: currentPayAppPeriod.periodStart,
-                periodEnd: currentPayAppPeriod.periodEnd,
-                status: "Approved",
-                snapshot: snapshot
-            });
-            casepmStore.setItem('payAppHistory', JSON.stringify(payAppHistory));
-        } else {
-            // Update existing snapshot if re-approved
-            payAppHistory[existingIndex].snapshot = snapshot;
-            payAppHistory[existingIndex].status = "Approved";
-            casepmStore.setItem('payAppHistory', JSON.stringify(payAppHistory));
-        }
-
-        currentPayAppPeriod.status = "Approved";
-        casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
-        logPayAppAudit('APPLICATION_APPROVED', { periodNumber: currentPayAppPeriod.periodNumber });
         const approvedRollup = computeG703Rollup();
-        queueSageSync('G702Approved', {
-            periodNumber: currentPayAppPeriod.periodNumber,
-            grandTotal: approvedRollup.grand.completed,
-            amountDue: approvedRollup.grand.thisPeriod + approvedRollup.grand.materials + approvedRollup.changeOrders.thisPeriod - approvedRollup.grand.retainage,
-        }, `G702 period ${currentPayAppPeriod.periodNumber} approved — queued for Sage AR/progress billing post`);
-        if (typeof CasePMWorkflow !== 'undefined') {
-            CasePMWorkflow.onG702Approved(currentPayAppPeriod).catch(e => console.warn('Workflow', e));
+        const periodNum = currentPayAppPeriod.periodNumber;
+
+        try {
+            const wfResult = await CasePMPayAppWorkflow.workflow('g702', 'approve', {
+                entity_key: periodNum,
+                rollup: approvedRollup,
+                amount_due: approvedRollup.grand.thisPeriod + approvedRollup.grand.materials + approvedRollup.changeOrders.thisPeriod - approvedRollup.grand.retainage,
+            });
+            reloadPayAppStateFromStorage();
+
+            if (!wfResult.final_approved) {
+                renderPayAppContent();
+                return;
+            }
+
+            const existingIndex = payAppHistory.findIndex(p => p.periodNumber === periodNum);
+            if (existingIndex === -1) {
+                payAppHistory.unshift({
+                    id: Date.now(),
+                    periodNumber: periodNum,
+                    periodStart: currentPayAppPeriod.periodStart,
+                    periodEnd: currentPayAppPeriod.periodEnd,
+                    status: 'Approved',
+                    snapshot: snapshot,
+                });
+            } else {
+                payAppHistory[existingIndex].snapshot = snapshot;
+                payAppHistory[existingIndex].status = 'Approved';
+            }
+            casepmStore.setItem('payAppHistory', JSON.stringify(payAppHistory));
+            logPayAppAudit('APPLICATION_APPROVED', { periodNumber: periodNum });
+
+            setTimeout(() => { switchPayAppTab('previous-payapps'); }, 800);
+            pushActiveSubPayAppsToPrevious(periodNum);
+
+            contractorSOV.forEach(line => {
+                const finalBilling = finalBillingForSnapshot[line.id] || { workThisPeriod: 0, materialsStored: 0, coWorkThisPeriod: 0 };
+                const contractCompleted = (finalBilling.workThisPeriod || 0) + (finalBilling.materialsStored || 0);
+                const coCompleted = finalBilling.coWorkThisPeriod || 0;
+                if (!line.billed_to_date) line.billed_to_date = 0;
+                if (!line.co_billed_to_date) line.co_billed_to_date = 0;
+                line.billed_to_date += contractCompleted;
+                line.co_billed_to_date += coCompleted;
+            });
+            casepmStore.setItem('contractorSOV', JSON.stringify(contractorSOV));
+
+            const approvedPeriod = JSON.parse(JSON.stringify(currentPayAppPeriod));
+            createNextPeriodAfterApproval(approvedPeriod);
+
+            setTimeout(() => {
+                switchPayAppTab('payapp');
+                renderPayAppContent();
+            }, 600);
+        } catch (err) {
+            showCenteredAlert(err.message || 'Approval failed', 'error');
         }
-
-        // After approval, automatically switch to Previous Pay Applications tab so user can verify the numbers carried over
-        setTimeout(() => {
-            switchPayAppTab('previous-payapps');
-        }, 800);
-
-        // === ARCHIVE ALL SUB PAY APPS FOR THIS PERIOD (move from Tracker to Previous Sub Pay Apps) ===
-        pushActiveSubPayAppsToPrevious(currentPayAppPeriod.periodNumber);
-        
-        // === UPDATE LIVE CONTRACTOR SOV billed_to_date WITH THIS PERIOD'S *FINAL DISPLAYED* COMPLETED AMOUNTS ===
-        // This ensures the next period's G702 starts with the correct cumulative Billed to Date.
-        // We use the same final values that were calculated for the history snapshot (sub min enforced).
-        contractorSOV.forEach(line => {
-            const finalBilling = finalBillingForSnapshot[line.id] || { workThisPeriod: 0, materialsStored: 0, coWorkThisPeriod: 0 };
-            const contractCompleted = (finalBilling.workThisPeriod || 0) + (finalBilling.materialsStored || 0);
-            const coCompleted = finalBilling.coWorkThisPeriod || 0;
-            if (!line.billed_to_date) line.billed_to_date = 0;
-            if (!line.co_billed_to_date) line.co_billed_to_date = 0;
-            line.billed_to_date += contractCompleted;
-            line.co_billed_to_date += coCompleted;
-        });
-        casepmStore.setItem('contractorSOV', JSON.stringify(contractorSOV));
-
-        // Success confirmation for the user
-        // showCenteredAlert("Pay Application approved. Amounts from Work This Period have been added to Billed to Date for the next period.", "success");
-
-        // After approval, automatically create and switch to Period N+1 in Draft state
-        // so the Submit button appears again for the next period (user request).
-        createNextPeriodAfterApproval(currentPayAppPeriod);
-
-        // Switch back to G702 tab so user immediately sees the new Draft period ready for input
-        setTimeout(() => {
-            switchPayAppTab('payapp');
-            renderPayAppContent();
-        }, 600);
     }
 
     // NEW: Create next period as Draft after approval (auto-advance for workflow continuity)
@@ -3931,7 +3966,8 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             periodNumber: nextNum,
             periodStart: nextStart.toISOString().split('T')[0],
             periodEnd: nextEnd.toISOString().split('T')[0],
-            status: "Draft"
+            status: 'Draft',
+            ball_in_court_role: 'Creator',
         };
 
         currentPayAppPeriod = nextPeriod;
@@ -3946,15 +3982,21 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         return nextPeriod;
     }
 
-    function requestRevisionPayApplication() {
+    async function requestRevisionPayApplication() {
         if (!currentPayAppPeriod) return;
-        currentPayAppPeriod.status = "Draft";
-        casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
-        logPayAppAudit('REVISION_REQUESTED', { periodNumber: currentPayAppPeriod.periodNumber });
-        if (typeof CasePMWorkflow !== 'undefined') {
-            CasePMWorkflow.onG702RevisionRequested(currentPayAppPeriod).catch(e => console.warn('Workflow', e));
+        const comments = prompt('Revision reason (required):') || '';
+        if (!comments.trim()) return;
+        try {
+            await CasePMPayAppWorkflow.workflow('g702', 'reject', {
+                entity_key: currentPayAppPeriod.periodNumber,
+                comments: comments.trim(),
+            });
+            reloadPayAppStateFromStorage();
+            logPayAppAudit('REVISION_REQUESTED', { periodNumber: currentPayAppPeriod.periodNumber });
+            renderPayAppContent();
+        } catch (err) {
+            showCenteredAlert(err.message || 'Could not request revision', 'error');
         }
-        renderPayAppContent();
     }
 
     // ==================== CONTRACTOR SOV LOCK / UNLOCK (Admin Only) ====================
@@ -6385,40 +6427,38 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             showCenteredAlert("This SOV is already approved. No need to submit again.");
             return;
         }
-        updateSubSOVStatus(selectedSubCompanyId, 'Pending Approval', { submittedDate: new Date().toISOString() });
-        logPayAppAudit('SUB_SOV_SUBMITTED_FOR_APPROVAL', { companyId: selectedSubCompanyId });
-        if (typeof CasePMWorkflow !== 'undefined') {
-            const sovLines = (getSubCompanyMapEntry(subcontractorSOV, selectedSubCompanyId) || []).map(line => ({
-                cost_code: line.cost_code,
-                description: line.description,
-                original: line.original,
-                co_amount: line.co_amount,
-                billed_to_date: line.billed_to_date,
-            }));
-            CasePMWorkflow.onSubSOVSubmitted(selectedSubCompanyId, getCompanyName(selectedSubCompanyId), { lines: sovLines }).catch(e => console.warn('Workflow', e));
-        }
-        renderPayAppContent(); // Refresh to show new status + buttons
+        CasePMPayAppWorkflow.workflow('sub_sov', 'submit', { entity_key: selectedSubCompanyId, company_id: selectedSubCompanyId })
+            .then(() => {
+                reloadPayAppStateFromStorage();
+                logPayAppAudit('SUB_SOV_SUBMITTED_FOR_APPROVAL', { companyId: selectedSubCompanyId });
+                renderPayAppContent();
+            })
+            .catch(err => showCenteredAlert(err.message || 'Submit failed', 'error'));
     }
 
     function approveSubSOVSetup() {
         if (!selectedSubCompanyId) return;
-        updateSubSOVStatus(selectedSubCompanyId, 'Approved', { 
-            approvedBy: "Michael Bretz (Project Manager)", 
-            approvedDate: new Date().toISOString() 
-        });
-        logPayAppAudit('SUB_SOV_APPROVED', { companyId: selectedSubCompanyId, approvedBy: "Michael Bretz" });
-        if (typeof CasePMWorkflow !== 'undefined') {
-            CasePMWorkflow.onSubSOVApproved(selectedSubCompanyId, getCompanyName(selectedSubCompanyId)).catch(e => console.warn('Workflow', e));
-        }
-        renderPayAppContent();
+        CasePMPayAppWorkflow.workflow('sub_sov', 'approve', { entity_key: selectedSubCompanyId, company_id: selectedSubCompanyId })
+            .then(() => {
+                reloadPayAppStateFromStorage();
+                logPayAppAudit('SUB_SOV_APPROVED', { companyId: selectedSubCompanyId });
+                renderPayAppContent();
+            })
+            .catch(err => showCenteredAlert(err.message || 'Approve failed', 'error'));
     }
 
     function rejectSubSOVSetup() {
         if (!selectedSubCompanyId) return;
-        updateSubSOVStatus(selectedSubCompanyId, 'Rejected', { approvedBy: "Michael Bretz (Project Manager)" });
-        logPayAppAudit('SUB_SOV_REJECTED', { companyId: selectedSubCompanyId });
-        showCenteredAlert("Revision requested. Subcontractor / PM can now update the SOV and resubmit.", 'info');
-        renderPayAppContent();
+        const comments = prompt('Revision notes (required):') || '';
+        if (!comments.trim()) return;
+        CasePMPayAppWorkflow.workflow('sub_sov', 'reject', { entity_key: selectedSubCompanyId, company_id: selectedSubCompanyId, comments: comments.trim() })
+            .then(() => {
+                reloadPayAppStateFromStorage();
+                logPayAppAudit('SUB_SOV_REJECTED', { companyId: selectedSubCompanyId });
+                showCenteredAlert("Revision requested. Subcontractor / PM can now update the SOV and resubmit.", 'info');
+                renderPayAppContent();
+            })
+            .catch(err => showCenteredAlert(err.message || 'Reject failed', 'error'));
     }
 
     /**
@@ -6581,15 +6621,18 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         if (!safeSetLocalStorage('subPayAppHistory', subPayAppHistory)) return;
 
         logPayAppAudit('SUB_PAYAPP_SUBMITTED_FOR_APPROVAL', { companyId: companyId, period: currentPeriodNum, total: totalBilledThisPeriod, isCompliance: isComplianceSubmission });
-        queueSageSync('SubPayAppSubmitted', { companyId, periodNumber: currentPeriodNum, total: totalBilledThisPeriod }, `Sub pay app submitted by ${getCompanyName(companyId)} — queued for Sage review`);
-        if (typeof CasePMWorkflow !== 'undefined') {
-            CasePMWorkflow.onSubPayAppSubmitted(companyId, getCompanyName(companyId), currentPeriodNum, totalBilledThisPeriodCheck, {
-                lines: snapshotLines,
-                periodStart: currentPayAppPeriod ? currentPayAppPeriod.periodStart : '',
-                periodEnd: currentPayAppPeriod ? currentPayAppPeriod.periodEnd : '',
-            }).catch(e => console.warn('Workflow', e));
-        }
-        renderPayAppContent();
+        const pendingPayload = subPendingSubmissions[cid];
+        const historyPayload = subPayAppHistory[cid][historyKey];
+        CasePMPayAppWorkflow.workflow('sub_pay_app', 'submit', {
+            entity_key: cid,
+            company_id: cid,
+            pending_entry: pendingPayload,
+            history_entry: historyPayload,
+            history_key: String(historyKey),
+        }).then(() => {
+            reloadPayAppStateFromStorage();
+            renderPayAppContent();
+        }).catch(err => showCenteredAlert(err.message || 'Submit failed', 'error'));
     }
 
     function approveSubPayApp(companyId) {
@@ -6732,17 +6775,15 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             totalCommitted: totalCommittedThisPeriod,
             newPayAppNumber: subPayAppNumbers[companyId]
         });
-        if (typeof CasePMWorkflow !== 'undefined') {
-            CasePMWorkflow.onSubPayAppApproved(companyId, getCompanyName(companyId), currentPeriodNum).catch(e => console.warn('Workflow', e));
-        }
-        queueSageSync('SubPayAppApproved', {
-            companyId,
-            companyName: getCompanyName(companyId),
-            periodNumber: currentPeriodNum,
-            totalCommitted: totalCommittedThisPeriod,
-        }, `Sub pay app #${currentPeriodNum} for ${getCompanyName(companyId)} approved — queued for Sage subcontractor billing/AP`);
-        
-        renderPayAppContent();
+        CasePMPayAppWorkflow.workflow('sub_pay_app', 'approve', {
+            entity_key: cid,
+            company_id: cid,
+            pending_entry: pendingEntry,
+            history_key: String(historyKey),
+        }).then(() => {
+            reloadPayAppStateFromStorage();
+            renderPayAppContent();
+        }).catch(err => showCenteredAlert(err.message || 'Approve failed', 'error'));
     }
 
     // Request Revision for a pending (left hand) or approved (right hand / Tracker) Sub Pay App
@@ -9111,6 +9152,16 @@ function printSubcontractorG703(companyId) {
             applyPayTabPermissions();
             renderPayAppContent();
             renderSageSyncStatus();
+
+            const params = new URLSearchParams(location.search);
+            if (params.get('tab') === 'erp') switchPayAppTab('erp');
+            if (params.get('open') === '1' && params.get('respond') === '1' && params.get('pay_entity') === 'g702') {
+                const period = parseInt(params.get('period') || '0', 10);
+                const pid = params.get('project_id') || localStorage.getItem('casepm_current_project_id');
+                if (period && typeof CasePMApprovalResponder !== 'undefined') {
+                    setTimeout(() => CasePMApprovalResponder.open('pay_applications', period, { project_id: pid }), 400);
+                }
+            }
         };
         boot();
 
