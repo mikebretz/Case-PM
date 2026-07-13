@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 CONNECTOR_COOKIE = 'casepm_connector'
 CONNECTOR_QUERY = 'connector'
-CONNECTOR_VERSION = '1.4'
+CONNECTOR_VERSION = '1.5'
 
 _CONNECTOR_DIR = os.path.join(os.path.dirname(__file__), 'connector')
 _ICON_NAME = 'casepm-icon.ico'
