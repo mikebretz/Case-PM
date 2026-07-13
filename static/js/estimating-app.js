@@ -502,5 +502,5 @@
     loadEstimates().catch(e => estAlert(e.message, 'error'));
   });
 
-  global.CasePMEstimating = { loadEstimates, setTab, state };
+  global.CasePMEstimating = { loadEstimates, setTab, state, loadCurrent, renderWorksheet, renderAll };
 })(window);

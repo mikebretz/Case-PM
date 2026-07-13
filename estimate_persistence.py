@@ -267,6 +267,7 @@ def award_estimate_to_budget(
     estimate_id,
     user_id=None,
     use_bid_awards=False,
+    EstimateBudgetMapping=None,
 ):
     """
     Push finalized estimate into project budget original_budget lines.
@@ -293,7 +294,12 @@ def award_estimate_to_budget(
                 'cost_type': 'Subcontract',
                 'description': pkg.title or f'Awarded bid {pkg.number}',
                 'amount': float(inv.quote_amount),
+                'spec_section': pkg.spec_section or '',
             })
+
+    if EstimateBudgetMapping:
+        from estimate_features import apply_budget_mappings
+        rollups = apply_budget_mappings(EstimateBudgetMapping, est.project_id, rollups)
 
     record, state = get_budget_state(BudgetProjectState, est.project_id)
     budget_lines = list(state.get('budgetLines') or [])

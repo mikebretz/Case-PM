@@ -37,6 +37,10 @@
   border-top: 1px solid #3f3f46;
   background: #09090b;
 }
+@media (max-width: 640px) {
+  .est-portal-card-actions { width: 100%; }
+  .est-portal-card-actions button { width: 100%; }
+}
 </style>
 <div class="max-w-4xl mx-auto p-6">
   <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
@@ -60,7 +64,12 @@
       <p id="estPortalQuotePkgTitle" class="text-zinc-400"></p>
       <div>
         <label class="text-zinc-400">Quote amount ($)</label>
-        <input type="number" step="0.01" min="0" id="estPortalQuoteAmount" required class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1 font-mono">
+        <input type="number" step="0.01" min="0" id="estPortalQuoteAmount" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1 font-mono">
+      </div>
+      <div>
+        <label class="text-zinc-400">Line-item breakdown (optional)</label>
+        <div id="estPortalQuoteLines" class="space-y-2 mt-1 max-h-40 overflow-auto"></div>
+        <button type="button" id="estPortalAddQuoteLine" class="mt-2 text-xs text-emerald-400">+ Add line</button>
       </div>
       <div>
         <label class="text-zinc-400">Notes (optional)</label>

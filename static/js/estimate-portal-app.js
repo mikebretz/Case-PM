@@ -47,6 +47,26 @@
     await load();
   }
 
+  function addQuoteLineRow(desc = '', amount = '') {
+    const wrap = document.getElementById('estPortalQuoteLines');
+    if (!wrap) return;
+    const row = document.createElement('div');
+    row.className = 'flex gap-2';
+    row.innerHTML = `
+      <input type="text" placeholder="Description" class="ql-desc flex-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm" value="${esc(desc)}">
+      <input type="number" step="0.01" placeholder="Amt" class="ql-amt w-24 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm font-mono" value="${amount}">
+      <button type="button" class="text-red-400 px-1 remove-ql">×</button>`;
+    row.querySelector('.remove-ql').addEventListener('click', () => row.remove());
+    wrap.appendChild(row);
+  }
+
+  function readQuoteLines() {
+    return [...document.querySelectorAll('#estPortalQuoteLines .flex.gap-2')].map(row => ({
+      description: row.querySelector('.ql-desc')?.value || '',
+      amount: parseFloat(row.querySelector('.ql-amt')?.value) || 0,
+    })).filter(l => l.description || l.amount);
+  }
+
   function openQuoteModal(row) {
     const inv = row.invitation;
     const pkg = row.bid_package;
@@ -54,6 +74,9 @@
     document.getElementById('estPortalQuotePkgTitle').textContent = `${pkg.number} — ${pkg.title}`;
     document.getElementById('estPortalQuoteAmount').value = '';
     document.getElementById('estPortalQuoteNotes').value = '';
+    const ql = document.getElementById('estPortalQuoteLines');
+    if (ql) ql.innerHTML = '';
+    addQuoteLineRow();
     openDialog(document.getElementById('estPortalQuoteModal'));
     document.getElementById('estPortalQuoteAmount').focus();
   }
@@ -91,7 +114,7 @@
               <div class="text-xs text-zinc-500 mt-2">${esc(pkg.scope_notes || pkg.description || '')}</div>
               <div class="text-xs text-zinc-500 mt-2">Status: ${esc(inv.status)}</div>
             </div>
-            <div class="flex flex-col gap-2 shrink-0">
+            <div class="flex flex-col gap-2 shrink-0 est-portal-card-actions">
               ${open ? `
                 <button type="button" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium btn-quote">Submit Quote</button>
                 <button type="button" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm btn-decline">Not Interested</button>
@@ -125,17 +148,21 @@
       btn.addEventListener('click', () => closeDialog(document.getElementById(btn.getAttribute('data-target'))));
     });
 
+    document.getElementById('estPortalAddQuoteLine')?.addEventListener('click', () => addQuoteLineRow());
+
     document.getElementById('estPortalQuoteForm')?.addEventListener('submit', async e => {
       e.preventDefault();
       const invId = parseInt(document.getElementById('estPortalQuoteInvId').value, 10);
-      const amount = parseFloat(document.getElementById('estPortalQuoteAmount').value) || 0;
+      let amount = parseFloat(document.getElementById('estPortalQuoteAmount').value) || 0;
+      const quote_lines = readQuoteLines();
+      if (!amount && quote_lines.length) amount = quote_lines.reduce((s, l) => s + l.amount, 0);
       if (!amount) {
-        await portalAlert('Enter a quote amount.', 'warning');
+        await portalAlert('Enter a quote amount or line items.', 'warning');
         return;
       }
       const notes = document.getElementById('estPortalQuoteNotes').value || '';
       try {
-        await respond(invId, { action: 'quote', quote_amount: amount, quote_notes: notes });
+        await respond(invId, { action: 'quote', quote_amount: amount, quote_notes: notes, quote_lines });
         closeDialog(document.getElementById('estPortalQuoteModal'));
         await portalAlert('Quote submitted.', 'success');
       } catch (err) {

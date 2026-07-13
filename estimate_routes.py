@@ -14,6 +14,7 @@ def register_estimate_routes(app, deps):
     BidInvitation = deps['BidInvitation']
     BidQuoteLine = deps['BidQuoteLine']
     BudgetProjectState = deps['BudgetProjectState']
+    EstimateBudgetMapping = deps.get('EstimateBudgetMapping')
     Company = deps['Company']
     Drawing = deps['Drawing']
     DrawingMarkup = deps['DrawingMarkup']
@@ -275,6 +276,7 @@ def register_estimate_routes(app, deps):
                 BudgetProjectState, db, estimate_id,
                 user_id=current_user.id,
                 use_bid_awards=bool(body.get('use_bid_awards')),
+                EstimateBudgetMapping=EstimateBudgetMapping,
             )
         except Exception as exc:
             db.session.rollback()
