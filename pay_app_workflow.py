@@ -113,14 +113,51 @@ def notify_pay_app_ball(project_id, role, *, title, description, entity_type, en
 
 def _g702_amount_from_state(state, body):
     body = body or {}
+    state = state or {}
     if body.get('amount_due') is not None:
         return float(body.get('amount_due') or 0)
     rollup = body.get('rollup') or {}
     grand = rollup.get('grand') or {}
-    try:
-        return float(grand.get('thisPeriod') or 0) + float(grand.get('materials') or 0) + float(grand.get('changeOrders', {}).get('thisPeriod') or 0) - float(grand.get('retainage') or 0)
-    except (TypeError, ValueError):
-        return 0.0
+    if grand:
+        try:
+            return float(grand.get('thisPeriod') or 0) + float(grand.get('materials') or 0) + float(grand.get('changeOrders', {}).get('thisPeriod') or 0) - float(grand.get('retainage') or 0)
+        except (TypeError, ValueError):
+            pass
+
+    billing_lines = state.get('payAppBillingLines') or {}
+    contractor_sov = state.get('contractorSOV') or []
+    retainage_rate = float(state.get('retainageRate') or state.get('retainage_rate') or 0.10)
+    total_current = 0.0
+    total_retainage = 0.0
+    for line in contractor_sov:
+        if not isinstance(line, dict):
+            continue
+        line_id = line.get('id')
+        billing = billing_lines.get(str(line_id)) or billing_lines.get(line_id) or {}
+        work = float(billing.get('workThisPeriod') or billing.get('work_this_period') or 0)
+        materials = float(billing.get('materialsStored') or billing.get('materials_stored') or 0)
+        co_work = float(
+            billing.get('coWorkThisPeriod')
+            or billing.get('co_work_this_period')
+            or billing.get('co_billed_this_period')
+            or 0
+        )
+        contract_completed = work + materials
+        co_completed = co_work
+        total_current += contract_completed + co_completed
+        total_retainage += (contract_completed + co_completed) * retainage_rate
+
+    if total_current > 0:
+        return round(total_current - total_retainage, 2)
+
+    period = state.get('currentPayAppPeriod') or {}
+    for key in ('amountDue', 'amount_due', 'paymentDue', 'payment_due'):
+        if period.get(key) is not None:
+            try:
+                return float(period.get(key) or 0)
+            except (TypeError, ValueError):
+                pass
+    return 0.0
 
 
 def g702_workflow_action(period, action, user, amount=0):
