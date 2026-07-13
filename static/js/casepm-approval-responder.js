@@ -327,9 +327,12 @@
 
   async function submit(action) {
     if (!ctx) return;
+    const activeCtx = ctx;
+    const moduleName = activeCtx.module;
+    const entityId = activeCtx.entity_id;
     const commentEl = document.getElementById('aprComment');
     const comment = commentEl?.value?.trim() || '';
-    const actionMeta = (ctx.allowed_actions || []).find(a => a.action === action) || {};
+    const actionMeta = (activeCtx.allowed_actions || []).find(a => a.action === action) || {};
     if (actionMeta.requires_comment && !comment) {
       alert('Please enter a comment before continuing.');
       commentEl?.focus();
@@ -351,8 +354,8 @@
       }
     }
     try {
-      if (ctx._local && typeof localHandler === 'function') {
-        await localHandler(action, comment, body, ctx);
+      if (activeCtx._local && typeof localHandler === 'function') {
+        await localHandler(action, comment, body, activeCtx);
         toast('Saved successfully.');
         modal()?.close();
         destroySignPanel();
@@ -360,24 +363,24 @@
         global.dispatchEvent(new CustomEvent('casepm:approval-responded', { detail: { action, local: true } }));
         return;
       }
-      if (ctx.module === 'RFIs' && pendingFiles.length) {
-        await uploadPendingFiles(ctx.module, ctx.entity_id);
+      if (moduleName === 'RFIs' && pendingFiles.length) {
+        await uploadPendingFiles(moduleName, entityId);
       }
-      const path = `/api/workflow/respond/${modulePath(ctx.module)}/${ctx.entity_id}`;
+      const path = `/api/workflow/respond/${modulePath(moduleName)}/${entityId}`;
       const result = await api(path, { method: 'POST', body: JSON.stringify(body) });
       toast('Saved — everyone involved has been notified.');
       modal()?.close();
       destroySignPanel();
       global.dispatchEvent(new CustomEvent('casepm:approval-responded', { detail: result }));
-      if (ctx.module === 'RFIs' && global.CasePMRfis) {
+      if (moduleName === 'RFIs' && global.CasePMRfis) {
         if (typeof global.CasePMRfis.refresh === 'function') await global.CasePMRfis.refresh();
-        else if (global.CasePMRfis.view) await global.CasePMRfis.view(ctx.entity_id).catch(() => {});
+        else if (global.CasePMRfis.view) await global.CasePMRfis.view(entityId).catch(() => {});
       }
-      if (ctx.module === 'Change Orders' && global.CasePMChangeOrders) {
+      if (moduleName === 'Change Orders' && global.CasePMChangeOrders) {
         if (global.CasePMChangeOrders.loadChangeOrders) await global.CasePMChangeOrders.loadChangeOrders?.();
         if (global.CasePMChangeOrders.closeDrawer) global.CasePMChangeOrders.closeDrawer();
       }
-      if (ctx.module === 'Pay Applications') {
+      if (moduleName === 'Pay Applications') {
         if (typeof global.CasePMPayAppSync !== 'undefined') await global.CasePMPayAppSync.refreshFromServer().catch(() => {});
       }
     } catch (err) {
