@@ -5,6 +5,14 @@ import json
 import os
 from datetime import datetime
 
+# Internal-only events that may post without accounting review
+SAGE_AUTO_POST_EXEMPT = frozenset({
+    'AccountingReconciled',
+    'ManualSync',
+    'BudgetSaved',
+    'BudgetPublished',
+    'BudgetSageSync',
+})
 # Map event types to Sage document categories (CRE module conventions)
 SAGE_EVENT_MAP = {
     'G702Submitted': {'module': 'ProgressBilling', 'action': 'submit'},
@@ -162,9 +170,12 @@ def create_and_process_sage_event(
 
     financial_events = {
         'ChangeOrderApproved', 'CommitmentChangeOrderApproved', 'CommitmentApproved',
-        'G702Approved', 'SubPayAppApproved', 'CPCOPromoted', 'CORApproved',
+        'G702Approved', 'SubPayAppApproved', 'CPCOPromoted', 'CORApproved', 'PCOPromoted',
+        'ChangeOrderSubmitted', 'CommitmentChangeOrderSubmitted', 'PCOSubmitted',
+        'CPCOSubmitted', 'CORSubmitted', 'RFQSubmitted', 'RFQQuoted', 'ChangeEventCreated',
     }
-    needs_review = require_accounting_review or event_type in financial_events
+    # All Sage export events require Contractor Accounting review before auto-posting
+    needs_review = require_accounting_review or event_type not in SAGE_AUTO_POST_EXEMPT
 
     event = SageSyncEvent(
         project_id=project_id,
@@ -181,6 +192,12 @@ def create_and_process_sage_event(
 
     if auto_process and not needs_review:
         process_sage_event(event, db, Commitment=Commitment)
+    elif needs_review:
+        try:
+            from change_event_persistence import notify_accounting_erp_review
+            notify_accounting_erp_review(event, Project, db, User=None)
+        except Exception:
+            pass
 
     db.session.commit()
     return event
@@ -188,6 +205,8 @@ def create_and_process_sage_event(
 
 def process_sage_event(event, db, Commitment=None):
     if not event or event.status == 'posted':
+        return event
+    if getattr(event, 'accounting_status', None) == 'pending_review':
         return event
 
     if not event.sage_job_number:

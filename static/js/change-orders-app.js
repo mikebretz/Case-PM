@@ -473,7 +473,7 @@
     if (!tbody) return;
     const rows = filteredSubCos();
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="11" class="px-6 py-12 text-center text-zinc-500">No subcontractor change orders yet. Create one tied to an owner CO backcharge, contract add, or budget transfer.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="13" class="px-6 py-12 text-center text-zinc-500">No subcontractor change orders yet. Create one tied to an owner CO backcharge, contract add, or budget transfer.</td></tr>';
       return;
     }
     tbody.innerHTML = rows.map(co => {
@@ -481,6 +481,8 @@
       const showApprove = subCoApproveStatuses().includes(co.status) && canActOnBall(co.ball_in_court_role);
       const showReject = showApprove;
       const autoTag = co.auto_generated ? '<span class="ml-1 text-[9px] text-sky-400">AUTO</span>' : '';
+      const variance = co.billing_variance != null ? co.billing_variance : null;
+      const varianceCls = variance == null ? 'text-zinc-500' : (variance === 0 ? 'text-emerald-400' : (variance > 0 ? 'text-amber-400' : 'text-red-400'));
       return `
       <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer" onclick="CasePMChangeOrders.viewCo(${co.id})">
         <td class="px-4 py-3 font-mono text-amber-400 whitespace-nowrap">${co.number || '—'}${autoTag}</td>
@@ -490,6 +492,8 @@
         <td class="px-4 py-3 font-mono text-xs text-sky-400">${ownerCoLink(co.linked_owner_co_id, co)}</td>
         <td class="px-4 py-3 text-xs">${co.sub_co_kind || '—'}</td>
         <td class="px-4 py-3 text-right font-mono">${fmt(co.amount)}</td>
+        <td class="px-4 py-3 text-right font-mono text-xs">${co.billed_amount != null ? fmt(co.billed_amount) : '—'}</td>
+        <td class="px-4 py-3 text-right font-mono text-xs ${varianceCls}">${variance != null ? fmt(variance) : '—'}</td>
         <td class="px-4 py-3 text-center">${statusBadge(co.status)}</td>
         <td class="px-4 py-3 text-center">${ballBadge(co.ball_in_court_role)}</td>
         <td class="px-4 py-3 text-center text-[10px] ${co.sov_synced_at ? 'text-emerald-400' : 'text-zinc-500'}">${co.sov_synced_at ? 'SOV ✓' : (co.sage_sync_status || '—')}</td>
@@ -516,7 +520,7 @@
     }
     tbody.innerHTML = rows.map(co => {
       const showSubmit = co.status === 'Draft';
-      const showApprove = (isSubCo(co) ? subCoApproveStatuses() : ['Submitted', 'Pending Architect', 'Pending Owner']).includes(co.status) && canActOnBall(co.ball_in_court_role);
+      const showApprove = (isSubCo(co) ? subCoApproveStatuses() : ['Submitted', 'Pending Architect', 'Pending Owner', 'Pending Accounting']).includes(co.status) && canActOnBall(co.ball_in_court_role);
       const showReject = showApprove;
       const approveLabel = co.status === 'Pending Owner' ? 'Final Approve' : 'Approve Step';
       const subCount = (co.linked_sub_change_orders || []).length;
@@ -1189,6 +1193,7 @@
         <p><span class="text-zinc-500">Linked RFI</span><br>${co.linked_rfi_id ? `<a href="/rfis" class="text-sky-400 hover:underline">${esc(linkedRfiLabel(co.linked_rfi_id))}</a>` : '—'}</p>
         <p><span class="text-zinc-500">Linked commitment</span><br>${esc(co.linked_commitment_ref || '—')}</p>
         <p><span class="text-zinc-500">Sage / SOV</span><br>${co.sov_synced_at ? '<span class="text-emerald-400">Synced to Budget &amp; SOV</span>' : esc(co.sage_sync_status || '—')}</p>
+        ${isSubCo(co) && co.status === 'Approved' ? `<p><span class="text-zinc-500">Billing variance</span><br><span class="font-mono ${(co.billing_variance || 0) === 0 ? 'text-emerald-400' : ((co.billing_variance || 0) > 0 ? 'text-amber-400' : 'text-red-400')}">${co.billing_variance != null ? fmt(co.billing_variance) : '—'}</span> <span class="text-[10px] text-zinc-500">(approved − billed)</span></p>` : ''}
       </div>
       ${(co.approval_history || []).length ? `<div class="mt-4"><div class="text-xs text-zinc-500 uppercase tracking-wide mb-2">Approval history</div>
         <div class="space-y-2">${co.approval_history.map(h => `<div class="text-xs border border-zinc-800 rounded p-2"><div class="text-zinc-400">${esc(h.user_name || '')} · ${esc(h.action)} · ${h.at ? new Date(h.at).toLocaleString() : ''}</div>${h.comment ? `<div class="mt-1">${esc(h.comment)}</div>` : ''}</div>`).join('')}</div></div>` : ''}
@@ -1202,7 +1207,7 @@
         <p>${atts}</p>
       </div>`;
     const showSubmit = co.status === 'Draft';
-    const showApprove = (isSubCo(co) ? subCoApproveStatuses() : ['Submitted', 'Pending Architect', 'Pending Owner']).includes(co.status) && canActOnBall(co.ball_in_court_role);
+    const showApprove = (isSubCo(co) ? subCoApproveStatuses() : ['Submitted', 'Pending Architect', 'Pending Owner', 'Pending Accounting']).includes(co.status) && canActOnBall(co.ball_in_court_role);
     document.getElementById('drawerActions').innerHTML = `
       ${showSubmit ? `<button type="button" onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit for Approval</button>` : ''}
       ${showApprove ? `<button type="button" onclick="CasePMChangeOrders.openApprovalModal(${co.id},'approve')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Review &amp; Approve</button>` : ''}

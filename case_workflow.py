@@ -796,12 +796,37 @@ def register_workflow(app, _db, models):
                     ctx = get_co_responder_context(co, current_user, alloc_payload)
                     return jsonify({'ok': True, **ctx})
                 body = request.get_json(silent=True) or {}
-                action, co_dict = execute_co_action(
-                    co, body.get('action'), current_user, User, body, ChangeOrderAllocation,
+                workflow_deps = {
+                    'ChangeOrder': ChangeOrder,
+                    'ChangeOrderAllocation': ChangeOrderAllocation,
+                    'PayAppProjectState': models.get('PayAppProjectState'),
+                    'ScheduleData': models.get('ScheduleData'),
+                    'Project': models.get('Project'),
+                    'BudgetProjectState': models.get('BudgetProjectState'),
+                    'db': db,
+                    'Commitment': models.get('Commitment'),
+                    'CommitmentAllocation': models.get('CommitmentAllocation'),
+                    'SageSyncEvent': models.get('SageSyncEvent'),
+                    'generate_next_number_fn': models.get('generate_next_number_fn'),
+                    'developer_unlock_bypass': models.get('developer_unlock_bypass', lambda: False)(),
+                }
+                action, co_dict, wf_result = execute_co_action(
+                    co, body.get('action'), current_user, User, body,
+                    ChangeOrderAllocation, workflow_deps=workflow_deps,
                 )
                 db.session.commit()
                 ctx = get_co_responder_context(co, current_user, alloc_payload)
-                return jsonify({'ok': True, 'action': action, 'change_order': co_dict, **ctx})
+                return jsonify({
+                    'ok': True,
+                    'action': action,
+                    'change_order': co_dict,
+                    'new_status': wf_result.get('new_status'),
+                    'final_approved': wf_result.get('final_approved'),
+                    'sync_result': wf_result.get('sync_result'),
+                    'budget_sync_result': wf_result.get('budget_sync_result'),
+                    'auto_sub_change_orders': wf_result.get('auto_sub_change_orders'),
+                    **ctx,
+                })
 
             return jsonify({'error': f'Unsupported module: {module}'}), 400
         except ValueError as exc:

@@ -146,7 +146,7 @@
         <td class="px-4 py-3 text-center text-[10px]">${esc(r.ball_in_court_role || '—')}</td>
         <td class="px-4 py-3 text-center flex gap-1 justify-center flex-wrap">
           ${r.status === 'Draft' ? `<button onclick="CasePMChangeOrdersExt.rfqWorkflow(${r.id},'send')" class="text-amber-400 text-xs">Send</button>` : ''}
-          ${r.status === 'Sent' ? `<button onclick="CasePMChangeOrdersExt.openRfqQuote(${r.id})" class="text-emerald-400 text-xs">Quote</button>` : ''}
+          ${r.status === 'Sent' ? `<button onclick="CasePMChangeOrdersExt.openRfqQuote(${r.id})" class="text-emerald-400 text-xs">Quote</button><button onclick="CasePMChangeOrdersExt.portalRfqQuote(${r.id})" class="text-sky-400 text-xs">Portal</button>` : ''}
           ${r.status === 'Quoted' ? `<button onclick="CasePMChangeOrdersExt.rfqWorkflow(${r.id},'accept',true)" class="text-emerald-400 text-xs">Accept→CPCO</button>` : ''}
         </td>
       </tr>`).join('');
@@ -294,7 +294,55 @@
 
   async function viewChangeEvent(id) {
     const e = await api(`/api/change-events/${id}`);
-    alert(`${e.number} — ${e.title}\nROM: ${fmt(e.rom_amount)}\nRFQs: ${(e.rfqs||[]).length} · CORs: ${(e.cors||[]).length} · PCOs: ${(e.pcos||[]).length}`);
+    document.getElementById('coDetailDrawer').classList.add('open');
+    document.getElementById('coDrawerBackdrop').classList.remove('hidden');
+    document.getElementById('drawerTitle').textContent = `${e.number} — ${e.title || 'Change Event'}`;
+    const rfqRows = (e.rfqs || []).map(r => `<tr class="border-b border-zinc-800"><td class="py-1 font-mono text-sky-400">${esc(r.number)}</td><td class="py-1">${esc(r.company_name || '—')}</td><td class="py-1 text-center">${statusBadge(r.status)}</td><td class="py-1 text-right font-mono">${fmt(r.quoted_amount)}</td></tr>`).join('') || '<tr><td colspan="4" class="py-3 text-zinc-500">None</td></tr>';
+    const corRows = (e.cors || []).map(c => `<tr class="border-b border-zinc-800"><td class="py-1 font-mono text-indigo-400">${esc(c.number)}</td><td class="py-1">${esc(c.title)}</td><td class="py-1 text-center">${statusBadge(c.status)}</td><td class="py-1 text-right font-mono">${fmt(c.amount)}</td></tr>`).join('') || '<tr><td colspan="4" class="py-3 text-zinc-500">None</td></tr>';
+    const pcoRows = (e.pcos || []).map(p => `<tr class="border-b border-zinc-800"><td class="py-1 font-mono text-amber-400">${esc(p.number)}</td><td class="py-1">${esc(p.title)}</td><td class="py-1 text-center">${statusBadge(p.status)}</td><td class="py-1 text-right font-mono">${fmt(p.estimated_amount)}</td></tr>`).join('') || '<tr><td colspan="4" class="py-3 text-zinc-500">None</td></tr>';
+    document.getElementById('drawerBody').innerHTML = `
+      <div class="space-y-2">
+        <p><span class="text-zinc-500">Status</span><br>${statusBadge(e.status)}</p>
+        <p><span class="text-zinc-500">ROM</span><br><span class="font-mono text-lg">${fmt(e.rom_amount)}</span></p>
+        <p><span class="text-zinc-500">Schedule impact</span><br>${e.schedule_impact_days || 0} days</p>
+        <p><span class="text-zinc-500">Drawing revision</span><br>${esc(e.drawing_revision || '—')}</p>
+        <p><span class="text-zinc-500">Contingency release</span><br>${e.contingency_release_amount ? fmt(e.contingency_release_amount) : '—'}</p>
+        <p><span class="text-zinc-500">Description</span><br>${esc(e.description || '—')}</p>
+      </div>
+      <div class="mt-4"><div class="text-xs text-zinc-500 uppercase mb-2">RFQs</div><table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left">#</th><th class="text-left">Sub</th><th class="text-center">Status</th><th class="text-right">Quote</th></tr></thead><tbody>${rfqRows}</tbody></table></div>
+      <div class="mt-4"><div class="text-xs text-zinc-500 uppercase mb-2">CORs</div><table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left">#</th><th class="text-left">Title</th><th class="text-center">Status</th><th class="text-right">Amount</th></tr></thead><tbody>${corRows}</tbody></table></div>
+      <div class="mt-4"><div class="text-xs text-zinc-500 uppercase mb-2">PCOs</div><table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left">#</th><th class="text-left">Title</th><th class="text-center">Status</th><th class="text-right">ROM</th></tr></thead><tbody>${pcoRows}</tbody></table></div>`;
+    const canWorkflow = ['Open', 'Pricing', 'Pending Review'].includes(e.status);
+    document.getElementById('drawerActions').innerHTML = `
+      ${e.status === 'Open' ? `<button type="button" onclick="CasePMChangeOrdersExt.ceWorkflow(${e.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit for Pricing</button>` : ''}
+      ${canWorkflow && e.status !== 'Open' ? `<button type="button" onclick="CasePMChangeOrdersExt.ceWorkflow(${e.id},'approve')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Advance Workflow</button>` : ''}
+      ${canWorkflow ? `<button type="button" onclick="CasePMChangeOrdersExt.ceWorkflow(${e.id},'reject')" class="px-4 py-2 bg-red-950 hover:bg-red-900 border border-red-800 rounded-md text-sm text-red-300">Void</button>` : ''}
+      <button type="button" onclick="CasePMChangeOrders.closeDrawer()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Close</button>`;
+  }
+
+  async function ceWorkflow(id, action) {
+    await api(`/api/change-events/${id}/workflow`, { method: 'POST', body: JSON.stringify({ action }) });
+    await loadChangeEvents();
+    if (action !== 'reject') await viewChangeEvent(id);
+    else CasePMChangeOrders.closeDrawer();
+  }
+
+  async function portalRfqQuote(id) {
+    const r = ext.rfqs.find(x => x.id === id);
+    const amt = parseFloat((await cePrompt(`Quote amount for ${r?.number}:`, r?.allocations?.[0]?.amount || '0', { title: 'RFQ Portal Quote' })) || '0') || 0;
+    if (!amt) return;
+    await api(`/api/rfqs/${id}/portal-quote`, { method: 'POST', body: JSON.stringify({ quoted_amount: amt, cost_code: r?.allocations?.[0]?.cost_code || '01-0000' }) });
+    await loadRfqs();
+  }
+
+  function renderBillingVarianceBanner() {
+    const el = document.getElementById('coBillingVarianceBanner');
+    if (!el || !ext.billingVariances.length) { if (el) el.classList.add('hidden'); return; }
+    const flagged = ext.billingVariances.filter(v => Math.abs(v.variance || 0) > 0.01);
+    if (!flagged.length) { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    el.innerHTML = `<span class="text-amber-400 font-medium">${flagged.length} sub CO billing variance(s)</span> — ` +
+      flagged.slice(0, 5).map(v => `<span class="font-mono">${esc(v.number)}: ${fmt(v.variance)}</span>`).join(' · ');
   }
 
   async function loadTabData(tab) {
@@ -303,7 +351,10 @@
     if (tab === 'cors') await loadCors();
     if (tab === 'cpcos') await loadCpcos();
     if (tab === 'erp') await loadErpQueue();
-    if (tab === 'subs' || tab === 'cos') await loadBillingVariance();
+    if (tab === 'subs' || tab === 'cos') {
+      await loadBillingVariance();
+      renderBillingVarianceBanner();
+    }
   }
 
   const TAB_KEYS = { events: 'change_orders_events', rfqs: 'change_orders_rfq', cors: 'change_orders_cor', cpcos: 'change_orders_cpco', erp: 'change_orders_erp' };
@@ -342,6 +393,6 @@
   global.CasePMChangeOrdersExt = {
     loadChangeEvents, loadRfqs, loadCors, loadCpcos, loadErpQueue, loadBillingVariance,
     newChangeEvent, newRfq, newCor, rfqWorkflow, openRfqQuote, corWorkflow, promoteCpco,
-    erpReview, viewChangeEvent, switchExtTab, ext,
+    erpReview, viewChangeEvent, ceWorkflow, portalRfqQuote, switchExtTab, ext,
   };
 })(window);

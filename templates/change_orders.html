@@ -89,6 +89,7 @@
 <div id="coPrintSheet" aria-hidden="true"></div>
 
 <div class="co-page">
+<div id="coBillingVarianceBanner" class="hidden mb-3 px-4 py-2 rounded-md border border-amber-800/50 bg-amber-950/30 text-xs text-zinc-300"></div>
 <div class="co-stack">
 
 <!-- TOOLBAR (title left — matches Pay Apps / Schedule) -->
@@ -240,7 +241,7 @@
 <div id="tabSubs" class="hidden flex-1 min-h-0 flex flex-col border border-zinc-700 rounded-md bg-zinc-900 mb-20 overflow-hidden">
     <div class="px-4 py-2 border-b border-zinc-800 text-xs text-zinc-500">Commitment Change Orders (CCO) · tied to owner CO or standalone contract add / budget transfer · PM → Accounting approval · Sage Subcontracts</div>
     <div class="flex-1 overflow-auto min-h-0">
-        <table class="w-full text-sm min-w-[1300px]">
+        <table class="w-full text-sm min-w-[1500px]">
             <thead class="bg-zinc-800 sticky top-0 z-20 border-b border-zinc-700">
                 <tr>
                     <th class="px-4 py-3 text-left text-zinc-400 font-medium">SCO #</th>
@@ -250,6 +251,8 @@
                     <th class="px-4 py-3 text-left text-zinc-400 font-medium">Owner CO</th>
                     <th class="px-4 py-3 text-left text-zinc-400 font-medium">Kind</th>
                     <th class="px-4 py-3 text-right text-zinc-400 font-medium">Amount</th>
+                    <th class="px-4 py-3 text-right text-zinc-400 font-medium">Billed</th>
+                    <th class="px-4 py-3 text-right text-zinc-400 font-medium">Variance</th>
                     <th class="px-4 py-3 text-center text-zinc-400 font-medium">Status</th>
                     <th class="px-4 py-3 text-center text-zinc-400 font-medium">Ball in Court</th>
                     <th class="px-4 py-3 text-center text-zinc-400 font-medium">Sync</th>
@@ -263,7 +266,7 @@
 
 <!-- PCO TABLE -->
 <div id="tabPcos" class="hidden flex-1 min-h-0 flex flex-col border border-zinc-700 rounded-md bg-zinc-900 mb-20 overflow-hidden">
-    <div class="px-4 py-2 border-b border-zinc-800 text-xs text-zinc-500">PCO → promote → CO · sequential approval PM → Architect → Owner</div>
+    <div class="px-4 py-2 border-b border-zinc-800 text-xs text-zinc-500">PCO → promote → CO · Procore-style approval: PM → Architect → Owner → Accounting → Approved</div>
     <div class="flex-1 overflow-auto min-h-0">
         <table class="w-full text-sm min-w-[1100px]">
             <thead class="bg-zinc-800 sticky top-0 z-20 border-b border-zinc-700">
