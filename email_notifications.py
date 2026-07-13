@@ -71,6 +71,26 @@ def _html_to_plain(html):
     return text.strip()
 
 
+def _module_notify_key(module: str) -> str:
+    mapping = {
+        'RFIs': 'rfis',
+        'RFI': 'rfis',
+        'Submittals': 'submittals',
+        'Change Orders': 'change_orders',
+        'Pay Applications': 'pay_applications',
+        'Commitments': 'commitments',
+        'Estimating': 'estimating_rfp',
+        'Safety': 'safety',
+        'Schedule': 'schedule',
+        'Documents': 'documents',
+        'Inspections': 'inspections',
+        'Daily Log': 'daily_log',
+        'Punch List': 'punch_list',
+        'Email': 'email',
+    }
+    return mapping.get(module or '', 'change_orders')
+
+
 def notify_user_workflow(
     user,
     *,
@@ -89,27 +109,38 @@ def notify_user_workflow(
     uid = getattr(user, 'id', None)
     if not uid:
         return
+    module_key = _module_notify_key(module)
+    try:
+        from user_extended_prefs import user_should_receive_notification
+        allow_in_app = user_should_receive_notification(user, module_key, 'in_app')
+        allow_email = send_email and user_should_receive_notification(user, module_key, 'email')
+    except Exception:
+        allow_in_app = True
+        allow_email = bool(send_email)
+    if not allow_in_app and not allow_email:
+        return
     body = f'<p>{description}</p>'
     if action_url:
         full_url = action_url if action_url.startswith('http') else f'{_base_url()}{action_url}'
         body += f'<p><a href="{full_url}">Open in Case PM</a></p>'
-    cw.notify_user(uid, title, description, action_url)
-    cw.create_internal_message(
-        uid,
-        folder='action-required' if requires_action else 'team',
-        msg_type='alert',
-        subject=title,
-        preview=(description or '')[:500],
-        body=body,
-        project_id=project_id,
-        from_label=module,
-        module=module,
-        action_url=action_url,
-        action_label='Review',
-        priority=priority,
-        requires_action=requires_action,
-    )
-    if send_email and getattr(user, 'email', None):
+    if allow_in_app:
+        cw.notify_user(uid, title, description, action_url)
+        cw.create_internal_message(
+            uid,
+            folder='action-required' if requires_action else 'team',
+            msg_type='alert',
+            subject=title,
+            preview=(description or '')[:500],
+            body=body,
+            project_id=project_id,
+            from_label=module,
+            module=module,
+            action_url=action_url,
+            action_label='Review',
+            priority=priority,
+            requires_action=requires_action,
+        )
+    if allow_email and getattr(user, 'email', None):
         send_workflow_email(
             user.email,
             title,

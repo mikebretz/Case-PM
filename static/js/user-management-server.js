@@ -33,6 +33,25 @@
       lastName: formData.lastName,
       email: formData.email,
       jobTitle: formData.jobTitle,
+      department: formData.department,
+      employeeId: formData.employeeId,
+      licenseTier: formData.licenseTier,
+      timezone: formData.timezone,
+      locale: formData.locale,
+      dateFormat: formData.dateFormat,
+      officeLocation: formData.officeLocation,
+      costCenter: formData.costCenter,
+      hireDate: formData.hireDate,
+      workPhoneExt: formData.workPhoneExt,
+      linkedinUrl: formData.linkedinUrl,
+      bio: formData.bio,
+      reportsToUserId: formData.reportsToUserId,
+      defaultProjectId: formData.defaultProjectId,
+      emergencyContact: formData.emergencyContact,
+      certifications: formData.certifications,
+      notificationPrefs: formData.notificationPrefs,
+      integrations: formData.integrations,
+      mark_invite_sent: formData.mark_invite_sent,
       role: formData.role,
       company: formData.company,
       address: formData.address,
@@ -45,6 +64,37 @@
       permissions: formData.permissions,
       permissions_v2: formData.permissions,
     };
+  }
+
+  async function uploadHrDocument(userId, formData) {
+    const res = await fetch(`/api/users/${userId}/hr-documents`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      body: formData,
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || 'Upload failed');
+    return json;
+  }
+
+  async function fetchUserAuditLog(userId, limit = 100) {
+    const res = await fetch(`/api/users/${userId}/audit-log?limit=${limit}`, { credentials: 'same-origin' });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || 'Could not load activity');
+    return json;
+  }
+
+  async function uploadProfileImage(userId, file) {
+    const fd = new FormData();
+    fd.append('photo', file);
+    const res = await fetch(`/api/users/${userId}/profile-image`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      body: fd,
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || 'Photo upload failed');
+    return json;
   }
 
   async function createUser(payload) {
@@ -101,5 +151,8 @@
     updateUser,
     deleteUserById,
     resetPassword,
+    uploadHrDocument,
+    fetchUserAuditLog,
+    uploadProfileImage,
   };
 })(window);

@@ -24,11 +24,19 @@
   }
   /* Slightly taller rows for better readability (tiny increase) */
   #usersTableBody tr td {
-    padding-top: 10px !important;
-    padding-bottom: 10px !important;
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
   }
 .um-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 1rem 1rem 0; overflow: hidden; box-sizing: border-box; }
-  .um-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; max-width: 1600px; margin: 0 auto; width: 100%; }
+  .um-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; width: 100%; max-width: none; }
+  #usersTableWrap { width: 100%; }
+  #usersTableWrap table { width: 100%; table-layout: auto; }
+  #usersTableWrap thead th { position: sticky; top: 0; z-index: 10; background: #27272a; }
+  #usersTableWrap .col-login { min-width: 7rem; white-space: nowrap; }
+  #usersTableWrap .col-projects { min-width: 4.5rem; text-align: center; }
+  #usersTableWrap .col-2fa { min-width: 3.5rem; text-align: center; }
+  #usersTableWrap .col-license { min-width: 5.5rem; white-space: nowrap; }
+  #usersTableWrap .col-portal { min-width: 5rem; white-space: nowrap; }
 </style>
 
 <div class="um-page"><div class="um-stack">
@@ -105,22 +113,28 @@
     <button onclick="clearUserFilters()" class="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Clear Filters</button>
 </div>
 
-<!-- USERS TABLE (rows shrunk) -->
-<div class="mb-6 flex-1 min-h-0 overflow-hidden flex flex-col border border-zinc-700 rounded-md bg-zinc-900">
+<!-- USERS TABLE -->
+<div id="usersTableWrap" class="mb-6 flex-1 min-h-0 overflow-hidden flex flex-col border border-zinc-700 rounded-md bg-zinc-900">
     <div class="flex-1 min-h-0 overflow-auto">
         <table class="w-full text-sm">
             <thead class="bg-zinc-800 sticky top-0 z-20 border-b border-zinc-700">
                 <tr>
-                    <th class="px-5 py-2 text-left font-medium text-zinc-400">Name</th>
-                    <th class="px-5 py-2 text-left font-medium text-zinc-400">Email</th>
-                    <th class="px-4 py-2 text-left font-medium text-zinc-400">Phone</th>
-                    <th class="px-4 py-2 text-left font-medium text-zinc-400">Job Title</th>
-                    <th class="px-4 py-2 text-left font-medium text-zinc-400">Role</th>
-                    <th class="px-4 py-2 text-left font-medium text-zinc-400">Company</th>
-                    <th class="px-5 py-2 text-left font-medium text-zinc-400 flex-1 min-w-[200px]">Address</th>
-                    <th class="px-3 py-2 text-center font-medium text-zinc-400 w-16">Status</th>
-                    <th class="px-3 py-2 text-center font-medium text-zinc-400 w-16">Access</th>
-                    <th class="px-3 py-2 text-center font-medium text-zinc-400 min-w-[130px]">Permissions</th>
+                    <th class="px-4 py-2 text-left font-medium text-zinc-400">Name</th>
+                    <th class="px-4 py-2 text-left font-medium text-zinc-400">Email</th>
+                    <th class="px-3 py-2 text-left font-medium text-zinc-400">Phone</th>
+                    <th class="px-3 py-2 text-left font-medium text-zinc-400">Department</th>
+                    <th class="px-3 py-2 text-left font-medium text-zinc-400">Job Title</th>
+                    <th class="px-3 py-2 text-left font-medium text-zinc-400">Role</th>
+                    <th class="px-3 py-2 text-left font-medium text-zinc-400 col-portal">Portal</th>
+                    <th class="px-3 py-2 text-left font-medium text-zinc-400">Company</th>
+                    <th class="px-3 py-2 text-left font-medium text-zinc-400 col-license">License</th>
+                    <th class="px-3 py-2 text-center font-medium text-zinc-400 col-projects">Projects</th>
+                    <th class="px-3 py-2 text-left font-medium text-zinc-400 col-login">Last Login</th>
+                    <th class="px-3 py-2 text-center font-medium text-zinc-400 min-w-[90px]">Invite</th>
+                    <th class="px-2 py-2 text-center font-medium text-zinc-400 col-2fa">2FA</th>
+                    <th class="px-2 py-2 text-center font-medium text-zinc-400 w-16">Status</th>
+                    <th class="px-2 py-2 text-center font-medium text-zinc-400 w-16">Access</th>
+                    <th class="px-2 py-2 text-center font-medium text-zinc-400 min-w-[110px]">Permissions</th>
                     <th class="px-2 py-2 text-center font-medium text-zinc-400 w-[90px]">Actions</th>
                 </tr>
             </thead>
@@ -134,7 +148,7 @@
 </div></div>
 
 <!-- ADD / EDIT USER MODAL -->
-<dialog id="userModal" class="modal rounded-md w-full max-w-3xl p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
+<dialog id="userModal" class="modal rounded-md w-full max-w-6xl p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
     <div class="p-6">
         <div class="flex justify-between items-center mb-6">
             <h3 id="modalTitle" class="text-xl font-semibold">Add New User</h3>
@@ -144,12 +158,30 @@
         </div>
 
         <!-- TABS -->
-        <div class="flex border-b border-zinc-700 mb-6">
-            <button onclick="switchTab('general')" id="tab-general" class="px-6 py-3 text-sm font-medium border-b-2 border-emerald-500 text-white">General</button>
-            <button onclick="switchTab('permissions')" id="tab-permissions" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">
+        <div class="flex border-b border-zinc-700 mb-6 overflow-x-auto">
+            <button onclick="switchTab('general')" id="tab-general" class="px-6 py-3 text-sm font-medium border-b-2 border-emerald-500 text-white whitespace-nowrap">General</button>
+            <button onclick="switchTab('projects')" id="tab-projects" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">
+                <i class="fa-solid fa-diagram-project mr-1 text-sky-400/80"></i> Projects &amp; Access
+            </button>
+            <button onclick="switchTab('certifications')" id="tab-certifications" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">
+                <i class="fa-solid fa-id-card mr-1 text-violet-400/80"></i> Certifications
+            </button>
+            <button onclick="switchTab('notifications')" id="tab-notifications" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">
+                <i class="fa-solid fa-bell mr-1 text-amber-400/80"></i> Notifications
+            </button>
+            <button onclick="switchTab('integrations')" id="tab-integrations" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">
+                <i class="fa-solid fa-plug mr-1 text-blue-400/80"></i> Integrations
+            </button>
+            <button onclick="switchTab('hrdocuments')" id="tab-hrdocuments" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">
+                <i class="fa-solid fa-folder-open mr-1 text-orange-400/80"></i> HR / Documents
+            </button>
+            <button onclick="switchTab('activity')" id="tab-activity" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">
+                <i class="fa-solid fa-clock-rotate-left mr-1 text-zinc-400"></i> Activity
+            </button>
+            <button onclick="switchTab('permissions')" id="tab-permissions" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">
                 <i class="fa-solid fa-shield-halved mr-1 text-amber-400/80"></i> Permissions <span class="text-[9px] uppercase text-amber-500/90 ml-1">Admin</span>
             </button>
-            <button onclick="switchTab('signature')" id="tab-signature" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Signature &amp; Certificate</button>
+            <button onclick="switchTab('signature')" id="tab-signature" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">Signature &amp; Certificate</button>
         </div>
 
         <form id="userForm" onsubmit="saveUser(event)" novalidate>
@@ -185,6 +217,103 @@
                         <div>
                             <label class="block text-sm mb-1.5 text-zinc-300">Job Title</label>
                             <input type="text" id="jobTitle" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="e.g. Senior Estimator">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Department / Crew</label>
+                            <input type="text" id="department" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="e.g. Preconstruction, Field Ops">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Employee ID</label>
+                            <input type="text" id="employeeId" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="HR / payroll ID">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">License / Seat Tier</label>
+                            <select id="licenseTier" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                                <option value="">Default (from role)</option>
+                                <option value="Full">Full — all modules</option>
+                                <option value="Field">Field — site tools</option>
+                                <option value="Accounting">Accounting — financial</option>
+                                <option value="View Only">View Only</option>
+                                <option value="External">External / portal</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Time Zone</label>
+                            <select id="timezone" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                                <option value="">System default</option>
+                                <option value="America/New_York">Eastern (US)</option>
+                                <option value="America/Chicago">Central (US)</option>
+                                <option value="America/Denver">Mountain (US)</option>
+                                <option value="America/Los_Angeles">Pacific (US)</option>
+                                <option value="America/Phoenix">Arizona</option>
+                                <option value="Pacific/Honolulu">Hawaii</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Language / Locale</label>
+                            <select id="locale" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                                {% for code, label in locale_options %}
+                                <option value="{{ code }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Date Format</label>
+                            <select id="dateFormat" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                                {% for code, label in date_format_options %}
+                                <option value="{{ code }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Office / Location</label>
+                            <input type="text" id="officeLocation" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="e.g. Tampa HQ, Jobsite trailer">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Cost Center</label>
+                            <input type="text" id="costCenter" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="e.g. 4100-Precon">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Hire Date</label>
+                            <input type="date" id="hireDate" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Work Phone Ext.</label>
+                            <input type="text" id="workPhoneExt" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="e.g. 204">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Reports To</label>
+                            <select id="reportsToUserId" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                                <option value="">— None —</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Default Project</label>
+                            <select id="defaultProjectId" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                                <option value="">— None —</option>
+                            </select>
+                        </div>
+
+                        <div class="md:col-span-2">
+                            <label class="block text-sm mb-1.5 text-zinc-300">LinkedIn URL</label>
+                            <input type="url" id="linkedinUrl" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="https://linkedin.com/in/...">
+                        </div>
+
+                        <div class="md:col-span-2">
+                            <label class="block text-sm mb-1.5 text-zinc-300">Bio / About</label>
+                            <textarea id="bio" rows="2" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="Short profile for directory and proposals"></textarea>
                         </div>
 
                         <!-- Role Dropdown -->
@@ -270,6 +399,26 @@
                             </label>
                         </div>
 
+                        <div class="md:col-span-2 border-t border-zinc-700 pt-4">
+                            <div class="text-sm font-medium text-zinc-300 mb-2">Emergency Contact</div>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <input type="text" id="emergencyName" class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm" placeholder="Contact name">
+                                <input type="text" id="emergencyPhone" class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm" placeholder="Phone">
+                                <input type="text" id="emergencyRelationship" class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm" placeholder="Relationship">
+                            </div>
+                        </div>
+
+                        <div class="md:col-span-2 border-t border-zinc-700 pt-4">
+                            <div class="text-sm font-medium text-zinc-300 mb-1">Account Activity</div>
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs text-zinc-400">
+                                <div><span class="text-zinc-500">Last login:</span> <span id="activityLastLogin" class="text-zinc-300">—</span></div>
+                                <div><span class="text-zinc-500">Created:</span> <span id="activityCreated" class="text-zinc-300">—</span></div>
+                                <div><span class="text-zinc-500">Portal type:</span> <span id="activityPortal" class="text-zinc-300">—</span></div>
+                                <div><span class="text-zinc-500">Invite status:</span> <span id="activityInviteStatus" class="text-zinc-300">—</span></div>
+                            </div>
+                            <button type="button" onclick="markInviteSent()" class="mt-2 text-xs px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded">Mark invite sent now</button>
+                        </div>
+
                         <!-- Notes -->
                         <div class="md:col-span-2">
                             <label class="block text-sm mb-1.5 text-zinc-300">Notes / Internal Log</label>
@@ -299,6 +448,144 @@
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- PROJECTS TAB -->
+            <div id="tab-content-projects" class="hidden">
+                <div class="rounded-lg border border-sky-900/40 bg-sky-950/20 px-4 py-3 mb-4 text-xs text-sky-200/90">
+                    <strong>Project assignments.</strong> When project membership enforcement is enabled in Security settings, users only see projects listed here (Admins always see all).
+                </div>
+                <div class="mb-3 flex gap-2">
+                    <input type="text" id="projectMembershipSearch" placeholder="Filter projects…" class="flex-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm" oninput="filterProjectMembershipList()">
+                    <button type="button" onclick="selectAllVisibleProjects(true)" class="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Select all</button>
+                    <button type="button" onclick="selectAllVisibleProjects(false)" class="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Clear</button>
+                </div>
+                <div id="projectMembershipList" class="max-h-[52vh] overflow-auto border border-zinc-700 rounded-md divide-y divide-zinc-800">
+                    <div class="text-sm text-zinc-500 py-8 text-center">Save the user first to assign projects, or open an existing user.</div>
+                </div>
+            </div>
+
+            <!-- CERTIFICATIONS TAB -->
+            <div id="tab-content-certifications" class="hidden">
+                <div class="rounded-lg border border-violet-900/40 bg-violet-950/20 px-4 py-3 mb-4 text-xs text-violet-200/90">
+                    <strong>Licenses &amp; certifications.</strong> OSHA cards, trade licenses, PE stamps, safety training — with optional expiry for renewal tracking.
+                </div>
+                <div id="certificationsContainer" class="space-y-2 mb-3"></div>
+                <button type="button" onclick="addCertificationRow()" class="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded flex items-center gap-1">
+                    <i class="fa-solid fa-plus"></i> Add certification
+                </button>
+            </div>
+
+            <!-- NOTIFICATIONS TAB -->
+            <div id="tab-content-notifications" class="hidden">
+                <div class="rounded-lg border border-amber-900/40 bg-amber-950/20 px-4 py-3 mb-4 text-xs text-amber-200/90">
+                    <strong>Notification preferences.</strong> Control email vs in-app alerts per module, digest frequency, and quiet hours.
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <label class="flex items-center gap-2 text-sm text-zinc-300"><input type="checkbox" id="notifEmailEnabled" class="accent-emerald-600" checked> Email notifications</label>
+                    <label class="flex items-center gap-2 text-sm text-zinc-300"><input type="checkbox" id="notifInAppEnabled" class="accent-emerald-600" checked> In-app notifications</label>
+                    <div>
+                        <label class="text-xs text-zinc-400 block mb-1">Digest frequency</label>
+                        <select id="notifDigest" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
+                            <option value="immediate">Immediate</option>
+                            <option value="daily">Daily digest</option>
+                            <option value="weekly">Weekly digest</option>
+                            <option value="none">None (in-app only)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4 p-3 bg-zinc-800/40 rounded border border-zinc-700">
+                    <label class="flex items-center gap-2 text-xs text-zinc-300"><input type="checkbox" id="notifQuietHours" class="accent-emerald-600"> Quiet hours</label>
+                    <input type="time" id="notifQuietStart" value="22:00" class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm">
+                    <input type="time" id="notifQuietEnd" value="07:00" class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm">
+                    <label class="md:col-span-3 flex items-center gap-2 text-xs text-zinc-400"><input type="checkbox" id="notifWeekendDigestOnly" class="accent-emerald-600"> Weekend: digest only (no immediate emails)</label>
+                </div>
+                <div class="max-h-[40vh] overflow-auto border border-zinc-700 rounded-md">
+                    <table class="w-full text-sm">
+                        <thead class="bg-zinc-800 sticky top-0"><tr>
+                            <th class="px-4 py-2 text-left text-zinc-400">Module</th>
+                            <th class="px-4 py-2 text-left text-zinc-400">Notify via</th>
+                        </tr></thead>
+                        <tbody id="notificationModulesBody" class="divide-y divide-zinc-800">
+                            {% for key, label in notification_modules %}
+                            <tr>
+                                <td class="px-4 py-2 text-zinc-300">{{ label }}</td>
+                                <td class="px-4 py-2">
+                                    <select data-notif-module="{{ key }}" class="notif-module-select bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs w-full max-w-[180px]">
+                                        <option value="both">Email + In-app</option>
+                                        <option value="in_app">In-app only</option>
+                                        <option value="email">Email only</option>
+                                        <option value="none">None</option>
+                                    </select>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- INTEGRATIONS TAB -->
+            <div id="tab-content-integrations" class="hidden">
+                <div class="rounded-lg border border-blue-900/40 bg-blue-950/20 px-4 py-3 mb-4 text-xs text-blue-200/90">
+                    <strong>External system IDs.</strong> Map this user to SSO, Procore, Sage, DocuSign, and HR/payroll systems for sync and single sign-on.
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div><label class="text-xs text-zinc-400 block mb-1">SSO Provider</label><input type="text" id="intSsoProvider" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm" placeholder="Microsoft Entra, Okta, Google…"></div>
+                    <div><label class="text-xs text-zinc-400 block mb-1">SSO External ID</label><input type="text" id="intSsoExternalId" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm"></div>
+                    <div><label class="text-xs text-zinc-400 block mb-1">Microsoft Entra ID</label><input type="text" id="intMicrosoftEntraId" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm"></div>
+                    <div><label class="text-xs text-zinc-400 block mb-1">Google Workspace ID</label><input type="text" id="intGoogleWorkspaceId" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm"></div>
+                    <div><label class="text-xs text-zinc-400 block mb-1">Procore User ID</label><input type="text" id="intProcoreUserId" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm"></div>
+                    <div><label class="text-xs text-zinc-400 block mb-1">Procore Login / Email</label><input type="text" id="intProcoreLogin" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm"></div>
+                    <div><label class="text-xs text-zinc-400 block mb-1">Autodesk Construction Cloud ID</label><input type="text" id="intAutodeskId" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm"></div>
+                    <div><label class="text-xs text-zinc-400 block mb-1">Sage Employee Code</label><input type="text" id="intSageEmployeeCode" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm"></div>
+                    <div><label class="text-xs text-zinc-400 block mb-1">Sage Resource ID</label><input type="text" id="intSageResourceId" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm"></div>
+                    <div><label class="text-xs text-zinc-400 block mb-1">DocuSign User ID</label><input type="text" id="intDocusignUserId" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm"></div>
+                    <div><label class="text-xs text-zinc-400 block mb-1">QuickBooks Employee ID</label><input type="text" id="intQuickbooksEmployeeId" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm"></div>
+                    <div><label class="text-xs text-zinc-400 block mb-1">ADP Worker ID</label><input type="text" id="intAdpWorkerId" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm"></div>
+                    <div class="md:col-span-2"><label class="text-xs text-zinc-400 block mb-1">External HR System ID</label><input type="text" id="intExternalHrSystemId" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm" placeholder="Workday, BambooHR, Paychex…"></div>
+                </div>
+            </div>
+
+            <!-- HR DOCUMENTS TAB -->
+            <div id="tab-content-hrdocuments" class="hidden">
+                <div class="rounded-lg border border-orange-900/40 bg-orange-950/20 px-4 py-3 mb-4 text-xs text-orange-200/90">
+                    <strong>HR &amp; onboarding files.</strong> W-9, insurance certificates, NDAs, I-9, and other documents stored per user.
+                </div>
+                <div id="hrDocumentsList" class="space-y-2 mb-4 max-h-[36vh] overflow-auto"></div>
+                <div class="flex flex-wrap gap-2 items-end border-t border-zinc-700 pt-4">
+                    <div>
+                        <label class="text-xs text-zinc-400 block mb-1">Document type</label>
+                        <select id="hrDocType" class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
+                            {% for code, label in hr_document_types %}
+                            <option value="{{ code }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="flex-1 min-w-[160px]">
+                        <label class="text-xs text-zinc-400 block mb-1">Display name</label>
+                        <input type="text" id="hrDocName" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm" placeholder="Optional label">
+                    </div>
+                    <div>
+                        <label class="text-xs text-zinc-400 block mb-1">Expires</label>
+                        <input type="date" id="hrDocExpires" class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs text-zinc-400 block mb-1">File</label>
+                        <input type="file" id="hrDocFile" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx" class="text-sm">
+                    </div>
+                    <button type="button" onclick="uploadHrDocument()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded text-sm font-medium">Upload</button>
+                </div>
+            </div>
+
+            <!-- ACTIVITY TAB (server audit log) -->
+            <div id="tab-content-activity" class="hidden">
+                <div class="rounded-lg border border-zinc-700 bg-zinc-800/40 px-4 py-3 mb-4 text-xs text-zinc-300">
+                    <strong>System activity log.</strong> Login events, profile changes, and module actions recorded in the audit log for this user.
+                </div>
+                <div id="userAuditLogContent" class="max-h-[52vh] overflow-auto border border-zinc-700 rounded-md text-sm">
+                    <div class="text-zinc-500 py-8 text-center">Open an existing user to load activity.</div>
                 </div>
             </div>
 
@@ -423,7 +710,12 @@
     const CASEPM_PERMISSIONS_CATALOG = {{ permissions_catalog|tojson }};
     const CASEPM_IS_ADMIN = true;
     const CASEPM_CAN_ASSIGN_DEVELOPER = {{ can_assign_developer_role|tojson }};
+    const CASEPM_PROJECTS = {{ projects_for_js|tojson }};
+    const CASEPM_NOTIFICATION_MODULES = {{ notification_modules|tojson }};
     let currentUserEmail = CASEPM_CURRENT_USER.email || "";
+    let selectedProjectIds = [];
+    let markInviteSentOnSave = false;
+    let pendingProfileImageFile = null;
 
     function resolveServerUserId(localUser) {
         if (!localUser) return null;
@@ -615,6 +907,375 @@
         if (tab === 'permissions') {
             const localUser = currentEditingUserId ? users.find(u => u.id == currentEditingUserId) : null;
             renderPermissionsTab(localUser);
+        }
+        if (tab === 'projects') {
+            renderProjectMembershipList();
+        }
+        if (tab === 'activity') {
+            const uid = parseInt(document.getElementById('userId')?.value || '0', 10);
+            loadUserAuditLog(uid);
+        }
+        if (tab === 'hrdocuments') {
+            const uid = parseInt(document.getElementById('userId')?.value || '0', 10);
+            loadHrDocumentsForUser(uid);
+        }
+    }
+
+    const PORTAL_LABELS = { staff: 'Staff', consultant: 'Consultant', sub: 'Sub / Vendor' };
+
+    function formatShortDate(iso) {
+        if (!iso) return '—';
+        try {
+            const d = new Date(iso);
+            if (Number.isNaN(d.getTime())) return '—';
+            return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+        } catch (_) {
+            return '—';
+        }
+    }
+
+    function formatDateTime(iso) {
+        if (!iso) return '—';
+        try {
+            const d = new Date(iso);
+            if (Number.isNaN(d.getTime())) return '—';
+            return d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+        } catch (_) {
+            return '—';
+        }
+    }
+
+    function setActivityFields(user) {
+        const lastEl = document.getElementById('activityLastLogin');
+        const createdEl = document.getElementById('activityCreated');
+        const portalEl = document.getElementById('activityPortal');
+        const inviteEl = document.getElementById('activityInviteStatus');
+        if (lastEl) lastEl.textContent = formatDateTime(user?.last_login);
+        if (createdEl) createdEl.textContent = formatShortDate(user?.created_at);
+        if (portalEl) portalEl.textContent = PORTAL_LABELS[user?.portalType] || user?.portalType || '—';
+        if (inviteEl) inviteEl.textContent = user?.inviteStatus || '—';
+    }
+
+    function populateUserDropdowns(excludeUserId = null) {
+        const reportsSel = document.getElementById('reportsToUserId');
+        const defaultProjSel = document.getElementById('defaultProjectId');
+        if (reportsSel) {
+            const current = reportsSel.value;
+            reportsSel.innerHTML = '<option value="">— None —</option>' + users
+                .filter(u => u.id != excludeUserId && u.status !== 'Inactive')
+                .map(u => `<option value="${u.id}">${u.firstName || ''} ${u.lastName || ''}</option>`)
+                .join('');
+            if (current) reportsSel.value = current;
+        }
+        if (defaultProjSel) {
+            const current = defaultProjSel.value;
+            defaultProjSel.innerHTML = '<option value="">— None —</option>' + (CASEPM_PROJECTS || [])
+                .map(p => `<option value="${p.id}">${p.name}${p.number ? ' (' + p.number + ')' : ''}</option>`)
+                .join('');
+            if (current) defaultProjSel.value = current;
+        }
+    }
+
+    function setNotificationPrefsToUI(prefs = {}) {
+        const p = prefs || {};
+        document.getElementById('notifEmailEnabled').checked = p.email_enabled !== false;
+        document.getElementById('notifInAppEnabled').checked = p.in_app_enabled !== false;
+        document.getElementById('notifDigest').value = p.digest || 'immediate';
+        document.getElementById('notifQuietHours').checked = !!p.quiet_hours_enabled;
+        document.getElementById('notifQuietStart').value = p.quiet_hours_start || '22:00';
+        document.getElementById('notifQuietEnd').value = p.quiet_hours_end || '07:00';
+        document.getElementById('notifWeekendDigestOnly').checked = !!p.weekend_digest_only;
+        const modules = p.modules || {};
+        document.querySelectorAll('.notif-module-select').forEach(sel => {
+            const key = sel.dataset.notifModule;
+            if (key) sel.value = modules[key] || 'both';
+        });
+    }
+
+    function getNotificationPrefsFromUI() {
+        const modules = {};
+        document.querySelectorAll('.notif-module-select').forEach(sel => {
+            if (sel.dataset.notifModule) modules[sel.dataset.notifModule] = sel.value;
+        });
+        return {
+            email_enabled: document.getElementById('notifEmailEnabled').checked,
+            in_app_enabled: document.getElementById('notifInAppEnabled').checked,
+            digest: document.getElementById('notifDigest').value,
+            quiet_hours_enabled: document.getElementById('notifQuietHours').checked,
+            quiet_hours_start: document.getElementById('notifQuietStart').value,
+            quiet_hours_end: document.getElementById('notifQuietEnd').value,
+            weekend_digest_only: document.getElementById('notifWeekendDigestOnly').checked,
+            modules,
+        };
+    }
+
+    const INTEGRATION_FIELDS = [
+        ['intSsoProvider', 'sso_provider'],
+        ['intSsoExternalId', 'sso_external_id'],
+        ['intMicrosoftEntraId', 'microsoft_entra_id'],
+        ['intGoogleWorkspaceId', 'google_workspace_id'],
+        ['intProcoreUserId', 'procore_user_id'],
+        ['intProcoreLogin', 'procore_login'],
+        ['intAutodeskId', 'autodesk_id'],
+        ['intSageEmployeeCode', 'sage_employee_code'],
+        ['intSageResourceId', 'sage_resource_id'],
+        ['intDocusignUserId', 'docusign_user_id'],
+        ['intQuickbooksEmployeeId', 'quickbooks_employee_id'],
+        ['intAdpWorkerId', 'adp_worker_id'],
+        ['intExternalHrSystemId', 'external_hr_system_id'],
+    ];
+
+    function setIntegrationsToUI(data = {}) {
+        const d = data || {};
+        INTEGRATION_FIELDS.forEach(([elId, key]) => {
+            const el = document.getElementById(elId);
+            if (el) el.value = d[key] || '';
+        });
+    }
+
+    function getIntegrationsFromUI() {
+        const out = {};
+        INTEGRATION_FIELDS.forEach(([elId, key]) => {
+            const el = document.getElementById(elId);
+            out[key] = el ? el.value.trim() : '';
+        });
+        return out;
+    }
+
+    function renderHrDocumentsList(docs = []) {
+        const list = document.getElementById('hrDocumentsList');
+        if (!list) return;
+        if (!docs.length) {
+            list.innerHTML = '<div class="text-sm text-zinc-500 py-4">No HR documents uploaded yet.</div>';
+            return;
+        }
+        list.innerHTML = docs.map(doc => `
+            <div class="flex items-center justify-between gap-3 bg-zinc-800/50 border border-zinc-700 rounded px-3 py-2 text-sm">
+                <div>
+                    <div class="text-zinc-200">${doc.name || 'Document'}</div>
+                    <div class="text-[10px] text-zinc-500">${doc.type || 'other'}${doc.expires ? ' · expires ' + doc.expires : ''}${doc.uploaded_at ? ' · ' + formatShortDate(doc.uploaded_at) : ''}</div>
+                </div>
+                <div class="flex gap-2">
+                    ${doc.has_file ? `<a href="/api/users/${document.getElementById('userId').value}/hr-documents/${doc.id}/download" class="text-xs px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded" target="_blank">Download</a>` : ''}
+                    <button type="button" onclick="deleteHrDocument('${doc.id}')" class="text-xs px-2 py-1 bg-red-900/50 hover:bg-red-800 rounded text-red-300">Delete</button>
+                </div>
+            </div>`).join('');
+    }
+
+    async function loadHrDocumentsForUser(userId) {
+        const user = users.find(u => u.id == userId);
+        renderHrDocumentsList(user?.hrDocuments || []);
+    }
+
+    async function uploadHrDocument() {
+        const userId = parseInt(document.getElementById('userId').value, 10);
+        const fileInput = document.getElementById('hrDocFile');
+        if (!userId) {
+            showCenteredAlert('Save the user first before uploading HR documents.', 'warning');
+            return;
+        }
+        if (!fileInput?.files?.length) {
+            showCenteredAlert('Choose a file to upload.', 'warning');
+            return;
+        }
+        const fd = new FormData();
+        fd.append('file', fileInput.files[0]);
+        fd.append('type', document.getElementById('hrDocType').value);
+        fd.append('name', document.getElementById('hrDocName').value);
+        fd.append('expires', document.getElementById('hrDocExpires').value);
+        try {
+            const res = await fetch(`/api/users/${userId}/hr-documents`, { method: 'POST', body: fd, credentials: 'same-origin' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Upload failed');
+            const idx = users.findIndex(u => u.id == userId);
+            if (idx > -1) {
+                users[idx].hrDocuments = [...(users[idx].hrDocuments || []), data.document];
+            }
+            fileInput.value = '';
+            document.getElementById('hrDocName').value = '';
+            document.getElementById('hrDocExpires').value = '';
+            renderHrDocumentsList(users[idx]?.hrDocuments || []);
+            showCenteredAlert('Document uploaded.', 'success');
+        } catch (e) {
+            showCenteredAlert(e.message || 'Upload failed', 'error');
+        }
+    }
+
+    async function deleteHrDocument(docId) {
+        const userId = parseInt(document.getElementById('userId').value, 10);
+        if (!userId || !confirm('Delete this document?')) return;
+        try {
+            const res = await fetch(`/api/users/${userId}/hr-documents/${docId}`, { method: 'DELETE', credentials: 'same-origin' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Delete failed');
+            const idx = users.findIndex(u => u.id == userId);
+            if (idx > -1) {
+                users[idx].hrDocuments = (users[idx].hrDocuments || []).filter(d => d.id !== docId);
+                renderHrDocumentsList(users[idx].hrDocuments);
+            }
+        } catch (e) {
+            showCenteredAlert(e.message || 'Delete failed', 'error');
+        }
+    }
+
+    async function loadUserAuditLog(userId) {
+        const container = document.getElementById('userAuditLogContent');
+        if (!container) return;
+        if (!userId) {
+            container.innerHTML = '<div class="text-zinc-500 py-8 text-center">Save the user first to view activity.</div>';
+            return;
+        }
+        container.innerHTML = '<div class="text-zinc-500 py-8 text-center">Loading activity…</div>';
+        try {
+            const res = await fetch(`/api/users/${userId}/audit-log?limit=100`, { credentials: 'same-origin' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Could not load activity');
+            const events = data.events || [];
+            if (!events.length) {
+                container.innerHTML = '<div class="text-zinc-500 py-8 text-center">No audit log entries for this user yet.</div>';
+                return;
+            }
+            container.innerHTML = `<table class="w-full text-xs"><thead class="bg-zinc-800 sticky top-0"><tr>
+                <th class="px-3 py-2 text-left text-zinc-400">Time</th>
+                <th class="px-3 py-2 text-left text-zinc-400">Module</th>
+                <th class="px-3 py-2 text-left text-zinc-400">Action</th>
+                <th class="px-3 py-2 text-left text-zinc-400">Details</th>
+            </tr></thead><tbody class="divide-y divide-zinc-800">` +
+            events.map(ev => `<tr class="hover:bg-zinc-800/40">
+                <td class="px-3 py-2 text-zinc-500 whitespace-nowrap">${formatDateTime(ev.timestamp)}</td>
+                <td class="px-3 py-2 text-zinc-400">${ev.module || ''}</td>
+                <td class="px-3 py-2 text-zinc-300">${ev.action || ''}</td>
+                <td class="px-3 py-2 text-zinc-500">${ev.details || ''}</td>
+            </tr>`).join('') + '</tbody></table>';
+        } catch (e) {
+            container.innerHTML = `<div class="text-red-400 py-8 text-center">${e.message || 'Load failed'}</div>`;
+        }
+    }
+
+    function markInviteSent() {
+        markInviteSentOnSave = true;
+        const inviteEl = document.getElementById('activityInviteStatus');
+        if (inviteEl) inviteEl.textContent = 'Invite marked (save to persist)';
+        showCenteredAlert('Invite timestamp will be saved when you click Save User.', 'success');
+    }
+
+    function addCertificationRow(name = '', number = '', expires = '') {
+        const container = document.getElementById('certificationsContainer');
+        if (!container) return;
+        const row = document.createElement('div');
+        row.className = 'grid grid-cols-1 md:grid-cols-12 gap-2 items-center bg-zinc-800/40 border border-zinc-700 rounded px-3 py-2';
+        row.innerHTML = `
+            <input type="text" data-cert-name class="md:col-span-5 bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm" placeholder="Certification name" value="${(name || '').replace(/"/g, '&quot;')}">
+            <input type="text" data-cert-number class="md:col-span-3 bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm" placeholder="License #" value="${(number || '').replace(/"/g, '&quot;')}">
+            <input type="date" data-cert-expires class="md:col-span-3 bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm" value="${expires || ''}">
+            <button type="button" onclick="this.closest('div').remove()" class="md:col-span-1 text-red-400 hover:text-red-300 text-xs justify-self-end"><i class="fa-solid fa-trash"></i></button>
+        `;
+        container.appendChild(row);
+    }
+
+    function setCertificationsToUI(certs = []) {
+        const container = document.getElementById('certificationsContainer');
+        if (!container) return;
+        container.innerHTML = '';
+        if (!certs.length) addCertificationRow();
+        else certs.forEach(c => addCertificationRow(c.name, c.number, c.expires));
+    }
+
+    function getCertificationsFromUI() {
+        const rows = document.querySelectorAll('#certificationsContainer > div');
+        const certs = [];
+        rows.forEach(row => {
+            const name = row.querySelector('[data-cert-name]')?.value?.trim();
+            if (!name) return;
+            certs.push({
+                name,
+                number: row.querySelector('[data-cert-number]')?.value?.trim() || '',
+                expires: row.querySelector('[data-cert-expires]')?.value || '',
+            });
+        });
+        return certs;
+    }
+
+    async function loadProjectMembershipsForUser(userId) {
+        selectedProjectIds = [];
+        if (!userId) {
+            renderProjectMembershipList();
+            return;
+        }
+        try {
+            const res = await fetch(`/api/users/${userId}/project-memberships`, { credentials: 'same-origin' });
+            const data = await res.json();
+            if (res.ok && data.memberships) {
+                selectedProjectIds = data.memberships.map(m => m.project_id);
+            }
+        } catch (e) {
+            console.warn('Project memberships:', e);
+        }
+        renderProjectMembershipList();
+    }
+
+    function renderProjectMembershipList() {
+        const list = document.getElementById('projectMembershipList');
+        if (!list) return;
+        const userId = parseInt(document.getElementById('userId')?.value || '0', 10);
+        const q = (document.getElementById('projectMembershipSearch')?.value || '').trim().toLowerCase();
+        const projects = (CASEPM_PROJECTS || []).filter(p => {
+            if (!q) return true;
+            const hay = `${p.name || ''} ${p.number || ''} ${p.status || ''}`.toLowerCase();
+            return hay.includes(q);
+        });
+        if (!userId) {
+            list.innerHTML = '<div class="text-sm text-zinc-500 py-8 text-center">Save the user first, then reopen to assign projects.</div>';
+            return;
+        }
+        if (!projects.length) {
+            list.innerHTML = '<div class="text-sm text-zinc-500 py-8 text-center">No projects match your filter.</div>';
+            return;
+        }
+        list.innerHTML = projects.map(p => {
+            const checked = selectedProjectIds.includes(p.id) ? 'checked' : '';
+            const status = p.status ? `<span class="text-[10px] text-zinc-500 ml-2">${p.status}</span>` : '';
+            return `
+                <label class="flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-800/50 cursor-pointer text-sm">
+                    <input type="checkbox" class="accent-emerald-600 project-membership-cb" data-project-id="${p.id}" ${checked} onchange="toggleProjectMembership(${p.id}, this.checked)">
+                    <span class="font-medium text-zinc-200">${p.name || 'Project'}</span>
+                    <span class="text-xs text-zinc-500">${p.number || ''}</span>${status}
+                </label>`;
+        }).join('');
+    }
+
+    function filterProjectMembershipList() {
+        renderProjectMembershipList();
+    }
+
+    function toggleProjectMembership(projectId, checked) {
+        const id = parseInt(projectId, 10);
+        if (checked) {
+            if (!selectedProjectIds.includes(id)) selectedProjectIds.push(id);
+        } else {
+            selectedProjectIds = selectedProjectIds.filter(x => x !== id);
+        }
+    }
+
+    function selectAllVisibleProjects(select) {
+        const boxes = document.querySelectorAll('.project-membership-cb');
+        boxes.forEach(cb => {
+            cb.checked = select;
+            toggleProjectMembership(parseInt(cb.dataset.projectId, 10), select);
+        });
+    }
+
+    async function saveProjectMemberships(userId) {
+        if (!userId) return;
+        try {
+            await fetch(`/api/users/${userId}/project-memberships`, {
+                method: 'PUT',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project_ids: selectedProjectIds }),
+            });
+        } catch (e) {
+            console.warn('Could not save project memberships:', e);
         }
     }
 
@@ -909,12 +1570,33 @@
     // ==================== PROFILE IMAGE ====================
     function previewProfileImage(input) {
         if (input.files && input.files[0]) {
+            pendingProfileImageFile = input.files[0];
             const reader = new FileReader();
             reader.onload = e => {
                 const img = document.getElementById('profileImg');
                 if (img) img.src = e.target.result;
             };
             reader.readAsDataURL(input.files[0]);
+        }
+    }
+
+    async function uploadProfileImageForUser(userId) {
+        if (!pendingProfileImageFile || !userId) return;
+        const fd = new FormData();
+        fd.append('photo', pendingProfileImageFile);
+        try {
+            const res = await fetch(`/api/users/${userId}/profile-image`, { method: 'POST', body: fd, credentials: 'same-origin' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Photo upload failed');
+            const idx = users.findIndex(u => u.id == userId);
+            if (idx > -1 && data.profile_image_url) {
+                users[idx].profileImage = data.profile_image_url;
+                const img = document.getElementById('profileImg');
+                if (img) img.src = data.profile_image_url;
+            }
+            pendingProfileImageFile = null;
+        } catch (e) {
+            console.warn('Profile image upload:', e);
         }
     }
 
@@ -980,6 +1662,17 @@
         const roleSelect = document.getElementById('role');
         if (roleSelect) roleSelect.value = 'Company User';
 
+        setCertificationsToUI([]);
+        selectedProjectIds = [];
+        markInviteSentOnSave = false;
+        pendingProfileImageFile = null;
+        setActivityFields(null);
+        setNotificationPrefsToUI({});
+        setIntegrationsToUI({});
+        renderHrDocumentsList([]);
+        populateUserDropdowns(null);
+        renderProjectMembershipList();
+
         switchTab('general');
         document.getElementById('userModal').showModal();
 
@@ -1016,6 +1709,31 @@
         document.getElementById('email').value = user.email || '';
         document.getElementById('jobTitle').value = user.jobTitle || '';
         document.getElementById('address').value = user.address || '';
+        document.getElementById('department').value = user.department || '';
+        document.getElementById('employeeId').value = user.employeeId || '';
+        document.getElementById('licenseTier').value = user.licenseTier || '';
+        document.getElementById('timezone').value = user.timezone || '';
+        document.getElementById('locale').value = user.locale || 'en-US';
+        document.getElementById('dateFormat').value = user.dateFormat || 'MDY';
+        document.getElementById('officeLocation').value = user.officeLocation || '';
+        document.getElementById('costCenter').value = user.costCenter || '';
+        document.getElementById('hireDate').value = user.hireDate || '';
+        document.getElementById('workPhoneExt').value = user.workPhoneExt || '';
+        document.getElementById('linkedinUrl').value = user.linkedinUrl || '';
+        document.getElementById('bio').value = user.bio || '';
+        populateUserDropdowns(user.id);
+        document.getElementById('reportsToUserId').value = user.reportsToUserId || '';
+        document.getElementById('defaultProjectId').value = user.defaultProjectId || '';
+        const ec = user.emergencyContact || {};
+        document.getElementById('emergencyName').value = ec.name || '';
+        document.getElementById('emergencyPhone').value = ec.phone || '';
+        document.getElementById('emergencyRelationship').value = ec.relationship || '';
+        setCertificationsToUI(user.certifications || []);
+        setNotificationPrefsToUI(user.notificationPrefs || {});
+        setIntegrationsToUI(user.integrations || {});
+        renderHrDocumentsList(user.hrDocuments || []);
+        setActivityFields(user);
+        loadProjectMembershipsForUser(user.id);
         document.getElementById('status').value = user.status || 'Active';
         document.getElementById('tempPassword').value = ''; // Never show existing password
         document.getElementById('notes').value = user.notes || '';
@@ -1034,6 +1752,7 @@
         // Profile image
         const profileImg = document.getElementById('profileImg');
         if (profileImg) profileImg.src = user.profileImage || 'https://i.pravatar.cc/96?img=68';
+        pendingProfileImageFile = null;
 
         // Company dropdown
         populateCompanyDropdown(user.company || '');
@@ -1173,6 +1892,29 @@
                 lastName: document.getElementById('lastName').value.trim(),
                 email: email,
                 jobTitle: document.getElementById('jobTitle').value.trim(),
+                department: document.getElementById('department').value.trim(),
+                employeeId: document.getElementById('employeeId').value.trim(),
+                licenseTier: document.getElementById('licenseTier').value,
+                timezone: document.getElementById('timezone').value,
+                emergencyContact: {
+                    name: document.getElementById('emergencyName').value.trim(),
+                    phone: document.getElementById('emergencyPhone').value.trim(),
+                    relationship: document.getElementById('emergencyRelationship').value.trim(),
+                },
+                certifications: getCertificationsFromUI(),
+                locale: document.getElementById('locale').value,
+                dateFormat: document.getElementById('dateFormat').value,
+                officeLocation: document.getElementById('officeLocation').value.trim(),
+                costCenter: document.getElementById('costCenter').value.trim(),
+                hireDate: document.getElementById('hireDate').value,
+                workPhoneExt: document.getElementById('workPhoneExt').value.trim(),
+                linkedinUrl: document.getElementById('linkedinUrl').value.trim(),
+                bio: document.getElementById('bio').value.trim(),
+                reportsToUserId: document.getElementById('reportsToUserId').value || null,
+                defaultProjectId: document.getElementById('defaultProjectId').value || null,
+                notificationPrefs: getNotificationPrefsFromUI(),
+                integrations: getIntegrationsFromUI(),
+                mark_invite_sent: markInviteSentOnSave,
                 role: document.getElementById('role') ? document.getElementById('role').value : 'Viewer',
                 company: companyName,
                 address: document.getElementById('address').value.trim(),
@@ -1217,6 +1959,11 @@
             } else {
                 users.push(savedUser);
             }
+
+            await saveProjectMemberships(savedUser.id);
+            savedUser.projectCount = selectedProjectIds.length;
+            await uploadProfileImageForUser(savedUser.id);
+            markInviteSentOnSave = false;
 
             const actionType = id ? 'USER_EDITED' : 'USER_CREATED';
             let logDetails = { company: companyName || 'None' };
@@ -1324,7 +2071,7 @@
         const data = filtered || users;
 
         if (data.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="11" class="px-6 py-8 text-center text-zinc-500">No users found. Click "Add New User" to begin.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="17" class="px-6 py-8 text-center text-zinc-500">No users found. Click "Add New User" to begin.</td></tr>`;
             updateSummaryCards();
             return;
         }
@@ -1332,32 +2079,20 @@
         data.forEach(user => {
             const row = document.createElement('tr');
             row.className = 'hover:bg-zinc-800/60 transition-colors cursor-pointer';
-            
-            // Double-click to edit - FIXED
             row.ondblclick = () => editUser(user.id);
 
-            const hasAccess = user.accessEnabled !== false ? 
-                `<span class="px-2.5 py-0.5 text-xs rounded-full bg-emerald-900/60 text-emerald-400">Enabled</span>` : 
-                `<span class="px-2.5 py-0.5 text-xs rounded-full bg-red-900/60 text-red-400">Disabled</span>`;
-
-            const roleTitle = user.jobTitle ? `${user.role || 'User'}<br><span class="text-xs text-zinc-500">${user.jobTitle}</span>` : (user.role || 'User');
-
-            // Primary phone and address for table display
             let primaryPhone = '';
             if (user.phones && user.phones.length > 0) {
                 primaryPhone = user.phones[0].number || user.phones[0] || '';
             } else if (user.phone) {
                 primaryPhone = user.phone;
             }
-            const displayAddress = user.address || '';
 
-            const roleTitleHtml = `<div class="text-xs"><div class="font-medium">${user.role || 'User'}</div><div class="text-[10px] text-zinc-500">${user.jobTitle || ''}</div></div>`;
-            const hasAccessHtml = user.accessEnabled !== false 
-                ? `<span class="px-2 py-0.5 text-[10px] rounded-full bg-emerald-900/60 text-emerald-400">On</span>` 
+            const hasAccessHtml = user.accessEnabled !== false
+                ? `<span class="px-2 py-0.5 text-[10px] rounded-full bg-emerald-900/60 text-emerald-400">On</span>`
                 : `<span class="px-2 py-0.5 text-[10px] rounded-full bg-zinc-700 text-zinc-400">Off</span>`;
             const statusHtml = `<span class="px-2 py-0.5 text-[10px] rounded-full ${user.status === 'Active' ? 'bg-emerald-900/60 text-emerald-400' : 'bg-zinc-700 text-zinc-400'}">${user.status || 'Active'}</span>`;
 
-            // Simplified Permissions display for main table
             let permDisplay = user.role || 'User';
             const pMatrix = user.permissions_v2 || (user.permissions?.version === 2 ? user.permissions : null);
             if (pMatrix && typeof CasePMPermissionsUI !== 'undefined') {
@@ -1370,17 +2105,32 @@
             }
             const permHtml = `<span class="px-2 py-0.5 text-[10px] rounded-full bg-zinc-700 text-emerald-300">${permDisplay}</span>`;
 
+            const portalLabel = PORTAL_LABELS[user.portalType] || user.portalType || '—';
+            const licenseLabel = user.licenseTier || '—';
+            const projectCount = user.projectCount != null ? user.projectCount : '—';
+            const lastLogin = formatDateTime(user.last_login);
+            const inviteHtml = `<span class="px-2 py-0.5 text-[10px] rounded-full ${user.inviteStatus === 'Active' ? 'bg-emerald-900/60 text-emerald-400' : user.inviteStatus === 'Pending invite' ? 'bg-amber-900/60 text-amber-300' : 'bg-zinc-700 text-zinc-400'}">${user.inviteStatus || '—'}</span>`;
+            const twoFaHtml = (user.twoFactorEnabled || user.totpEnabled)
+                ? '<span class="text-emerald-400" title="2FA enabled"><i class="fa-solid fa-shield-check"></i></span>'
+                : '<span class="text-zinc-600" title="2FA off"><i class="fa-solid fa-shield"></i></span>';
+
             row.innerHTML = `
-                <td class="px-5 py-2 font-medium">${user.firstName || ''} ${user.lastName || ''}</td>
-                <td class="px-5 py-2 text-zinc-400 text-sm">${user.email || ''}</td>
-                <td class="px-4 py-2 text-zinc-400 text-sm">${primaryPhone}</td>
-                <td class="px-4 py-2 text-zinc-300 text-sm">${user.jobTitle || ''}</td>
-                <td class="px-4 py-2 text-sm"><span class="px-2.5 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-300">${user.role || 'User'}</span></td>
-                <td class="px-4 py-2 text-sm text-zinc-400">${user.company || ''}</td>
-                <td class="px-5 py-2 text-zinc-400 text-sm">${displayAddress}</td>
-                <td class="px-3 py-2 text-center">${statusHtml}</td>
-                <td class="px-3 py-2 text-center">${hasAccessHtml}</td>
-                <td class="px-3 py-2 text-center">${permHtml}</td>
+                <td class="px-4 py-2 font-medium whitespace-nowrap">${user.firstName || ''} ${user.lastName || ''}</td>
+                <td class="px-4 py-2 text-zinc-400 text-sm">${user.email || ''}</td>
+                <td class="px-3 py-2 text-zinc-400 text-sm whitespace-nowrap">${primaryPhone}</td>
+                <td class="px-3 py-2 text-zinc-400 text-sm">${user.department || ''}</td>
+                <td class="px-3 py-2 text-zinc-300 text-sm">${user.jobTitle || ''}</td>
+                <td class="px-3 py-2 text-sm"><span class="px-2 py-0.5 text-[10px] rounded-full bg-zinc-700 text-zinc-300 whitespace-nowrap">${user.role || 'User'}</span></td>
+                <td class="px-3 py-2 text-xs text-zinc-400 col-portal">${portalLabel}</td>
+                <td class="px-3 py-2 text-sm text-zinc-400">${user.company || ''}</td>
+                <td class="px-3 py-2 text-xs text-zinc-400 col-license">${licenseLabel}</td>
+                <td class="px-3 py-2 text-center text-zinc-300 col-projects">${projectCount}</td>
+                <td class="px-3 py-2 text-xs text-zinc-500 col-login whitespace-nowrap">${lastLogin}</td>
+                <td class="px-3 py-2 text-center">${inviteHtml}</td>
+                <td class="px-2 py-2 text-center col-2fa">${twoFaHtml}</td>
+                <td class="px-2 py-2 text-center">${statusHtml}</td>
+                <td class="px-2 py-2 text-center">${hasAccessHtml}</td>
+                <td class="px-2 py-2 text-center">${permHtml}</td>
                 <td class="px-2 py-2 text-center">
                     <div class="flex justify-center gap-2 flex-nowrap items-center">
                         <button onclick="event.stopImmediatePropagation(); showUserLog(${user.id})" class="text-sky-400 hover:text-sky-300 p-1" title="View Log">
@@ -1796,6 +2546,7 @@
         }
 
         syncLocalUsersWithServer();
+        populateUserDropdowns();
         renderUsersTable();
         window.renderUsersTable = renderUsersTable;
         updateSummaryCards();

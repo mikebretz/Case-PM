@@ -51,6 +51,7 @@ def filter_users_for_actor(users, actor):
 
 
 def ensure_user_admin_schema(db):
+    from user_extended_prefs import ensure_user_extended_schema
     from sqlalchemy import inspect, text
     inspector = inspect(db.engine)
     if 'user' not in inspector.get_table_names():
@@ -60,11 +61,105 @@ def ensure_user_admin_schema(db):
         'phones_json': 'TEXT',
         'notes': 'TEXT',
         'access_enabled': 'BOOLEAN DEFAULT 1',
+        'department': 'VARCHAR(120)',
+        'employee_id': 'VARCHAR(80)',
+        'license_tier': 'VARCHAR(40)',
+        'timezone': 'VARCHAR(80)',
+        'emergency_contact_json': 'TEXT',
+        'certifications_json': 'TEXT',
     }
     for col, ddl in additions.items():
         if col not in cols:
             db.session.execute(text(f'ALTER TABLE user ADD COLUMN {col} {ddl}'))
     db.session.commit()
+    ensure_user_extended_schema(db)
+
+
+def _portal_for_role(role: str | None) -> str:
+    try:
+        from case_workflow import ROLE_PERMISSIONS
+        meta = ROLE_PERMISSIONS.get(role or '', {})
+        return meta.get('portal') or 'staff'
+    except Exception:
+        return 'staff'
+
+
+def _parse_json_obj(raw) -> dict:
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+    except (TypeError, json.JSONDecodeError):
+        return {}
+
+
+def _parse_json_list(raw) -> list:
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, list) else []
+    except (TypeError, json.JSONDecodeError):
+        return []
+
+
+def _emergency_contact_to_json(contact: dict | None) -> str | None:
+    if not contact or not isinstance(contact, dict):
+        return None
+    cleaned = {
+        'name': (contact.get('name') or '').strip(),
+        'phone': (contact.get('phone') or '').strip(),
+        'relationship': (contact.get('relationship') or '').strip(),
+    }
+    if not any(cleaned.values()):
+        return None
+    return json.dumps(cleaned)
+
+
+def _certifications_to_json(certs: list | None) -> str | None:
+    if not certs:
+        return None
+    cleaned = []
+    for item in certs:
+        if not isinstance(item, dict):
+            continue
+        name = (item.get('name') or '').strip()
+        if not name:
+            continue
+        cleaned.append({
+            'name': name,
+            'number': (item.get('number') or '').strip(),
+            'expires': (item.get('expires') or '').strip(),
+        })
+    return json.dumps(cleaned) if cleaned else None
+
+
+def _project_count_for_user(user_id: int) -> int:
+    try:
+        from project_access import list_memberships_for_user
+        return len(list_memberships_for_user(user_id))
+    except Exception:
+        return 0
+
+
+def _apply_extended_profile_fields(user, body: dict) -> None:
+    if 'department' in body and hasattr(user, 'department'):
+        user.department = (body.get('department') or '').strip() or None
+    if ('employeeId' in body or 'employee_id' in body) and hasattr(user, 'employee_id'):
+        user.employee_id = (body.get('employeeId') or body.get('employee_id') or '').strip() or None
+    if ('licenseTier' in body or 'license_tier' in body) and hasattr(user, 'license_tier'):
+        user.license_tier = (body.get('licenseTier') or body.get('license_tier') or '').strip() or None
+    if 'timezone' in body and hasattr(user, 'timezone'):
+        user.timezone = (body.get('timezone') or '').strip() or None
+    if ('emergencyContact' in body or 'emergency_contact' in body) and hasattr(user, 'emergency_contact_json'):
+        user.emergency_contact_json = _emergency_contact_to_json(
+            body.get('emergencyContact') or body.get('emergency_contact')
+        )
+    if 'certifications' in body and hasattr(user, 'certifications_json'):
+        user.certifications_json = _certifications_to_json(body.get('certifications'))
+    from user_extended_prefs import apply_extended_prefs
+    apply_extended_prefs(user, body)
 
 
 def _parse_phones(user) -> list[dict]:
@@ -94,6 +189,8 @@ def _phones_to_json(phones: list | None) -> str | None:
 
 
 def serialize_user(user, *, include_permissions: bool = False, actor=None) -> dict:
+    from user_extended_prefs import serialize_extended_prefs
+    from user_profile_persistence import profile_image_url
     role = user.role or 'Viewer'
     if actor and not _actor_can_see_developer_users(actor) and role == DEVELOPER_ROLE:
         return None
@@ -122,7 +219,18 @@ def serialize_user(user, *, include_permissions: bool = False, actor=None) -> di
         'last_login': user.last_login.isoformat() if user.last_login else None,
         'created_at': user.created_at.isoformat() if user.created_at else None,
         'has_custom_permissions': bool(user.permissions_json),
+        'department': getattr(user, 'department', None) or '',
+        'employeeId': getattr(user, 'employee_id', None) or '',
+        'licenseTier': getattr(user, 'license_tier', None) or '',
+        'timezone': getattr(user, 'timezone', None) or '',
+        'emergencyContact': _parse_json_obj(getattr(user, 'emergency_contact_json', None)),
+        'certifications': _parse_json_list(getattr(user, 'certifications_json', None)),
+        'portalType': _portal_for_role(role),
+        'projectCount': _project_count_for_user(user.id),
+        'totpEnabled': bool(getattr(user, 'totp_enabled', False)),
+        'profileImage': profile_image_url(user, admin=True) or '',
     }
+    payload.update(serialize_extended_prefs(user))
     if include_permissions:
         from user_permissions_persistence import get_user_permissions
         payload['permissions'] = get_user_permissions(user)
@@ -206,6 +314,7 @@ def create_user(db, User, Company, body: dict, *, actor_id: int | None = None, a
         user.notes = (body.get('notes') or '').strip() or None
     if hasattr(user, 'access_enabled'):
         user.access_enabled = bool(access_enabled)
+    _apply_extended_profile_fields(user, body)
 
     perms = body.get('permissions') or body.get('permissions_v2')
     if perms and perms.get('version') == 2:
@@ -249,6 +358,7 @@ def update_user(db, User, Company, user, body: dict, *, actor=None) -> object:
         user.require_2fa = bool(body.get('twoFactorEnabled', body.get('require_2fa')))
     if 'notes' in body and hasattr(user, 'notes'):
         user.notes = (body.get('notes') or '').strip() or None
+    _apply_extended_profile_fields(user, body)
 
     access_enabled = body.get('accessEnabled')
     if access_enabled is not None:

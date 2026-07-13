@@ -463,6 +463,26 @@ class User(db.Model, UserMixin):
     phones_json = db.Column(db.Text)
     notes = db.Column(db.Text)
     access_enabled = db.Column(db.Boolean, default=True)
+    department = db.Column(db.String(120))
+    employee_id = db.Column(db.String(80))
+    license_tier = db.Column(db.String(40))
+    timezone = db.Column(db.String(80))
+    emergency_contact_json = db.Column(db.Text)
+    certifications_json = db.Column(db.Text)
+    locale = db.Column(db.String(20), default='en-US')
+    office_location = db.Column(db.String(120))
+    cost_center = db.Column(db.String(80))
+    hire_date = db.Column(db.String(20))
+    reports_to_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    default_project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
+    bio = db.Column(db.Text)
+    linkedin_url = db.Column(db.String(300))
+    work_phone_ext = db.Column(db.String(20))
+    date_format_pref = db.Column(db.String(10), default='MDY')
+    notification_prefs_json = db.Column(db.Text)
+    integrations_json = db.Column(db.Text)
+    hr_documents_json = db.Column(db.Text)
+    invite_sent_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime)
 
@@ -2492,6 +2512,109 @@ def api_save_user_project_memberships(user_id):
         db.session.rollback()
         return jsonify({'error': str(exc)}), 400
     return jsonify({'ok': True, 'project_ids': saved})
+
+
+@app.route('/api/users/<int:user_id>/audit-log', methods=['GET'])
+@login_required
+@users_module_required
+def api_user_audit_log(user_id):
+    from audit_log_persistence import ensure_audit_log_schema, query_audit_logs, serialize_log
+    user = User.query.get_or_404(user_id)
+    if user.role == 'Developer':
+        from developer_tools import can_assign_developer_role
+        if not can_assign_developer_role(current_user):
+            return jsonify({'error': 'Not found'}), 404
+    ensure_audit_log_schema(db)
+    args = dict(request.args)
+    args['user_id'] = user_id
+    rows, total = query_audit_logs(AuditLog, args)
+    return jsonify({
+        'ok': True,
+        'events': [serialize_log(r) for r in rows],
+        'total': total,
+        'user': {'id': user.id, 'email': user.email, 'full_name': user.full_name},
+    })
+
+
+@app.route('/api/users/<int:user_id>/hr-documents', methods=['POST'])
+@login_required
+@users_module_required
+def api_user_hr_document_upload(user_id):
+    from user_extended_prefs import add_hr_document, ensure_user_extended_schema
+    from user_management_service import ensure_user_admin_schema
+    ensure_user_admin_schema(db)
+    ensure_user_extended_schema(db)
+    user = User.query.get_or_404(user_id)
+    file = request.files.get('file')
+    doc_type = request.form.get('type') or 'other'
+    name = request.form.get('name') or ''
+    expires = request.form.get('expires') or ''
+    try:
+        doc = add_hr_document(user, doc_type=doc_type, name=name, file_storage=file, expires=expires)
+        db.session.commit()
+        write_audit('Uploaded HR document', f'{user.email}: {doc.get("name")}', module='users', category='upload', target_type='User', target_id=user.id, commit=True)
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'ok': True, 'document': doc})
+
+
+@app.route('/api/users/<int:user_id>/hr-documents/<doc_id>', methods=['DELETE'])
+@login_required
+@users_module_required
+def api_user_hr_document_delete(user_id, doc_id):
+    from user_extended_prefs import remove_hr_document, ensure_user_extended_schema
+    from user_management_service import ensure_user_admin_schema
+    ensure_user_admin_schema(db)
+    ensure_user_extended_schema(db)
+    user = User.query.get_or_404(user_id)
+    if not remove_hr_document(user, doc_id):
+        return jsonify({'error': 'Document not found'}), 404
+    db.session.commit()
+    write_audit('Removed HR document', f'{user.email}: {doc_id}', module='users', category='delete', target_type='User', target_id=user.id, commit=True)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/users/<int:user_id>/hr-documents/<doc_id>/download', methods=['GET'])
+@login_required
+@users_module_required
+def api_user_hr_document_download(user_id, doc_id):
+    from user_extended_prefs import hr_document_file_path
+    user = User.query.get_or_404(user_id)
+    path = hr_document_file_path(user, doc_id)
+    if not path:
+        return jsonify({'error': 'Not found'}), 404
+    return send_file(path, as_attachment=True)
+
+
+@app.route('/api/users/<int:user_id>/profile-image', methods=['GET'])
+@login_required
+@users_module_required
+def api_user_profile_image(user_id):
+    user = User.query.get_or_404(user_id)
+    path = getattr(user, 'profile_image_path', None)
+    if not path or not os.path.isfile(path):
+        return '', 404
+    return send_file(path, max_age=3600)
+
+
+@app.route('/api/users/<int:user_id>/profile-image', methods=['POST'])
+@login_required
+@users_module_required
+def api_user_profile_image_upload(user_id):
+    from user_profile_persistence import ensure_user_profile_schema, save_profile_image, profile_image_url
+    from user_management_service import ensure_user_admin_schema
+    ensure_user_admin_schema(db)
+    ensure_user_profile_schema(db)
+    user = User.query.get_or_404(user_id)
+    file = request.files.get('photo') or request.files.get('file')
+    try:
+        save_profile_image(user, file)
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'ok': True, 'profile_image_url': profile_image_url(user)})
 
 
 @app.route('/api/audit-log/security-summary', methods=['GET'])
@@ -5985,10 +6108,13 @@ def user_management():
     from user_signature_persistence import ensure_user_signature_schema
     from user_permissions_persistence import catalog_payload
     from user_management_service import ensure_user_admin_schema, serialize_user, filter_users_for_actor
+    from user_extended_prefs import NOTIFICATION_MODULES, HR_DOCUMENT_TYPES, LOCALE_OPTIONS, DATE_FORMAT_OPTIONS
     from developer_tools import is_developer, can_assign_developer_role
     ensure_user_signature_schema(db)
     ensure_user_admin_schema(db)
     users = filter_users_for_actor(User.query.order_by(User.created_at.desc()).all(), current_user)
+    projects = Project.query.order_by(Project.name).all()
+    projects_for_js = [{'id': p.id, 'name': p.name, 'number': p.number or '', 'status': p.status or ''} for p in projects]
     return render_template(
         'user_management.html',
         users=users,
@@ -5999,6 +6125,11 @@ def user_management():
             'full_name': current_user.full_name,
         },
         server_users_for_js=[u for u in (serialize_user(x, actor=current_user) for x in users) if u],
+        projects_for_js=projects_for_js,
+        notification_modules=NOTIFICATION_MODULES,
+        hr_document_types=HR_DOCUMENT_TYPES,
+        locale_options=LOCALE_OPTIONS,
+        date_format_options=DATE_FORMAT_OPTIONS,
         permissions_catalog=catalog_payload(),
         is_admin_user=True,
         can_assign_developer_role=can_assign_developer_role(current_user),
