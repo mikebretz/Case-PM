@@ -2283,9 +2283,13 @@
   function openSetup() { showSettings(); }
 
   // ─── Modals ────────────────────────────────────────────────
-  function showSettings() {
+  async function showSettings() {
     document.getElementById('emailSettingsModal')?.classList.remove('hidden');
-    if (typeof CasePMEmailSettingsUI !== 'undefined') CasePMEmailSettingsUI.render('emailSettingsModalBody');
+    if (typeof CasePMEmailSettingsUI !== 'undefined') {
+      const opts = { mode: 'user', userId: state.currentUserId || global.CasePMCurrentUserId || null };
+      await CasePMEmailSettingsUI.ensureLoaded(opts);
+      CasePMEmailSettingsUI.render('emailSettingsModalBody', opts);
+    }
   }
 
   function showRules() {

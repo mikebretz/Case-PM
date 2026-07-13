@@ -451,17 +451,66 @@
     </div>
 
     <div id="tab-content-email" class="hidden">
-        <div class="settings-panel">
-            <div class="flex items-center justify-between mb-6">
-                <div>
-                    <h2 class="text-xl font-semibold">Email Settings</h2>
-                    <p class="text-sm text-zinc-400 mt-1">Synced with the <a href="{{ url_for('email_page') }}?settings=1" class="text-emerald-400 hover:underline">Email</a> module — changes here apply everywhere mail is sent.</p>
+        <div class="space-y-4">
+            <div class="settings-panel">
+                <div class="flex items-start justify-between gap-4 flex-wrap mb-4">
+                    <div>
+                        <h2 class="text-xl font-semibold">Email Settings</h2>
+                        <p class="text-sm text-zinc-400 mt-1">Manage the <strong class="text-zinc-300">company workflow mailbox</strong> (RFI alerts, pay app notices) and <strong class="text-zinc-300">individual user mailboxes</strong> (Outlook/Gmail connections).</p>
+                    </div>
+                    <a href="{{ url_for('email_page') }}?settings=1" class="settings-btn settings-btn-secondary">
+                        <i class="fa-solid fa-envelope"></i><span>Open Email Client</span>
+                    </a>
                 </div>
-                <a href="{{ url_for('email_page') }}?settings=1" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md text-sm">
-                    <i class="fa-solid fa-envelope mr-1"></i> Open Email
-                </a>
+
+                <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                    <div class="settings-card xl:col-span-1 space-y-4">
+                        <h3 class="font-medium text-white flex items-center gap-2"><i class="fa-solid fa-users text-emerald-500"></i> User Mailboxes</h3>
+                        <p class="text-xs text-zinc-500">Select a person to connect Outlook, review status, or edit their mailbox preferences. New users inherit notification defaults from the Notifications tab.</p>
+                        <div>
+                            <label class="block text-xs text-zinc-400 mb-1">Configure mailbox for</label>
+                            <select id="emailAdminUserPicker" class="settings-input" onchange="CasePMProgramSettings.onEmailUserSelected()"></select>
+                        </div>
+                        <div id="emailUserConnectionCard" class="border border-zinc-700 rounded-md p-3 text-sm space-y-2 bg-zinc-900/40">
+                            <div class="text-zinc-500 text-xs">Loading connection status…</div>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <button type="button" onclick="CasePMProgramSettings.connectOutlookForUser()" class="settings-btn settings-btn-primary text-xs !h-9">
+                                <i class="fa-brands fa-microsoft"></i><span>Connect Outlook</span>
+                            </button>
+                            <button type="button" onclick="CasePMProgramSettings.disconnectOutlookForUser()" class="settings-btn settings-btn-secondary text-xs !h-9">
+                                <i class="fa-solid fa-link-slash"></i><span>Disconnect</span>
+                            </button>
+                            <button type="button" onclick="CasePMProgramSettings.syncOutlookForUser()" class="settings-btn settings-btn-secondary text-xs !h-9">
+                                <i class="fa-solid fa-rotate"></i><span>Sync Inbox</span>
+                            </button>
+                        </div>
+                        <div id="emailMailboxAccessPanel" class="text-xs text-zinc-500 border-t border-zinc-800 pt-3">
+                            <div class="font-medium text-zinc-300 mb-1">Shared mailbox access</div>
+                            <div id="emailMailboxAccessList">Select a user to view delegates.</div>
+                            <p class="mt-2">Grant or revoke access in <a href="{{ url_for('user_management') }}" class="text-emerald-400 hover:underline">User Management</a> → Integrations tab.</p>
+                        </div>
+                    </div>
+
+                    <div class="xl:col-span-2 space-y-4">
+                        <div class="settings-card">
+                            <div class="flex items-center justify-between gap-2 mb-3">
+                                <h3 class="font-medium text-white flex items-center gap-2"><i class="fa-solid fa-building text-sky-400"></i> Company / Workflow Email</h3>
+                                <span class="text-[10px] uppercase tracking-wide text-zinc-500">System notifications</span>
+                            </div>
+                            <p class="text-xs text-zinc-500 mb-4">SMTP used for module alerts (RFIs, change orders, pay apps). This is not a user's personal inbox — configure each person's Outlook connection in the panel at left.</p>
+                            <div id="programEmailCompanyBody"></div>
+                        </div>
+                        <div class="settings-card">
+                            <div class="flex items-center justify-between gap-2 mb-3">
+                                <h3 class="font-medium text-white flex items-center gap-2"><i class="fa-solid fa-user text-emerald-400"></i> <span id="emailUserSettingsTitle">Individual Mailbox Settings</span></h3>
+                                <span id="emailUserSettingsBadge" class="text-[10px] uppercase tracking-wide text-zinc-500">Per user</span>
+                            </div>
+                            <div id="programEmailUserBody"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div id="programEmailSettingsBody"></div>
         </div>
     </div>
 
@@ -946,10 +995,8 @@
     }
 
     async function renderProgramEmailSettings() {
-        if (window.CasePMProgramSettings) await CasePMProgramSettings.syncEmailFromServer();
-        if (typeof CasePMEmailSettingsUI !== 'undefined') {
-            window.CasePMEmailSettings = CasePMEmailSettingsUI.loadFromStorage();
-            CasePMEmailSettingsUI.render('programEmailSettingsBody');
+        if (window.CasePMProgramSettings) {
+            await CasePMProgramSettings.renderEmailAdminTab();
         }
     }
 
