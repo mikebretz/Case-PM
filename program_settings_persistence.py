@@ -267,13 +267,41 @@ def save_maintenance_settings(form_data):
 
 
 def load_email_settings_mirror():
+    """Internal — includes SMTP password for outbound mail."""
     return get_section('email', {})
 
 
 def save_email_settings_mirror(payload):
+    return save_company_email_settings(payload)
+
+
+def load_company_email_settings(mask_secret: bool = True):
+    section = get_section('email', {})
+    out = dict(section)
+    if mask_secret:
+        pwd = out.get('smtpPassword') or out.get('smtp_password')
+        if pwd:
+            out['smtpPassword'] = '********'
+            out['_smtpPasswordSet'] = True
+    out['scope'] = 'company'
+    return out
+
+
+def save_company_email_settings(payload):
     if not isinstance(payload, dict):
-        return {}
-    clean = {k: v for k, v in payload.items() if not str(k).startswith('_')}
+        return load_company_email_settings()
+    existing = get_section('email', {})
+    clean = dict(existing)
+    clean.update({k: v for k, v in payload.items() if not str(k).startswith('_')})
+    incoming_pwd = payload.get('smtpPassword') or payload.get('smtp_password')
+    if incoming_pwd in (None, '', '********'):
+        if existing.get('smtpPassword'):
+            clean['smtpPassword'] = existing.get('smtpPassword')
+        elif existing.get('smtp_password'):
+            clean['smtpPassword'] = existing.get('smtp_password')
+    else:
+        clean['smtpPassword'] = incoming_pwd
+    clean['scope'] = 'company'
     return save_section('email', clean)
 
 
@@ -586,12 +614,18 @@ def integrations_status():
         docusign = docusign_info()
     except Exception:
         docusign = {'configured': False}
+    try:
+        from microsoft_graph_mail_service import integration_info as microsoft_mail_info
+        microsoft_mail = microsoft_mail_info()
+    except Exception:
+        microsoft_mail = {'configured': False}
     return {
         'sage_api_url_set': bool(sage_url),
         'sage_api_key_set': sage_key,
         'sage_live': bool(sage_url and sage_key),
         'aia': aia,
         'docusign': docusign,
+        'microsoft_mail': microsoft_mail,
         'secret_key_from_env': bool(os.environ.get('CASEPM_SECRET_KEY', '').strip()),
         'deployment_env': (os.environ.get('CASEPM_DEPLOYMENT') or '').strip() or None,
     }

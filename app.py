@@ -16,6 +16,7 @@ from datetime import datetime, date
 import os
 import sys
 import json
+import urllib.parse
 from functools import wraps
 
 app = Flask(__name__)
@@ -530,6 +531,21 @@ class EmailMailboxAccess(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     revoked_at = db.Column(db.DateTime)
     notes = db.Column(db.String(300))
+
+
+class UserEmailConnection(db.Model):
+    __tablename__ = 'user_email_connection'
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
+    provider = db.Column(db.String(40), default='microsoft')
+    email_address = db.Column(db.String(255))
+    display_name = db.Column(db.String(255))
+    encrypted_tokens = db.Column(db.Text)
+    scopes = db.Column(db.Text)
+    status = db.Column(db.String(40), default='connected')
+    connected_at = db.Column(db.DateTime)
+    last_sync_at = db.Column(db.DateTime)
+    last_error = db.Column(db.String(500))
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 @login_manager.user_loader
@@ -12631,13 +12647,26 @@ def api_clear_all_program_data():
 @login_required
 @admin_required
 def api_program_settings_email():
-    """Server mirror of email settings — synced with Email module UI."""
-    from program_settings_persistence import load_email_settings_mirror, save_email_settings_mirror
+    """Company / workflow SMTP settings for system notifications."""
+    from program_settings_persistence import load_company_email_settings, save_company_email_settings
     if request.method == 'GET':
-        return jsonify({'ok': True, 'email': load_email_settings_mirror()})
+        return jsonify({'ok': True, 'email': load_company_email_settings(mask_secret=True), 'scope': 'company'})
     body = request.get_json(silent=True) or {}
-    email = save_email_settings_mirror(body.get('email') or body)
-    return jsonify({'ok': True, 'email': email})
+    email = save_company_email_settings(body.get('email') or body)
+    write_audit('Updated company email settings', 'Program workflow SMTP', module='program_settings', category='settings', commit=True)
+    return jsonify({'ok': True, 'email': email, 'scope': 'company'})
+
+
+@app.route('/api/program-settings/email/users-summary', methods=['GET'])
+@login_required
+@admin_required
+def api_program_settings_email_users_summary():
+    from user_email_connection_persistence import list_users_email_summary, ensure_user_email_connection_schema
+    ensure_user_email_connection_schema(db)
+    return jsonify({
+        'ok': True,
+        'users': list_users_email_summary(User=User, UserEmailConnection=UserEmailConnection),
+    })
 
 
 @app.route('/api/program-settings/numbering', methods=['GET', 'PUT'])
@@ -13479,6 +13508,232 @@ def api_email_mailbox_transfer():
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
     return jsonify({'ok': True, **result})
+
+
+def _resolve_email_settings_user_id(requested_user_id=None):
+    """Self-service or admin access for per-user email settings."""
+    if requested_user_id in (None, '', 0, 'me'):
+        return int(current_user.id)
+    target = int(requested_user_id)
+    if target == int(current_user.id):
+        return target
+    if current_user.role != 'Admin':
+        raise PermissionError('Admin only')
+    user = User.query.get(target)
+    if not user:
+        raise ValueError('User not found')
+    return target
+
+
+@app.route('/api/email/users/me/settings', methods=['GET', 'PUT'])
+@login_required
+def api_email_my_settings():
+    return api_email_user_settings(current_user.id)
+
+
+@app.route('/api/email/users/me/connection', methods=['GET', 'DELETE'])
+@login_required
+def api_email_my_connection():
+    return api_email_user_connection(current_user.id)
+
+
+@app.route('/api/email/users/<int:user_id>/settings', methods=['GET', 'PUT'])
+@login_required
+def api_email_user_settings(user_id):
+    from user_email_connection_persistence import load_user_email_settings, save_user_email_settings
+    try:
+        uid = _resolve_email_settings_user_id(user_id)
+    except PermissionError:
+        return jsonify({'error': 'Admin only'}), 403
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 404
+    if request.method == 'GET':
+        settings = load_user_email_settings(uid, UserEmailMailbox=UserEmailMailbox)
+        return jsonify({'ok': True, 'user_id': uid, 'settings': settings})
+    body = request.get_json(silent=True) or {}
+    saved = save_user_email_settings(uid, body.get('settings') or body, db=db, UserEmailMailbox=UserEmailMailbox)
+    return jsonify({'ok': True, 'user_id': uid, 'settings': saved})
+
+
+@app.route('/api/email/users/<int:user_id>/connection', methods=['GET', 'DELETE'])
+@login_required
+def api_email_user_connection(user_id):
+    from user_email_connection_persistence import (
+        connection_status,
+        disconnect_connection,
+        ensure_user_email_connection_schema,
+    )
+    try:
+        uid = _resolve_email_settings_user_id(user_id)
+    except PermissionError:
+        return jsonify({'error': 'Admin only'}), 403
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 404
+    ensure_user_email_connection_schema(db)
+    if request.method == 'GET':
+        return jsonify({
+            'ok': True,
+            'user_id': uid,
+            'connection': connection_status(uid, UserEmailConnection=UserEmailConnection, User=User),
+        })
+    disconnect_connection(uid, db=db, UserEmailConnection=UserEmailConnection)
+    write_audit(
+        'Disconnected email mailbox',
+        f'User #{uid} Microsoft/Outlook disconnected',
+        module='email',
+        category='settings',
+        commit=True,
+    )
+    return jsonify({'ok': True, 'user_id': uid, 'disconnected': True})
+
+
+@app.route('/api/email/oauth/microsoft/start')
+@login_required
+def api_email_oauth_microsoft_start():
+    import secrets
+    from microsoft_graph_mail_service import authorization_url, integration_info, is_configured
+    from user_email_connection_persistence import ensure_user_email_connection_schema
+    if not is_configured():
+        info = integration_info()
+        return jsonify({
+            'error': 'Microsoft 365 is not configured on this server.',
+            'setup': info,
+        }), 503
+    try:
+        uid = _resolve_email_settings_user_id(request.args.get('user_id', type=int) or current_user.id)
+    except PermissionError:
+        return jsonify({'error': 'Admin only'}), 403
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 404
+    ensure_user_email_connection_schema(db)
+    state = secrets.token_urlsafe(24)
+    session['email_oauth_state'] = state
+    session['email_oauth_user_id'] = uid
+    session['email_oauth_return_to'] = (request.args.get('return_to') or '').strip() or url_for('email_page', settings=1)
+    redirect_uri = request.url_root.rstrip('/') + '/api/email/oauth/microsoft/callback'
+    return jsonify({
+        'ok': True,
+        'authorization_url': authorization_url(redirect_uri=redirect_uri, state=state),
+        'user_id': uid,
+    })
+
+
+@app.route('/api/email/oauth/microsoft/callback')
+@login_required
+def api_email_oauth_microsoft_callback():
+    from microsoft_graph_mail_service import exchange_code, get_user_profile, sync_inbox_messages
+    from user_email_connection_persistence import upsert_connection, ensure_user_email_connection_schema
+    expected_state = session.pop('email_oauth_state', None)
+    user_id = session.pop('email_oauth_user_id', None)
+    return_to = session.pop('email_oauth_return_to', None) or url_for('email_page', settings=1)
+    if not expected_state or request.args.get('state') != expected_state:
+        return redirect(return_to + ('&' if '?' in return_to else '?') + 'outlook=error&reason=state')
+    if request.args.get('error'):
+        reason = request.args.get('error_description') or request.args.get('error')
+        return redirect(return_to + ('&' if '?' in return_to else '?') + f'outlook=error&reason={urllib.parse.quote(str(reason)[:120])}')
+    code = request.args.get('code')
+    if not code or not user_id:
+        return redirect(return_to + ('&' if '?' in return_to else '?') + 'outlook=error&reason=missing_code')
+    redirect_uri = request.url_root.rstrip('/') + '/api/email/oauth/microsoft/callback'
+    try:
+        ensure_user_email_connection_schema(db)
+        tokens = exchange_code(code, redirect_uri=redirect_uri)
+        profile = get_user_profile(tokens['access_token'])
+        email = (profile.get('mail') or profile.get('userPrincipalName') or '').strip()
+        display = (profile.get('displayName') or '').strip()
+        upsert_connection(
+            int(user_id),
+            provider='microsoft',
+            email_address=email,
+            display_name=display,
+            tokens=tokens,
+            scopes=None,
+            db=db,
+            UserEmailConnection=UserEmailConnection,
+        )
+        sync_inbox_messages(
+            int(user_id),
+            db=db,
+            UserEmailConnection=UserEmailConnection,
+            UserEmailMailbox=UserEmailMailbox,
+        )
+        write_audit(
+            'Connected Outlook mailbox',
+            f'User #{user_id} connected as {email}',
+            module='email',
+            category='settings',
+            commit=True,
+        )
+        return redirect(return_to + ('&' if '?' in return_to else '?') + 'outlook=connected')
+    except Exception as exc:
+        db.session.rollback()
+        return redirect(return_to + ('&' if '?' in return_to else '?') + f'outlook=error&reason={urllib.parse.quote(str(exc)[:120])}')
+
+
+@app.route('/api/email/test-connection', methods=['POST'])
+@login_required
+def api_email_test_connection():
+    from microsoft_graph_mail_service import ensure_fresh_tokens, integration_info, is_configured, test_connection
+    from user_email_connection_persistence import connection_status, ensure_user_email_connection_schema
+    body = request.get_json(silent=True) or {}
+    try:
+        uid = _resolve_email_settings_user_id(body.get('user_id'))
+    except PermissionError:
+        return jsonify({'error': 'Admin only'}), 403
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 404
+    ensure_user_email_connection_schema(db)
+    conn = connection_status(uid, UserEmailConnection=UserEmailConnection, User=User)
+    if conn.get('connected') and conn.get('provider') == 'microsoft':
+        if not is_configured():
+            return jsonify({'error': 'Microsoft 365 not configured', 'setup': integration_info()}), 503
+        try:
+            tokens = ensure_fresh_tokens(uid, db=db, UserEmailConnection=UserEmailConnection)
+            result = test_connection(tokens['access_token'])
+            return jsonify({'ok': True, 'mode': 'microsoft_graph', **result})
+        except Exception as exc:
+            return jsonify({'error': str(exc)}), 400
+    settings = body.get('settings') or {}
+    host = (settings.get('smtpHost') or '').strip()
+    imap = (settings.get('imapHost') or '').strip()
+    if not host and not imap:
+        return jsonify({'error': 'Connect Microsoft Outlook or enter SMTP/IMAP server details.'}), 400
+    return jsonify({
+        'ok': True,
+        'mode': 'manual',
+        'message': f"Manual settings captured for {settings.get('emailAddress') or conn.get('email_address') or 'account'}.",
+        'smtp': host or None,
+        'imap': imap or None,
+    })
+
+
+@app.route('/api/email/sync', methods=['POST'])
+@login_required
+def api_email_sync_mailbox():
+    from microsoft_graph_mail_service import sync_inbox_messages
+    from user_email_connection_persistence import connection_status, ensure_user_email_connection_schema
+    body = request.get_json(silent=True) or {}
+    try:
+        uid = _resolve_email_settings_user_id(body.get('user_id'))
+    except PermissionError:
+        return jsonify({'error': 'Admin only'}), 403
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 404
+    ensure_user_email_connection_schema(db)
+    conn = connection_status(uid, UserEmailConnection=UserEmailConnection, User=User)
+    if not conn.get('connected'):
+        return jsonify({'error': 'Mailbox is not connected.'}), 400
+    try:
+        result = sync_inbox_messages(
+            uid,
+            db=db,
+            UserEmailConnection=UserEmailConnection,
+            UserEmailMailbox=UserEmailMailbox,
+            limit=int(body.get('limit') or 40),
+        )
+        return jsonify({'ok': True, 'user_id': uid, **result})
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
 
 
 # ==================== NOTIFICATIONS ====================

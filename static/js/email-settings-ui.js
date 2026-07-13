@@ -7,6 +7,25 @@
   const S = () => global.CasePMEmail?.getSettings?.() || global.CasePMEmailSettings || {};
 
   let lastContainerId = 'emailSettingsModalBody';
+  let renderOptions = { mode: 'user', userId: null, admin: false };
+
+  function setRenderOptions(options = {}) {
+    renderOptions = { mode: options.mode || 'user', userId: options.userId || null, admin: !!options.admin };
+  }
+
+  function connectionBanner(connection) {
+    if (!connection) return '';
+    if (connection.connected) {
+      return `<div class="mb-4 rounded-md border border-emerald-900/50 bg-emerald-950/30 px-4 py-3 text-sm">
+        <div class="text-emerald-300 font-medium"><i class="fa-brands fa-microsoft mr-2"></i>Connected to Microsoft 365</div>
+        <div class="text-zinc-400 text-xs mt-1">${escText(connection.display_name || '')} · ${escText(connection.email_address || '')}</div>
+        ${connection.last_sync_at ? `<div class="text-zinc-500 text-[10px] mt-1">Last sync: ${escText(connection.last_sync_at.replace('T', ' ').slice(0, 19))}</div>` : ''}
+      </div>`;
+    }
+    return `<div class="mb-4 rounded-md border border-zinc-700 bg-zinc-900/50 px-4 py-3 text-sm text-zinc-400">
+      <i class="fa-solid fa-plug-circle-xmark mr-2 text-zinc-500"></i>Not connected to Microsoft 365. Click <strong class="text-zinc-300">Connect Microsoft / Outlook</strong> to sign in.
+    </div>`;
+  }
 
   function escText(s) {
     return String(s || '')
@@ -61,17 +80,25 @@
     return `<div class="email-settings-section mb-4"><h3>${title}</h3>${body}</div>`;
   }
 
-  function render(containerId) {
+  function render(containerId, options) {
+    if (options) setRenderOptions(options);
     lastContainerId = containerId || lastContainerId;
     const el = document.getElementById(lastContainerId);
     if (!el) return;
     const s = S();
     const sigs = loadSignatures();
     const defaultSigId = s.defaultSignatureId || (sigs[0] && sigs[0].id) || 'default';
+    const isCompany = renderOptions.mode === 'company';
+    const conn = renderOptions.connection || null;
 
     el.innerHTML = `
       <div class="space-y-2 max-h-[70vh] overflow-y-auto pr-1">
-        ${section('Account & Connection', `
+        ${!isCompany ? connectionBanner(conn) : ''}
+        ${isCompany ? `<div class="mb-4 rounded-md border border-sky-900/40 bg-sky-950/20 px-4 py-3 text-sm text-zinc-400">
+          <strong class="text-sky-300">Company workflow mailbox</strong> — used for automated module notifications (RFIs, pay apps, etc.). Personal inboxes are configured per user.
+        </div>` : ''}
+
+        ${!isCompany ? section('Account & Connection', `
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div class="md:col-span-2 flex flex-wrap gap-2">
               <button type="button" onclick="CasePMEmailSettingsUI.connectGoogle()" class="px-4 py-2 bg-white text-zinc-900 rounded-md text-sm font-medium"><i class="fa-brands fa-google mr-2"></i>Connect Google / Gmail</button>
@@ -82,9 +109,9 @@
             ${field('es_emailAddress', 'Email Address', input('es_emailAddress', 'email', s.emailAddress))}
             ${field('es_replyTo', 'Reply-To Address', input('es_replyTo', 'email', s.replyTo))}
           </div>
-        `)}
+        `) : ''}
 
-        ${section('Incoming Mail (IMAP / POP)', `
+        ${!isCompany ? section('Incoming Mail (IMAP / POP)', `
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             ${field('es_imapHost', 'IMAP Server', input('es_imapHost', 'text', s.imapHost, 'imap.gmail.com'))}
             ${field('es_imapPort', 'IMAP Port', input('es_imapPort', 'number', s.imapPort))}
@@ -92,7 +119,7 @@
             ${field('es_popHost', 'POP Server (optional)', input('es_popHost', 'text', s.popHost, 'pop.gmail.com'))}
             ${field('es_popPort', 'POP Port', input('es_popPort', 'number', s.popPort))}
           </div>
-        `)}
+        `) : ''}
 
         ${section('Outgoing Mail (SMTP)', `
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -104,15 +131,15 @@
           </div>
         `)}
 
-        ${section('Sync & Offline', `
+        ${!isCompany ? section('Sync & Offline', `
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             ${field('es_syncFrequency', 'Sync Frequency', select('es_syncFrequency', [{v:'push',t:'Push (real-time)'},{v:'15',t:'Every 15 min'},{v:'30',t:'Every 30 min'},{v:'60',t:'Hourly'}], s.syncFrequency))}
             ${field('es_syncDays', 'Sync mail from last (days)', input('es_syncDays', 'number', s.syncDays))}
             <div class="md:col-span-2">${checkbox('es_offlineMode', 'Enable offline mode (cache mail locally)', s.offlineMode)}</div>
           </div>
-        `)}
+        `) : ''}
 
-        ${section('Inbox Experience (Outlook + Gmail)', `
+        ${!isCompany ? section('Inbox Experience (Outlook + Gmail)', `
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             ${checkbox('es_conversationView', 'Conversation view / threading', s.conversationView)}
             ${checkbox('es_focusedInbox', 'Focused Inbox (Outlook-style)', s.focusedInbox)}
@@ -126,9 +153,9 @@
             ${field('es_density', 'Density', select('es_density', [{v:'comfortable',t:'Comfortable'},{v:'compact',t:'Compact'}], s.density))}
             ${field('es_undoSendSeconds', 'Undo send window (seconds)', input('es_undoSendSeconds', 'number', s.undoSendSeconds))}
           </div>
-        `)}
+        `) : ''}
 
-        ${section('Compose & Send', `
+        ${!isCompany ? section('Compose & Send', `
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             ${checkbox('es_defaultReplyAll', 'Default to Reply All', s.defaultReplyAll)}
             ${checkbox('es_markAsReadOnView', 'Mark as read when opened', s.markAsReadOnView)}
@@ -141,18 +168,18 @@
             ${field('es_delayDeliveryDefault', 'Default delay delivery (minutes, 0=off)', input('es_delayDeliveryDefault', 'number', s.delayDeliveryDefault))}
             ${field('es_swipeActions', 'Swipe actions (mobile)', select('es_swipeActions', [{v:'archive_delete',t:'Archive / Delete'},{v:'read_archive',t:'Read / Archive'},{v:'flag_delete',t:'Flag / Delete'}], s.swipeActions))}
           </div>
-        `)}
+        `) : ''}
 
-        ${section('Email Signatures', `
+        ${!isCompany ? section('Email Signatures', `
           <p class="text-xs text-zinc-500 mb-3">Signatures are appended when you compose a new message. Use HTML for formatting (name, title, phone, logo, etc.). The <strong class="text-zinc-300">Default</strong> signature is inserted automatically.</p>
           <div id="es_signaturesList">${renderSignatureRows(sigs, defaultSigId)}</div>
           <button type="button" onclick="CasePMEmailSettingsUI.addSignature()" class="mt-1 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md text-sm text-zinc-200">
             <i class="fa-solid fa-plus mr-1"></i> Add Signature
           </button>
           <p class="text-[10px] text-zinc-500 mt-3">Tip: Drawn signatures for PDFs and submittals are managed separately under <strong class="text-zinc-400">User Management → Signature &amp; Certificate</strong>.</p>
-        `)}
+        `) : ''}
 
-        ${section('Vacation Responder / Out of Office', `
+        ${!isCompany ? section('Vacation Responder / Out of Office', `
           <div class="mb-3">${checkbox('es_vacationEnabled', 'Enable vacation auto-reply', s.vacationEnabled)}</div>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             ${field('es_vacationStart', 'Start date', input('es_vacationStart', 'date', s.vacationStart))}
@@ -160,23 +187,23 @@
             <div class="md:col-span-2">${field('es_vacationMessage', 'Auto-reply message', `<textarea id="es_vacationMessage" rows="3" class="email-field-input">${s.vacationMessage || ''}</textarea>`)}</div>
             <div class="md:col-span-2">${checkbox('es_vacationInternalOnly', 'Internal auto-reply only (Case PM)', s.vacationInternalOnly)}</div>
           </div>
-        `)}
+        `) : ''}
 
-        ${section('Junk, Blocked & Safe Senders', `
+        ${!isCompany ? section('Junk, Blocked & Safe Senders', `
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             ${field('es_junkLevel', 'Junk filtering level', select('es_junkLevel', [{v:'low',t:'Low'},{v:'standard',t:'Standard'},{v:'high',t:'High'},{v:'strict',t:'Strict'}], s.junkLevel))}
             <div>${checkbox('es_blockRemoteImages', 'Block remote images (privacy)', s.blockRemoteImages)}</div>
           </div>
           <p class="text-xs text-zinc-500 mt-2">Manage blocked and safe senders from the Mail toolbar → Report / Settings.</p>
-        `)}
+        `) : ''}
 
-        ${section('Delegation & Shared Mailboxes (Outlook)', `
+        ${!isCompany ? section('Delegation & Shared Mailboxes (Outlook)', `
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             ${field('es_sharedMailboxes', 'Shared mailboxes (comma-separated)', input('es_sharedMailboxes', 'text', (s.sharedMailboxes || []).join(', '), 'estimating@casepm.com, safety@casepm.com'))}
             ${field('es_delegates', 'Delegates who can send on your behalf', input('es_delegates', 'text', (s.delegates || []).join(', ')))}
             ${field('es_sendAsAddresses', 'Send As addresses', input('es_sendAsAddresses', 'text', (s.sendAsAddresses || []).join(', ')))}
           </div>
-        `)}
+        `) : ''}
 
         ${section('Internal Communications (Case PM)', `
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -187,15 +214,15 @@
           <p class="text-xs text-zinc-500 mt-2">Approvals, @mentions, schedule/budget alerts, and team messages appear in the Internal workspace.</p>
         `)}
 
-        ${section('Keyboard & Accessibility', `
+        ${!isCompany ? section('Keyboard & Accessibility', `
           <div class="text-xs text-zinc-400 space-y-1">
             ${checkbox('es_keyboardShortcuts', 'Enable keyboard shortcuts', s.keyboardShortcuts)}
             <p class="mt-2"><strong class="text-zinc-300">Shortcuts:</strong> C = Compose · R = Reply · E = Archive · # = Delete · / = Search</p>
           </div>
-        `)}
+        `) : ''}
 
         <div class="flex justify-end gap-3 pt-2">
-          <button type="button" onclick="CasePMEmailSettingsUI.save()" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold text-white">Save Email Settings</button>
+          <button type="button" onclick="CasePMEmailSettingsUI.save()" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold text-white">${isCompany ? 'Save Company Email' : 'Save Mailbox Settings'}</button>
         </div>
       </div>`;
   }
@@ -308,49 +335,107 @@
     render(lastContainerId);
   }
 
-  function save() {
+  async function save() {
     saveSignaturesFromUI();
     const data = collect();
-    const merged = { ...S(), ...data };
-    localStorage.setItem('casepm_email_settings', JSON.stringify(merged));
-    if (global.CasePMEmail) global.CasePMEmail.saveSettings(data);
-    else global.CasePMEmailSettings = merged;
-    pushEmailToServer(merged);
-    global.dispatchEvent(new CustomEvent('casepm-email-settings-changed', { detail: merged }));
-    alert('Email settings saved and synced with Program Settings.');
-    if (global.CasePMEmail) global.CasePMEmail.refresh?.();
+    const isCompany = renderOptions.mode === 'company';
+    try {
+      if (isCompany) {
+        const res = await fetch('/api/program-settings/email', {
+          method: 'PUT',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || res.statusText);
+        global.CasePMEmailSettings = { ...(global.CasePMEmailSettings || {}), ...json.email };
+      } else {
+        const uid = renderOptions.userId;
+        const path = uid ? `/api/email/users/${uid}/settings` : '/api/email/users/me/settings';
+        const merged = { ...S(), ...data };
+        const res = await fetch(path, {
+          method: 'PUT',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ settings: merged }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || res.statusText);
+        localStorage.setItem('casepm_email_settings', JSON.stringify(merged));
+        if (global.CasePMEmail) global.CasePMEmail.saveSettings(merged);
+        else global.CasePMEmailSettings = merged;
+      }
+      global.dispatchEvent(new CustomEvent('casepm-email-settings-changed', { detail: data }));
+      if (global.CasePMDialog) global.CasePMDialog.alert(isCompany ? 'Company workflow email saved.' : 'Mailbox settings saved.', 'success');
+      else alert(isCompany ? 'Company workflow email saved.' : 'Mailbox settings saved.');
+      if (global.CasePMEmail) global.CasePMEmail.refresh?.();
+    } catch (err) {
+      if (global.CasePMDialog) global.CasePMDialog.alert(err.message || 'Could not save email settings.', 'error');
+      else alert(err.message || 'Could not save email settings.');
+    }
   }
 
   async function pushEmailToServer(settings) {
-    try {
-      await fetch('/api/program-settings/email', {
-        method: 'PUT',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings),
-      });
-    } catch (_) { /* admin may be offline */ }
+    if (!settings) return;
+    await fetch('/api/program-settings/email', {
+      method: 'PUT',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
   }
 
-  async function loadFromServer() {
+  async function loadFromServer(options) {
+    if (options) setRenderOptions(options);
+    const isCompany = renderOptions.mode === 'company';
     try {
-      const res = await fetch('/api/program-settings/email', { credentials: 'same-origin' });
-      if (!res.ok) return null;
-      const json = await res.json();
-      const email = json.email;
-      if (email && typeof email === 'object' && Object.keys(email).length) {
-        localStorage.setItem('casepm_email_settings', JSON.stringify(email));
-        if (global.CasePMEmail) global.CasePMEmail.saveSettings(email);
-        else global.CasePMEmailSettings = email;
-        return email;
+      if (isCompany) {
+        const res = await fetch('/api/program-settings/email', { credentials: 'same-origin' });
+        if (!res.ok) return null;
+        const json = await res.json();
+        const email = json.email;
+        if (email && typeof email === 'object') {
+          global.CasePMEmailSettings = email;
+          return email;
+        }
+      } else {
+        const uid = renderOptions.userId;
+        const path = uid ? `/api/email/users/${uid}/settings` : '/api/email/users/me/settings';
+        const connPath = uid ? `/api/email/users/${uid}/connection` : '/api/email/users/me/connection';
+        const [settingsRes, connRes] = await Promise.all([
+          fetch(path, { credentials: 'same-origin' }),
+          fetch(connPath, { credentials: 'same-origin' }),
+        ]);
+        let settings = {};
+        if (settingsRes.ok) {
+          const json = await settingsRes.json();
+          settings = json.settings || {};
+        }
+        if (connRes.ok) {
+          const json = await connRes.json();
+          renderOptions.connection = json.connection || null;
+          if (json.connection?.connected) {
+            settings.microsoftConnected = true;
+            settings.provider = json.connection.provider || 'microsoft';
+            settings.emailAddress = json.connection.email_address || settings.emailAddress;
+            settings.displayName = json.connection.display_name || settings.displayName;
+          }
+        }
+        if (Object.keys(settings).length) {
+          if (!renderOptions.admin) localStorage.setItem('casepm_email_settings', JSON.stringify(settings));
+          if (global.CasePMEmail) global.CasePMEmail.saveSettings(settings);
+          else global.CasePMEmailSettings = settings;
+          return settings;
+        }
       }
     } catch (_) {}
     return null;
   }
 
-  async function ensureLoaded() {
-    const server = await loadFromServer();
-    if (!server) {
+  async function ensureLoaded(options) {
+    const server = await loadFromServer(options);
+    if (!server && (!options || options.mode !== 'company')) {
       const local = loadFromStorage();
       if (local && Object.keys(local).length) {
         if (global.CasePMEmail) global.CasePMEmail.saveSettings(local);
@@ -361,17 +446,54 @@
   }
 
   function connectGoogle() {
-    alert('Google OAuth connection will open in production. For now, enter IMAP/SMTP credentials below and save.');
+    if (global.CasePMDialog) global.CasePMDialog.alert('Google Gmail OAuth is planned for a future release. Use IMAP/SMTP credentials below or connect Microsoft Outlook.', 'info');
+    else alert('Google Gmail OAuth is planned for a future release.');
   }
 
-  function connectMicrosoft() {
-    alert('Microsoft 365 OAuth connection will open in production. For now, enter SMTP/IMAP credentials below and save.');
+  async function connectMicrosoft() {
+    const uid = renderOptions.userId;
+    const params = new URLSearchParams();
+    if (uid) params.set('user_id', String(uid));
+    params.set('return_to', window.location.pathname + window.location.search);
+    try {
+      const res = await fetch(`/api/email/oauth/microsoft/start?${params}`, { credentials: 'same-origin' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const setup = json.setup ? `\n\nSet environment variables:\n${(json.setup.required_env || []).join('\n')}` : '';
+        throw new Error((json.error || res.statusText) + setup);
+      }
+      if (json.authorization_url) {
+        window.location.href = json.authorization_url;
+        return;
+      }
+      throw new Error('No authorization URL returned.');
+    } catch (err) {
+      if (global.CasePMDialog) global.CasePMDialog.alert(err.message || 'Could not start Microsoft sign-in.', 'error');
+      else alert(err.message || 'Could not start Microsoft sign-in.');
+    }
   }
 
-  function testConnection() {
+  async function testConnection() {
     const s = collect();
-    if (!s.smtpHost && !s.imapHost) { alert('Enter at least SMTP or IMAP server details.'); return; }
-    alert(`Connection test simulated OK for ${s.emailAddress || 'account'}.\nSMTP: ${s.smtpHost}:${s.smtpPort}\nIMAP: ${s.imapHost || '—'}:${s.imapPort}`);
+    const uid = renderOptions.userId;
+    try {
+      const res = await fetch('/api/email/test-connection', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: uid, settings: s }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || res.statusText);
+      const msg = json.mode === 'microsoft_graph'
+        ? `Microsoft 365 connected as ${json.email_address || json.display_name || 'account'}.`
+        : (json.message || 'Connection settings look valid.');
+      if (global.CasePMDialog) global.CasePMDialog.alert(msg, 'success');
+      else alert(msg);
+    } catch (err) {
+      if (global.CasePMDialog) global.CasePMDialog.alert(err.message || 'Connection test failed.', 'error');
+      else alert(err.message || 'Connection test failed.');
+    }
   }
 
   function loadFromStorage() {
@@ -384,6 +506,7 @@
     render, save, collect, addSignature, removeSignature,
     connectGoogle, connectMicrosoft, testConnection,
     loadFromStorage, loadFromServer, ensureLoaded, pushEmailToServer,
+    setRenderOptions,
   };
 
   global.addEventListener('casepm-email-settings-changed', (ev) => {

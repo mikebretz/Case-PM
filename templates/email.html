@@ -141,8 +141,9 @@
 <script src="{{ url_for('static', filename='js/email-app.js') }}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', async function() {
+    window.CasePMCurrentUserId = {{ current_user.id }};
     if (window.CasePMEmailSettingsUI?.ensureLoaded) {
-        await CasePMEmailSettingsUI.ensureLoaded();
+        await CasePMEmailSettingsUI.ensureLoaded({ mode: 'user', userId: {{ current_user.id }} });
     }
     CasePMEmail.init({
         userName: {{ current_user.full_name|tojson }},
@@ -153,6 +154,15 @@ document.addEventListener('DOMContentLoaded', async function() {
         projectName: {{ (active_project.name if active_project else '')|tojson }},
         users: {{ users|default([])|tojson }}
     });
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('settings') === '1') {
+        setTimeout(() => CasePMEmail.showSettings?.(), 200);
+    }
+    if (params.get('outlook') === 'connected') {
+        CasePMDialog?.alert('Microsoft Outlook connected successfully.', 'success');
+    } else if (params.get('outlook') === 'error') {
+        CasePMDialog?.alert('Outlook connection failed: ' + (params.get('reason') || 'unknown error'), 'error');
+    }
 });
 </script>
 {% endblock %}

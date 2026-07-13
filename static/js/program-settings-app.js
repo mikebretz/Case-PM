@@ -702,6 +702,11 @@
           </div>
         </div>
         <div class="settings-card">
+          <div class="font-medium text-white mb-2">Microsoft 365 / Outlook</div>
+          <div class="text-xs">${integrationStatusBadge(i.microsoft_mail?.configured, i.microsoft_mail?.configured ? 'OAuth app configured' : 'Not configured')}</div>
+          ${i.microsoft_mail?.tenant_id ? `<div class="text-zinc-500 text-[10px] mt-1">Tenant: ${escapeHtml(i.microsoft_mail.tenant_id)}</div>` : ''}
+        </div>
+        <div class="settings-card">
           <div class="font-medium text-white mb-2">DocuSign</div>
           <div class="text-xs">${integrationStatusBadge(docusign.configured, docusign.configured ? 'Configured' : 'Not configured')}</div>
           ${docusign.base_url ? `<div class="text-xs text-zinc-500 mt-1">${escapeHtml(docusign.base_url)}</div>` : ''}
@@ -896,6 +901,127 @@
     CasePMDialog?.alert('Security settings saved. Restart the server if you changed HTTPS/proxy options.', 'success');
   }
 
+  let emailAdminUsers = [];
+  let emailAdminSelectedUserId = null;
+
+  function renderEmailConnectionCard(connection, user) {
+    const host = document.getElementById('emailUserConnectionCard');
+    if (!host) return;
+    if (!user) {
+      host.innerHTML = '<div class="text-zinc-500 text-xs">Select a user.</div>';
+      return;
+    }
+    if (connection?.connected) {
+      host.innerHTML = `
+        <div class="text-emerald-300 font-medium text-sm"><i class="fa-brands fa-microsoft mr-2"></i>Outlook connected</div>
+        <div class="text-zinc-300">${escapeHtml(connection.display_name || user.name)}</div>
+        <div class="text-zinc-500 text-xs font-mono">${escapeHtml(connection.email_address || user.email)}</div>
+        ${connection.last_sync_at ? `<div class="text-zinc-600 text-[10px] mt-1">Last sync ${escapeHtml(connection.last_sync_at.replace('T', ' ').slice(0, 19))}</div>` : ''}`;
+    } else {
+      host.innerHTML = `
+        <div class="text-zinc-400 text-sm">Not connected to Microsoft 365</div>
+        <div class="text-zinc-500 text-xs">Login email: ${escapeHtml(user.email)}</div>
+        <div class="text-zinc-600 text-[10px] mt-1">Use Connect Outlook to sign in as this user (admin-assisted setup).</div>`;
+    }
+  }
+
+  async function loadEmailMailboxAccessList(userId) {
+    const host = document.getElementById('emailMailboxAccessList');
+    if (!host || !userId) {
+      if (host) host.textContent = 'Select a user to view delegates.';
+      return;
+    }
+    try {
+      const json = await api(`/api/email/mailbox-access?owner_user_id=${userId}`);
+      const rows = json.access || [];
+      if (!rows.length) {
+        host.innerHTML = '<span class="text-zinc-500">No delegated access configured.</span>';
+        return;
+      }
+      host.innerHTML = rows.map((r) => `
+        <div class="py-1 border-b border-zinc-800 last:border-0">
+          <span class="text-zinc-300">${escapeHtml(r.grantee_name || r.grantee_email)}</span>
+          <span class="text-zinc-600"> · ${r.can_send ? 'can send' : 'read only'}</span>
+        </div>`).join('');
+    } catch (_) {
+      host.textContent = 'Could not load mailbox access.';
+    }
+  }
+
+  async function onEmailUserSelected() {
+    const picker = document.getElementById('emailAdminUserPicker');
+    const userId = parseInt(picker?.value || '', 10);
+    emailAdminSelectedUserId = userId || null;
+    const user = emailAdminUsers.find((u) => u.id === userId);
+    const title = document.getElementById('emailUserSettingsTitle');
+    if (title) title.textContent = user ? `Mailbox — ${user.name}` : 'Individual Mailbox Settings';
+    if (!userId || !user) {
+      renderEmailConnectionCard(null, null);
+      return;
+    }
+    const connJson = await api(`/api/email/users/${userId}/connection`);
+    renderEmailConnectionCard(connJson.connection, user);
+    await loadEmailMailboxAccessList(userId);
+    if (global.CasePMEmailSettingsUI) {
+      await CasePMEmailSettingsUI.loadFromServer({ mode: 'user', userId, admin: true });
+      CasePMEmailSettingsUI.render('programEmailUserBody', { mode: 'user', userId, admin: true, connection: connJson.connection });
+    }
+  }
+
+  async function renderEmailAdminTab() {
+    if (!global.CasePMEmailSettingsUI) return;
+    const summary = await api('/api/program-settings/email/users-summary');
+    emailAdminUsers = summary.users || [];
+    const picker = document.getElementById('emailAdminUserPicker');
+    if (picker) {
+      picker.innerHTML = emailAdminUsers.map((u) => {
+        const status = u.connection?.connected ? ' · Outlook ✓' : '';
+        return `<option value="${u.id}">${escapeHtml(u.name)} (${escapeHtml(u.email)})${status}</option>`;
+      }).join('');
+      if (!picker.value && emailAdminUsers.length) picker.value = String(emailAdminUsers[0].id);
+    }
+    await CasePMEmailSettingsUI.loadFromServer({ mode: 'company', admin: true });
+    CasePMEmailSettingsUI.render('programEmailCompanyBody', { mode: 'company', admin: true });
+    await onEmailUserSelected();
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('outlook') === 'connected') {
+      CasePMDialog?.alert('Microsoft Outlook connected successfully. Inbox sync has started.', 'success');
+    } else if (params.get('outlook') === 'error') {
+      CasePMDialog?.alert(`Outlook connection failed: ${params.get('reason') || 'unknown error'}`, 'error');
+    }
+  }
+
+  async function connectOutlookForUser() {
+    if (!emailAdminSelectedUserId) {
+      CasePMDialog?.alert('Select a user first.', 'warning');
+      return;
+    }
+    if (global.CasePMEmailSettingsUI) {
+      CasePMEmailSettingsUI.setRenderOptions({ mode: 'user', userId: emailAdminSelectedUserId, admin: true });
+      await CasePMEmailSettingsUI.connectMicrosoft();
+    }
+  }
+
+  async function disconnectOutlookForUser() {
+    if (!emailAdminSelectedUserId) return;
+    const ok = await CasePMDialog?.confirm('Disconnect this user from Microsoft 365?', { title: 'Disconnect Outlook', confirmLabel: 'Disconnect', danger: true });
+    if (!ok) return;
+    await api(`/api/email/users/${emailAdminSelectedUserId}/connection`, { method: 'DELETE' });
+    CasePMDialog?.alert('Outlook disconnected.', 'success');
+    await onEmailUserSelected();
+  }
+
+  async function syncOutlookForUser() {
+    if (!emailAdminSelectedUserId) return;
+    const json = await api('/api/email/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: emailAdminSelectedUserId }),
+    });
+    CasePMDialog?.alert(`Synced ${json.synced || 0} message(s). Mailbox now has ${json.total_messages || 0} total.`, 'success');
+    await onEmailUserSelected();
+  }
+
   global.CasePMProgramSettings = {
     loadCompanyForm, saveCompanyForm, loadBackupForm, saveBackupForm,
     runBackupNow, refreshBackupList, chooseBackupToInstall, installBackup,
@@ -911,5 +1037,7 @@
     loadRegionalForm, saveRegionalForm,
     loadWorkflowForm, saveWorkflowForm,
     loadIntegrationsPanel,
+    renderEmailAdminTab, onEmailUserSelected,
+    connectOutlookForUser, disconnectOutlookForUser, syncOutlookForUser,
   };
 })(window);
