@@ -3748,27 +3748,10 @@ def create_rfi():
 @app.route('/rfis/<int:rfi_id>/update-status', methods=['POST'])
 @login_required
 def update_rfi_status(rfi_id):
-    rfi = RFI.query.get_or_404(rfi_id)
-    new_status = request.form.get('status')
-
-    if new_status:
-        old_status = rfi.status
-        rfi.status = new_status
-        db.session.commit()
-
-        log = AuditLog(
-            user_id=current_user.id,
-            action='Updated RFI Status',
-            target_type='RFI',
-            target_id=rfi.id,
-            details=f"Changed status from '{old_status}' to '{new_status}'"
-        )
-        db.session.add(log)
-        db.session.commit()
-
-        return jsonify({'success': True, 'new_status': new_status})
-
-    return jsonify({'success': False, 'message': 'No status provided'}), 400
+    return jsonify({
+        'success': False,
+        'message': 'This endpoint is disabled. Use POST /api/rfis/<id>/workflow instead.',
+    }), 410
 
 
 # ==================== RFI REST API ====================
@@ -3828,7 +3811,9 @@ def api_create_rfi():
         subject = (body.get('subject') or '').strip()
         if not subject:
             return jsonify({'error': 'subject required'}), 400
-        status = body.get('status') or 'Draft'
+        status = 'Draft'
+        if body.get('create_as_open'):
+            status = 'Open'
         rfi = RFI(
             project_id=int(project_id),
             number=generate_next_number('RFI', RFI, doc_type='rfi'),
@@ -3840,7 +3825,7 @@ def api_create_rfi():
             created_by_id=current_user.id,
             ball_in_court_role='RFI Manager' if status == 'Draft' else 'Assignee',
         )
-        apply_rfi_fields(rfi, body)
+        apply_rfi_fields(rfi, body, is_create=True)
         if body.get('create_as_open'):
             rfi.status = 'Open'
             rfi.submitted_at = datetime.utcnow()
@@ -3857,8 +3842,14 @@ def api_create_rfi():
 @login_required
 def api_update_rfi(rfi_id):
     from rfi_persistence import apply_rfi_fields, rfi_to_dict, get_linked_records
+    from financial_security import strip_workflow_fields, require_financial_project_access, assert_mutable_rfi
     rfi = RFI.query.get_or_404(rfi_id)
-    body = request.get_json(silent=True) or {}
+    try:
+        require_financial_project_access(current_user, rfi.project_id, Project)
+        assert_mutable_rfi(rfi)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    body = strip_workflow_fields(request.get_json(silent=True) or {})
     apply_rfi_fields(rfi, body)
     db.session.commit()
     linked_cos, linked_pcos = get_linked_records(rfi.id, ChangeOrder, PotentialChangeOrder)
@@ -3870,7 +3861,12 @@ def api_update_rfi(rfi_id):
 def api_rfi_workflow(rfi_id):
     from rfi_persistence import rfi_to_dict, get_linked_records
     from workflow_responder import execute_rfi_action
+    from financial_security import require_financial_project_access
     rfi = RFI.query.get_or_404(rfi_id)
+    try:
+        require_financial_project_access(current_user, rfi.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     body = request.get_json(silent=True) or {}
     action = body.get('action')
     try:
@@ -4367,15 +4363,10 @@ def create_submittal():
 @app.route('/submittals/<int:submittal_id>/update-status', methods=['POST'])
 @login_required
 def update_submittal_status(submittal_id):
-    submittal = Submittal.query.get_or_404(submittal_id)
-    new_status = request.form.get('status')
-
-    if new_status:
-        submittal.status = new_status
-        db.session.commit()
-        return jsonify({'success': True, 'new_status': new_status})
-
-    return jsonify({'success': False}), 400
+    return jsonify({
+        'success': False,
+        'message': 'This endpoint is disabled. Use POST /api/submittals/<id>/workflow instead.',
+    }), 410
 
 
 @app.route('/api/submittals/<int:submittal_id>/attachments', methods=['POST'])
@@ -9262,12 +9253,18 @@ def api_share_link_approve(link_kind, link_id):
 @login_required
 def api_submittal_sync():
     """Upsert a submittal from the UI and return server id for attachments."""
+    from submittal_persistence import apply_submittal_fields
+    from financial_security import require_financial_project_access, assert_mutable_submittal
     body = request.get_json(silent=True) or {}
     project_id = body.get('project_id') or get_current_project_id()
     number = (body.get('number') or '').strip()
     description = (body.get('description') or body.get('subject') or 'Submittal').strip()
     if not project_id or not number:
         return jsonify({'error': 'project_id and number required'}), 400
+    try:
+        require_financial_project_access(current_user, int(project_id), Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     submittal = Submittal.query.filter_by(project_id=int(project_id), number=number).first()
     if not submittal:
         submittal = Submittal(
@@ -9275,22 +9272,49 @@ def api_submittal_sync():
             number=number,
             description=description[:200],
             spec_section=body.get('spec_section'),
-            status=body.get('status') or 'Pending',
+            status='Draft',
             priority=body.get('priority') or 'Medium',
             submitted_by=body.get('submitted_by') or _user_display_name(current_user.id),
             date=datetime.utcnow().date(),
         )
+        apply_submittal_fields(submittal, body, is_create=True)
         db.session.add(submittal)
     else:
-        submittal.description = description[:200]
-        if body.get('status'):
-            submittal.status = body['status']
-        if body.get('spec_section'):
-            submittal.spec_section = body['spec_section']
+        try:
+            assert_mutable_submittal(submittal)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+        apply_submittal_fields(submittal, body, is_create=False)
     db.session.commit()
     from rfi_persistence import _parse_json
     attachments = _parse_json(submittal.attachments_json, [])
-    return jsonify({'ok': True, 'submittal_id': submittal.id, 'number': submittal.number, 'attachments': attachments})
+    return jsonify({
+        'ok': True,
+        'submittal_id': submittal.id,
+        'number': submittal.number,
+        'status': submittal.status,
+        'attachments': attachments,
+    })
+
+
+@app.route('/api/submittals/<int:submittal_id>/workflow', methods=['POST'])
+@login_required
+def api_submittal_workflow(submittal_id):
+    from submittal_persistence import submittal_workflow_action
+    from financial_security import require_financial_project_access
+    submittal = Submittal.query.get_or_404(submittal_id)
+    try:
+        require_financial_project_access(current_user, submittal.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    body = request.get_json(silent=True) or {}
+    action = body.get('action')
+    try:
+        new_status = submittal_workflow_action(submittal, action, current_user, body)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    db.session.commit()
+    return jsonify({'ok': True, 'new_status': new_status, 'submittal_id': submittal.id})
 
 
 @app.route('/api/submittals/<int:submittal_id>/attachments', methods=['GET'])

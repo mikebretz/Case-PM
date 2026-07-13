@@ -1,0 +1,25 @@
+name: Financial workflow tests
+
+on:
+  push:
+    branches: [main, 'cursor/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  financial:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+      - name: Security unit tests
+        run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
+      - name: Pay app workflow tests
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Financial lifecycle simulation
+        run: python3 scripts/simulate_financial_project.py

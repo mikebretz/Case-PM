@@ -93,10 +93,15 @@ def register_change_event_routes(app, deps):
     @app.route('/api/change-events/<int:event_id>', methods=['PUT'])
     @login_required
     def api_update_change_event(event_id):
-        from change_event_persistence import apply_change_event_fields, change_event_to_dict, apply_contingency_release, apply_partial_budget_line, link_change_event_schedule_impact
+        from change_event_persistence import apply_change_event_fields, change_event_to_dict, apply_partial_budget_line
+        from financial_security import strip_workflow_fields, require_financial_project_access, assert_mutable_change_event
         ce = ChangeEvent.query.get_or_404(event_id)
-        body = deps['request'].get_json(silent=True) or {}
-        old_status = ce.status
+        try:
+            require_financial_project_access(current_user, ce.project_id, Project)
+            assert_mutable_change_event(ce)
+        except (ValueError, PermissionError) as exc:
+            return deps['jsonify']({'error': str(exc)}), 403
+        body = strip_workflow_fields(deps['request'].get_json(silent=True) or {})
         apply_change_event_fields(ce, body)
         if body.get('allocations'):
             for row in body['allocations']:
@@ -105,10 +110,6 @@ def register_change_event_routes(app, deps):
                     row.get('cost_code'), row.get('cost_type'), row.get('amount'),
                     row.get('description'), db,
                 )
-        if ce.status == 'Approved' and old_status != 'Approved':
-            if float(getattr(ce, 'contingency_release_amount', 0) or 0):
-                apply_contingency_release(BudgetProjectState, ce.project_id, ce.contingency_release_amount, db)
-            link_change_event_schedule_impact(ScheduleData, Project, db, ce.project_id, ce)
         db.session.commit()
         return deps['jsonify']({'ok': True, 'change_event': change_event_to_dict(ce)})
 
@@ -119,8 +120,13 @@ def register_change_event_routes(app, deps):
             change_event_workflow_action, change_event_to_dict,
             apply_contingency_release, link_change_event_schedule_impact,
         )
+        from financial_security import require_financial_project_access
         from sage_service import create_and_process_sage_event
         ce = ChangeEvent.query.get_or_404(event_id)
+        try:
+            require_financial_project_access(current_user, ce.project_id, Project)
+        except (ValueError, PermissionError) as exc:
+            return deps['jsonify']({'error': str(exc)}), 403
         body = deps['request'].get_json(silent=True) or {}
         action = body.get('action')
         old_status = ce.status
@@ -185,8 +191,16 @@ def register_change_event_routes(app, deps):
     @login_required
     def api_update_rfq(rfq_id):
         from change_event_persistence import apply_rfq_fields, rfq_to_dict, save_generic_allocations
+        from financial_security import strip_workflow_fields, require_financial_project_access, assert_mutable_rfq
         rfq = SubcontractorRFQ.query.get_or_404(rfq_id)
-        body = deps['request'].get_json(silent=True) or {}
+        try:
+            require_financial_project_access(current_user, rfq.project_id, Project)
+            assert_mutable_rfq(rfq)
+        except (ValueError, PermissionError) as exc:
+            return deps['jsonify']({'error': str(exc)}), 403
+        body = strip_workflow_fields(deps['request'].get_json(silent=True) or {})
+        for key in ('quoted_amount', 'quoted_at', 'quoted_by'):
+            body.pop(key, None)
         apply_rfq_fields(rfq, body)
         if body.get('allocations') is not None:
             save_generic_allocations(RFQAllocation, 'rfq_id', rfq.id, body['allocations'], db)
@@ -198,8 +212,13 @@ def register_change_event_routes(app, deps):
     @login_required
     def api_rfq_workflow(rfq_id):
         from change_event_persistence import rfq_workflow_action, rfq_to_dict, notify_rfq_subcontractor, promote_rfq_to_cpco
+        from financial_security import require_financial_project_access
         from sage_service import create_and_process_sage_event
         rfq = SubcontractorRFQ.query.get_or_404(rfq_id)
+        try:
+            require_financial_project_access(current_user, rfq.project_id, Project)
+        except (ValueError, PermissionError) as exc:
+            return deps['jsonify']({'error': str(exc)}), 403
         body = deps['request'].get_json(silent=True) or {}
         action = body.get('action')
         allocs = RFQAllocation.query.filter_by(rfq_id=rfq.id).all()
@@ -278,7 +297,7 @@ def register_change_event_routes(app, deps):
                 return deps['jsonify']({'error': 'Quote amount is required.'}), 400
             allocs = [{'cost_code': body.get('cost_code') or '01-0000', 'cost_type': 'Subcontract', 'amount': amt, 'quoted_amount': amt}]
         try:
-            new_status, _final = rfq_workflow_action(rfq, 'quote', current_user, allocs)
+            new_status, _final = rfq_workflow_action(rfq, 'quote', current_user, allocs, portal_quote=True)
         except ValueError as exc:
             return deps['jsonify']({'error': str(exc)}), 400
         save_generic_allocations(RFQAllocation, 'rfq_id', rfq.id, allocs, db)

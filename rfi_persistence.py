@@ -135,16 +135,22 @@ def _is_overdue(rfi):
     return due < date.today()
 
 
-def apply_rfi_fields(rfi, data):
+def apply_rfi_fields(rfi, data, *, is_create=False):
     simple = (
-        'subject', 'question', 'priority', 'status', 'drawing_reference', 'spec_reference',
+        'subject', 'question', 'priority', 'drawing_reference', 'spec_reference',
         'from_party', 'to_party', 'received_from_company', 'received_from_contact',
-        'responsible_contractor', 'rfi_manager_name', 'ball_in_court_role', 'official_answer',
+        'responsible_contractor', 'rfi_manager_name', 'official_answer',
         'notes', 'schedule_impact_label', 'location_description', 'discipline', 'linked_pco_id',
     )
     for key in simple:
         if data.get(key) is not None:
             setattr(rfi, key, data[key])
+    if data.get('status') is not None or data.get('ball_in_court_role') is not None:
+        if is_create and data.get('status') in ('Draft', 'Open'):
+            rfi.status = data['status']
+            if data.get('ball_in_court_role') is not None:
+                rfi.ball_in_court_role = data['ball_in_court_role']
+        # else workflow only
     if data.get('date') is not None:
         rfi.date = _parse_date(data['date'])
     if data.get('due_date') is not None:

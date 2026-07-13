@@ -159,5 +159,42 @@ class ChangeOrderNumberScopeTests(unittest.TestCase):
             db.session.commit()
 
 
+class RfqSecurityTests(unittest.TestCase):
+    def test_rfq_reject_requires_ball_in_court(self):
+        from change_event_persistence import rfq_workflow_action
+        from types import SimpleNamespace
+        rfq = SimpleNamespace(
+            status='Quoted', ball_in_court_role='Project Manager', quoted_amount=1000,
+        )
+        sub = SimpleNamespace(id=1, role='Subcontractor Accountant')
+        with self.assertRaises(ValueError):
+            rfq_workflow_action(rfq, 'reject', sub)
+
+    def test_apply_rfq_fields_ignores_quoted_amount(self):
+        from change_event_persistence import apply_rfq_fields
+        from types import SimpleNamespace
+        rfq = SimpleNamespace(quoted_amount=5000.0, status='Quoted')
+        apply_rfq_fields(rfq, {'quoted_amount': 1.0})
+        self.assertEqual(rfq.quoted_amount, 5000.0)
+
+
+class RfiSecurityTests(unittest.TestCase):
+    def test_apply_rfi_fields_ignores_status_on_update(self):
+        from rfi_persistence import apply_rfi_fields
+        from types import SimpleNamespace
+        rfi = SimpleNamespace(status='Closed', ball_in_court_role=None)
+        apply_rfi_fields(rfi, {'status': 'Void'})
+        self.assertEqual(rfi.status, 'Closed')
+
+
+class SubmittalSecurityTests(unittest.TestCase):
+    def test_apply_submittal_fields_ignores_status_on_update(self):
+        from submittal_persistence import apply_submittal_fields
+        from types import SimpleNamespace
+        sub = SimpleNamespace(status='Closed', ball_in_court=None)
+        apply_submittal_fields(sub, {'status': 'Draft'}, is_create=False)
+        self.assertEqual(sub.status, 'Closed')
+
+
 if __name__ == '__main__':
     unittest.main()

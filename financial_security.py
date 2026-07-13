@@ -39,6 +39,21 @@ IMMUTABLE_CO_STATUSES = frozenset({'Approved', 'Rejected', 'Void'})
 
 IMMUTABLE_COMMITMENT_STATUSES = frozenset({'Approved', 'Partially Invoiced', 'Closed', 'Void', 'Rejected'})
 
+IMMUTABLE_CHANGE_EVENT_STATUSES = frozenset({'Approved', 'Void'})
+
+IMMUTABLE_RFI_STATUSES = frozenset({'Closed', 'Void'})
+
+IMMUTABLE_SUBMITTAL_STATUSES = frozenset({'Closed', 'Rejected'})
+
+IMMUTABLE_RFQ_STATUSES = frozenset({'Accepted', 'Rejected'})
+
+# RFQ quote fields may only change via /workflow quote or portal-quote.
+RFQ_QUOTE_WORKFLOW_FIELDS = frozenset({
+    'quoted_amount',
+    'quoted_at',
+    'quoted_by',
+})
+
 
 def strip_workflow_fields(data: dict | None) -> dict:
     """Remove workflow-controlled keys from a request payload."""
@@ -96,6 +111,26 @@ def assert_mutable_commitment(commitment, *, developer_unlock=False):
         raise ValueError(f'Commitments in status {commitment.status!r} cannot be edited via save.')
 
 
+def assert_mutable_change_event(ce, *, developer_unlock=False):
+    if ce.status in IMMUTABLE_CHANGE_EVENT_STATUSES and not developer_unlock:
+        raise ValueError(f'Change events in status {ce.status!r} cannot be edited via save; use /workflow.')
+
+
+def assert_mutable_rfi(rfi, *, developer_unlock=False):
+    if rfi.status in IMMUTABLE_RFI_STATUSES and not developer_unlock:
+        raise ValueError(f'RFIs in status {rfi.status!r} cannot be edited via save; use /workflow.')
+
+
+def assert_mutable_rfq(rfq, *, developer_unlock=False):
+    if rfq.status in IMMUTABLE_RFQ_STATUSES and not developer_unlock:
+        raise ValueError(f'RFQs in status {rfq.status!r} cannot be edited via save; use /workflow.')
+
+
+def assert_mutable_submittal(submittal, *, developer_unlock=False):
+    if submittal.status in IMMUTABLE_SUBMITTAL_STATUSES and not developer_unlock:
+        raise ValueError(f'Submittals in status {submittal.status!r} cannot be edited via save; use /workflow.')
+
+
 def assert_co_allocation_edit_allowed(co, body, *, developer_unlock=False):
     if body.get('allocations') is None:
         return
@@ -130,9 +165,10 @@ def authoritative_commitment_amount(commitment, CommitmentAllocation=None):
     return abs(float(commitment.current_amount or commitment.original_amount or 0))
 
 
-def authoritative_cor_amount(cor, ChangeEventAllocation=None):
-    if ChangeEventAllocation is not None and getattr(cor, 'id', None):
-        rows = ChangeEventAllocation.query.filter_by(cor_id=cor.id).all()
+def authoritative_cor_amount(cor, ChangeEventAllocation=None, CORAllocation=None):
+    alloc_model = CORAllocation or ChangeEventAllocation
+    if alloc_model is not None and getattr(cor, 'id', None):
+        rows = alloc_model.query.filter_by(cor_id=cor.id).all()
         if rows:
             return abs(sum(float(r.amount or 0) for r in rows))
     return abs(float(getattr(cor, 'amount', 0) or 0))

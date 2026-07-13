@@ -359,8 +359,8 @@ def apply_rfq_fields(rfq, data):
         pass  # workflow only
     if data.get('change_event_id') is not None:
         rfq.change_event_id = int(data['change_event_id']) if data['change_event_id'] else None
-    if data.get('quoted_amount') is not None:
-        rfq.quoted_amount = float(data['quoted_amount'])
+    if data.get('quoted_amount') is not None or data.get('quoted_at') is not None:
+        pass  # workflow only — use /workflow quote or portal-quote
     if data.get('due_date') is not None and data['due_date']:
         try:
             rfq.due_date = datetime.strptime(str(data['due_date'])[:10], '%Y-%m-%d').date()
@@ -408,12 +408,15 @@ def save_generic_allocations(AllocationModel, parent_field, parent_id, allocatio
         db.session.add(row)
 
 
-def rfq_workflow_action(rfq, action, user, allocations=None):
-    from co_persistence import user_can_act_on_ball_in_court, validate_allocations
+def rfq_workflow_action(rfq, action, user, allocations=None, *, portal_quote=False):
+    from co_persistence import user_can_act_on_ball_in_court
+    from financial_security import workflow_reject_authorized
     action = (action or '').lower()
     if action == 'send':
         if rfq.status != 'Draft':
             raise ValueError('Only draft RFQs can be sent')
+        if not user_can_act_on_ball_in_court(user, rfq.ball_in_court_role or 'Creator'):
+            raise ValueError('Cannot send this RFQ')
         if not (getattr(rfq, 'linked_commitment_ref', None) or '').strip() and not rfq.company_id:
             raise ValueError('RFQ requires a subcontractor or linked commitment')
         rfq.status = 'Sent'
@@ -422,6 +425,14 @@ def rfq_workflow_action(rfq, action, user, allocations=None):
     if action == 'quote':
         if rfq.status not in ('Sent', 'Draft'):
             raise ValueError('RFQ is not open for quoting')
+        if rfq.status == 'Sent':
+            if portal_quote:
+                if not user_can_act_on_ball_in_court(user, 'Subcontractor'):
+                    raise ValueError('Only the assigned subcontractor can quote a sent RFQ')
+            elif not user_can_act_on_ball_in_court(user, rfq.ball_in_court_role or 'Subcontractor'):
+                raise ValueError('Cannot quote this RFQ — ball is with subcontractor')
+        elif not user_can_act_on_ball_in_court(user, rfq.ball_in_court_role or 'Creator'):
+            raise ValueError('Cannot quote this RFQ')
         rows = allocations or []
         total = sum(float(r.get('quoted_amount') or r.get('amount') or 0) for r in rows)
         if total <= 0 and not float(rfq.quoted_amount or 0):
@@ -441,6 +452,10 @@ def rfq_workflow_action(rfq, action, user, allocations=None):
         rfq.ball_in_court_role = None
         return rfq.status, True
     if action == 'reject':
+        workflow_reject_authorized(
+            user, rfq.ball_in_court_role or 'Project Manager',
+            user_can_act_fn=user_can_act_on_ball_in_court,
+        )
         rfq.status = 'Rejected'
         rfq.ball_in_court_role = None
         return rfq.status, False
