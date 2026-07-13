@@ -25,6 +25,7 @@
     daily_logs:    { label: 'Recent Daily Logs',  icon: 'fa-clipboard-list',      default: true,  h: 2 },
     schedule:      { label: 'Key Tasks',          icon: 'fa-calendar-week',       default: true,  h: 2 },
     commitments:   { label: 'Commitments',        icon: 'fa-file-contract',       default: true,  h: 1 },
+    estimating:    { label: 'Estimating',         icon: 'fa-calculator',            default: true,  h: 1 },
     change_orders: { label: 'Change Orders',      icon: 'fa-arrows-rotate',       default: true,  h: 1 },
     safety:        { label: 'Safety This Week',   icon: 'fa-hard-hat',            default: true,  h: 1 },
     progress:      { label: 'Schedule Progress',  icon: 'fa-bars-progress',       default: true,  h: 2 },
@@ -339,6 +340,20 @@
     </div>`;
   }
 
+  function renderEstimating(d) {
+    const e = d.estimating || {};
+    const u = ctx.urls || {};
+    return `<div class="dash-tile-body space-y-3">
+      <div class="grid grid-cols-2 gap-3 text-center">
+        <div class="p-3 bg-zinc-950 rounded-md border border-zinc-800"><div class="text-lg font-semibold font-mono">${esc(e.active_estimate || '—')}</div><div class="text-xs text-zinc-400">Active est.</div></div>
+        <div class="p-3 bg-zinc-950 rounded-md border border-zinc-800"><div class="text-2xl font-semibold text-sky-400">${e.open_packages ?? 0}</div><div class="text-xs text-zinc-400">Open RFPs</div></div>
+      </div>
+      <div class="text-sm flex justify-between"><span class="text-zinc-400">Loaded total</span><span class="font-medium">${fmtMoney(e.active_total)}</span></div>
+      <div class="text-sm flex justify-between"><span class="text-zinc-400">Quotes / due week</span><span>${e.quotes_received ?? 0} · ${e.due_this_week ?? 0}</span></div>
+      <a href="${esc(u.estimating)}" class="text-xs text-emerald-400">Open estimating →</a>
+    </div>`;
+  }
+
   function renderChangeOrders(d) {
     const c = d.change_orders || {};
     const erp = d.erp_queue || {};
@@ -494,6 +509,7 @@
     daily_logs: (d) => renderDailyLogs(d),
     schedule: (d) => renderSchedule(d),
     commitments: (d) => renderCommitments(d),
+    estimating: (d) => renderEstimating(d),
     change_orders: (d) => renderChangeOrders(d),
     safety: (d) => renderSafety(d),
     progress: (d) => renderProgress(d),

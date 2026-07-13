@@ -26,9 +26,34 @@
     return json;
   }
 
-  function toast(msg) {
-    if (global.CasePMDialog?.alert) global.CasePMDialog.alert(msg);
-    else alert(msg);
+  function openDialog(el) {
+    if (!el) return;
+    if (global.CasePMDialog?.open) global.CasePMDialog.open(el);
+    else el.showModal();
+  }
+
+  function closeDialog(el) {
+    if (!el) return;
+    if (typeof el.close === 'function') el.close();
+  }
+
+  async function estAlert(message, type = 'info') {
+    if (global.CasePMDialog?.alert) return global.CasePMDialog.alert(message, type);
+    alert(message);
+  }
+
+  async function estConfirm(message, options = {}) {
+    if (global.CasePMDialog?.confirm) return global.CasePMDialog.confirm(message, options);
+    return confirm(message);
+  }
+
+  async function estPrompt(message, defaultValue = '', options = {}) {
+    if (global.CasePMDialog?.prompt) return global.CasePMDialog.prompt(message, defaultValue, options);
+    return prompt(message, defaultValue);
+  }
+
+  function toast(msg, type = 'success') {
+    estAlert(msg, type);
   }
 
   function setTab(tab) {
@@ -194,8 +219,8 @@
           body: JSON.stringify({ invitation_id: parseInt(btn.dataset.inv, 10) }),
         });
         await loadCurrent();
-        toast('Vendor awarded for this package.');
-      } catch (e) { toast(e.message); }
+        await estAlert('Vendor awarded for this package.', 'success');
+      } catch (e) { estAlert(e.message, 'error'); }
     }));
   }
 
@@ -206,8 +231,8 @@
         body: JSON.stringify({ auto_match: autoMatch, send_notifications: true }),
       });
       await loadCurrent();
-      toast(`Sent ${json.sent} invitation(s).`);
-    } catch (e) { toast(e.message); }
+      await estAlert(`Sent ${json.sent} invitation(s).`, 'success');
+    } catch (e) { estAlert(e.message, 'error'); }
   }
 
   async function loadTakeoffPreview() {
@@ -262,7 +287,7 @@
   async function loadEstimates() {
     const id = pid();
     if (!id) {
-      toast('Select a project first.');
+      await estAlert('Select a project first.', 'warning');
       return;
     }
     const json = await api(`/api/estimates?project_id=${id}`);
@@ -298,16 +323,27 @@
 
   async function createEstimate() {
     const id = pid();
-    if (!id) return toast('Select a project first.');
-    const title = prompt('Estimate title:', 'Project Estimate');
+    if (!id) return estAlert('Select a project first.', 'warning');
+    const modal = document.getElementById('estNewEstimateModal');
+    document.getElementById('estNewTitle').value = 'Project Estimate';
+    openDialog(modal);
+  }
+
+  async function submitNewEstimate(e) {
+    e.preventDefault();
+    const id = pid();
+    if (!id) return;
+    const title = document.getElementById('estNewTitle').value.trim();
     if (!title) return;
+    const estimate_type = document.getElementById('estNewType').value;
     const json = await api('/api/estimates', {
       method: 'POST',
-      body: JSON.stringify({ project_id: id, title }),
+      body: JSON.stringify({ project_id: id, title, estimate_type }),
     });
+    closeDialog(document.getElementById('estNewEstimateModal'));
     state.current = json.estimate;
     await loadEstimates();
-    toast(`Created ${json.estimate.number}`);
+    await estAlert(`Created ${json.estimate.number}`, 'success');
   }
 
   async function saveSummary() {
@@ -326,7 +362,7 @@
     };
     await api(`/api/estimates/${state.current.id}`, { method: 'PUT', body: JSON.stringify(body) });
     await loadCurrent();
-    toast('Estimate saved.');
+    await estAlert('Estimate saved.', 'success');
   }
 
   async function saveLines() {
@@ -334,7 +370,7 @@
     const lines = readWorksheetLines();
     await api(`/api/estimates/${state.current.id}`, { method: 'PUT', body: JSON.stringify({ lines }) });
     await loadCurrent();
-    toast('Worksheet saved.');
+    await estAlert('Worksheet saved.', 'success');
   }
 
   function addLine() {
@@ -357,21 +393,41 @@
     recalcWsFooter();
   }
 
-  async function importTakeoff() {
+  async function openTakeoffImport() {
+    if (!state.current?.id) return estAlert('Select or create an estimate first.', 'warning');
+    const countEl = document.getElementById('estTakeoffCount');
+    try {
+      const json = await api(`/api/estimates/${state.current.id}/takeoff-preview`);
+      const n = json.count || 0;
+      if (countEl) countEl.textContent = n ? `${n} takeoff item(s) available to import.` : 'No takeoff markups found on drawings.';
+      if (!n) return estAlert('No takeoff measurements found. Add measure/area markups in Drawings first.', 'warning');
+    } catch (e) {
+      if (countEl) countEl.textContent = '';
+    }
+    openDialog(document.getElementById('estTakeoffModal'));
+  }
+
+  async function submitTakeoffImport(e) {
+    e.preventDefault();
     if (!state.current?.id) return;
-    const costCode = prompt('Cost code for imported takeoff lines:', '01-000') || '01-000';
+    const costCode = document.getElementById('estTakeoffCostCode').value.trim() || '01-000';
     const json = await api(`/api/estimates/${state.current.id}/import-takeoff`, {
       method: 'POST',
       body: JSON.stringify({ cost_code: costCode }),
     });
+    closeDialog(document.getElementById('estTakeoffModal'));
     await loadCurrent();
-    toast(`Imported ${json.imported} takeoff line(s).`);
+    await estAlert(`Imported ${json.imported} takeoff line(s).`, 'success');
     setTab('worksheet');
   }
 
   async function awardToBudget() {
     if (!state.current?.id) return;
-    if (!confirm('Push this estimate to the project budget as original budget lines?')) return;
+    const ok = await estConfirm(
+      'Push this estimate to the project budget as original budget lines? Existing matching cost codes will be increased.',
+      { title: 'Award to Budget', confirmLabel: 'Push to Budget' },
+    );
+    if (!ok) return;
     const useBids = document.getElementById('estUseBidAwards')?.checked;
     const json = await api(`/api/estimates/${state.current.id}/award-to-budget`, {
       method: 'POST',
@@ -387,47 +443,64 @@
     if (global.CasePMBudgetSync?.reload) global.CasePMBudgetSync.reload();
   }
 
+  function bindModalClosers() {
+    document.querySelectorAll('.estModalClose').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-target');
+        closeDialog(document.getElementById(id));
+      });
+    });
+    const pkgCancel = document.getElementById('estPackageCancel');
+    const pkgCancelBtn = document.querySelector('.estPackageCancelBtn');
+    const closePkg = () => closeDialog(document.getElementById('estPackageModal'));
+    pkgCancel?.addEventListener('click', closePkg);
+    pkgCancelBtn?.addEventListener('click', closePkg);
+  }
+
   function bindEvents() {
+    bindModalClosers();
     document.querySelectorAll('#estTabBar button').forEach(btn => {
       btn.addEventListener('click', () => setTab(btn.dataset.tab));
     });
-    document.getElementById('estNewBtn')?.addEventListener('click', createEstimate);
+    document.getElementById('estNewBtn')?.addEventListener('click', () => createEstimate().catch(e => estAlert(e.message, 'error')));
+    document.getElementById('estNewEstimateForm')?.addEventListener('submit', e => submitNewEstimate(e).catch(err => estAlert(err.message, 'error')));
     document.getElementById('estEstimateSelect')?.addEventListener('change', async e => {
       state.current = { id: parseInt(e.target.value, 10) };
       await loadCurrent();
     });
-    document.getElementById('estSaveSummary')?.addEventListener('click', () => saveSummary().catch(e => toast(e.message)));
+    document.getElementById('estSaveSummary')?.addEventListener('click', () => saveSummary().catch(e => estAlert(e.message, 'error')));
     document.getElementById('estAddLine')?.addEventListener('click', addLine);
-    document.getElementById('estSaveLines')?.addEventListener('click', () => saveLines().catch(e => toast(e.message)));
+    document.getElementById('estSaveLines')?.addEventListener('click', () => saveLines().catch(e => estAlert(e.message, 'error')));
     document.getElementById('estLineSearch')?.addEventListener('input', () => renderWorksheet(state.current || { lines: [] }));
-    document.getElementById('estNewPackage')?.addEventListener('click', () => document.getElementById('estPackageModal')?.showModal());
-    document.getElementById('estPackageCancel')?.addEventListener('click', () => document.getElementById('estPackageModal')?.close());
+    document.getElementById('estNewPackage')?.addEventListener('click', () => openDialog(document.getElementById('estPackageModal')));
     document.getElementById('estPackageForm')?.addEventListener('submit', async e => {
       e.preventDefault();
       if (!state.current?.id) return;
       const fd = new FormData(e.target);
       const body = Object.fromEntries(fd.entries());
       await api(`/api/estimates/${state.current.id}/bid-packages`, { method: 'POST', body: JSON.stringify(body) });
-      document.getElementById('estPackageModal')?.close();
+      closeDialog(document.getElementById('estPackageModal'));
       e.target.reset();
       await loadCurrent();
       setTab('rfp');
-      toast('Bid package created.');
+      await estAlert('Bid package created.', 'success');
     });
-    document.getElementById('estRefreshTakeoff')?.addEventListener('click', () => loadTakeoffPreview().catch(e => toast(e.message)));
+    document.getElementById('estRefreshTakeoff')?.addEventListener('click', () => loadTakeoffPreview().catch(e => estAlert(e.message, 'error')));
     document.getElementById('estTakeoffSearch')?.addEventListener('input', () => loadTakeoffPreview().catch(() => {}));
-    document.getElementById('estImportTakeoff')?.addEventListener('click', () => importTakeoff().catch(e => toast(e.message)));
-    document.getElementById('estRefreshLeveling')?.addEventListener('click', () => renderLeveling().catch(e => toast(e.message)));
-    document.getElementById('estAwardBudget')?.addEventListener('click', () => awardToBudget().catch(e => toast(e.message)));
+    document.getElementById('estImportTakeoff')?.addEventListener('click', () => openTakeoffImport().catch(e => estAlert(e.message, 'error')));
+    document.getElementById('estTakeoffForm')?.addEventListener('submit', e => submitTakeoffImport(e).catch(err => estAlert(err.message, 'error')));
+    document.getElementById('estRefreshLeveling')?.addEventListener('click', () => renderLeveling().catch(e => estAlert(e.message, 'error')));
+    document.getElementById('estAwardBudget')?.addEventListener('click', () => awardToBudget().catch(e => estAlert(e.message, 'error')));
 
     const tab = new URLSearchParams(location.search).get('tab');
     if (tab) setTab(tab);
   }
 
   document.addEventListener('DOMContentLoaded', () => {
+    if (global.CasePMDialog?.initAllDialogs) global.CasePMDialog.initAllDialogs();
     bindEvents();
-    loadEstimates().catch(e => toast(e.message));
+    loadEstimates().catch(e => estAlert(e.message, 'error'));
   });
 
-  global.CasePMEstimating = { loadEstimates, setTab, state };
+  global.CasePMEstimating = { loadEstimates, setTab, state, loadCurrent, renderWorksheet, renderAll };
 })(window);

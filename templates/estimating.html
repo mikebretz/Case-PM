@@ -11,6 +11,7 @@ window.CASEPM_ESTIMATE_CTX = {
 </script>
 <script src="{{ url_for('static', filename='js/budget-sync.js') }}"></script>
 <script src="{{ url_for('static', filename='js/estimating-app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/estimating-features.js') }}"></script>
 
 <style>
 .est-page { display:flex; flex-direction:column; flex:1; min-height:0; width:100%; padding:1rem 1rem 0; overflow:hidden; box-sizing:border-box; }
@@ -25,6 +26,41 @@ window.CASEPM_ESTIMATE_CTX = {
 .level-grid { display:grid; gap:0.5rem; }
 .level-card { border:1px solid #3f3f46; border-radius:0.5rem; background:#18181b; padding:1rem; }
 .level-low { outline:2px solid rgba(16,185,129,0.5); }
+.est-modal {
+  border-radius: 6px !important;
+  margin: auto !important;
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  z-index: 100000 !important;
+  max-height: min(92vh, 900px);
+  overflow: hidden;
+}
+.est-modal[open] {
+  margin: auto !important;
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+}
+.est-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #3f3f46;
+  background: #141416;
+}
+.est-modal-body { padding: 1.25rem; overflow: auto; max-height: calc(92vh - 140px); }
+.est-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.875rem 1.25rem;
+  border-top: 1px solid #3f3f46;
+  background: #09090b;
+}
 </style>
 
 <div class="est-page">
@@ -34,6 +70,8 @@ window.CASEPM_ESTIMATE_CTX = {
       <div class="text-xs text-zinc-500 mt-0.5">Worksheet · RFPs · Takeoff · Bid leveling · Award → Budget</div>
     </div>
     <div class="flex items-center gap-2 flex-wrap">
+      <button type="button" id="estExportExcel" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm" title="Export worksheet Excel"><i class="fa-solid fa-file-excel"></i></button>
+      <label class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm cursor-pointer"><i class="fa-solid fa-file-import"></i><input type="file" id="estImportExcelInput" accept=".xlsx,.xls" class="hidden"></label>
       <select id="estEstimateSelect" class="bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm min-w-[200px]"></select>
       <button type="button" id="estNewBtn" class="px-4 py-2 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-sm font-semibold">
         <i class="fa-solid fa-plus mr-1"></i>New Estimate
@@ -56,7 +94,10 @@ window.CASEPM_ESTIMATE_CTX = {
     <button type="button" data-tab="rfp" class="px-4 py-2 text-sm border border-zinc-700 rounded-md text-zinc-400">Bid Packages / RFPs</button>
     <button type="button" data-tab="takeoff" class="px-4 py-2 text-sm border border-zinc-700 rounded-md text-zinc-400">Takeoff</button>
     <button type="button" data-tab="leveling" class="px-4 py-2 text-sm border border-zinc-700 rounded-md text-zinc-400">Bid Leveling</button>
+    <button type="button" data-tab="alternates" class="px-4 py-2 text-sm border border-zinc-700 rounded-md text-zinc-400">Alternates</button>
+    <button type="button" data-tab="library" class="px-4 py-2 text-sm border border-zinc-700 rounded-md text-zinc-400">Library</button>
     <button type="button" data-tab="award" class="px-4 py-2 text-sm border border-zinc-700 rounded-md text-zinc-400">Award & Budget</button>
+    <button type="button" data-tab="tools" class="px-4 py-2 text-sm border border-zinc-700 rounded-md text-zinc-400">Tools</button>
   </div>
 
   <div id="estPanelSummary" class="est-panel flex-1 min-h-0 overflow-auto mb-20">
@@ -89,6 +130,10 @@ window.CASEPM_ESTIMATE_CTX = {
           <a href="/documents" class="text-sm text-sky-400 hover:underline">Specs & drawings in Documents →</a>
         </div>
       </div>
+      <div class="bg-zinc-900 border border-zinc-700 rounded-md p-4">
+        <h3 class="font-medium mb-3">Fee Breakdown</h3>
+        <div id="estFeeBreakdown"></div>
+      </div>
     </div>
   </div>
 
@@ -96,7 +141,11 @@ window.CASEPM_ESTIMATE_CTX = {
     <div class="flex gap-2 mb-2 flex-wrap flex-shrink-0">
       <input type="text" id="estLineSearch" placeholder="Search cost code, spec, description…" class="flex-1 bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm min-w-[200px]">
       <button type="button" id="estAddLine" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Add Line</button>
-      <button type="button" id="estSaveLines" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Save Worksheet</button>
+      <button type="button" id="estBulkEdit" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Bulk Edit</button>
+      <button type="button" data-quick-filter="unpriced" class="px-3 py-2 bg-zinc-800 rounded-md text-xs">Unpriced</button>
+      <button type="button" data-quick-filter="takeoff" class="px-3 py-2 bg-zinc-800 rounded-md text-xs">Takeoff</button>
+      <span id="estFilterSummary" class="text-xs text-zinc-500 self-center"></span>
+      <button type="button" id="estSaveLines" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Save Worksheet <span class="text-zinc-400 text-xs">(Ctrl+S)</span></button>
     </div>
     <div class="est-sheet-wrap flex-1 min-h-0">
       <table class="est-sheet">
@@ -120,45 +169,105 @@ window.CASEPM_ESTIMATE_CTX = {
   <div id="estPanelTakeoff" class="est-panel hidden flex-1 min-h-0 flex flex-col mb-20">
     <div class="flex gap-2 mb-2 flex-wrap flex-shrink-0">
       <input type="text" id="estTakeoffSearch" placeholder="Search takeoff items…" class="flex-1 bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm">
-      <button type="button" id="estRefreshTakeoff" class="px-4 py-2 bg-zinc-800 rounded-md text-sm">Refresh</button>
+      <button type="button" id="estRefreshTakeoff" class="px-4 py-2 bg-zinc-800 rounded-md text-sm">List</button>
+      <button type="button" id="estRefreshTakeoffLive" class="px-4 py-2 bg-zinc-800 rounded-md text-sm">Live Viewer</button>
       <button type="button" id="estImportTakeoff" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Import to Worksheet</button>
     </div>
-    <div class="flex-1 overflow-auto border border-zinc-700 rounded-md bg-zinc-900">
+    <div class="grid lg:grid-cols-2 gap-3 flex-1 min-h-0">
+      <iframe id="estTakeoffFrame" class="w-full min-h-[280px] border border-zinc-700 rounded-md bg-zinc-950" title="Drawings takeoff viewer"></iframe>
+      <div class="overflow-auto border border-zinc-700 rounded-md bg-zinc-900 min-h-[200px]">
+        <table class="w-full text-sm">
+          <thead class="bg-zinc-800 sticky top-0"><tr>
+            <th class="px-2 py-2 text-left text-zinc-400 text-xs">Sheet</th>
+            <th class="px-2 py-2 text-left text-zinc-400 text-xs">Description</th>
+            <th class="px-2 py-2 text-right text-zinc-400 text-xs">Qty</th>
+          </tr></thead>
+          <tbody id="estTakeoffLiveList"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="mt-2 overflow-auto border border-zinc-700 rounded-md bg-zinc-900 max-h-40">
       <table class="w-full text-sm">
-        <thead class="bg-zinc-800 sticky top-0"><tr>
-          <th class="px-3 py-2 text-left text-zinc-400">Sheet</th>
-          <th class="px-3 py-2 text-left text-zinc-400">Description</th>
-          <th class="px-3 py-2 text-right text-zinc-400">Qty</th>
-          <th class="px-3 py-2 text-left text-zinc-400">Unit</th>
-        </tr></thead>
         <tbody id="estTakeoffBody" class="divide-y divide-zinc-800"></tbody>
       </table>
     </div>
   </div>
 
   <div id="estPanelLeveling" class="est-panel hidden flex-1 min-h-0 overflow-auto mb-20">
-    <div class="flex justify-between mb-3"><span class="text-sm text-zinc-400">Compare vendor quotes side-by-side</span><button type="button" id="estRefreshLeveling" class="px-3 py-1.5 bg-zinc-800 rounded text-sm">Refresh</button></div>
+    <div class="flex justify-between mb-3 flex-wrap gap-2">
+      <span class="text-sm text-zinc-400">Compare vendor quotes side-by-side</span>
+      <div class="flex gap-2">
+        <button type="button" id="estExportLevelingExcel" class="px-3 py-1.5 bg-zinc-800 rounded text-sm">Export Matrix</button>
+        <button type="button" id="estRefreshLeveling" class="px-3 py-1.5 bg-zinc-800 rounded text-sm">Refresh</button>
+      </div>
+    </div>
     <div id="estLevelingGrid" class="level-grid"></div>
   </div>
 
+  <div id="estPanelAlternates" class="est-panel hidden flex-1 min-h-0 overflow-auto mb-20">
+    <div class="flex justify-between mb-3"><h3 class="font-medium">Alternates & Allowances</h3><button type="button" id="estSaveAlternates" class="px-4 py-2 bg-emerald-600 rounded-md text-sm">Save</button></div>
+    <table class="w-full text-sm border border-zinc-700 rounded-md overflow-hidden">
+      <thead class="bg-zinc-800"><tr><th class="p-2 text-left text-zinc-400">Key</th><th class="p-2 text-left text-zinc-400">Label</th><th class="p-2 text-center text-zinc-400">In Base</th><th class="p-2 text-right text-zinc-400">Amount</th><th class="p-2 text-left text-zinc-400">Notes</th></tr></thead>
+      <tbody id="estAlternatesBody"></tbody>
+    </table>
+  </div>
+
+  <div id="estPanelLibrary" class="est-panel hidden flex-1 min-h-0 overflow-auto mb-20">
+    <p class="text-sm text-zinc-400 mb-3">Cost code assemblies — apply to worksheet to expand components (#1, #8)</p>
+    <div id="estLibraryList" class="space-y-2"></div>
+  </div>
+
+  <div id="estPanelTools" class="est-panel hidden flex-1 min-h-0 overflow-auto mb-20">
+    <div class="grid md:grid-cols-2 gap-4">
+      <div class="bg-zinc-900 border border-zinc-700 rounded-md p-4">
+        <div class="flex justify-between mb-2"><h3 class="font-medium">Revision Snapshots</h3><button type="button" id="estSaveSnapshot" class="text-sm text-emerald-400">Save snapshot</button></div>
+        <div id="estSnapshotsList"></div>
+      </div>
+      <div class="bg-zinc-900 border border-zinc-700 rounded-md p-4">
+        <h3 class="font-medium mb-2">AI Scope Extraction</h3>
+        <textarea id="estAiScopeText" rows="4" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm" placeholder="Paste spec section text…"></textarea>
+        <div class="flex gap-2 mt-2">
+          <button type="button" id="estAiScopePreview" class="px-3 py-1.5 bg-zinc-800 rounded text-sm">Preview</button>
+          <button type="button" id="estAiScopeApply" class="px-3 py-1.5 bg-emerald-700 rounded text-sm">Apply to worksheet</button>
+        </div>
+        <div id="estAiScopeResults" class="mt-3 max-h-40 overflow-auto"></div>
+      </div>
+      <div class="bg-zinc-900 border border-zinc-700 rounded-md p-4 md:col-span-2">
+        <button type="button" id="estRunReminders" class="px-4 py-2 bg-zinc-800 rounded-md text-sm">Run bid deadline reminders</button>
+      </div>
+    </div>
+  </div>
+
   <div id="estPanelAward" class="est-panel hidden flex-1 min-h-0 overflow-auto mb-20">
-    <div class="bg-zinc-900 border border-zinc-700 rounded-md p-5 max-w-2xl">
+    <div class="grid md:grid-cols-2 gap-4 max-w-5xl">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-md p-5">
       <h3 class="text-lg font-semibold mb-2">Award Estimate → Budget</h3>
-      <p class="text-sm text-zinc-400 mb-4">When the project is awarded, push estimate lines (and optionally awarded bid quotes) into the project budget as original budget amounts.</p>
+      <p class="text-sm text-zinc-400 mb-4">Push estimate lines (and optionally awarded bids) into original budget. Maps spec sections via rules below.</p>
       <label class="flex items-center gap-2 text-sm mb-4"><input type="checkbox" id="estUseBidAwards" class="rounded"> Include awarded bid package quotes</label>
       <div class="flex gap-2 flex-wrap">
         <button type="button" id="estAwardBudget" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md font-semibold">Push to Budget</button>
+        <button type="button" id="estSyncForecast" class="px-4 py-2 bg-sky-700 rounded-md text-sm">Sync ROM → Forecast</button>
+        <button type="button" id="estContingencyDraw" class="px-4 py-2 bg-zinc-800 rounded-md text-sm">Contingency Drawdown</button>
         <a href="/budget" class="px-5 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm inline-flex items-center">Open Budget</a>
       </div>
       <p id="estAwardResult" class="text-sm text-emerald-400 mt-4 hidden"></p>
     </div>
+    <div class="bg-zinc-900 border border-zinc-700 rounded-md p-5">
+      <div class="flex justify-between mb-2"><h3 class="font-medium">Spec → Budget Mapping</h3><button type="button" id="estSaveMappings" class="text-sm text-emerald-400">Save rules</button></div>
+      <table class="w-full text-sm"><thead><tr><th class="text-left text-zinc-500 text-xs p-1">Spec</th><th class="text-left text-zinc-500 text-xs p-1">Cost Code</th><th class="text-left text-zinc-500 text-xs p-1">Type</th></tr></thead>
+      <tbody id="estMappingsBody"></tbody></table>
+    </div>
+    </div>
   </div>
 </div>
 
-<dialog id="estPackageModal" class="modal rounded-md w-full max-w-lg p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;">
-  <form id="estPackageForm" class="p-5">
-    <h3 class="text-lg font-semibold mb-4">Bid Package / RFP</h3>
-    <div class="space-y-3 text-sm">
+<dialog id="estPackageModal" class="modal est-modal rounded-md w-full max-w-lg p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;" data-casepm-draggable="true">
+  <form id="estPackageForm">
+    <div class="est-modal-head casepm-drag-handle">
+      <h3 class="text-lg font-semibold">Bid Package / RFP</h3>
+      <button type="button" id="estPackageCancel" class="text-zinc-400 hover:text-white text-xl leading-none" aria-label="Close">&times;</button>
+    </div>
+    <div class="est-modal-body space-y-3 text-sm">
       <div><label class="text-zinc-400">Title</label><input name="title" required class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></div>
       <div class="grid grid-cols-2 gap-3">
         <div><label class="text-zinc-400">Spec Section</label><input name="spec_section" placeholder="07 92 00" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></div>
@@ -167,10 +276,64 @@ window.CASEPM_ESTIMATE_CTX = {
       <div><label class="text-zinc-400">Due Date</label><input type="date" name="due_date" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></div>
       <div><label class="text-zinc-400">Scope / Instructions</label><textarea name="scope_notes" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></textarea></div>
     </div>
-    <div class="flex justify-end gap-2 mt-5">
-      <button type="button" id="estPackageCancel" class="px-4 py-2 bg-zinc-800 rounded-md">Cancel</button>
-      <button type="submit" class="px-4 py-2 bg-emerald-600 rounded-md font-medium">Create Package</button>
+    <div class="est-modal-foot">
+      <button type="button" class="estPackageCancelBtn px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md">Cancel</button>
+      <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md font-medium">Create Package</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="estNewEstimateModal" class="modal est-modal rounded-md w-full max-w-md p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;" data-casepm-draggable="true">
+  <form id="estNewEstimateForm">
+    <div class="est-modal-head casepm-drag-handle">
+      <h3 class="text-lg font-semibold">New Estimate</h3>
+      <button type="button" class="estModalClose text-zinc-400 hover:text-white text-xl leading-none" data-target="estNewEstimateModal" aria-label="Close">&times;</button>
+    </div>
+    <div class="est-modal-body text-sm space-y-3">
+      <div>
+        <label class="text-zinc-400">Title</label>
+        <input id="estNewTitle" name="title" required value="Project Estimate" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1">
+      </div>
+      <div>
+        <label class="text-zinc-400">Type</label>
+        <select id="estNewType" name="estimate_type" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1">
+          <option>Hard Bid</option>
+          <option>Budget Estimate</option>
+          <option>Design-Build</option>
+          <option>ROM</option>
+        </select>
+      </div>
+    </div>
+    <div class="est-modal-foot">
+      <button type="button" class="estModalClose px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md" data-target="estNewEstimateModal">Cancel</button>
+      <button type="submit" class="px-4 py-2 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md font-semibold">Create Estimate</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="estTakeoffModal" class="modal est-modal rounded-md w-full max-w-md p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;" data-casepm-draggable="true">
+  <form id="estTakeoffForm">
+    <div class="est-modal-head casepm-drag-handle">
+      <h3 class="text-lg font-semibold">Import Takeoff</h3>
+      <button type="button" class="estModalClose text-zinc-400 hover:text-white text-xl leading-none" data-target="estTakeoffModal" aria-label="Close">&times;</button>
+    </div>
+    <div class="est-modal-body text-sm space-y-3">
+      <p class="text-zinc-400">Import drawing measure/area markups into the estimate worksheet.</p>
+      <div>
+        <label class="text-zinc-400">Default cost code</label>
+        <input id="estTakeoffCostCode" name="cost_code" value="01-000" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1 font-mono">
+      </div>
+      <p id="estTakeoffCount" class="text-xs text-zinc-500"></p>
+    </div>
+    <div class="est-modal-foot">
+      <button type="button" class="estModalClose px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md" data-target="estTakeoffModal">Cancel</button>
+      <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md font-medium">Import Lines</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="estSnapshotViewModal" class="modal est-modal rounded-md w-full max-w-2xl p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;" data-casepm-draggable="true">
+  <div class="est-modal-head casepm-drag-handle"><h3 class="text-lg font-semibold">Snapshot</h3><button type="button" class="estModalClose text-xl text-zinc-400" data-target="estSnapshotViewModal">&times;</button></div>
+  <pre id="estSnapshotViewBody" class="est-modal-body text-xs overflow-auto text-zinc-300"></pre>
 </dialog>
 {% endblock %}

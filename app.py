@@ -1279,6 +1279,8 @@ class Estimate(db.Model):
     pushed_to_budget_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     assumptions_json = db.Column(db.Text)
     attachments_json = db.Column(db.Text)
+    settings_json = db.Column(db.Text)
+    rom_amount = db.Column(db.Float, default=0)
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -1300,6 +1302,8 @@ class BidPackage(db.Model):
     awarded_invitation_id = db.Column(db.Integer, nullable=True)
     drawing_refs_json = db.Column(db.Text)
     spec_refs_json = db.Column(db.Text)
+    attachments_json = db.Column(db.Text)
+    email_template_json = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -1322,6 +1326,12 @@ class EstimateLine(db.Model):
     source = db.Column(db.String(40), default='manual')
     source_ref = db.Column(db.String(120))
     notes = db.Column(db.Text)
+    line_kind = db.Column(db.String(30), default='base')
+    alternate_key = db.Column(db.String(40))
+    assembly_id = db.Column(db.Integer, nullable=True)
+    markup_id = db.Column(db.Integer, nullable=True)
+    group_key = db.Column(db.String(80))
+    meta_json = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -1340,6 +1350,9 @@ class BidInvitation(db.Model):
     quote_amount = db.Column(db.Float, default=0)
     quote_notes = db.Column(db.Text)
     decline_reason = db.Column(db.Text)
+    qualification_json = db.Column(db.Text)
+    scope_gaps_json = db.Column(db.Text)
+    reminder_sent_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -1355,6 +1368,87 @@ class BidQuoteLine(db.Model):
     unit = db.Column(db.String(30))
     unit_cost = db.Column(db.Float, default=0)
     notes = db.Column(db.Text)
+
+
+class EstimateAssembly(db.Model):
+    __tablename__ = 'estimate_assembly'
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
+    name = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text)
+    trade = db.Column(db.String(80))
+    spec_section = db.Column(db.String(30))
+    unit = db.Column(db.String(30), default='EA')
+    unit_cost = db.Column(db.Float, default=0)
+    components_json = db.Column(db.Text)
+    source = db.Column(db.String(40), default='library')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class EstimateSnapshot(db.Model):
+    __tablename__ = 'estimate_snapshot'
+    id = db.Column(db.Integer, primary_key=True)
+    estimate_id = db.Column(db.Integer, db.ForeignKey('estimate.id'), nullable=False)
+    label = db.Column(db.String(120))
+    data_json = db.Column(db.Text)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class EstimateAlternate(db.Model):
+    __tablename__ = 'estimate_alternate'
+    id = db.Column(db.Integer, primary_key=True)
+    estimate_id = db.Column(db.Integer, db.ForeignKey('estimate.id'), nullable=False)
+    alt_key = db.Column(db.String(40))
+    label = db.Column(db.String(200))
+    include_in_base = db.Column(db.Boolean, default=False)
+    amount = db.Column(db.Float, default=0)
+    notes = db.Column(db.Text)
+
+
+class EstimateCostHistory(db.Model):
+    __tablename__ = 'estimate_cost_history'
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
+    cost_code = db.Column(db.String(30))
+    trade = db.Column(db.String(80))
+    unit = db.Column(db.String(30))
+    unit_cost = db.Column(db.Float, default=0)
+    description = db.Column(db.String(300))
+    source_project_name = db.Column(db.String(200))
+    recorded_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class EstimateBudgetMapping(db.Model):
+    __tablename__ = 'estimate_budget_mapping'
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    spec_section = db.Column(db.String(30))
+    cost_code = db.Column(db.String(30))
+    cost_type = db.Column(db.String(80), default='Subcontract')
+
+
+class BidPackageAddendum(db.Model):
+    __tablename__ = 'bid_package_addendum'
+    id = db.Column(db.Integer, primary_key=True)
+    bid_package_id = db.Column(db.Integer, db.ForeignKey('bid_package.id'), nullable=False)
+    number = db.Column(db.String(30))
+    title = db.Column(db.String(200))
+    description = db.Column(db.Text)
+    require_rebid = db.Column(db.Boolean, default=False)
+    document_ids_json = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class BidLevelingNote(db.Model):
+    __tablename__ = 'bid_leveling_note'
+    id = db.Column(db.Integer, primary_key=True)
+    bid_package_id = db.Column(db.Integer, db.ForeignKey('bid_package.id'), nullable=False)
+    invitation_id = db.Column(db.Integer, db.ForeignKey('bid_invitation.id'), nullable=True)
+    note_type = db.Column(db.String(40), default='scope_gap')
+    text = db.Column(db.Text)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class SageSyncEvent(db.Model):
@@ -2478,6 +2572,12 @@ def api_dashboard_summary():
         SageSyncEvent=SageSyncEvent,
         PayAppProjectState=PayAppProjectState,
     )
+    if project_id:
+        try:
+            from estimate_features import build_dashboard_estimating_tile
+            payload['estimating'] = build_dashboard_estimating_tile(Estimate, BidPackage, BidInvitation, int(project_id))
+        except Exception:
+            payload['estimating'] = {}
     return jsonify(payload)
 
 
@@ -14295,11 +14395,44 @@ register_estimate_routes(app, {
     'BidInvitation': BidInvitation,
     'BidQuoteLine': BidQuoteLine,
     'BudgetProjectState': BudgetProjectState,
+    'EstimateBudgetMapping': EstimateBudgetMapping,
     'Company': Company,
     'Drawing': Drawing,
     'DrawingMarkup': DrawingMarkup,
     'User': User,
     'Project': Project,
+})
+
+from estimate_feature_routes import register_estimate_feature_routes
+register_estimate_feature_routes(app, {
+    'db': db,
+    'request': request,
+    'jsonify': jsonify,
+    'login_required': login_required,
+    'current_user': current_user,
+    'get_current_project_id': get_current_project_id,
+    'generate_next_number': generate_next_number,
+    'Estimate': Estimate,
+    'EstimateLine': EstimateLine,
+    'BidPackage': BidPackage,
+    'BidInvitation': BidInvitation,
+    'BidQuoteLine': BidQuoteLine,
+    'EstimateAssembly': EstimateAssembly,
+    'EstimateSnapshot': EstimateSnapshot,
+    'EstimateAlternate': EstimateAlternate,
+    'EstimateCostHistory': EstimateCostHistory,
+    'EstimateBudgetMapping': EstimateBudgetMapping,
+    'BidPackageAddendum': BidPackageAddendum,
+    'BidLevelingNote': BidLevelingNote,
+    'BudgetProjectState': BudgetProjectState,
+    'Commitment': Commitment,
+    'CommitmentAllocation': CommitmentAllocation,
+    'Company': Company,
+    'COI': COI,
+    'Project': Project,
+    'Drawing': Drawing,
+    'DrawingMarkup': DrawingMarkup,
+    'User': User,
 })
 
 
@@ -14370,6 +14503,11 @@ with app.app_context():
             ensure_commitment_schema(db.engine, db)
         except Exception as _cm:
             print('Commitment schema:', _cm)
+        try:
+            from estimate_features import ensure_estimate_schema
+            ensure_estimate_schema(db.engine, db)
+        except Exception as _est:
+            print('Estimate schema:', _est)
         try:
             from document_persistence import ensure_document_schema
             ensure_document_schema(db.engine, db)
