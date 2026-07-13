@@ -3794,29 +3794,50 @@ def api_link_documents_to_entity():
 @app.route('/api/rfis/<int:rfi_id>/promote-pco', methods=['POST'])
 @login_required
 def api_rfi_promote_pco(rfi_id):
-    """Create a PCO from an RFI."""
+    """Create a PCO from an RFI with ROM allocation and Sage queue."""
     from co_persistence import pco_to_dict
+    from sage_service import create_and_process_sage_event
     rfi = RFI.query.get_or_404(rfi_id)
     body = request.get_json(silent=True) or {}
+    amount = float(body.get('estimated_amount') or rfi.cost_impact_amount or 0)
     pco = PotentialChangeOrder(
         project_id=rfi.project_id,
         number=generate_next_number('PCO', PotentialChangeOrder, doc_type='pco'),
         title=body.get('title') or f'PCO from {rfi.number}: {rfi.subject}',
         description=body.get('description') or rfi.official_answer or rfi.question,
-        estimated_amount=float(body.get('estimated_amount') or rfi.cost_impact_amount or 0),
+        estimated_amount=amount,
         status='Open',
         reason=body.get('reason') or 'Design Change',
         priority=rfi.priority or 'Medium',
         schedule_impact_days=rfi.schedule_impact_days or 0,
         linked_rfi_id=rfi.id,
+        change_event_id=body.get('change_event_id'),
         ball_in_court_role='Project Manager',
         created_by_id=current_user.id,
     )
     db.session.add(pco)
     db.session.flush()
+    cost_code = (body.get('cost_code') or '01-0000').strip()
+    cost_type = body.get('cost_type') or 'Other'
+    if amount:
+        db.session.add(PCOAllocation(
+            pco_id=pco.id,
+            cost_code=cost_code,
+            cost_type=cost_type,
+            amount=amount,
+            description=f'ROM from RFI {rfi.number}',
+        ))
     rfi.linked_pco_id = pco.id
+    create_and_process_sage_event(
+        SageSyncEvent, Project, db, rfi.project_id,
+        'PCOSubmitted',
+        message=f'PCO {pco.number} created from RFI {rfi.number}',
+        payload={'pco_id': pco.id, 'rfi_id': rfi.id, 'amount': amount},
+        user_id=current_user.id,
+    )
     db.session.commit()
-    return jsonify({'ok': True, 'pco': pco_to_dict(pco), 'pco_id': pco.id})
+    allocs = PCOAllocation.query.filter_by(pco_id=pco.id).all()
+    return jsonify({'ok': True, 'pco': pco_to_dict(pco, allocs), 'pco_id': pco.id})
 
 
 @app.route('/uploads/rfis/<int:rfi_id>/<path:filename>')
@@ -13257,6 +13278,8 @@ def api_create_sage_sync_event():
 def api_retry_sage_sync_event(event_id):
     from sage_service import process_sage_event, sage_event_to_dict
     event = SageSyncEvent.query.get_or_404(event_id)
+    if getattr(event, 'accounting_status', None) == 'pending_review':
+        return jsonify({'error': 'Event must be accepted in ERP Queue before retrying Sage post.'}), 400
     event.status = 'queued'
     process_sage_event(event, db, Commitment=Commitment)
     return jsonify({'ok': True, 'event': sage_event_to_dict(event)})
@@ -13649,211 +13672,42 @@ def api_change_orders_link_options():
 @app.route('/api/change-orders/<int:co_id>/workflow', methods=['POST'])
 @login_required
 def api_change_order_workflow(co_id):
-    from co_persistence import (
-        co_workflow_action, notify_ball_in_court, co_to_dict, append_approval_history,
-        run_change_order_accounting_sync, auto_create_sub_cos_from_owner_co, is_subcontract_co,
-    )
+    from co_persistence import process_change_order_workflow, co_to_dict, is_subcontract_co
     co = ChangeOrder.query.get_or_404(co_id)
     body = request.get_json(silent=True) or {}
     action = body.get('action')
-    comments = (body.get('comments') or '').strip()
-    if action == 'reject' and not comments:
-        return jsonify({'error': 'Rejection requires a comment.'}), 400
-    old_status = co.status
-    old_ball_role = co.ball_in_court_role
-    if getattr(co, 'executed_locked', False) and action in ('submit', 'approve') and not _developer_unlock_bypass():
-        return jsonify({'error': 'This change order is executed and locked under owner e-signature.'}), 403
-    allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
-    alloc_payload = [{
-        'cost_code': a.cost_code,
-        'cost_type': getattr(a, 'cost_type', None),
-        'amount': a.amount,
-        'description': getattr(a, 'description', ''),
-    } for a in allocs]
     try:
-        if action == 'approve' and old_ball_role in ('Owner', 'Architect'):
-            from user_signature_persistence import verify_user_signature_attestation
-            if not body.get('signature_attestation'):
-                return jsonify({'error': 'Electronic signature attestation is required for Owner and Architect approvals.'}), 400
-            verify_user_signature_attestation(current_user, (body.get('signature_hash') or '').strip())
-        new_status, final_approved = co_workflow_action(co, action, current_user, User, alloc_payload)
+        result = process_change_order_workflow(
+            co, action, current_user, User, body,
+            ChangeOrder=ChangeOrder,
+            ChangeOrderAllocation=ChangeOrderAllocation,
+            PayAppProjectState=PayAppProjectState,
+            ScheduleData=ScheduleData,
+            Project=Project,
+            BudgetProjectState=BudgetProjectState,
+            db=db,
+            Commitment=Commitment,
+            CommitmentAllocation=CommitmentAllocation,
+            SageSyncEvent=SageSyncEvent,
+            generate_next_number_fn=lambda prefix, model, doc_type=None, project_id=None: generate_next_number(
+                prefix, model, doc_type=doc_type, project_id=project_id or co.project_id,
+            ),
+            developer_unlock_bypass=_developer_unlock_bypass(),
+        )
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
 
-    append_approval_history(co, action, current_user, comments, old_status, new_status)
-
-    if action == 'approve' and old_ball_role in ('Owner', 'Architect'):
-        from user_signature_persistence import append_co_approval_signature
-        append_co_approval_signature(co, current_user, old_ball_role, comments, action='approve')
-
-    try:
-        from case_workflow import ApprovalRequest, decide_approval
-        pending = ApprovalRequest.query.filter_by(
-            entity_type='ChangeOrder',
-            entity_id=str(co.id),
-            status='pending',
-        ).order_by(ApprovalRequest.created_at.desc()).first()
-        if pending and action in ('approve', 'reject'):
-            decide_approval(pending.id, action, comments)
-    except Exception:
-        pass
-
-    if action == 'submit' and not co.submitted_at:
-        co.submitted_at = datetime.utcnow()
-        try:
-            from case_workflow import create_approval
-            create_approval(
-                project_id=co.project_id,
-                module='Change Orders',
-                entity_type='ChangeOrder',
-                entity_id=co.id,
-                title=f'Change Order {co.number} submitted — {co.ball_in_court_role} review',
-                description=co.description or '',
-                action_url=f'/change-orders?project_id={co.project_id}&open=1&respond=1&co_id={co.id}',
-                payload={'amount': co.amount, 'status': new_status, 'ball_in_court': co.ball_in_court_role},
-                assignee_role=co.ball_in_court_role,
-            )
-        except Exception:
-            pass
-        from sage_service import create_and_process_sage_event
-        if is_subcontract_co(co):
-            com_type = 'Subcontract'
-            if getattr(co, 'linked_commitment_ref', None):
-                com = Commitment.query.filter_by(project_id=co.project_id, number=co.linked_commitment_ref).first()
-                if com:
-                    com_type = com.commitment_type or 'Subcontract'
-            create_and_process_sage_event(
-                SageSyncEvent, Project, db, co.project_id,
-                'CommitmentChangeOrderSubmitted',
-                message=f'{co.number} submitted — ball with {co.ball_in_court_role}',
-                payload={
-                    'change_order_id': co.id,
-                    'amount': co.amount,
-                    'commitment_type': com_type,
-                    'linked_commitment_ref': getattr(co, 'linked_commitment_ref', None),
-                    'sub_co_kind': getattr(co, 'sub_co_kind', None),
-                },
-                user_id=current_user.id,
-                Commitment=Commitment,
-            )
-        else:
-            create_and_process_sage_event(
-                SageSyncEvent, Project, db, co.project_id,
-                'ChangeOrderSubmitted',
-                message=f'{co.number} submitted — ball with {co.ball_in_court_role}',
-                payload={'change_order_id': co.id, 'amount': co.amount},
-                user_id=current_user.id,
-            )
-
-    sync_result = None
-    budget_sync_result = None
-    if action == 'submit' and new_status == 'Submitted':
-        accounting = run_change_order_accounting_sync(
-            co, old_status, new_status, current_user.id,
-            ChangeOrder=ChangeOrder,
-            ChangeOrderAllocation=ChangeOrderAllocation,
-            PayAppProjectState=PayAppProjectState,
-            ScheduleData=ScheduleData,
-            Project=Project,
-            BudgetProjectState=BudgetProjectState,
-            db=db,
-            Commitment=Commitment,
-            CommitmentAllocation=CommitmentAllocation,
-            SageSyncEvent=SageSyncEvent,
-            queue_sage_event=False,
-        )
-        budget_sync_result = accounting.get('budget_sync_result')
-
-    if final_approved:
-        co.approved_by_id = current_user.id
-        accounting = run_change_order_accounting_sync(
-            co, old_status, 'Approved', current_user.id,
-            ChangeOrder=ChangeOrder,
-            ChangeOrderAllocation=ChangeOrderAllocation,
-            PayAppProjectState=PayAppProjectState,
-            ScheduleData=ScheduleData,
-            Project=Project,
-            BudgetProjectState=BudgetProjectState,
-            db=db,
-            Commitment=Commitment,
-            CommitmentAllocation=CommitmentAllocation,
-            SageSyncEvent=SageSyncEvent,
-        )
-        sync_result = accounting.get('sync_result')
-        budget_sync_result = accounting.get('budget_sync_result') or budget_sync_result
-        if not is_subcontract_co(co):
-            auto_create_sub_cos_from_owner_co(
-                co,
-                allocs,
-                ChangeOrder,
-                ChangeOrderAllocation,
-                Commitment,
-                CommitmentAllocation,
-                db,
-                lambda prefix, model, doc_type=None, project_id=None: generate_next_number(
-                    prefix, model, doc_type=doc_type, project_id=project_id or co.project_id,
-                ),
-                current_user.id,
-            )
-    elif action in ('submit', 'approve') and co.ball_in_court_role:
-        notify_ball_in_court(
-            co.project_id, co, User,
-            title=f'{co.number} — action required ({co.ball_in_court_role})',
-            description=f'Status: {new_status}. {co.description or ""}',
-        )
-        if action == 'approve' and not final_approved:
-            try:
-                from case_workflow import create_approval
-                create_approval(
-                    project_id=co.project_id,
-                    module='Change Orders',
-                    entity_type='ChangeOrder',
-                    entity_id=co.id,
-                    title=f'Change Order {co.number} — {co.ball_in_court_role} approval',
-                    description=co.description or '',
-                    action_url=f'/change-orders?project_id={co.project_id}&open=1&respond=1&co_id={co.id}',
-                    payload={'amount': co.amount, 'status': new_status},
-                    assignee_role=co.ball_in_court_role,
-                )
-            except Exception:
-                pass
-
-    if action == 'reject':
-        accounting = run_change_order_accounting_sync(
-            co, old_status, 'Rejected', current_user.id,
-            ChangeOrder=ChangeOrder,
-            ChangeOrderAllocation=ChangeOrderAllocation,
-            PayAppProjectState=PayAppProjectState,
-            ScheduleData=ScheduleData,
-            Project=Project,
-            BudgetProjectState=BudgetProjectState,
-            db=db,
-            Commitment=Commitment,
-            CommitmentAllocation=CommitmentAllocation,
-            SageSyncEvent=SageSyncEvent,
-            queue_sage_event=False,
-        )
-        budget_sync_result = accounting.get('budget_sync_result') or budget_sync_result
-
     db.session.commit()
     allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
-    auto_sub_cos = []
-    if final_approved and not is_subcontract_co(co):
-        auto_sub_cos = [
-            {'id': c.id, 'number': c.number, 'company_name': c.company_name}
-            for c in ChangeOrder.query.filter_by(
-                project_id=co.project_id, linked_owner_co_id=co.id, auto_generated=True,
-            ).all()
-        ]
     return jsonify({
         'ok': True,
-        'new_status': new_status,
-        'final_approved': final_approved,
+        'new_status': result['new_status'],
+        'final_approved': result['final_approved'],
         'ball_in_court_role': co.ball_in_court_role,
         'change_order': co_to_dict(co, allocs),
-        'sync_result': sync_result,
-        'budget_sync_result': budget_sync_result,
-        'auto_sub_change_orders': auto_sub_cos,
+        'sync_result': result.get('sync_result'),
+        'budget_sync_result': result.get('budget_sync_result'),
+        'auto_sub_change_orders': result.get('auto_sub_change_orders') or [],
     })
 
 
@@ -14147,6 +14001,7 @@ register_change_event_routes(app, {
     'Commitment': Commitment,
     'PayAppProjectState': PayAppProjectState,
     'User': User,
+    'user_portal_type_fn': lambda u: __import__('case_workflow').user_portal_type(u),
 })
 
 
@@ -14173,6 +14028,16 @@ with app.app_context():
             'ChangeOrder': ChangeOrder,
             'ChangeOrderAllocation': ChangeOrderAllocation,
             'PotentialChangeOrder': PotentialChangeOrder,
+            'PayAppProjectState': PayAppProjectState,
+            'ScheduleData': ScheduleData,
+            'BudgetProjectState': BudgetProjectState,
+            'Commitment': Commitment,
+            'CommitmentAllocation': CommitmentAllocation,
+            'SageSyncEvent': SageSyncEvent,
+            'generate_next_number_fn': lambda prefix, model, doc_type=None, project_id=None: generate_next_number(
+                prefix, model, doc_type=doc_type, project_id=project_id,
+            ),
+            'developer_unlock_bypass': _developer_unlock_bypass,
         })
         db.create_all()
         cw.ensure_workflow_schema(db.engine)

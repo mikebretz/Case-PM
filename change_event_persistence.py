@@ -25,6 +25,11 @@ RFQ_BALL = {
     'Rejected': None,
     'Void': None,
 }
+CHANGE_EVENT_APPROVAL_CHAIN = (
+    {'from_status': 'Open', 'role': 'Project Manager', 'next_status': 'Pricing'},
+    {'from_status': 'Pricing', 'role': 'Project Manager', 'next_status': 'Pending Review'},
+    {'from_status': 'Pending Review', 'role': 'Project Manager', 'next_status': 'Approved'},
+)
 COR_APPROVAL_CHAIN = (
     {'from_status': 'Submitted', 'role': 'Project Manager', 'next_status': 'Under Review'},
     {'from_status': 'Under Review', 'role': 'Owner', 'next_status': 'Approved'},
@@ -421,6 +426,35 @@ def rfq_workflow_action(rfq, action, user, allocations=None):
     raise ValueError('action must be send, quote, accept, or reject')
 
 
+def change_event_workflow_action(ce, action, user):
+    from co_persistence import user_can_act_on_ball_in_court
+    action = (action or '').lower()
+    if action == 'submit':
+        if ce.status != 'Open':
+            raise ValueError('Only open change events can be submitted for pricing')
+        ce.status = 'Pricing'
+        ce.ball_in_court_role = CHANGE_EVENT_BALL.get('Pricing')
+        return ce.status, False
+    if action == 'reject':
+        ce.status = 'Void'
+        ce.ball_in_court_role = None
+        return ce.status, False
+    if action == 'approve':
+        role = ce.ball_in_court_role or 'Project Manager'
+        if not user_can_act_on_ball_in_court(user, role):
+            raise ValueError(f'Cannot approve while ball is with {role}')
+        for step in CHANGE_EVENT_APPROVAL_CHAIN:
+            if step['from_status'] == ce.status and step['role'] == role:
+                ce.status = step['next_status']
+                ce.ball_in_court_role = CHANGE_EVENT_BALL.get(ce.status)
+                if ce.status == 'Approved':
+                    ce.ball_in_court_role = None
+                    return ce.status, True
+                return ce.status, False
+        raise ValueError('No approval step for current change event status')
+    raise ValueError('action must be submit, approve, or reject')
+
+
 def cor_workflow_action(cor, action, user):
     from co_persistence import user_can_act_on_ball_in_court, get_next_approval_step, set_ball_in_court
     action = (action or '').lower()
@@ -529,7 +563,7 @@ def promote_cor_to_pco(cor, allocations, PotentialChangeOrder, PCOAllocation, db
     return pco
 
 
-def promote_cpco_to_sco(pco, allocations, ChangeOrder, ChangeOrderAllocation, db, generate_number_fn, user_id):
+def promote_cpco_to_sco(pco, allocations, ChangeOrder, ChangeOrderAllocation, db, generate_number_fn, user_id, SubcontractorRFQ=None):
     from co_persistence import compute_co_amount_from_allocations
     total = sum(float(a.amount or 0) for a in allocations) if allocations else float(pco.estimated_amount or 0)
     sco = ChangeOrder(
@@ -568,6 +602,10 @@ def promote_cpco_to_sco(pco, allocations, ChangeOrder, ChangeOrderAllocation, db
         ))
     pco.change_order_id = sco.id
     pco.status = 'Promoted'
+    if getattr(pco, 'source_rfq_id', None) and SubcontractorRFQ is not None:
+        rfq = SubcontractorRFQ.query.get(pco.source_rfq_id)
+        if rfq:
+            rfq.linked_sco_id = sco.id
     return sco
 
 
@@ -619,11 +657,11 @@ def apply_partial_budget_line(BudgetProjectState, project_id, cost_code, cost_ty
     return {'added': not found, 'cost_code': cost_code}
 
 
-def update_sco_retainage_and_billing(co, PayAppProjectState, Commitment, db):
+def update_sco_retainage_and_billing(co, PayAppProjectState, Commitment, ChangeOrderAllocation, db):
     """Apply retainage % from commitment and compute billing variance on approved sub CO."""
     if co.status != 'Approved':
         return {}
-    from pay_app_persistence import get_pay_app_state, save_pay_app_state, resolve_sub_sov_targets_for_allocation, normalize_sub_sov_keys
+    from pay_app_persistence import get_pay_app_state, normalize_sub_sov_keys, normalize_cost_code
     _, state = get_pay_app_state(PayAppProjectState, co.project_id)
     sub_sov = normalize_sub_sov_keys(state.get('subcontractorSOV') or {})
     retainage_pct = 0.0
@@ -632,9 +670,26 @@ def update_sco_retainage_and_billing(co, PayAppProjectState, Commitment, db):
         if com:
             retainage_pct = float(com.retainage_percent or 0)
     billed = 0.0
-    for alloc in co.allocations if hasattr(co, 'allocations') else []:
-        pass
-    return {'retainage_percent': retainage_pct}
+    allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all() if ChangeOrderAllocation else []
+    company_keys = []
+    cid = str(getattr(co, 'company_id', '') or '').strip()
+    cname = (getattr(co, 'company_name', '') or '').strip()
+    if cid:
+        company_keys.append(cid)
+    if cname:
+        company_keys.append(cname)
+    for key in company_keys:
+        for line in sub_sov.get(key) or []:
+            if co.number and co.number in str(line.get('from_change_order', '')):
+                billed += float(line.get('co_billed_to_date') or 0) + float(line.get('billed_to_date') or 0)
+    for alloc in allocs:
+        if getattr(alloc, 'retainage_percent', None) is None and retainage_pct:
+            alloc.retainage_percent = retainage_pct
+    variance = round(float(co.amount or 0) - billed, 2)
+    co.billed_amount = billed
+    co.billing_variance = variance
+    db.session.flush()
+    return {'retainage_percent': retainage_pct, 'billed': billed, 'variance': variance}
 
 
 def compute_billing_variance_for_sub_cos(cos, PayAppProjectState, project_id):
@@ -704,6 +759,48 @@ def reject_sage_event(event, user, notes=''):
     event.accounting_notes = (notes or '').strip()
     event.status = 'rejected'
     return event
+
+
+def notify_accounting_erp_review(event, Project, db, User=None):
+    """Alert Contractor Accounting when a Sage event is queued for review."""
+    try:
+        import case_workflow as cw
+        from co_persistence import user_can_act_on_ball_in_court
+        if getattr(event, 'accounting_status', None) != 'pending_review':
+            return
+        if User is None:
+            try:
+                from app import User as UserModel
+                User = UserModel
+            except Exception:
+                return
+        project = Project.query.get(event.project_id) if Project else None
+        project_name = getattr(project, 'name', None) or f'Project #{event.project_id}'
+        action_url = f'/change-orders?project_id={event.project_id}&tab=erp'
+        title = f'ERP review: {event.event_type}'
+        description = event.message or f'{event.event_type} requires accounting acceptance before Sage export.'
+        if User is not None:
+            users = User.query.filter_by(status='Active').all()
+            targets = [u for u in users if user_can_act_on_ball_in_court(u, 'Contractor Accounting')]
+            for u in targets:
+                cw.notify_user(u.id, title, f'{project_name}: {description}', action_url)
+                cw.create_internal_message(
+                    u.id,
+                    folder='action-required',
+                    msg_type='alert',
+                    subject=title,
+                    preview=description[:500],
+                    body=f'<p><strong>{project_name}</strong></p><p>{description}</p>',
+                    project_id=event.project_id,
+                    from_label='ERP Queue',
+                    module='Change Orders',
+                    action_url=action_url,
+                    action_label='Review in ERP Queue',
+                    priority='high',
+                    requires_action=True,
+                )
+    except Exception:
+        pass
 
 
 def link_change_event_schedule_impact(ScheduleData, Project, db, project_id, change_event, co_number=None):

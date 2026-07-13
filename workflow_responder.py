@@ -181,13 +181,13 @@ def get_rfi_responder_context(rfi, user, linked_cos=None, linked_pcos=None):
 
 
 def get_co_responder_context(co, user, allocations=None):
-    from co_persistence import co_to_dict, user_can_act_on_ball_in_court
+    from co_persistence import co_to_dict, user_can_act_on_ball_in_court, co_approvable_statuses, is_subcontract_co
 
     data = co_to_dict(co, allocations=allocations or [])
     ball = data.get('ball_in_court_role')
     can_act = user_can_act_on_ball_in_court(user, ball)
     actions = []
-    if data.get('status') in ('Submitted', 'Pending Architect', 'Pending Owner') and can_act:
+    if data.get('status') in co_approvable_statuses(co) and can_act:
         actions.append(_action_dict('approve'))
         actions.append(_action_dict('reject'))
     requires_esign = ball in ('Owner', 'Architect')
@@ -199,12 +199,14 @@ def get_co_responder_context(co, user, allocations=None):
         'title': f'{data.get("number") or "CO"} — {data.get("title") or data.get("description") or ""}'.strip(' —'),
         'status': data.get('status'),
         'ball_in_court_role': ball,
+        'is_subcontract': is_subcontract_co(co),
         'summary': {
             'number': data.get('number'),
             'title': data.get('title') or data.get('description'),
             'amount': data.get('amount'),
             'reason_code': data.get('reason_code'),
             'schedule_impact_days': data.get('schedule_impact_days'),
+            'sub_co_kind': data.get('sub_co_kind'),
             'allocations': data.get('allocations') or [],
         },
         'attachments': data.get('attachments') or [],
@@ -364,14 +366,9 @@ def execute_rfi_action(rfi, action, user, User, body=None):
     return action
 
 
-def execute_co_action(co, action, user, User, body=None, ChangeOrderAllocation=None):
-    from co_persistence import (
-        co_workflow_action,
-        notify_ball_in_court,
-        append_approval_history,
-        user_can_act_on_ball_in_court,
-        co_to_dict,
-    )
+def execute_co_action(co, action, user, User, body=None, ChangeOrderAllocation=None, workflow_deps=None):
+    """Execute CO approve/reject via the unified workflow path (same as main CO API)."""
+    from co_persistence import co_to_dict, user_can_act_on_ball_in_court, process_change_order_workflow
 
     body = body or {}
     action = (action or '').lower()
@@ -379,61 +376,21 @@ def execute_co_action(co, action, user, User, body=None, ChangeOrderAllocation=N
         raise ValueError(f'Unsupported change order action: {action}')
     if not user_can_act_on_ball_in_court(user, co.ball_in_court_role):
         raise ValueError('You are not the current approver for this change order.')
-    comments = (body.get('comment') or body.get('comments') or '').strip()
-    if action == 'reject' and not comments:
-        raise ValueError('Rejection requires a comment.')
-    if action == 'approve' and old_ball_role in ('Owner', 'Architect'):
-        if not body.get('signature_attestation'):
-            raise ValueError('Electronic signature attestation is required for Owner and Architect approvals.')
 
-    old_status = co.status
-    old_ball_role = co.ball_in_court_role
-    allocs = []
-    if ChangeOrderAllocation:
-        allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
-    alloc_payload = [{
-        'cost_code': a.cost_code,
-        'cost_type': getattr(a, 'cost_type', None),
-        'amount': a.amount,
-        'description': getattr(a, 'description', ''),
-    } for a in allocs]
-
-    if action == 'approve' and old_ball_role in ('Owner', 'Architect'):
-        from user_signature_persistence import verify_user_signature_attestation
-        verify_user_signature_attestation(user, (body.get('signature_hash') or '').strip())
-
-    new_status, _final = co_workflow_action(co, action, user, User, alloc_payload)
-    append_approval_history(co, action, user, comments, old_status, new_status)
-
-    if action == 'approve' and old_ball_role in ('Owner', 'Architect'):
-        from user_signature_persistence import append_co_approval_signature
-        append_co_approval_signature(co, user, old_ball_role, comments, action='approve')
-
-    if new_status not in ('Approved', 'Rejected'):
-        notify_ball_in_court(co.project_id, co, User)
-    else:
-        action_url = co_deep_link(co.project_id, co.id)
-        verb = 'approved' if action == 'approve' else 'rejected'
-        if co.created_by_id:
-            cw.notify_user(
-                co.created_by_id,
-                f'{co.number} — {verb}',
-                comments or f'Change order was {verb}.',
-                action_url,
-            )
-            cw.create_internal_message(
-                co.created_by_id,
-                folder='team',
-                msg_type='message',
-                subject=f'{co.number} — {verb}',
-                preview=comments or verb,
-                body=f'<p>{comments or verb}</p>',
-                project_id=co.project_id,
-                from_label=user.full_name if hasattr(user, 'full_name') else 'Change Orders',
-                from_user_id=user.id,
-                module='Change Orders',
-                action_url=action_url,
-                requires_action=False,
-            )
-
-    return action, co_to_dict(co, allocations=alloc_payload)
+    deps = workflow_deps or {}
+    result = process_change_order_workflow(
+        co, action, user, User, body,
+        ChangeOrder=deps['ChangeOrder'],
+        ChangeOrderAllocation=ChangeOrderAllocation or deps.get('ChangeOrderAllocation'),
+        PayAppProjectState=deps['PayAppProjectState'],
+        ScheduleData=deps['ScheduleData'],
+        Project=deps['Project'],
+        BudgetProjectState=deps['BudgetProjectState'],
+        db=deps['db'],
+        Commitment=deps['Commitment'],
+        CommitmentAllocation=deps['CommitmentAllocation'],
+        SageSyncEvent=deps['SageSyncEvent'],
+        generate_next_number_fn=deps.get('generate_next_number_fn'),
+        developer_unlock_bypass=deps.get('developer_unlock_bypass', False),
+    )
+    return action, co_to_dict(co, allocations=result.get('alloc_payload') or []), result

@@ -112,6 +112,36 @@ def register_change_event_routes(app, deps):
         db.session.commit()
         return deps['jsonify']({'ok': True, 'change_event': change_event_to_dict(ce)})
 
+    @app.route('/api/change-events/<int:event_id>/workflow', methods=['POST'])
+    @login_required
+    def api_change_event_workflow(event_id):
+        from change_event_persistence import (
+            change_event_workflow_action, change_event_to_dict,
+            apply_contingency_release, link_change_event_schedule_impact,
+        )
+        from sage_service import create_and_process_sage_event
+        ce = ChangeEvent.query.get_or_404(event_id)
+        body = deps['request'].get_json(silent=True) or {}
+        action = body.get('action')
+        old_status = ce.status
+        try:
+            new_status, final = change_event_workflow_action(ce, action, current_user)
+        except ValueError as exc:
+            return deps['jsonify']({'error': str(exc)}), 400
+        if final and ce.status == 'Approved' and old_status != 'Approved':
+            if float(getattr(ce, 'contingency_release_amount', 0) or 0):
+                apply_contingency_release(BudgetProjectState, ce.project_id, ce.contingency_release_amount, db)
+            link_change_event_schedule_impact(ScheduleData, Project, db, ce.project_id, ce)
+            create_and_process_sage_event(
+                SageSyncEvent, Project, db, ce.project_id,
+                'ChangeEventCreated',
+                message=f'Change Event {ce.number} approved',
+                payload={'change_event_id': ce.id, 'rom_amount': ce.rom_amount, 'approved': True},
+                user_id=current_user.id,
+            )
+        db.session.commit()
+        return deps['jsonify']({'ok': True, 'new_status': new_status, 'final': final, 'change_event': change_event_to_dict(ce)})
+
     @app.route('/api/rfqs', methods=['GET'])
     @login_required
     def api_list_rfqs():
@@ -226,6 +256,42 @@ def register_change_event_routes(app, deps):
             out['cpco'] = pco_to_dict(cpco, PCOAllocation.query.filter_by(pco_id=cpco.id).all())
         return deps['jsonify'](out)
 
+    @app.route('/api/rfqs/<int:rfq_id>/portal-quote', methods=['POST'])
+    @login_required
+    def api_rfq_portal_quote(rfq_id):
+        """Subcontractor portal — submit quote for an RFQ sent to their company."""
+        from change_event_persistence import rfq_workflow_action, rfq_to_dict, save_generic_allocations
+        from sage_service import create_and_process_sage_event
+        rfq = SubcontractorRFQ.query.get_or_404(rfq_id)
+        body = deps['request'].get_json(silent=True) or {}
+        portal = deps.get('user_portal_type_fn')
+        is_sub = portal(current_user) == 'sub' if portal else current_user.role in ('Company User', 'Subcontractor Accountant')
+        if is_sub and rfq.company_id and str(getattr(current_user, 'company_id', '')) != str(rfq.company_id):
+            if getattr(current_user, 'company', '') != (rfq.company_name or ''):
+                return deps['jsonify']({'error': 'This RFQ is not assigned to your company.'}), 403
+        if rfq.status not in ('Sent', 'Draft'):
+            return deps['jsonify']({'error': 'RFQ is not open for quoting.'}), 400
+        allocs = body.get('allocations') or []
+        if not allocs:
+            amt = float(body.get('quoted_amount') or body.get('amount') or 0)
+            if amt <= 0:
+                return deps['jsonify']({'error': 'Quote amount is required.'}), 400
+            allocs = [{'cost_code': body.get('cost_code') or '01-0000', 'cost_type': 'Subcontract', 'amount': amt, 'quoted_amount': amt}]
+        try:
+            new_status, _final = rfq_workflow_action(rfq, 'quote', current_user, allocs)
+        except ValueError as exc:
+            return deps['jsonify']({'error': str(exc)}), 400
+        save_generic_allocations(RFQAllocation, 'rfq_id', rfq.id, allocs, db)
+        create_and_process_sage_event(
+            SageSyncEvent, Project, db, rfq.project_id,
+            'RFQQuoted', message=f'{rfq.number} quoted via portal',
+            payload={'rfq_id': rfq.id, 'quoted_amount': rfq.quoted_amount, 'portal': True},
+            user_id=current_user.id,
+        )
+        db.session.commit()
+        saved = RFQAllocation.query.filter_by(rfq_id=rfq.id).all()
+        return deps['jsonify']({'ok': True, 'new_status': new_status, 'rfq': rfq_to_dict(rfq, saved)})
+
     @app.route('/api/cors', methods=['GET'])
     @login_required
     def api_list_cors():
@@ -321,7 +387,7 @@ def register_change_event_routes(app, deps):
         try:
             sco = promote_cpco_to_sco(
                 pco, allocs, ChangeOrder, ChangeOrderAllocation, db,
-                generate_next_number, current_user.id,
+                generate_next_number, current_user.id, SubcontractorRFQ=SubcontractorRFQ,
             )
             create_and_process_sage_event(
                 SageSyncEvent, Project, db, sco.project_id,
