@@ -25,6 +25,7 @@ PAY_APP_STATE_KEYS = (
     'submissionDeadlineDay',
     'allowZeroDollarSubPayApps',
     'requireAllSubPayAppsBeforeG702Submit',
+    'g702PayAppGateScope',
     'payAppAuditLog',
     'sageSyncAutoEnabled',
     'contractorSOVLocked',
