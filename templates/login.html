@@ -185,19 +185,19 @@
                     <span>Connected via Case PM Desktop</span>
                 </p>
                 {% else %}
-                <div class="text-center mt-5 space-y-2">
-                    <p class="text-[11px] text-zinc-500 leading-relaxed">
-                        Not using the desktop connector?
-                    </p>
-                    <button type="button" id="connectorInstallBtn"
-                            class="inline-flex items-center gap-2 px-3.5 py-2 rounded-md text-xs font-medium
-                                   bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700 text-emerald-400
-                                   hover:text-emerald-300 transition-colors">
-                        <i class="fa-solid fa-download"></i>
-                        Install Case PM Connector
+                <div class="text-center mt-5 space-y-2.5">
+                    <p class="text-[11px] text-zinc-500">Need a desktop shortcut to this server?</p>
+                    <button type="button" id="connectorAddBtn"
+                            class="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-md text-xs font-medium
+                                   bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700 text-zinc-200
+                                   transition-colors">
+                        <span class="w-9 h-9 bg-emerald-600 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-900/30 shrink-0">
+                            <i class="fa-solid fa-hard-hat text-white text-base"></i>
+                        </span>
+                        Add Case PM to Desktop
                     </button>
-                    <p class="text-[10px] text-zinc-600 leading-relaxed max-w-[280px] mx-auto">
-                        One click adds a Case PM icon on your desktop, pinned to this server.
+                    <p class="text-[10px] text-zinc-600 leading-relaxed max-w-[300px] mx-auto">
+                        Quick shortcut — not a full install. Click Open once if your browser asks.
                     </p>
                 </div>
                 {% endif %}
@@ -207,40 +207,23 @@
         </div>
     </div>
 
-    <div id="connectorModal" class="hidden fixed inset-0 z-50 flex items-center justify-center px-4" role="dialog" aria-modal="true" aria-labelledby="connectorModalTitle">
-        <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" id="connectorModalBackdrop"></div>
-        <div class="relative z-10 w-full max-w-[380px] bg-zinc-900 border border-zinc-700 rounded-lg p-5 shadow-2xl shadow-black/50">
-            <div class="flex items-start gap-3 mb-4">
-                <div class="w-10 h-10 bg-emerald-600 rounded-lg flex items-center justify-center shrink-0">
-                    <i class="fa-solid fa-hard-hat text-white"></i>
-                </div>
-                <div>
-                    <h2 id="connectorModalTitle" class="font-display text-lg text-white">Install Case PM Connector?</h2>
-                    <p class="text-sm text-zinc-400 mt-1 leading-relaxed">
-                        This downloads a small installer that puts a <strong class="text-zinc-300">Case PM</strong> icon on your Windows desktop.
-                        The icon opens this server automatically — no address to type.
-                    </p>
-                </div>
+    <div id="connectorModal" class="hidden fixed inset-0 z-50 flex items-center justify-center px-4">
+        <div class="absolute inset-0 bg-black/60" id="connectorModalBackdrop"></div>
+        <div class="relative z-10 w-full max-w-[340px] bg-zinc-900 border border-zinc-700 rounded-lg p-5 shadow-2xl text-center">
+            <div class="w-9 h-9 bg-emerald-600 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-900/30 mx-auto mb-3">
+                <i class="fa-solid fa-hard-hat text-white text-base"></i>
             </div>
-            <p class="text-xs text-zinc-500 mb-4 leading-relaxed">
-                When your browser asks, click <span class="text-zinc-400">Open</span> or <span class="text-zinc-400">Run</span>.
-                Windows will confirm once more, then the icon appears on your desktop.
+            <h2 class="font-display text-lg text-white mb-1">Add to desktop?</h2>
+            <p class="text-sm text-zinc-400 mb-4 leading-relaxed">
+                Puts the same Case PM icon on your desktop, linked to this server.
             </p>
-            <div class="flex gap-2 justify-end">
-                <button type="button" id="connectorModalCancel"
-                        class="px-3.5 py-2 rounded-md text-sm text-zinc-400 hover:text-zinc-200 transition-colors">
-                    Cancel
-                </button>
-                <button type="button" id="connectorModalConfirm"
-                        class="px-3.5 py-2 rounded-md text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors">
-                    Yes, install connector
-                </button>
+            <div class="flex gap-2 justify-center">
+                <button type="button" id="connectorModalNo"
+                        class="px-4 py-2 rounded-md text-sm text-zinc-400 hover:text-zinc-200">No</button>
+                <button type="button" id="connectorModalYes"
+                        class="px-4 py-2 rounded-md text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white">Yes, add it</button>
             </div>
         </div>
-    </div>
-
-    <div id="connectorToast" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-sm w-[calc(100%-2rem)] px-4 py-3 rounded-lg bg-zinc-900 border border-emerald-800/60 text-sm text-zinc-200 shadow-xl text-center">
-        Installer downloaded — click <span class="text-emerald-400">Open</span> or <span class="text-emerald-400">Run</span> to finish.
     </div>
 
     <script>
@@ -249,37 +232,28 @@
                 try { localStorage.setItem('casepm_connector', '1'); } catch (e) {}
             }
 
-            var installBtn = document.getElementById('connectorInstallBtn');
+            var btn = document.getElementById('connectorAddBtn');
             var modal = document.getElementById('connectorModal');
-            var toast = document.getElementById('connectorToast');
             var downloadUrl = {{ url_for('download_casepm_connector') | tojson }};
+            if (!btn || !modal) return;
 
-            if (!installBtn || !modal) return;
-
-            function openModal() { modal.classList.remove('hidden'); }
             function closeModal() { modal.classList.add('hidden'); }
+            function openModal() { modal.classList.remove('hidden'); }
 
-            function showToast() {
-                if (!toast) return;
-                toast.classList.remove('hidden');
-                setTimeout(function () { toast.classList.add('hidden'); }, 8000);
-            }
-
-            function startInstall() {
+            function downloadShortcut() {
                 closeModal();
-                var link = document.createElement('a');
-                link.href = downloadUrl;
-                link.download = 'Install Case PM Connector.bat';
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
-                showToast();
+                var a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = 'Add Case PM to Desktop.vbs';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
             }
 
-            installBtn.addEventListener('click', openModal);
-            document.getElementById('connectorModalCancel').addEventListener('click', closeModal);
+            btn.addEventListener('click', openModal);
             document.getElementById('connectorModalBackdrop').addEventListener('click', closeModal);
-            document.getElementById('connectorModalConfirm').addEventListener('click', startInstall);
+            document.getElementById('connectorModalNo').addEventListener('click', closeModal);
+            document.getElementById('connectorModalYes').addEventListener('click', downloadShortcut);
         })();
     </script>
 </body>

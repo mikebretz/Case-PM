@@ -1,13 +1,12 @@
-Case PM Desktop Connector (v1.1)
+Case PM Desktop Connector (v1.3)
 ================================
 
-Users install from the login page — click "Install Case PM Connector",
-confirm in the popup, then open the downloaded file when the browser asks.
+Users click "Add Case PM to Desktop" on the login page.
 
-The installer automatically:
-  - Connects to the server they downloaded from (no address to type)
-  - Adds a "Case PM" icon to the Windows desktop
-  - Pins the shortcut to /login?connector=1
+Flow:
+  1. Yes/No on the login page
+  2. Open the downloaded "Add Case PM to Desktop.vbs" when the browser asks
+  3. Yes/No on Windows — shortcut is placed on the desktop and Case PM opens
 
-Files in this folder are kept for reference. The live installer is built
-dynamically by connector_download.py when users click install on the login page.
+Icons are generated with scripts/generate_casepm_icon.py using the same
+Font Awesome hard-hat and emerald-600 tile as the login header.
