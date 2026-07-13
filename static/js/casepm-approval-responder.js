@@ -18,6 +18,11 @@
   let ctx = null;
   let signPanel = null;
   let pendingFiles = [];
+  let localHandler = null;
+
+  const REVIEW_BTN_PRIMARY = 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-900/30';
+  const REVIEW_BTN_DANGER = 'bg-red-700 hover:bg-red-600 text-white shadow-md shadow-red-900/30';
+  const REVIEW_BTN_SECONDARY = 'bg-zinc-700 hover:bg-zinc-600 text-white';
 
   function esc(s) {
     if (s == null) return '';
@@ -78,7 +83,7 @@
     if (!items.length) {
       return '<p class="text-sm text-zinc-500">No comments yet.</p>';
     }
-    if (module === 'Change Orders' || module === 'Pay Applications') {
+    if (module === 'Change Orders' || module === 'Pay Applications' || module === 'Commitments' || module === 'PCO' || module === 'COR' || module === 'Change Events' || module === 'ERP / Sage') {
       return items.map(entry => `
         <div class="border border-zinc-700 rounded-md p-3 text-sm">
           <div class="flex justify-between text-xs text-zinc-500 mb-1">
@@ -158,11 +163,11 @@
     }
     host.innerHTML = list.map(a => {
       const cls = a.style === 'primary'
-        ? 'bg-emerald-600 hover:bg-emerald-500 text-white font-semibold'
+        ? REVIEW_BTN_PRIMARY
         : a.style === 'danger'
-          ? 'bg-red-950 hover:bg-red-900 border border-red-800 text-red-300'
-          : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200';
-      return `<button type="button" data-apr-action="${esc(a.action)}" class="px-5 py-2.5 rounded-md text-sm ${cls}">${esc(a.label)}</button>`;
+          ? REVIEW_BTN_DANGER
+          : REVIEW_BTN_SECONDARY;
+      return `<button type="button" data-apr-action="${esc(a.action)}" class="${cls}">${esc(a.label)}</button>`;
     }).join('');
     host.querySelectorAll('[data-apr-action]').forEach(btn => {
       btn.addEventListener('click', () => submit(btn.getAttribute('data-apr-action')));
@@ -274,23 +279,47 @@
     });
   }
 
+  function showDialog() {
+    const dlg = modal();
+    if (!dlg) return;
+    if (typeof dlg.showModal === 'function') dlg.showModal();
+  }
+
   function paint(data) {
     ctx = data;
+    localHandler = data._localHandler || localHandler;
     document.getElementById('aprTitle').textContent = data.title || 'Review Item';
     const subtitle = [
       data.status,
-      data.ball_in_court_role ? `Waiting on: ${data.ball_in_court_role}` : null,
     ].filter(Boolean).join(' · ');
     document.getElementById('aprSubtitle').textContent = subtitle;
-    document.getElementById('aprSummary').innerHTML = renderSummary(data);
+    const ballEl = document.getElementById('aprBallBadge');
+    if (ballEl) {
+      if (data.ball_in_court_role) {
+        ballEl.textContent = `Your turn — ${data.ball_in_court_role}`;
+        ballEl.classList.remove('hidden');
+      } else {
+        ballEl.classList.add('hidden');
+      }
+    }
+    document.getElementById('aprSummary').innerHTML = data.summary_html || renderSummary(data);
     document.getElementById('aprThread').innerHTML = renderThread(data.thread, data.module);
     document.getElementById('aprAttachments').innerHTML = renderAttachments(data.attachments, data.module, data.entity_id);
     const comment = document.getElementById('aprComment');
-    if (comment) comment.value = '';
-    const uploadSection = document.getElementById('aprUploadSection');
-    if (uploadSection) {
-      uploadSection.classList.toggle('hidden', data.module === 'Change Orders');
+    if (comment) {
+      comment.value = '';
+      comment.placeholder = (data.allowed_actions || []).some(a => a.action === 'reject' || a.requires_comment)
+        ? 'Required for rejection — add notes for the project record…'
+        : 'Add approval notes, official answer, or comments…';
     }
+    const attachSection = document.getElementById('aprAttachmentsSection');
+    const hideUpload = ['Change Orders', 'Pay Applications', 'Commitments'].includes(data.module);
+    if (attachSection) {
+      const hasAtts = (data.attachments || []).length > 0;
+      attachSection.classList.toggle('hidden', hideUpload && !hasAtts && data.module !== 'RFIs');
+    }
+    const uploadSection = document.getElementById('aprUploadSection');
+    if (uploadSection) uploadSection.classList.toggle('hidden', hideUpload || data.module !== 'RFIs');
     renderActions(data.allowed_actions);
     setupEsign(data);
     bindUploadHandlers();
@@ -306,7 +335,12 @@
       commentEl?.focus();
       return;
     }
-  const body = { action, comment };
+    if (action === 'reject' && !comment) {
+      alert('Please enter a rejection reason.');
+      commentEl?.focus();
+      return;
+    }
+    const body = { action, comment, comments: comment };
     if (actionMeta.is_official) body.is_official = true;
     if (action === 'approve' && signPanel) {
       try {
@@ -317,6 +351,15 @@
       }
     }
     try {
+      if (ctx._local && typeof localHandler === 'function') {
+        await localHandler(action, comment, body, ctx);
+        toast('Saved successfully.');
+        modal()?.close();
+        destroySignPanel();
+        localHandler = null;
+        global.dispatchEvent(new CustomEvent('casepm:approval-responded', { detail: { action, local: true } }));
+        return;
+      }
       if (ctx.module === 'RFIs' && pendingFiles.length) {
         await uploadPendingFiles(ctx.module, ctx.entity_id);
       }
@@ -332,12 +375,10 @@
       }
       if (ctx.module === 'Change Orders' && global.CasePMChangeOrders) {
         if (global.CasePMChangeOrders.loadChangeOrders) await global.CasePMChangeOrders.loadChangeOrders?.();
-        if (global.CasePMChangeOrders.viewCo) await global.CasePMChangeOrders.viewCo(ctx.entity_id).catch(() => {});
+        if (global.CasePMChangeOrders.closeDrawer) global.CasePMChangeOrders.closeDrawer();
       }
       if (ctx.module === 'Pay Applications') {
-        if (typeof global.CasePMPayAppSync !== 'undefined') await global.CasePMPayAppSync.refreshFromServer();
-        if (typeof reloadPayAppStateFromStorage === 'function') reloadPayAppStateFromStorage();
-        if (typeof renderPayAppContent === 'function') renderPayAppContent();
+        if (typeof global.CasePMPayAppSync !== 'undefined') await global.CasePMPayAppSync.refreshFromServer().catch(() => {});
       }
     } catch (err) {
       alert(err.message || 'Could not complete action.');
@@ -349,18 +390,42 @@
     else console.log(msg);
   }
 
+  function openLocal(opts) {
+    localHandler = opts.onSubmit || null;
+    const data = {
+      module: opts.module || 'Workflow',
+      entity_id: opts.entityId,
+      title: opts.title || 'Review',
+      status: opts.status || '',
+      ball_in_court_role: opts.ball || opts.ball_in_court_role,
+      summary: opts.summary || {},
+      summary_html: opts.summaryHtml || opts.summary_html,
+      thread: opts.thread || [],
+      attachments: opts.attachments || [],
+      allowed_actions: opts.actions || opts.allowed_actions || [],
+      requires_esign: !!opts.requires_esign,
+      _local: true,
+      _localHandler: localHandler,
+    };
+    pendingFiles = [];
+    paint(data);
+    showDialog();
+    document.getElementById('aprComment')?.focus();
+    return data;
+  }
+
   async function open(module, entityId, options) {
     if (typeof global.CasePMWorkflow !== 'undefined') {
       await global.CasePMWorkflow.loadPortal().catch(() => {});
     }
+    localHandler = null;
     let path = `/api/workflow/respond/${modulePath(module)}/${entityId}`;
     const opts = options || {};
     if (opts.project_id) path += `?project_id=${encodeURIComponent(opts.project_id)}`;
     const data = await api(path);
     pendingFiles = [];
     paint(data);
-    const dlg = modal();
-    dlg?.showModal();
+    showDialog();
     document.getElementById('aprComment')?.focus();
     return data;
   }
@@ -368,6 +433,7 @@
   function close() {
     destroySignPanel();
     pendingFiles = [];
+    localHandler = null;
     ctx = null;
     modal()?.close();
   }
@@ -383,6 +449,7 @@
 
   global.CasePMApprovalResponder = {
     open,
+    openLocal,
     close,
     isStaffPortal,
     init,
