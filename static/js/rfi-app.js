@@ -758,7 +758,6 @@
       subject: document.getElementById('modalRfiSubject')?.value?.trim(),
       question: document.getElementById('modalRfiQuestion')?.value?.trim(),
       priority: document.getElementById('modalRfiPriority')?.value,
-      status: document.getElementById('modalRfiStatus')?.value,
       due_date: document.getElementById('modalRfiDueDate')?.value || null,
       drawing_reference: document.getElementById('modalRfiDrawing')?.value?.trim(),
       spec_reference: document.getElementById('modalRfiSpec')?.value?.trim(),

@@ -54,7 +54,33 @@ TRADE_MIX_B = [
 ]
 
 CONTRACT_VALUE = 30_000_000.0
+CONTRACT_VALUE_100M = 100_000_000.0
 RETAINAGE_PCT = 10.0
+
+# $100M mega campus — expanded trade mix
+TRADE_MIX_C = [
+    ('03-300', 'Concrete', 0.07, 'Subcontract'),
+    ('04-200', 'Masonry', 0.02, 'Subcontract'),
+    ('05-120', 'Structural Steel', 0.06, 'Subcontract'),
+    ('06-100', 'Rough Carpentry', 0.04, 'Subcontract'),
+    ('07-200', 'Insulation/Waterproof', 0.03, 'Subcontract'),
+    ('08-100', 'Doors & Frames', 0.03, 'Subcontract'),
+    ('08-800', 'Glazing', 0.04, 'Subcontract'),
+    ('09-250', 'Drywall & Finishes', 0.09, 'Subcontract'),
+    ('09-900', 'Tile & Stone', 0.03, 'Subcontract'),
+    ('10-100', 'Specialties', 0.02, 'Subcontract'),
+    ('11-400', 'Equipment', 0.04, 'Purchase Order'),
+    ('14-200', 'Elevators', 0.03, 'Subcontract'),
+    ('15-100', 'Mechanical HVAC', 0.13, 'Subcontract'),
+    ('16-100', 'Electrical', 0.11, 'Subcontract'),
+    ('22-100', 'Plumbing', 0.07, 'Subcontract'),
+    ('21-000', 'Fire Protection', 0.03, 'Subcontract'),
+    ('23-000', 'HVAC Controls', 0.03, 'Subcontract'),
+    ('26-500', 'Low Voltage', 0.04, 'Subcontract'),
+    ('32-900', 'Landscaping', 0.02, 'Subcontract'),
+    ('01-100', 'General Conditions', 0.05, 'Service Agreement'),
+    ('01-200', 'Contingency', 0.02, 'Service Agreement'),
+]
 
 
 @dataclass
@@ -223,7 +249,296 @@ def _approve_owner_co(co, users, app_models):
     return co.status
 
 
-def run_simulation(name: str, trade_mix: list, app_models) -> SimResult:
+def _run_extended_modules(result: SimResult, project, users, app_models, commitments):
+    """RFIs, submittals, change events, RFQs, CORs, security regression, period 2, Sage review."""
+    from change_event_persistence import (
+        apply_change_event_fields, change_event_workflow_action,
+        rfq_workflow_action, cor_workflow_action, save_generic_allocations,
+        accept_sage_event_for_export,
+    )
+    from rfi_persistence import apply_rfi_fields, workflow_rfi, add_response
+    from workflow_responder import execute_rfi_action
+    from submittal_persistence import apply_submittal_fields, submittal_workflow_action
+    from financial_security import strip_workflow_fields
+
+    db = app_models['db']
+    RFI = app_models['RFI']
+    Submittal = app_models['Submittal']
+    ChangeEvent = app_models['ChangeEvent']
+    SubcontractorRFQ = app_models['SubcontractorRFQ']
+    RFQAllocation = app_models['RFQAllocation']
+    ChangeOrderRequest = app_models['ChangeOrderRequest']
+    CORAllocation = app_models['CORAllocation']
+    PotentialChangeOrder = app_models['PotentialChangeOrder']
+    PCOAllocation = app_models['PCOAllocation']
+    SageSyncEvent = app_models['SageSyncEvent']
+    Commitment = app_models['Commitment']
+    PayAppProjectState = app_models['PayAppProjectState']
+    BudgetProjectState = app_models['BudgetProjectState']
+    ChangeOrder = app_models['ChangeOrder']
+    ChangeOrderAllocation = app_models['ChangeOrderAllocation']
+    Project = app_models['Project']
+    User = app_models['User']
+
+    if not RFI or not Submittal or not ChangeEvent:
+        result.add('critical', 'setup', 'Extended modules missing required models (RFI, Submittal, ChangeEvent)')
+        return
+
+    uid = datetime.utcnow().strftime('%H%M%S%f')[:12]
+
+    # --- Standard RFI ---
+    rfi_std = RFI(
+        project_id=project.id,
+        number=f'RFI-{uid}-001',
+        subject='Curtain wall anchor detail at Level 12',
+        question='Confirm embed plate spec per drawing A-501.',
+        priority='High',
+        status='Draft',
+        date=datetime.utcnow().date(),
+        created_by_id=users['pm'].id,
+        ball_in_court_role='RFI Manager',
+    )
+    db.session.add(rfi_std)
+    db.session.flush()
+    execute_rfi_action(rfi_std, 'submit', users['pm'], User, {})
+    add_response(rfi_std, {'body': 'Use 3/4" A325 bolts per spec 05 12 00.', 'is_official': True}, users['arch'].id, 'Sim Architect')
+    workflow_rfi(rfi_std, 'close', 'Sim PM')
+    db.session.commit()
+    result.metrics['rfi_standard'] = rfi_std.status
+
+    # --- Atypical RFI (private, cost + schedule impact) ---
+    rfi_atyp = RFI(
+        project_id=project.id,
+        number=f'RFI-{uid}-ATYP',
+        subject='Structural conflict — transfer girder vs MEP plenum',
+        question='Field condition requires beam redesign; cost and schedule impact expected.',
+        priority='Critical',
+        status='Open',
+        date=datetime.utcnow().date(),
+        created_by_id=users['pm'].id,
+        ball_in_court_role='Assignee',
+        is_private=1,
+        cost_impact_amount=850_000.0,
+        schedule_impact_days=21,
+        discipline='Structural',
+    )
+    apply_rfi_fields(rfi_atyp, {
+        'notes': 'Executive-only until ROM validated',
+        'location_description': 'Level 8 east core',
+    })
+    db.session.add(rfi_atyp)
+    db.session.commit()
+    result.metrics['rfi_atypical_cost'] = rfi_atyp.cost_impact_amount
+
+    # --- Security: RFI status PUT bypass must fail ---
+    old_rfi_status = rfi_std.status
+    apply_rfi_fields(rfi_std, {'status': 'Void'})
+    if rfi_std.status != old_rfi_status:
+        result.add('critical', 'security', 'RFI status writable via PUT apply_rfi_fields')
+
+    # --- Submittals (full review chain) ---
+    sub_specs = [
+        ('09-250-001', '09-250', 'Level 5 gypsum board assembly'),
+        ('08-100-001', '08-100', 'Hollow metal door frames Type A'),
+        ('23-000-001', '23-000', 'BAS control sequences'),
+        ('15-100-001', '15-100', 'Rooftop unit RTU-3'),
+        ('16-100-001', '16-100', 'Switchgear submittal package'),
+    ]
+    sub_closed = 0
+    for i, (num_suffix, spec, desc) in enumerate(sub_specs):
+        num = f'SUB-{uid}-{num_suffix}'
+        sub = Submittal(
+            project_id=project.id,
+            number=num,
+            description=desc,
+            spec_section=spec,
+            status='Draft',
+            priority='Medium',
+            submitted_by='Sim Sub Co',
+            date=datetime.utcnow().date(),
+        )
+        apply_submittal_fields(sub, {}, is_create=True)
+        db.session.add(sub)
+        db.session.flush()
+        submittal_workflow_action(sub, 'send_to_sub', users['pm'])
+        submittal_workflow_action(sub, 'return_from_sub', users['sub'])
+        submittal_workflow_action(sub, 'submit_to_architect', users['pm'])
+        decision = 'No Exceptions Taken' if i == 0 else 'Reviewed as Noted'
+        submittal_workflow_action(sub, 'architect_decision', users['arch'], {'decision': decision})
+        if decision == 'No Exceptions Taken':
+            submittal_workflow_action(sub, 'close', users['pm'])
+            sub_closed += 1
+    db.session.commit()
+    result.metrics['submittals_closed'] = sub_closed
+    result.metrics['submittals_total'] = len(sub_specs)
+
+    # --- Security: submittal sync status bypass ---
+    sample_sub = Submittal.query.filter_by(project_id=project.id).first()
+    if sample_sub:
+        old_sub_status = sample_sub.status
+        apply_submittal_fields(sample_sub, {'status': 'Closed'}, is_create=False)
+        if sample_sub.status != old_sub_status:
+            result.add('critical', 'security', 'Submittal status writable via apply_submittal_fields PUT path')
+
+    # --- Change event + RFQ + COR ---
+    ce = ChangeEvent(
+        project_id=project.id,
+        number=f'CE-{uid}-001',
+        title='Owner-directed lobby upgrade',
+        status='Open',
+        ball_in_court_role='Project Manager',
+        rom_amount=1_200_000.0,
+        created_by_id=users['pm'].id,
+    )
+    db.session.add(ce)
+    db.session.flush()
+
+    sub_com = next((c for c in commitments if c.commitment_type == 'Subcontract'), commitments[0] if commitments else None)
+    rfq = SubcontractorRFQ(
+        project_id=project.id,
+        number=f'RFQ-{uid}-001',
+        title='Lobby finishes RFQ',
+        status='Draft',
+        ball_in_court_role='Creator',
+        company_id=sub_com.company_id if sub_com else '200',
+        company_name=sub_com.company_name if sub_com else 'Finishes Sim Co',
+        change_event_id=ce.id,
+        created_by_id=users['pm'].id,
+    )
+    db.session.add(rfq)
+    db.session.flush()
+    save_generic_allocations(RFQAllocation, 'rfq_id', rfq.id, [{
+        'cost_code': '09-250', 'cost_type': 'Subcontract', 'amount': 450_000,
+    }], db)
+    rfq_workflow_action(rfq, 'send', users['pm'])
+    rfq_workflow_action(rfq, 'quote', users['sub'], [{
+        'cost_code': '09-250', 'cost_type': 'Subcontract', 'amount': 450_000, 'quoted_amount': 475_000,
+    }])
+    rfq_workflow_action(rfq, 'accept', users['pm'])
+    db.session.commit()
+    result.metrics['rfq_status'] = rfq.status
+
+    # Security: RFQ reject without authority must fail
+    rfq_reject_test = SubcontractorRFQ(
+        project_id=project.id,
+        number=f'RFQ-{uid}-REJ',
+        title='Reject auth test',
+        status='Quoted',
+        ball_in_court_role='Project Manager',
+        company_id='999',
+        created_by_id=users['pm'].id,
+    )
+    db.session.add(rfq_reject_test)
+    db.session.commit()
+    try:
+        rfq_workflow_action(rfq_reject_test, 'reject', users['sub'])
+        result.add('critical', 'security', 'RFQ reject allowed for unauthorized subcontractor user')
+    except ValueError:
+        result.add('info', 'security', 'RFQ reject correctly blocked for unauthorized user')
+
+    # Security: RFQ quoted_amount PUT bypass
+    old_quote = float(rfq.quoted_amount or 0)
+    from change_event_persistence import apply_rfq_fields
+    apply_rfq_fields(rfq, {'quoted_amount': 1.0})
+    if float(rfq.quoted_amount or 0) != old_quote:
+        result.add('critical', 'security', 'RFQ quoted_amount writable via PUT')
+
+    cor = ChangeOrderRequest(
+        project_id=project.id,
+        number=f'COR-{uid}-001',
+        title='Lobby upgrade COR',
+        status='Draft',
+        ball_in_court_role='Creator',
+        amount=1_200_000.0,
+        change_event_id=ce.id,
+        created_by_id=users['pm'].id,
+    )
+    db.session.add(cor)
+    db.session.flush()
+    save_generic_allocations(CORAllocation, 'cor_id', cor.id, [{
+        'cost_code': '09-250', 'cost_type': 'Subcontract', 'amount': 1_200_000,
+    }], db)
+    cor_workflow_action(cor, 'submit', users['pm'])
+    for actor in (users['pm'], users['arch'], users['owner'], users['acct']):
+        if cor.status == 'Approved':
+            break
+        try:
+            cor_workflow_action(
+                cor, 'approve', actor,
+                body={'signature_attestation': True, 'signature_hash': 'sim', 'skip_signature_verify': True},
+                ChangeOrderRequest=ChangeOrderRequest,
+                CORAllocation=CORAllocation,
+            )
+        except ValueError as exc:
+            if 'signature' not in str(exc).lower():
+                raise
+    db.session.commit()
+    result.metrics['cor_status'] = cor.status
+    if cor.status != 'Approved':
+        result.add('critical', 'change_event', f'COR ended {cor.status} (expected Approved)')
+
+    change_event_workflow_action(ce, 'submit', users['pm'])
+    for _ in range(4):
+        if ce.status == 'Approved':
+            break
+        change_event_workflow_action(ce, 'approve', users['pm'])
+    db.session.commit()
+    result.metrics['change_event_status'] = ce.status
+
+    # Security: CE status PUT bypass
+    old_ce_status = ce.status
+    apply_change_event_fields(ce, {'status': 'Void'})
+    if ce.status != old_ce_status:
+        result.add('critical', 'security', 'Change event status writable via PUT')
+
+    # --- Sage accounting review (sample events) ---
+    reviewed = 0
+    events = SageSyncEvent.query.filter_by(project_id=project.id, accounting_status='pending_review').limit(5).all()
+    for ev in events:
+        accept_sage_event_for_export(ev, users['acct'], db, Commitment=Commitment)
+        reviewed += 1
+    db.session.commit()
+    result.metrics['sage_reviewed'] = reviewed
+
+    # --- Pay app period 2 (partial) ---
+    from pay_app_persistence import get_pay_app_state, save_pay_app_state
+    from pay_app_workflow import process_pay_app_workflow, sub_pay_app_workflow_action
+
+    _, pay_state = get_pay_app_state(PayAppProjectState, project.id)
+    period = pay_state.get('currentPayAppPeriod') or {}
+    if period.get('status') == 'Approved':
+        pay_state['currentPayAppPeriod'] = {
+            'periodNumber': 2,
+            'status': 'Draft',
+            'periodStart': '2026-02-01',
+            'periodEnd': '2026-02-28',
+            'ball_in_court_role': 'Creator',
+        }
+        pay_state['payAppBillingLines'] = {}
+        sub_sov = pay_state.get('subcontractorSOV') or {}
+        sub_hist = pay_state.get('subPayAppHistory') or {}
+        sub_lien = pay_state.get('subLienWaivers') or {}
+        billed_p2 = 0.0
+        for company_key, lines in list(sub_sov.items())[:3]:
+            period_amt = 0.0
+            for line in lines:
+                sv = float(line.get('scheduled_value') or 0)
+                bill = round(sv * 0.10, 2)
+                line['work_this_period'] = bill
+                period_amt += bill
+            entry = {'status': 'Draft', 'periodNumber': 2, 'totalBilledThisPeriod': period_amt}
+            sub_hist.setdefault(company_key, {})['2'] = entry
+            sub_lien.setdefault(company_key, {})['2'] = {'filename': f'lien-p2-{company_key}.pdf'}
+            sub_pay_app_workflow_action(pay_state, company_key, 'submit', users['sub'], {'pending_entry': entry})
+            sub_pay_app_workflow_action(pay_state, company_key, 'approve', users['pm'], {'pending_entry': entry})
+            billed_p2 += period_amt
+        save_pay_app_state(PayAppProjectState, db, project.id, pay_state, user_id=None)
+        result.metrics['period2_sub_billed'] = billed_p2
+
+    result.metrics['extended_modules'] = True
+
+
+def run_simulation(name: str, trade_mix: list, app_models, *, contract_value: float = CONTRACT_VALUE, full_lifecycle: bool = False) -> SimResult:
     from budget_persistence import get_budget_state, save_budget_state
     from pay_app_persistence import get_pay_app_state, save_pay_app_state
     from pay_app_workflow import process_pay_app_workflow, g702_workflow_action, sub_sov_workflow_action, sub_pay_app_workflow_action
@@ -246,9 +561,9 @@ def run_simulation(name: str, trade_mix: list, app_models) -> SimResult:
     ts = datetime.utcnow().strftime('%H%M%S')
     project = Project(
         number=f'SIM-{name[:3].upper()}-{ts}',
-        name=f'Simulation {name} — $30M Commercial',
+        name=f'Simulation {name} — ${contract_value/1e6:.0f}M Commercial',
         client='Sim Owner LLC',
-        contract_value=CONTRACT_VALUE,
+        contract_value=contract_value,
         status='Active',
         sage_job_number=f'SIM{name[:2]}{ts}',
         accounting_project_number=f'ACCT-{ts}',
@@ -261,7 +576,7 @@ def run_simulation(name: str, trade_mix: list, app_models) -> SimResult:
     budget_lines = []
     total_orig = 0.0
     for code, desc, pct, _ctype in trade_mix:
-        amt = round(CONTRACT_VALUE * pct, 2)
+        amt = round(contract_value * pct, 2)
         total_orig += amt
         budget_lines.append({
             'cost_code': code,
@@ -275,15 +590,15 @@ def run_simulation(name: str, trade_mix: list, app_models) -> SimResult:
         })
     budget_state = {
         'budgetLines': budget_lines,
-        'budgetContractAmount': CONTRACT_VALUE,
+        'budgetContractAmount': contract_value,
         'budgetRevision': 1,
         'budgetLocked': False,
         'budgetPublished': True,
     }
     save_budget_state(BudgetProjectState, db, project.id, budget_state, user_id=None)
 
-    if abs(total_orig - CONTRACT_VALUE) > 100:
-        result.add('warning', 'budget', f'Budget lines sum ${total_orig:,.2f} vs contract ${CONTRACT_VALUE:,.2f}')
+    if abs(total_orig - contract_value) > 100:
+        result.add('warning', 'budget', f'Budget lines sum ${total_orig:,.2f} vs contract ${contract_value:,.2f}')
 
     # --- Pay app state seed ---
     contractor_sov = [{
@@ -322,7 +637,7 @@ def run_simulation(name: str, trade_mix: list, app_models) -> SimResult:
     for code, desc, pct, ctype in trade_mix:
         if ctype == 'Service Agreement' and 'Contingency' in desc:
             continue  # hold contingency uncommitted
-        amt = round(CONTRACT_VALUE * pct * 0.98, 2)  # slight buy-out vs budget
+        amt = round(contract_value * pct * 0.98, 2)  # slight buy-out vs budget
         company_id_counter += 1
         com = Commitment(
             project_id=project.id,
@@ -458,7 +773,7 @@ def run_simulation(name: str, trade_mix: list, app_models) -> SimResult:
     period = pay_state.get('currentPayAppPeriod') or {}
     contractor_sov = pay_state.get('contractorSOV') or []
     sov_line_id = contractor_sov[0].get('id', 1) if contractor_sov else 1
-    billing_total = round(CONTRACT_VALUE * 0.12, 2)
+    billing_total = round(contract_value * 0.12, 2)
     pay_state['payAppBillingLines'] = {
         str(sov_line_id): {
             'workThisPeriod': billing_total,
@@ -476,7 +791,7 @@ def run_simulation(name: str, trade_mix: list, app_models) -> SimResult:
         )
         pay_state = g702_result['state']
         period = pay_state.get('currentPayAppPeriod') or period
-        billing_amt = round(CONTRACT_VALUE * 0.12 * (1 - RETAINAGE_PCT / 100), 2)
+        billing_amt = round(contract_value * 0.12 * (1 - RETAINAGE_PCT / 100), 2)
         # Spoofed low amount_due must NOT bypass Owner/Accounting on large billing
         approve_result = process_pay_app_workflow(
             project.id, 'g702', period.get('periodNumber'), 'approve', users['pm'], User,
@@ -561,7 +876,10 @@ def run_simulation(name: str, trade_mix: list, app_models) -> SimResult:
     sage_pending = SageSyncEvent.query.filter_by(project_id=project.id, accounting_status='pending_review').count()
     result.metrics['sage_pending_review'] = sage_pending
     if sage_pending > 20:
-        result.add('info', 'sage', f'{sage_pending} Sage events awaiting accounting review (expected volume on $30M job)')
+        result.add('info', 'sage', f'{sage_pending} Sage events awaiting accounting review (expected volume on ${contract_value/1e6:.0f}M job)')
+
+    if full_lifecycle:
+        _run_extended_modules(result, project, users, app_models, commitments)
 
     return result
 
@@ -573,7 +891,9 @@ def main():
     from app import (
         db, Project, Commitment, CommitmentAllocation,
         ChangeOrder, ChangeOrderAllocation, BudgetProjectState,
-        PayAppProjectState, SageSyncEvent, User,
+        PayAppProjectState, SageSyncEvent, User, RFI, Submittal,
+        ChangeEvent, SubcontractorRFQ, RFQAllocation,
+        ChangeOrderRequest, CORAllocation, PotentialChangeOrder, PCOAllocation,
     )
 
     models = {
@@ -588,18 +908,33 @@ def main():
         'SageSyncEvent': SageSyncEvent,
         'User': User,
         'ScheduleData': getattr(app_module, 'ScheduleData', None),
+        'RFI': RFI,
+        'Submittal': Submittal,
+        'ChangeEvent': ChangeEvent,
+        'SubcontractorRFQ': SubcontractorRFQ,
+        'RFQAllocation': RFQAllocation,
+        'ChangeOrderRequest': ChangeOrderRequest,
+        'CORAllocation': CORAllocation,
+        'PotentialChangeOrder': PotentialChangeOrder,
+        'PCOAllocation': PCOAllocation,
     }
+
+    runs = [
+        ('Retail-Shell-A', TRADE_MIX_A, CONTRACT_VALUE, False),
+        ('Hospitality-B', TRADE_MIX_B, CONTRACT_VALUE, False),
+        ('Mega-Campus-C', TRADE_MIX_C, CONTRACT_VALUE_100M, True),
+    ]
 
     results = []
     sig_patch = patch('user_signature_persistence.verify_user_signature_attestation', lambda *a, **k: True)
     sig_patch.start()
     try:
         with app_module.app.app_context():
-            for name, mix in [('Retail-Shell-A', TRADE_MIX_A), ('Hospitality-B', TRADE_MIX_B)]:
+            for name, mix, cv, full in runs:
                 db.session.rollback()
-                print(f'\n{"="*60}\nRunning simulation: {name}\n{"="*60}')
+                print(f'\n{"="*60}\nRunning simulation: {name} (${cv/1e6:.0f}M{" full lifecycle" if full else ""})\n{"="*60}')
                 try:
-                    r = run_simulation(name, mix, models)
+                    r = run_simulation(name, mix, models, contract_value=cv, full_lifecycle=full)
                     results.append(r)
                     print(f'Project ID: {r.project_id}')
                     print('Metrics:', json.dumps(r.metrics, indent=2))

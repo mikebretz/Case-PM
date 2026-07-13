@@ -1067,6 +1067,7 @@ function renderSubmittalsTable(list) {
 
 // Open detail modal
 let currentModalItem = null;
+let currentModalPreviousStatus = null;
 
 function openDetailModal(id, isNew = false, newData = null) {
     if (isNew && newData) {
@@ -1075,6 +1076,7 @@ function openDetailModal(id, isNew = false, newData = null) {
         currentModalItem = submittals.find(s => s.id === id);
     }
     if (!currentModalItem) return;
+    currentModalPreviousStatus = currentModalItem.status || 'Draft';
     
     // Populate basic fields
     document.getElementById('modalSubmittalNumber').textContent = currentModalItem.number || 'NEW';
@@ -1201,39 +1203,80 @@ function saveSubmittalFromModal() {
     }
     
     saveData();
-    syncSubmittalToServer(currentModalItem).then(() => {
+    const newStatus = currentModalItem.status;
+    const wf = submittalWorkflowActionForTransition(currentModalPreviousStatus, newStatus);
+    syncSubmittalToServer(currentModalItem, { statusWorkflow: wf }).then(() => {
+        if (wf && currentModalItem.serverId) {
+            currentModalItem.status = newStatus;
+            saveData();
+        }
         closeDetailModal();
         renderSubmittalsTable();
         updateMetrics();
+    }).catch(err => {
+        showCenteredAlert(err.message || 'Could not save submittal', 'error');
     });
 }
 
-async function syncSubmittalToServer(item) {
+async function syncSubmittalToServer(item, opts = {}) {
     const pid = window.SUBMITTAL_PROJECT_CTX?.id;
     if (!pid || !item?.number) return;
+    const payload = {
+        project_id: pid,
+        number: item.number,
+        description: item.subject || item.description || 'Submittal',
+        spec_section: item.specSection,
+        priority: item.priority || 'Medium',
+    };
+    if (!item.serverId) {
+        payload.status = 'Draft';
+    }
     try {
         const res = await fetch('/api/submittals/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
-            body: JSON.stringify({
-                project_id: pid,
-                number: item.number,
-                description: item.subject || item.description || 'Submittal',
-                spec_section: item.specSection,
-                status: item.status,
-                priority: item.priority || 'Medium',
-            }),
+            body: JSON.stringify(payload),
         });
         const json = await res.json();
         if (res.ok && json.submittal_id) {
             item.serverId = json.submittal_id;
+            if (json.status) item.status = json.status;
             saveData();
             await loadSubmittalAttachments(json.submittal_id);
+        }
+        if (opts.statusWorkflow && item.serverId) {
+            await applySubmittalStatusWorkflow(item.serverId, opts.statusWorkflow);
         }
     } catch (e) {
         console.warn('Submittal sync failed', e);
     }
+}
+
+function submittalWorkflowActionForTransition(oldStatus, newStatus) {
+    if (!oldStatus || oldStatus === newStatus) return null;
+    if (oldStatus === 'Draft' && newStatus === 'Sent to Subcontractor') return { action: 'send_to_sub' };
+    if (oldStatus === 'Sent to Subcontractor' && newStatus === 'Returned from Subcontractor') return { action: 'return_from_sub' };
+    if (oldStatus === 'Returned from Subcontractor' && newStatus === 'Submitted to Architect') return { action: 'submit_to_architect' };
+    if (oldStatus === 'Submitted to Architect' && ['No Exceptions Taken', 'Reviewed as Noted', 'Revise & Resubmit', 'Rejected'].includes(newStatus)) {
+        return { action: 'architect_decision', decision: newStatus };
+    }
+    if (['No Exceptions Taken', 'Reviewed as Noted'].includes(oldStatus) && newStatus === 'Closed') return { action: 'close' };
+    if (newStatus === 'Rejected') return { action: 'reject' };
+    return null;
+}
+
+async function applySubmittalStatusWorkflow(serverId, wf) {
+    if (!serverId || !wf?.action) return;
+    const res = await fetch(`/api/submittals/${serverId}/workflow`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(wf),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || 'Submittal workflow failed');
+    return json;
 }
 
 async function loadSubmittalAttachments(serverId) {

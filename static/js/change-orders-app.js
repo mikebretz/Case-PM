@@ -777,14 +777,14 @@
       if (!base.sub_co_kind) base.sub_co_kind = 'Contract Add';
     }
     if (type === 'pco') {
-      const payload = { ...base, estimated_amount: total || readMoney('modalAmount'), status: document.getElementById('modalStatus')?.value || 'Open' };
+      const payload = { ...base, estimated_amount: total || readMoney('modalAmount') };
       if (devUnlock()) {
         const num = document.getElementById('modalNumber')?.value?.trim();
         if (num) payload.number = num;
       }
       return payload;
     }
-    const coPayload = { ...base, amount: total || readMoney('modalAmount'), status: document.getElementById('modalStatus')?.value || 'Draft', date: document.getElementById('modalDate')?.value };
+    const coPayload = { ...base, amount: total || readMoney('modalAmount'), date: document.getElementById('modalDate')?.value };
     if (devUnlock()) {
       const num = document.getElementById('modalNumber')?.value?.trim();
       if (num) coPayload.number = num;

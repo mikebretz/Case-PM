@@ -6789,8 +6789,6 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
         clearStaleSubPendingForCompany(companyId);
 
-        updateSubSOVStatus(cid, 'Approved', { approvedBy: "Michael Bretz (Project Manager)", approvedDate: new Date().toISOString() });
-
         logPayAppAudit('SUB_PAYAPP_APPROVED_AND_COMMITTED', { 
             companyId: companyId, 
             period: currentPeriodNum,
