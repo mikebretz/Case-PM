@@ -6,8 +6,26 @@ from datetime import datetime
 
 CHANGE_EVENT_STATUSES = ('Open', 'Pricing', 'Pending Review', 'Approved', 'Closed', 'Void')
 RFQ_STATUSES = ('Draft', 'Sent', 'Quoted', 'Accepted', 'Rejected', 'Void')
-COR_STATUSES = ('Draft', 'Submitted', 'Under Review', 'Approved', 'Rejected', 'Void', 'Promoted')
-CPCO_CONTRACT_TYPE = 'Subcontract'
+COR_STATUSES = ('Draft', 'Submitted', 'Under Review', 'Pending Owner', 'Pending Architect', 'Pending Accounting', 'Approved', 'Rejected', 'Void', 'Promoted')
+COR_BALL_IN_COURT = {
+    'Draft': 'Creator',
+    'Submitted': 'Project Manager',
+    'Under Review': 'Architect',
+    'Pending Owner': 'Owner',
+    'Pending Architect': 'Architect',
+    'Pending Accounting': 'Contractor Accounting',
+    'Approved': None,
+    'Rejected': None,
+    'Void': None,
+    'Promoted': None,
+}
+COR_APPROVAL_CHAIN = (
+    {'from_status': 'Submitted', 'role': 'Project Manager', 'next_status': 'Under Review'},
+    {'from_status': 'Under Review', 'role': 'Architect', 'next_status': 'Pending Owner'},
+    {'from_status': 'Pending Owner', 'role': 'Owner', 'next_status': 'Pending Accounting'},
+    {'from_status': 'Pending Accounting', 'role': 'Contractor Accounting', 'next_status': 'Approved'},
+)
+
 
 CHANGE_EVENT_BALL = {
     'Open': 'Project Manager',
@@ -30,10 +48,7 @@ CHANGE_EVENT_APPROVAL_CHAIN = (
     {'from_status': 'Pricing', 'role': 'Project Manager', 'next_status': 'Pending Review'},
     {'from_status': 'Pending Review', 'role': 'Project Manager', 'next_status': 'Approved'},
 )
-COR_APPROVAL_CHAIN = (
-    {'from_status': 'Submitted', 'role': 'Project Manager', 'next_status': 'Under Review'},
-    {'from_status': 'Under Review', 'role': 'Owner', 'next_status': 'Approved'},
-)
+CPCO_CONTRACT_TYPE = 'Subcontract'
 
 
 def ensure_change_event_schema(engine, db):
@@ -456,7 +471,7 @@ def change_event_workflow_action(ce, action, user):
 
 
 def cor_workflow_action(cor, action, user):
-    from co_persistence import user_can_act_on_ball_in_court, get_next_approval_step, set_ball_in_court
+    from co_persistence import user_can_act_on_ball_in_court, OWNER_CO_APPROVAL_THRESHOLD
     action = (action or '').lower()
     if action == 'submit':
         if cor.status != 'Draft':
@@ -474,17 +489,19 @@ def cor_workflow_action(cor, action, user):
             raise ValueError(f'Cannot approve while ball is with {role}')
         for step in COR_APPROVAL_CHAIN:
             if step['from_status'] == cor.status and step['role'] == role:
-                cor.status = step['next_status']
+                next_status = step['next_status']
+                amount = float(cor.amount or 0)
+                if next_status == 'Pending Owner' and amount < OWNER_CO_APPROVAL_THRESHOLD:
+                    next_status = 'Pending Accounting'
+                if next_status == 'Pending Accounting' and amount < OWNER_CO_APPROVAL_THRESHOLD:
+                    next_status = 'Approved'
+                cor.status = next_status
                 cor.approval_stage = (getattr(cor, 'approval_stage', 0) or 0) + 1
+                cor.ball_in_court_role = COR_BALL_IN_COURT.get(cor.status)
                 if cor.status == 'Approved':
                     cor.ball_in_court_role = None
                     return cor.status, True
-                cor.ball_in_court_role = COR_APPROVAL_CHAIN[-1]['role'] if cor.status == 'Under Review' else 'Owner'
                 return cor.status, False
-        if cor.status == 'Under Review' and role == 'Owner':
-            cor.status = 'Approved'
-            cor.ball_in_court_role = None
-            return cor.status, True
         raise ValueError('No approval step for current COR status')
     raise ValueError('action must be submit, approve, or reject')
 
@@ -774,31 +791,23 @@ def notify_accounting_erp_review(event, Project, db, User=None):
                 User = UserModel
             except Exception:
                 return
+        from email_notifications import notify_role_workflow
+        from co_persistence import user_can_act_on_ball_in_court
         project = Project.query.get(event.project_id) if Project else None
         project_name = getattr(project, 'name', None) or f'Project #{event.project_id}'
         action_url = f'/change-orders?project_id={event.project_id}&tab=erp'
         title = f'ERP review: {event.event_type}'
         description = event.message or f'{event.event_type} requires accounting acceptance before Sage export.'
-        if User is not None:
-            users = User.query.filter_by(status='Active').all()
-            targets = [u for u in users if user_can_act_on_ball_in_court(u, 'Contractor Accounting')]
-            for u in targets:
-                cw.notify_user(u.id, title, f'{project_name}: {description}', action_url)
-                cw.create_internal_message(
-                    u.id,
-                    folder='action-required',
-                    msg_type='alert',
-                    subject=title,
-                    preview=description[:500],
-                    body=f'<p><strong>{project_name}</strong></p><p>{description}</p>',
-                    project_id=event.project_id,
-                    from_label='ERP Queue',
-                    module='Change Orders',
-                    action_url=action_url,
-                    action_label='Review in ERP Queue',
-                    priority='high',
-                    requires_action=True,
-                )
+        notify_role_workflow(
+            User,
+            'Contractor Accounting',
+            title=f'{project_name} — {title}',
+            description=description,
+            action_url=action_url,
+            project_id=event.project_id,
+            module='ERP Queue',
+            can_act_fn=user_can_act_on_ball_in_court,
+        )
     except Exception:
         pass
 
@@ -817,26 +826,34 @@ def link_change_event_schedule_impact(ScheduleData, Project, db, project_id, cha
 
 def notify_rfq_subcontractor(project_id, rfq, User, title=None):
     try:
-        import case_workflow as cw
-        action_url = f'/change-orders?project_id={project_id}&tab=rfqs&open=1&rfq_id={rfq.id}'
+        from email_notifications import notify_user_workflow
+        action_url = f'/rfq-portal?project_id={project_id}&rfq_id={rfq.id}'
         title = title or f'{rfq.number} — RFQ sent for quote'
         users = User.query.filter_by(status='Active').all()
-        targets = [u for u in users if getattr(u, 'role', '') in ('Company User', 'Subcontractor Accountant', 'Admin')]
-        for u in targets[:20]:
-            cw.create_internal_message(
-                u.id,
-                folder='action-required',
-                msg_type='alert',
-                subject=title,
-                preview=(rfq.description or '')[:500],
-                body=f'<p>Please submit your quote for RFQ {rfq.number}.</p>',
-                project_id=project_id,
-                from_label='Change Orders',
-                module='RFQs',
+        targets = []
+        cid = str(getattr(rfq, 'company_id', '') or '').strip()
+        cname = (getattr(rfq, 'company_name', '') or '').strip()
+        for u in users:
+            if cid and str(getattr(u, 'company_id', '') or '') == cid:
+                targets.append(u)
+            elif cname and (getattr(u, 'company', '') or '').strip() == cname:
+                targets.append(u)
+            elif getattr(rfq, 'contact_email', None) and u.email == rfq.contact_email:
+                targets.append(u)
+        if not targets:
+            targets = [u for u in users if getattr(u, 'role', '') in ('Company User', 'Subcontractor Accountant')][:5]
+        seen = set()
+        for u in targets:
+            if u.id in seen:
+                continue
+            seen.add(u.id)
+            notify_user_workflow(
+                u,
+                title=title,
+                description=rfq.description or rfq.title or 'Please submit your quote.',
                 action_url=action_url,
-                action_label='Submit Quote',
-                priority='high',
-                requires_action=True,
+                project_id=project_id,
+                module='RFQs',
             )
     except Exception:
         pass

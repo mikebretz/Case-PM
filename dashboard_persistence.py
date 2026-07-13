@@ -49,6 +49,8 @@ def build_dashboard_summary(
     forecast_summary=None,
     commitment_stats=None,
     co_stats=None,
+    SageSyncEvent=None,
+    PayAppProjectState=None,
 ):
     """Return structured payload for all dashboard tiles (real DB data only)."""
     project = Project.query.get(int(project_id)) if project_id else None
@@ -240,6 +242,25 @@ def build_dashboard_summary(
     commitments = commitment_stats or {}
     change_orders = co_stats or {}
 
+    erp_pending_count = 0
+    billing_variance_total = 0.0
+    billing_variance_count = 0
+    if project_id and SageSyncEvent is not None:
+        erp_pending_count = SageSyncEvent.query.filter_by(
+            project_id=int(project_id),
+            accounting_status='pending_review',
+        ).count()
+    if project_id and PayAppProjectState is not None:
+        try:
+            from change_event_persistence import compute_billing_variance_for_sub_cos
+            cos = ChangeOrder.query.filter_by(project_id=int(project_id)).all()
+            variances = compute_billing_variance_for_sub_cos(cos, PayAppProjectState, int(project_id))
+            flagged = [v for v in variances if abs(float(v.get('variance') or 0)) > 0.01]
+            billing_variance_count = len(flagged)
+            billing_variance_total = round(sum(float(v.get('variance') or 0) for v in flagged), 2)
+        except Exception:
+            pass
+
     location = {
         'city': getattr(project, 'city', None) or '',
         'state': getattr(project, 'state', None) or '',
@@ -309,6 +330,13 @@ def build_dashboard_summary(
         },
         'commitments': commitments,
         'change_orders': change_orders,
+        'erp_queue': {
+            'pending_review_count': erp_pending_count,
+        },
+        'billing_variance': {
+            'flagged_count': billing_variance_count,
+            'total_variance': billing_variance_total,
+        },
     }
 
 

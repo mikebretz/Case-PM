@@ -341,7 +341,12 @@
 
   function renderChangeOrders(d) {
     const c = d.change_orders || {};
+    const erp = d.erp_queue || {};
+    const variance = d.billing_variance || {};
     const u = ctx.urls || {};
+    const erpPending = erp.pending_review_count ?? 0;
+    const varCount = variance.flagged_count ?? 0;
+    const varTotal = variance.total_variance ?? 0;
     return `<div class="dash-tile-body space-y-3">
       <div class="grid grid-cols-2 gap-3">
         <div class="p-3 bg-zinc-950 rounded-md border border-zinc-800 text-center"><div class="text-2xl font-semibold text-emerald-400">${c.approved_count ?? 0}</div><div class="text-xs text-zinc-400">Approved</div></div>
@@ -349,7 +354,9 @@
       </div>
       <div class="text-sm flex justify-between"><span class="text-zinc-400">Approved $</span><span>${fmtMoney(c.approved_amount)}</span></div>
       <div class="text-sm flex justify-between"><span class="text-zinc-400">Pending $</span><span class="text-orange-400">${fmtMoney(c.pending_amount)}</span></div>
-      <a href="${esc(u.changeOrders)}" class="text-xs text-emerald-400">Open change orders →</a>
+      ${erpPending ? `<div class="text-sm flex justify-between border-t border-zinc-800 pt-2"><span class="text-zinc-400">ERP pending review</span><span class="font-medium text-violet-400">${erpPending}</span></div>` : ''}
+      ${varCount ? `<div class="text-sm flex justify-between"><span class="text-zinc-400">Sub CO billing variance</span><span class="font-mono ${varTotal >= 0 ? 'text-amber-400' : 'text-red-400'}">${varCount} · ${fmtMoney(varTotal)}</span></div>` : ''}
+      <a href="${esc(u.changeOrders)}${erpPending ? '?tab=erp' : ''}" class="text-xs text-emerald-400">Open change orders →</a>
     </div>`;
   }
 
