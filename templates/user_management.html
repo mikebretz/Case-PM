@@ -38,19 +38,54 @@
   #usersTableWrap .col-2fa { min-width: 3.5rem; text-align: center; }
   #usersTableWrap .col-license { min-width: 5.5rem; white-space: nowrap; }
   #usersTableWrap .col-portal { min-width: 5rem; white-space: nowrap; }
-  /* User modal tabs — single row, no horizontal scroll */
+  /* User modal — fixed header/tabs + footer; single scroll in body */
+  #userModal {
+    width: min(88rem, calc(100vw - 1.5rem));
+    max-width: none;
+    max-height: min(96vh, 980px);
+    padding: 0;
+    overflow: hidden;
+  }
+  #userModal .um-modal-shell {
+    display: flex;
+    flex-direction: column;
+    max-height: min(96vh, 980px);
+    height: 100%;
+  }
+  #userModal .um-modal-form {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+  #userModal .um-modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  #userModal .um-modal-footer {
+    flex-shrink: 0;
+    border-top: 1px solid #3f3f46;
+    background: #18181b;
+  }
   .um-modal-tabs {
     display: grid;
     grid-template-columns: repeat(9, minmax(0, 1fr));
     gap: 0;
     border-bottom: 1px solid #3f3f46;
-    margin-bottom: 1.5rem;
+    margin-bottom: 0;
     overflow: hidden;
   }
   .um-modal-tabs .um-tab-btn {
-    padding: 0.45rem 0.15rem;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    padding: 0.55rem 0.25rem;
     font-size: 10px;
-    line-height: 1.2;
+    line-height: 1.15;
     font-weight: 500;
     text-align: center;
     white-space: nowrap;
@@ -60,12 +95,17 @@
     color: #a1a1aa;
     min-width: 0;
   }
+  .um-modal-tabs .um-tab-btn i {
+    font-size: 11px;
+    flex-shrink: 0;
+    opacity: 0.85;
+  }
   .um-modal-tabs .um-tab-btn:hover { color: #fff; }
   .um-modal-tabs .um-tab-btn.um-tab-active {
     color: #fff;
     border-bottom-color: #10b981;
   }
-  .um-modal-tabs .um-tab-btn i { display: none; }
+  .um-modal-tabs .um-tab-btn.um-tab-active i { opacity: 1; }
   #signatureCanvas {
     touch-action: none;
     -ms-touch-action: none;
@@ -182,33 +222,35 @@
 </div></div>
 
 <!-- ADD / EDIT USER MODAL -->
-<dialog id="userModal" class="modal rounded-md w-full max-w-6xl p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
-    <div class="p-6">
-        <div class="flex justify-between items-center mb-6">
-            <h3 id="modalTitle" class="text-xl font-semibold">Add New User</h3>
-            <button onclick="closeUserModal()" class="text-zinc-400 hover:text-white">
-                <i class="fa-solid fa-times text-xl"></i>
-            </button>
+<dialog id="userModal" class="modal rounded-md p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
+    <div class="um-modal-shell">
+        <div class="um-modal-header flex-shrink-0 px-6 pt-5 pb-0">
+            <div class="flex justify-between items-center mb-4">
+                <h3 id="modalTitle" class="text-xl font-semibold">Add New User</h3>
+                <button type="button" onclick="closeUserModal()" class="text-zinc-400 hover:text-white">
+                    <i class="fa-solid fa-times text-xl"></i>
+                </button>
+            </div>
+
+            <!-- TABS -->
+            <div class="um-modal-tabs">
+                <button type="button" onclick="switchTab('general')" id="tab-general" class="um-tab-btn um-tab-active" title="General"><i class="fa-solid fa-user text-emerald-400/80"></i><span>General</span></button>
+                <button type="button" onclick="switchTab('projects')" id="tab-projects" class="um-tab-btn" title="Projects &amp; Access"><i class="fa-solid fa-diagram-project text-sky-400/80"></i><span>Projects</span></button>
+                <button type="button" onclick="switchTab('certifications')" id="tab-certifications" class="um-tab-btn" title="Certifications"><i class="fa-solid fa-id-card text-violet-400/80"></i><span>Certs</span></button>
+                <button type="button" onclick="switchTab('notifications')" id="tab-notifications" class="um-tab-btn" title="Notifications"><i class="fa-solid fa-bell text-amber-400/80"></i><span>Notify</span></button>
+                <button type="button" onclick="switchTab('integrations')" id="tab-integrations" class="um-tab-btn" title="Integrations"><i class="fa-solid fa-plug text-blue-400/80"></i><span>Integrate</span></button>
+                <button type="button" onclick="switchTab('hrdocuments')" id="tab-hrdocuments" class="um-tab-btn" title="HR / Documents"><i class="fa-solid fa-folder-open text-orange-400/80"></i><span>HR Docs</span></button>
+                <button type="button" onclick="switchTab('activity')" id="tab-activity" class="um-tab-btn" title="Activity log"><i class="fa-solid fa-clock-rotate-left text-zinc-400"></i><span>Activity</span></button>
+                <button type="button" onclick="switchTab('permissions')" id="tab-permissions" class="um-tab-btn" title="Permissions"><i class="fa-solid fa-shield-halved text-amber-400/80"></i><span>Perms</span></button>
+                <button type="button" onclick="switchTab('signature')" id="tab-signature" class="um-tab-btn" title="Signature &amp; Certificate"><i class="fa-solid fa-signature text-emerald-400/80"></i><span>Signature</span></button>
+            </div>
         </div>
 
-        <!-- TABS -->
-        <div class="um-modal-tabs">
-            <button type="button" onclick="switchTab('general')" id="tab-general" class="um-tab-btn um-tab-active" title="General">General</button>
-            <button type="button" onclick="switchTab('projects')" id="tab-projects" class="um-tab-btn" title="Projects &amp; Access">Projects</button>
-            <button type="button" onclick="switchTab('certifications')" id="tab-certifications" class="um-tab-btn" title="Certifications">Certs</button>
-            <button type="button" onclick="switchTab('notifications')" id="tab-notifications" class="um-tab-btn" title="Notifications">Notify</button>
-            <button type="button" onclick="switchTab('integrations')" id="tab-integrations" class="um-tab-btn" title="Integrations">Integrate</button>
-            <button type="button" onclick="switchTab('hrdocuments')" id="tab-hrdocuments" class="um-tab-btn" title="HR / Documents">HR Docs</button>
-            <button type="button" onclick="switchTab('activity')" id="tab-activity" class="um-tab-btn" title="Activity log">Activity</button>
-            <button type="button" onclick="switchTab('permissions')" id="tab-permissions" class="um-tab-btn" title="Permissions">Perms</button>
-            <button type="button" onclick="switchTab('signature')" id="tab-signature" class="um-tab-btn" title="Signature &amp; Certificate">Signature</button>
-        </div>
-
-        <form id="userForm" onsubmit="saveUser(event)" novalidate>
+        <form id="userForm" class="um-modal-form" onsubmit="saveUser(event)" novalidate>
             <input type="hidden" id="userId">
 
-            <!-- GENERAL TAB -->
-            <div id="tab-content-general">
+            <div class="um-modal-body px-6 py-4">
+            <div id="tab-content-general" class="um-tab-body-panel">
                 <div class="flex gap-6">
                     <!-- Profile Picture -->
                     <div class="flex-shrink-0">
@@ -472,7 +514,7 @@
             </div>
 
             <!-- PROJECTS TAB -->
-            <div id="tab-content-projects" class="hidden">
+            <div id="tab-content-projects" class="hidden um-tab-body-panel">
                 <div class="rounded-lg border border-sky-900/40 bg-sky-950/20 px-4 py-3 mb-4 text-xs text-sky-200/90">
                     <strong>Project assignments.</strong> When project membership enforcement is enabled in Security settings, users only see projects listed here (Admins always see all).
                 </div>
@@ -481,13 +523,13 @@
                     <button type="button" onclick="selectAllVisibleProjects(true)" class="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Select all</button>
                     <button type="button" onclick="selectAllVisibleProjects(false)" class="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Clear</button>
                 </div>
-                <div id="projectMembershipList" class="max-h-[52vh] overflow-auto border border-zinc-700 rounded-md divide-y divide-zinc-800">
+                <div id="projectMembershipList" class="border border-zinc-700 rounded-md divide-y divide-zinc-800">
                     <div class="text-sm text-zinc-500 py-8 text-center">Save the user first to assign projects, or open an existing user.</div>
                 </div>
             </div>
 
             <!-- CERTIFICATIONS TAB -->
-            <div id="tab-content-certifications" class="hidden">
+            <div id="tab-content-certifications" class="hidden um-tab-body-panel">
                 <div class="rounded-lg border border-violet-900/40 bg-violet-950/20 px-4 py-3 mb-4 text-xs text-violet-200/90">
                     <strong>Licenses &amp; certifications.</strong> OSHA cards, trade licenses, PE stamps, safety training — with optional expiry for renewal tracking.
                 </div>
@@ -498,7 +540,7 @@
             </div>
 
             <!-- NOTIFICATIONS TAB -->
-            <div id="tab-content-notifications" class="hidden">
+            <div id="tab-content-notifications" class="hidden um-tab-body-panel">
                 <div class="rounded-lg border border-amber-900/40 bg-amber-950/20 px-4 py-3 mb-4 text-xs text-amber-200/90">
                     <strong>Notification preferences.</strong> Control email vs in-app alerts per module, digest frequency, and quiet hours.
                 </div>
@@ -521,7 +563,7 @@
                     <input type="time" id="notifQuietEnd" value="07:00" class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm">
                     <label class="md:col-span-3 flex items-center gap-2 text-xs text-zinc-400"><input type="checkbox" id="notifWeekendDigestOnly" class="accent-emerald-600"> Weekend: digest only (no immediate emails)</label>
                 </div>
-                <div class="max-h-[40vh] overflow-auto border border-zinc-700 rounded-md">
+                <div class="border border-zinc-700 rounded-md">
                     <table class="w-full text-sm">
                         <thead class="bg-zinc-800 sticky top-0"><tr>
                             <th class="px-4 py-2 text-left text-zinc-400">Module</th>
@@ -547,7 +589,7 @@
             </div>
 
             <!-- INTEGRATIONS TAB -->
-            <div id="tab-content-integrations" class="hidden">
+            <div id="tab-content-integrations" class="hidden um-tab-body-panel">
                 <div class="rounded-lg border border-blue-900/40 bg-blue-950/20 px-4 py-3 mb-4 text-xs text-blue-200/90">
                     <strong>External system IDs.</strong> Map this user to SSO, Procore, Sage, DocuSign, and HR/payroll systems for sync and single sign-on.
                 </div>
@@ -569,11 +611,11 @@
             </div>
 
             <!-- HR DOCUMENTS TAB -->
-            <div id="tab-content-hrdocuments" class="hidden">
+            <div id="tab-content-hrdocuments" class="hidden um-tab-body-panel">
                 <div class="rounded-lg border border-orange-900/40 bg-orange-950/20 px-4 py-3 mb-4 text-xs text-orange-200/90">
                     <strong>HR &amp; onboarding files.</strong> W-9, insurance certificates, NDAs, I-9, and other documents stored per user.
                 </div>
-                <div id="hrDocumentsList" class="space-y-2 mb-4 max-h-[36vh] overflow-auto"></div>
+                <div id="hrDocumentsList" class="space-y-2 mb-4"></div>
                 <div class="flex flex-wrap gap-2 items-end border-t border-zinc-700 pt-4">
                     <div>
                         <label class="text-xs text-zinc-400 block mb-1">Document type</label>
@@ -600,27 +642,27 @@
             </div>
 
             <!-- ACTIVITY TAB (server audit log) -->
-            <div id="tab-content-activity" class="hidden">
+            <div id="tab-content-activity" class="hidden um-tab-body-panel">
                 <div class="rounded-lg border border-zinc-700 bg-zinc-800/40 px-4 py-3 mb-4 text-xs text-zinc-300">
                     <strong>System activity log.</strong> Login events, profile changes, and module actions recorded in the audit log for this user.
                 </div>
-                <div id="userAuditLogContent" class="max-h-[52vh] overflow-auto border border-zinc-700 rounded-md text-sm">
+                <div id="userAuditLogContent" class="border border-zinc-700 rounded-md text-sm">
                     <div class="text-zinc-500 py-8 text-center">Open an existing user to load activity.</div>
                 </div>
             </div>
 
             <!-- PERMISSIONS TAB (admin only — this page is admin-restricted) -->
-            <div id="tab-content-permissions" class="hidden">
+            <div id="tab-content-permissions" class="hidden um-tab-body-panel">
                 <div class="rounded-lg border border-amber-900/40 bg-amber-950/20 px-4 py-3 mb-4 text-xs text-amber-200/90">
                     <strong>Module access matrix.</strong> Set per-module access (none → client view → view → entry → edit → admin) and approval rights (submit, approve, reject). Changes apply when you save the user and sync to the server account.
                 </div>
-                <div id="permissionsContainer" class="max-h-[52vh] overflow-auto pr-1">
+                <div id="permissionsContainer" class="pr-1">
                     <div class="text-sm text-zinc-500 py-8 text-center">Loading permissions matrix…</div>
                 </div>
             </div>
 
             <!-- SIGNATURE TAB — viewable by all, editable only by the user -->
-            <div id="tab-content-signature" class="hidden">
+            <div id="tab-content-signature" class="hidden um-tab-body-panel">
                 <div id="signatureSelfOnlyBanner" class="mb-4 px-4 py-3 rounded-md border border-sky-800/60 bg-sky-950/30 text-xs text-sky-200 hidden">
                     <i class="fa-solid fa-lock mr-1"></i>
                     <strong>Private signature.</strong> Everyone can view this signature for approvals and documents, but only <span id="signatureOwnerName"></span> can create or change it — not even administrators.
@@ -676,7 +718,9 @@
                 </div>
             </div>
 
-            <div class="flex justify-end gap-3 mt-8 pt-6 border-t border-zinc-700">
+            </div>
+
+            <div class="um-modal-footer px-6 py-4 flex justify-end gap-3">
                 <button type="button" onclick="closeUserModal()" class="px-6 py-2.5 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm">Cancel</button>
                 <button type="submit" class="px-8 py-2.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Save User</button>
             </div>
