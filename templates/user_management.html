@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+<script src="{{ url_for('static', filename='js/signature-pad.js') }}"></script>
 <script src="{{ url_for('static', filename='js/user-management-server.js') }}"></script>
 <script src="{{ url_for('static', filename='js/casepm-esign.js') }}"></script>
 <script src="{{ url_for('static', filename='js/user-permissions-ui.js') }}"></script>
@@ -37,6 +38,39 @@
   #usersTableWrap .col-2fa { min-width: 3.5rem; text-align: center; }
   #usersTableWrap .col-license { min-width: 5.5rem; white-space: nowrap; }
   #usersTableWrap .col-portal { min-width: 5rem; white-space: nowrap; }
+  /* User modal tabs — single row, no horizontal scroll */
+  .um-modal-tabs {
+    display: grid;
+    grid-template-columns: repeat(9, minmax(0, 1fr));
+    gap: 0;
+    border-bottom: 1px solid #3f3f46;
+    margin-bottom: 1.5rem;
+    overflow: hidden;
+  }
+  .um-modal-tabs .um-tab-btn {
+    padding: 0.45rem 0.15rem;
+    font-size: 10px;
+    line-height: 1.2;
+    font-weight: 500;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-bottom: 2px solid transparent;
+    color: #a1a1aa;
+    min-width: 0;
+  }
+  .um-modal-tabs .um-tab-btn:hover { color: #fff; }
+  .um-modal-tabs .um-tab-btn.um-tab-active {
+    color: #fff;
+    border-bottom-color: #10b981;
+  }
+  .um-modal-tabs .um-tab-btn i { display: none; }
+  #signatureCanvas {
+    touch-action: none;
+    -ms-touch-action: none;
+    cursor: crosshair;
+  }
 </style>
 
 <div class="um-page"><div class="um-stack">
@@ -158,30 +192,16 @@
         </div>
 
         <!-- TABS -->
-        <div class="flex border-b border-zinc-700 mb-6 overflow-x-auto">
-            <button onclick="switchTab('general')" id="tab-general" class="px-6 py-3 text-sm font-medium border-b-2 border-emerald-500 text-white whitespace-nowrap">General</button>
-            <button onclick="switchTab('projects')" id="tab-projects" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">
-                <i class="fa-solid fa-diagram-project mr-1 text-sky-400/80"></i> Projects &amp; Access
-            </button>
-            <button onclick="switchTab('certifications')" id="tab-certifications" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">
-                <i class="fa-solid fa-id-card mr-1 text-violet-400/80"></i> Certifications
-            </button>
-            <button onclick="switchTab('notifications')" id="tab-notifications" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">
-                <i class="fa-solid fa-bell mr-1 text-amber-400/80"></i> Notifications
-            </button>
-            <button onclick="switchTab('integrations')" id="tab-integrations" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">
-                <i class="fa-solid fa-plug mr-1 text-blue-400/80"></i> Integrations
-            </button>
-            <button onclick="switchTab('hrdocuments')" id="tab-hrdocuments" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">
-                <i class="fa-solid fa-folder-open mr-1 text-orange-400/80"></i> HR / Documents
-            </button>
-            <button onclick="switchTab('activity')" id="tab-activity" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">
-                <i class="fa-solid fa-clock-rotate-left mr-1 text-zinc-400"></i> Activity
-            </button>
-            <button onclick="switchTab('permissions')" id="tab-permissions" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">
-                <i class="fa-solid fa-shield-halved mr-1 text-amber-400/80"></i> Permissions <span class="text-[9px] uppercase text-amber-500/90 ml-1">Admin</span>
-            </button>
-            <button onclick="switchTab('signature')" id="tab-signature" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">Signature &amp; Certificate</button>
+        <div class="um-modal-tabs">
+            <button type="button" onclick="switchTab('general')" id="tab-general" class="um-tab-btn um-tab-active" title="General">General</button>
+            <button type="button" onclick="switchTab('projects')" id="tab-projects" class="um-tab-btn" title="Projects &amp; Access">Projects</button>
+            <button type="button" onclick="switchTab('certifications')" id="tab-certifications" class="um-tab-btn" title="Certifications">Certs</button>
+            <button type="button" onclick="switchTab('notifications')" id="tab-notifications" class="um-tab-btn" title="Notifications">Notify</button>
+            <button type="button" onclick="switchTab('integrations')" id="tab-integrations" class="um-tab-btn" title="Integrations">Integrate</button>
+            <button type="button" onclick="switchTab('hrdocuments')" id="tab-hrdocuments" class="um-tab-btn" title="HR / Documents">HR Docs</button>
+            <button type="button" onclick="switchTab('activity')" id="tab-activity" class="um-tab-btn" title="Activity log">Activity</button>
+            <button type="button" onclick="switchTab('permissions')" id="tab-permissions" class="um-tab-btn" title="Permissions">Perms</button>
+            <button type="button" onclick="switchTab('signature')" id="tab-signature" class="um-tab-btn" title="Signature &amp; Certificate">Signature</button>
         </div>
 
         <form id="userForm" onsubmit="saveUser(event)" novalidate>
@@ -623,7 +643,8 @@
                 <div class="mb-4">
                     <label class="block text-sm mb-2 text-zinc-300">Draw your signature</label>
                     <div class="border border-zinc-700 rounded-md bg-white p-1 inline-block w-full max-w-xl">
-                        <canvas id="signatureCanvas" width="560" height="160" class="cursor-crosshair rounded w-full"></canvas>
+                        <canvas id="signatureCanvas" width="1120" height="320" class="rounded w-full block" style="height: 160px;"></canvas>
+                        <p class="text-[10px] text-zinc-500 mt-1">Use mouse, finger, or stylus (Surface Pen). Pressure-sensitive when supported.</p>
                     </div>
                     <div class="flex flex-wrap gap-2 mt-2" id="signatureEditControls">
                         <button type="button" onclick="clearSignature()" class="px-4 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Clear</button>
@@ -894,15 +915,11 @@
         const content = document.getElementById('tab-content-' + tab);
         if (content) content.classList.remove('hidden');
 
-        document.querySelectorAll('[id^="tab-"]').forEach(el => {
-            el.classList.remove('border-b-2', 'border-emerald-500', 'text-white');
-            el.classList.add('text-zinc-400');
+        document.querySelectorAll('.um-tab-btn').forEach(el => {
+            el.classList.remove('um-tab-active');
         });
         const activeTab = document.getElementById('tab-' + tab);
-        if (activeTab) {
-            activeTab.classList.add('border-b-2', 'border-emerald-500', 'text-white');
-            activeTab.classList.remove('text-zinc-400');
-        }
+        if (activeTab) activeTab.classList.add('um-tab-active');
 
         if (tab === 'permissions') {
             const localUser = currentEditingUserId ? users.find(u => u.id == currentEditingUserId) : null;
@@ -1389,87 +1406,29 @@
         }
     }
 
-    // ==================== SIGNATURE CANVAS (widened) ====================
+    // ==================== SIGNATURE CANVAS (stylus / Surface Pen) ====================
     let signatureCanvas = null;
     let signatureCtx = null;
+    let signaturePadInstance = null;
 
     function initSignatureCanvas(viewOnly = false) {
+        if (signaturePadInstance) {
+            signaturePadInstance.destroy();
+            signaturePadInstance = null;
+        }
         signatureCanvas = document.getElementById('signatureCanvas');
-        if (!signatureCanvas) return;
-        signatureCtx = signatureCanvas.getContext('2d', { alpha: true });
-        signatureCtx.strokeStyle = '#111827';
-        signatureCtx.lineWidth = 2.5;
-        signatureCtx.lineJoin = 'round';
-        signatureCtx.lineCap = 'round';
+        if (!signatureCanvas || typeof CasePMSignaturePad === 'undefined') return;
 
-        // If viewOnly (admin viewing another user's signature), disable all drawing and show watermark
+        signaturePadInstance = CasePMSignaturePad.attach(signatureCanvas, { readOnly: viewOnly });
+        signatureCtx = signaturePadInstance.ctx;
+
         if (viewOnly) {
-            signatureCanvas.style.cursor = 'not-allowed';
-            signatureCanvas.onmousedown = null;
-            signatureCanvas.onmousemove = null;
-            signatureCanvas.onmouseup = null;
-            signatureCanvas.onmouseout = null;
-            signatureCanvas.ontouchstart = null;
-            signatureCanvas.ontouchmove = null;
-            signatureCanvas.ontouchend = null;
-
-            // Apply watermark immediately if a signature is already loaded
             setTimeout(() => {
                 if (currentSignatureDataURL && signatureCtx && signatureCanvas) {
                     drawSignatureWatermark();
                 }
             }, 50);
-            return;
         }
-
-        // Normal editable mode (owner)
-        signatureCanvas.style.cursor = 'crosshair';
-        let drawing = false;
-        let lastX = 0;
-        let lastY = 0;
-
-        const startDrawing = (x, y) => {
-            drawing = true;
-            lastX = x;
-            lastY = y;
-        };
-
-        const draw = (x, y) => {
-            if (!drawing) return;
-            signatureCtx.beginPath();
-            signatureCtx.moveTo(lastX, lastY);
-            signatureCtx.lineTo(x, y);
-            signatureCtx.stroke();
-            lastX = x;
-            lastY = y;
-        };
-
-        const endDrawing = () => { drawing = false; };
-
-        // Mouse
-        signatureCanvas.onmousedown = e => {
-            const rect = signatureCanvas.getBoundingClientRect();
-            startDrawing(e.clientX - rect.left, e.clientY - rect.top);
-        };
-        signatureCanvas.onmousemove = e => {
-            const rect = signatureCanvas.getBoundingClientRect();
-            draw(e.clientX - rect.left, e.clientY - rect.top);
-        };
-        signatureCanvas.onmouseup = endDrawing;
-        signatureCanvas.onmouseout = endDrawing;
-
-        // Touch
-        signatureCanvas.ontouchstart = e => {
-            e.preventDefault();
-            const rect = signatureCanvas.getBoundingClientRect();
-            startDrawing(e.touches[0].clientX - rect.left, e.touches[0].clientY - rect.top);
-        };
-        signatureCanvas.ontouchmove = e => {
-            e.preventDefault();
-            const rect = signatureCanvas.getBoundingClientRect();
-            draw(e.touches[0].clientX - rect.left, e.touches[0].clientY - rect.top);
-        };
-        signatureCanvas.ontouchend = endDrawing;
     }
 
     // Draw a clear "VIEW ONLY" watermark diagonally across the signature (for admins)
@@ -1486,7 +1445,9 @@
     }
 
     function clearSignature() {
-        if (signatureCtx && signatureCanvas) {
+        if (signaturePadInstance) {
+            signaturePadInstance.clear();
+        } else if (signatureCtx && signatureCanvas) {
             signatureCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
         }
         currentSignatureDataURL = null;
