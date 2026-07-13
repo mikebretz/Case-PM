@@ -13169,7 +13169,7 @@ def api_change_orders_cost_codes():
 @app.route('/api/change-orders', methods=['GET'])
 @login_required
 def api_list_change_orders():
-    from co_persistence import co_to_dict, is_subcontract_co
+    from co_persistence import co_to_dict, is_subcontract_co, enrich_co_dict_links
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
@@ -13188,19 +13188,25 @@ def api_list_change_orders():
         allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
         revs = ChangeOrderRevision.query.filter_by(change_order_id=co.id).order_by(ChangeOrderRevision.revision.desc()).all()
         revisions = [{'revision': r.revision, 'created_at': r.created_at.isoformat() if r.created_at else None, 'notes': r.notes} for r in revs]
-        result.append(co_to_dict(co, allocs, revisions))
+        item = co_to_dict(co, allocs, revisions)
+        enrich_co_dict_links(item, ChangeOrder)
+        result.append(item)
     return jsonify({'change_orders': result})
 
 
 @app.route('/api/change-orders/<int:co_id>', methods=['GET'])
 @login_required
 def api_get_change_order(co_id):
-    from co_persistence import co_to_dict
+    from co_persistence import co_to_dict, enrich_co_dict_links
     co = ChangeOrder.query.get_or_404(co_id)
     allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
     revs = ChangeOrderRevision.query.filter_by(change_order_id=co.id).order_by(ChangeOrderRevision.revision.desc()).all()
     revisions = [{'revision': r.revision, 'created_at': r.created_at.isoformat() if r.created_at else None, 'notes': r.notes, 'snapshot': json.loads(r.snapshot_json) if r.snapshot_json else None} for r in revs]
-    return jsonify(co_to_dict(co, allocs, revisions))
+    payload = co_to_dict(co, allocs, revisions)
+    owner_co = None
+    if payload.get('linked_owner_co_id'):
+        owner_co = ChangeOrder.query.get(payload['linked_owner_co_id'])
+    return jsonify(enrich_co_dict_links(payload, ChangeOrder, owner_co=owner_co))
 
 
 @app.route('/api/change-orders/<int:co_id>/allocate', methods=['POST'])

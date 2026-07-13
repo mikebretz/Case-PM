@@ -130,7 +130,7 @@
 <!-- CO TABLE -->
 <div id="tabCos" class="flex-1 min-h-0 flex flex-col border border-zinc-700 rounded-md bg-zinc-900 mb-20 overflow-hidden">
     <div class="flex-1 overflow-auto min-h-0">
-        <table class="w-full text-sm min-w-[1200px]">
+        <table class="w-full text-sm min-w-[1280px]">
             <thead class="bg-zinc-800 sticky top-0 z-20 border-b border-zinc-700">
                 <tr>
                     <th class="px-4 py-3 text-left text-zinc-400 font-medium">CO #</th>
@@ -140,6 +140,7 @@
                     <th class="px-4 py-3 text-left text-zinc-400 font-medium">Cost Code</th>
                     <th class="px-4 py-3 text-right text-zinc-400 font-medium">Amount</th>
                     <th class="px-4 py-3 text-center text-zinc-400 font-medium">Status</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium">Sub COs</th>
                     <th class="px-4 py-3 text-center text-zinc-400 font-medium">Ball in Court</th>
                     <th class="px-4 py-3 text-center text-zinc-400 font-medium">Sync</th>
                     <th class="px-4 py-3 text-center text-zinc-400 font-medium w-32">Actions</th>
@@ -311,9 +312,10 @@
                         <option value="Owner CO Backcharge">Owner CO Backcharge — tied to approved owner CO</option>
                     </select>
                 </div>
-                <div id="modalOwnerCoRow" class="hidden">
+                <div id="modalOwnerCoRow" class="hidden md:col-span-2">
                     <label class="block text-sm text-zinc-400 mb-1">Linked Owner Change Order</label>
-                    <select id="modalLinkedOwnerCo" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm"><option value="">— None (standalone) —</option></select>
+                    <select id="modalLinkedOwnerCo" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm"><option value="">— None (standalone sub CO) —</option></select>
+                    <p class="text-[11px] text-zinc-500 mt-1">Optional link back to the prime/owner CO. Required for backcharges; recommended for contract adds funded by an owner change.</p>
                 </div>
                 <div id="modalDateRow">
                     <label class="block text-sm text-zinc-400 mb-1">CO Date</label>
