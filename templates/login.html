@@ -185,20 +185,19 @@
                     <span>Connected via Case PM Desktop</span>
                 </p>
                 {% else %}
-                <div class="text-center mt-5 space-y-2">
-                    <a href="{{ url_for('download_casepm_connector') }}"
-                       download="Case PM Connector.bat"
-                       class="inline-flex items-center gap-2 px-3.5 py-2 rounded-md text-xs font-medium
-                              bg-emerald-600/90 hover:bg-emerald-500 border border-emerald-500/50 text-white
-                              transition-colors shadow-lg shadow-emerald-900/20">
-                        <span class="w-5 h-5 bg-emerald-700/50 rounded flex items-center justify-center">
-                            <i class="fa-solid fa-hard-hat text-[10px]"></i>
+                <div class="text-center mt-5 space-y-2.5">
+                    <p class="text-[11px] text-zinc-500">Need a desktop shortcut to this server?</p>
+                    <button type="button" id="connectorAddBtn"
+                            class="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-md text-xs font-medium
+                                   bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700 text-zinc-200
+                                   transition-colors">
+                        <span class="w-9 h-9 bg-emerald-600 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-900/30 shrink-0">
+                            <i class="fa-solid fa-hard-hat text-white text-base"></i>
                         </span>
-                        Connect to Case PM
-                    </a>
+                        Add Case PM to Desktop
+                    </button>
                     <p class="text-[10px] text-zinc-600 leading-relaxed max-w-[300px] mx-auto">
-                        One click downloads a secure connector. If your browser asks, tap
-                        <span class="text-zinc-400">Open</span> once — the Case PM icon lands on your desktop automatically.
+                        Quick shortcut — not a full install. Click Open once if your browser asks.
                     </p>
                 </div>
                 {% endif %}
@@ -208,11 +207,53 @@
         </div>
     </div>
 
+    <div id="connectorModal" class="hidden fixed inset-0 z-50 flex items-center justify-center px-4">
+        <div class="absolute inset-0 bg-black/60" id="connectorModalBackdrop"></div>
+        <div class="relative z-10 w-full max-w-[340px] bg-zinc-900 border border-zinc-700 rounded-lg p-5 shadow-2xl text-center">
+            <div class="w-9 h-9 bg-emerald-600 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-900/30 mx-auto mb-3">
+                <i class="fa-solid fa-hard-hat text-white text-base"></i>
+            </div>
+            <h2 class="font-display text-lg text-white mb-1">Add to desktop?</h2>
+            <p class="text-sm text-zinc-400 mb-4 leading-relaxed">
+                Puts the same Case PM icon on your desktop, linked to this server.
+            </p>
+            <div class="flex gap-2 justify-center">
+                <button type="button" id="connectorModalNo"
+                        class="px-4 py-2 rounded-md text-sm text-zinc-400 hover:text-zinc-200">No</button>
+                <button type="button" id="connectorModalYes"
+                        class="px-4 py-2 rounded-md text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white">Yes, add it</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         (function () {
             if (new URLSearchParams(window.location.search).get('connector') === '1') {
                 try { localStorage.setItem('casepm_connector', '1'); } catch (e) {}
             }
+
+            var btn = document.getElementById('connectorAddBtn');
+            var modal = document.getElementById('connectorModal');
+            var downloadUrl = {{ url_for('download_casepm_connector') | tojson }};
+            if (!btn || !modal) return;
+
+            function closeModal() { modal.classList.add('hidden'); }
+            function openModal() { modal.classList.remove('hidden'); }
+
+            function downloadShortcut() {
+                closeModal();
+                var a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = 'Add Case PM to Desktop.vbs';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            }
+
+            btn.addEventListener('click', openModal);
+            document.getElementById('connectorModalBackdrop').addEventListener('click', closeModal);
+            document.getElementById('connectorModalNo').addEventListener('click', closeModal);
+            document.getElementById('connectorModalYes').addEventListener('click', downloadShortcut);
         })();
     </script>
 </body>
