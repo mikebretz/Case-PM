@@ -83,7 +83,19 @@
     });
   }
 
-  /** Shared ALDI-style project header meta for all log prints. */
+  /** Company branding for print headers (logo + name from program settings). */
+  function getCompanyMeta() {
+    const info = global.CASEPM_COMPANY_INFO || {};
+    const logoEl = document.getElementById('headerCompanyLogo');
+    const logoFromDom = logoEl?.src && !logoEl.src.endsWith('/') ? logoEl.src : '';
+    const name = (info.dba || info.name || 'Case PM').trim();
+    return {
+      name,
+      logo: (info.logo || logoFromDom || '').trim(),
+    };
+  }
+
+  /** Shared project header meta for all log prints. */
   function getProjectMeta() {
     const shell = document.body;
     const nameEl = document.getElementById('currentProjectName');
@@ -178,7 +190,30 @@
         border: 1px solid #3f3f46;
         border-radius: 0.375rem;
       }
-      .casepm-print-toolbar {
+      .casepm-print-content-options {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        margin-bottom: 0.75rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 1px solid #3f3f46;
+      }
+      .casepm-print-content-options label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.8125rem;
+        color: #d4d4d8;
+        cursor: pointer;
+      }
+      .casepm-print-content-options-title {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #71717a;
+        font-weight: 600;
+        margin-bottom: 0.25rem;
+      }
         display: flex;
         gap: 0.5rem;
         margin-bottom: 0.75rem;
@@ -350,15 +385,35 @@
         .casepm-print-page, .submittal-print-page {
           page-break-after: always;
           break-after: page;
+          page-break-inside: avoid;
+          break-inside: avoid-page;
         }
         .casepm-print-page:last-child, .submittal-print-page:last-child {
           page-break-after: auto;
           break-after: auto;
         }
         .casepm-print-header, .submittal-print-header {
+          margin-bottom: 8px;
+          border-bottom: 1.5px solid #222;
+          padding-bottom: 8px;
+        }
+        .casepm-print-header-continued, .submittal-print-header-continued {
           margin-bottom: 6px;
-          border-bottom: 2px solid #111;
-          padding-bottom: 6px;
+          padding-bottom: 4px;
+          border-bottom: 1px solid #bbb;
+        }
+        .casepm-print-continued-title, .submittal-print-continued-title {
+          font-size: 8pt;
+          font-weight: 700;
+          letter-spacing: 0.3px;
+          color: #333;
+          text-transform: uppercase;
+        }
+        .casepm-print-continued-label, .submittal-print-continued-label {
+          font-weight: 500;
+          color: #666;
+          text-transform: none;
+          font-size: 7.5pt;
         }
         .casepm-print-header-table, .submittal-print-header-table {
           width: 100%;
@@ -366,29 +421,78 @@
         }
         .casepm-print-header-table td, .submittal-print-header-table td {
           border: none;
-          vertical-align: top;
+          vertical-align: middle;
           padding: 0;
         }
-        .casepm-print-header-left, .submittal-print-header-left { padding-right: 12px; }
+        .casepm-print-header-brand, .submittal-print-header-brand {
+          width: 52px;
+          padding-right: 10px;
+          vertical-align: top;
+        }
+        .casepm-print-logo, .submittal-print-logo {
+          display: block;
+          max-width: 48px;
+          max-height: 36px;
+          object-fit: contain;
+        }
+        .casepm-print-logo-placeholder, .submittal-print-logo-placeholder {
+          width: 36px;
+          height: 36px;
+          border-radius: 4px;
+          background: #1a1a1a;
+          color: #fff;
+          font-size: 14pt;
+          font-weight: 700;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          line-height: 1;
+        }
+        .casepm-print-header-center, .submittal-print-header-center {
+          padding-right: 14px;
+          vertical-align: top;
+        }
+        .casepm-print-company-name, .submittal-print-company-name {
+          font-size: 7pt;
+          font-weight: 600;
+          color: #444;
+          letter-spacing: 0.2px;
+          margin-bottom: 2px;
+          line-height: 1.2;
+        }
+        .casepm-print-title, .submittal-print-title {
+          font-size: 11pt;
+          font-weight: 700;
+          letter-spacing: 0.5px;
+          color: #111;
+          line-height: 1.15;
+          text-transform: uppercase;
+        }
+        .casepm-print-location, .submittal-print-location {
+          margin-top: 3px;
+          font-size: 6pt;
+          color: #555;
+          line-height: 1.3;
+        }
+        .casepm-print-location .label, .submittal-print-location .label {
+          font-weight: 700;
+          text-transform: uppercase;
+          font-size: 5.5pt;
+          color: #777;
+        }
         .casepm-print-header-right, .submittal-print-header-right {
           text-align: right;
-          width: 34%;
+          width: 32%;
           padding-left: 10px;
           white-space: normal;
           word-break: normal;
           overflow-wrap: normal;
-        }
-        .casepm-print-title, .submittal-print-title {
-          font-size: 12pt;
-          font-weight: 700;
-          letter-spacing: 0.4px;
-          color: #111;
-          line-height: 1.15;
+          vertical-align: top;
         }
         .casepm-print-meta, .submittal-print-meta {
           text-align: right;
           font-size: 6.5pt;
-          line-height: 1.35;
+          line-height: 1.4;
           color: #222;
           word-break: normal;
           overflow-wrap: normal;
@@ -399,8 +503,9 @@
         .casepm-print-meta .label, .submittal-print-meta .label {
           font-weight: 700;
           text-transform: uppercase;
-          font-size: 6pt;
-          color: #444;
+          font-size: 5.5pt;
+          color: #666;
+          letter-spacing: 0.03em;
         }
         .casepm-print-table, .submittal-print-table {
           width: 100%;
@@ -445,19 +550,21 @@
           display: grid;
           grid-template-columns: 1fr auto 1fr;
           align-items: center;
-          margin-top: 8px;
-          padding-top: 4px;
-          border-top: 1px solid #999;
-          font-size: 7pt;
-          color: #444;
+          margin-top: 10px;
+          padding-top: 5px;
+          border-top: 1px solid #ccc;
+          font-size: 6.5pt;
+          color: #666;
         }
         .casepm-print-footer .center, .submittal-print-footer .center { text-align: center; }
         .casepm-print-footer .right, .submittal-print-footer .right { text-align: right; }
         .casepm-print-section-title {
-          font-size: 11pt;
-          font-weight: 700;
-          margin: 12px 0 6px;
-          color: #111;
+          font-size: 8pt;
+          font-weight: 600;
+          margin: 8px 0 4px;
+          color: #444;
+          text-transform: uppercase;
+          letter-spacing: 0.3px;
         }
         .casepm-log-report { font-size: 9pt; line-height: 1.45; color: #111; }
         .casepm-log-report h3 {
@@ -476,22 +583,39 @@
           line-height: 1.45;
           color: #111;
         }
+        .casepm-rfi-detail .rfi-detail-identifier {
+          display: flex;
+          align-items: baseline;
+          gap: 10px;
+          margin-bottom: 4px;
+          flex-wrap: wrap;
+        }
         .casepm-rfi-detail .rfi-detail-number {
           font-family: 'Courier New', Courier, monospace;
           font-size: 11pt;
           font-weight: 700;
           color: #111;
-          margin-bottom: 2px;
+        }
+        .casepm-rfi-detail .rfi-detail-status {
+          font-size: 7pt;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: #555;
+          padding: 2px 8px;
+          border: 1px solid #ccc;
+          border-radius: 3px;
         }
         .casepm-rfi-detail .rfi-detail-subject {
           font-size: 12pt;
           font-weight: 700;
           margin-bottom: 10px;
           color: #111;
+          line-height: 1.25;
         }
         .casepm-rfi-detail .rfi-detail-grid {
           display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
+          grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
           gap: 8px 12px;
           margin-bottom: 12px;
           font-size: 8pt;
@@ -506,11 +630,12 @@
           margin-bottom: 1px;
         }
         .casepm-rfi-detail .rfi-detail-box {
-          border: 1px solid #333;
+          border: 1px solid #ccc;
+          border-radius: 2px;
           padding: 8px 10px;
           margin-bottom: 10px;
           white-space: pre-wrap;
-          min-height: 48px;
+          min-height: 40px;
         }
         .casepm-rfi-detail .rfi-detail-box h4 {
           margin: 0 0 4px;
@@ -532,6 +657,7 @@
   function showFieldPicker(options) {
     ensureStyles();
     const fields = options.fields || [];
+    const contentOptions = options.contentOptions || [];
     const logTypes = options.logTypes || null;
     const title = options.title || 'Print Log';
     const defaultLogType = options.defaultLogType || (logTypes ? logTypes[0].value : null);
@@ -547,6 +673,14 @@
           `).join('')}
         </div>` : '';
 
+      const contentOptsHtml = contentOptions.length ? `
+        <div class="casepm-print-content-options">
+          <div class="casepm-print-content-options-title">Print options</div>
+          ${contentOptions.map(co => `
+            <label><input type="checkbox" data-content="${esc(co.key)}" ${co.default !== false ? 'checked' : ''}${co.locked ? ' disabled checked' : ''}> ${esc(co.label)}</label>
+          `).join('')}
+        </div>` : '';
+
       dialog.innerHTML = `
         <div class="casepm-print-picker-panel">
           <div class="casepm-print-picker-title casepm-drag-handle">
@@ -555,8 +689,9 @@
           </div>
           <div class="casepm-print-picker-body">
             ${logTypeHtml}
+            ${contentOptsHtml}
             ${note ? `<p class="casepm-print-field-note">${esc(note)}</p>` : ''}
-            <div class="casepm-print-toolbar">
+            ${fields.length ? `<div class="casepm-print-toolbar">
               <button type="button" data-action="all">Select All</button>
               <button type="button" data-action="none">Clear All</button>
               <button type="button" data-action="default">Defaults</button>
@@ -565,7 +700,7 @@
               ${fields.map(f => `
                 <label><input type="checkbox" data-field="${esc(f.key)}" ${f.default !== false ? 'checked' : ''}${f.locked ? ' disabled checked' : ''}> ${esc(f.label)}</label>
               `).join('')}
-            </div>
+            </div>` : ''}
           </div>
           <div class="casepm-print-picker-actions">
             <button type="button" data-action="cancel" class="casepm-dialog-btn casepm-dialog-btn-secondary" style="padding:0.5rem 1rem;border-radius:0.375rem;border:none;cursor:pointer;background:#3f3f46;color:#e4e4e7;">Cancel</button>
@@ -580,29 +715,52 @@
       dialog.showModal();
 
       const boxes = () => Array.from(dialog.querySelectorAll('input[data-field]'));
+      const contentBoxes = () => Array.from(dialog.querySelectorAll('input[data-content]'));
       const finish = (result) => { dialog.close(); dialog.remove(); resolve(result); };
 
-      dialog.querySelector('[data-action="all"]').onclick = () => boxes().forEach(b => { if (!b.disabled) b.checked = true; });
-      dialog.querySelector('[data-action="none"]').onclick = () => boxes().forEach(b => { if (!b.disabled) b.checked = false; });
-      dialog.querySelector('[data-action="default"]').onclick = () => {
-        boxes().forEach(b => {
-          const f = fields.find(x => x.key === b.dataset.field);
-          if (!b.disabled) b.checked = f ? f.default !== false : true;
-        });
-      };
+      if (fields.length) {
+        dialog.querySelector('[data-action="all"]').onclick = () => boxes().forEach(b => { if (!b.disabled) b.checked = true; });
+        dialog.querySelector('[data-action="none"]').onclick = () => boxes().forEach(b => { if (!b.disabled) b.checked = false; });
+        dialog.querySelector('[data-action="default"]').onclick = () => {
+          boxes().forEach(b => {
+            const f = fields.find(x => x.key === b.dataset.field);
+            if (!b.disabled) b.checked = f ? f.default !== false : true;
+          });
+          contentBoxes().forEach(b => {
+            const co = contentOptions.find(x => x.key === b.dataset.content);
+            if (!b.disabled) b.checked = co ? co.default !== false : true;
+          });
+        };
+      } else if (contentOptions.length) {
+        dialog.querySelector('[data-action="all"]')?.remove();
+        dialog.querySelector('[data-action="none"]')?.remove();
+        const defaultBtn = dialog.querySelector('[data-action="default"]');
+        if (defaultBtn) {
+          defaultBtn.textContent = 'Reset';
+          defaultBtn.onclick = () => {
+            contentBoxes().forEach(b => {
+              const co = contentOptions.find(x => x.key === b.dataset.content);
+              if (!b.disabled) b.checked = co ? co.default !== false : true;
+            });
+          };
+        }
+      }
       dialog.querySelector('[data-action="close"]').onclick = () => finish(null);
       dialog.querySelector('[data-action="cancel"]').onclick = () => finish(null);
       dialog.querySelector('[data-action="print"]').onclick = () => {
         const selected = boxes().filter(b => b.checked).map(b => b.dataset.field);
-        if (!selected.length) {
+        if (fields.length && !selected.length) {
           if (global.CasePMDialog) global.CasePMDialog.alert('Select at least one field to print.');
           else alert('Select at least one field to print.');
           return;
         }
+        const content = {};
+        contentBoxes().forEach(b => { content[b.dataset.content] = b.checked; });
         const logTypeEl = dialog.querySelector('input[name="casepmPrintLogType"]:checked');
         finish({
           fields: selected,
           logType: logTypeEl ? logTypeEl.value : defaultLogType,
+          contentOptions: content,
         });
       };
       dialog.addEventListener('cancel', (e) => { e.preventDefault(); finish(null); });
@@ -632,62 +790,98 @@
     return `<table class="casepm-print-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
   }
 
-  function buildPrintHeaderHtml(meta, title) {
-    const loc = meta.location
-      ? `<div style="margin-top:4px;font-size:6.5pt"><span class="label" style="font-weight:700">LOCATION</span><br>${esc(meta.location)}</div>`
+  function buildPrintHeaderHtml(meta, title, options) {
+    const opts = options || {};
+    const prefix = opts.classPrefix || 'casepm-print-';
+
+    if (opts.continued) {
+      return `<div class="${prefix}header ${prefix}header-continued">
+        <span class="${prefix}continued-title">${esc(title)} <span class="${prefix}continued-label">(continued)</span></span>
+      </div>`;
+    }
+
+    const company = getCompanyMeta();
+    const logoHtml = company.logo
+      ? `<img src="${company.logo}" alt="" class="${prefix}logo">`
+      : `<div class="${prefix}logo-placeholder">${esc(company.name.charAt(0).toUpperCase())}</div>`;
+
+    const showLoc = opts.showLocation !== false && meta.location;
+    const loc = showLoc
+      ? `<div class="${prefix}location"><span class="label">Location</span> ${esc(meta.location)}</div>`
       : '';
-    return `<div class="casepm-print-header">
-      <table class="casepm-print-header-table"><tr>
-        <td class="casepm-print-header-left">
-          <div class="casepm-print-title">${esc(title)}</div>
+
+    const projectMeta = [];
+    if (meta.number) projectMeta.push(`<div><span class="label">Project No.</span><br>${esc(meta.number)}</div>`);
+    if (meta.name) projectMeta.push(`<div><span class="label">Project</span><br>${esc(meta.name)}</div>`);
+
+    return `<div class="${prefix}header">
+      <table class="${prefix}header-table"><tr>
+        <td class="${prefix}header-brand">${logoHtml}</td>
+        <td class="${prefix}header-center">
+          <div class="${prefix}company-name">${esc(company.name)}</div>
+          <div class="${prefix}title">${esc(title)}</div>
           ${loc}
         </td>
-        <td class="casepm-print-header-right">
-          <div class="casepm-print-meta">
-            ${meta.number ? `<div><span class="label">PROJECT ID</span><br>${esc(meta.number)}</div>` : ''}
-            ${meta.name ? `<div><span class="label">PROJECT NAME</span><br>${esc(meta.name)}</div>` : ''}
-          </div>
+        <td class="${prefix}header-right">
+          <div class="${prefix}meta">${projectMeta.join('')}</div>
         </td>
       </tr></table>
     </div>`;
   }
 
+  function buildPrintFooterHtml(printedOn, pageNum, totalPages, options) {
+    const opts = options || {};
+    const showDate = opts.showPrintedDate !== false;
+    const pageLabel = totalPages > 1 ? `Page ${pageNum} of ${totalPages}` : `Page ${pageNum}`;
+    return `<div class="casepm-print-footer">
+      <span>Confidential</span>
+      <span class="center">${showDate ? esc(printedOn) : ''}</span>
+      <span class="right">${pageLabel}</span>
+    </div>`;
+  }
+
   function buildPrintDocument(opts) {
     const meta = opts.meta || {};
+    const printOpts = opts.printOptions || {};
     const printedOn = new Date().toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
     const sections = opts.sections || [{ title: opts.title, tableHtml: opts.tableHtml }];
     const pages = [];
-    const ROWS_PER_PAGE = opts.rowsPerPage || 28;
+    const ROWS_PER_PAGE = opts.rowsPerPage || 22;
+    const headerOpts = {
+      showLocation: printOpts.showLocation !== false,
+    };
+    const footerOpts = {
+      showPrintedDate: printOpts.showPrintedDate !== false,
+    };
 
     sections.forEach(section => {
       const rows = section.rows || [];
       const columns = rebalanceColumnWidths(pruneEmptyColumns(section.columns || [], rows));
       if (!rows.length) {
-        pages.push(buildPageBlock(meta, section.title, buildPrintTable(columns, [], section.emptyMessage), printedOn, 1, 1));
+        pages.push(buildPageBlock(meta, section.title, buildPrintTable(columns, [], section.emptyMessage), printedOn, 1, 1, false, headerOpts, footerOpts));
         return;
       }
       const totalPages = Math.ceil(rows.length / ROWS_PER_PAGE);
       for (let p = 0; p < totalPages; p++) {
         const chunk = rows.slice(p * ROWS_PER_PAGE, (p + 1) * ROWS_PER_PAGE);
         const tableHtml = buildPrintTable(columns, chunk);
-        pages.push(buildPageBlock(meta, section.title, tableHtml, printedOn, p + 1, totalPages, p > 0));
+        pages.push(buildPageBlock(meta, section.title, tableHtml, printedOn, p + 1, totalPages, p > 0, headerOpts, footerOpts));
       }
     });
 
     return pages.map((p) => `<div class="casepm-print-page">${p}</div>`).join('');
   }
 
-  function buildPageBlock(meta, title, tableHtml, printedOn, pageNum, totalPages, sectionContinued) {
-    const sectionNote = sectionContinued ? `<div class="casepm-print-section-title">${esc(title)} (continued)</div>` : '';
+  function buildPageBlock(meta, title, tableHtml, printedOn, pageNum, totalPages, sectionContinued, headerOpts, footerOpts) {
+    const hOpts = { ...(headerOpts || {}), continued: !!sectionContinued };
+    const sectionNote = sectionContinued && false
+      ? `<div class="casepm-print-section-title">${esc(title)} (continued)</div>`
+      : '';
     return `
-      ${buildPrintHeaderHtml(meta, title)}
+      ${buildPrintHeaderHtml(meta, title, hOpts)}
       ${sectionNote}
       ${tableHtml}
-      <div class="casepm-print-footer">
-        <span>Confidential</span>
-        <span class="center">${esc(printedOn)}</span>
-        <span class="right">Page ${pageNum}${totalPages > 1 ? ` of ${totalPages}` : ''}</span>
-      </div>`;
+      ${buildPrintFooterHtml(printedOn, pageNum, totalPages, footerOpts)}`;
   }
 
   function ensurePrintContainer(containerId) {
@@ -705,27 +899,41 @@
   /** Portrait document print (individual RFI, etc.) in an isolated iframe. */
   function printPortraitDocument(bodyHtml, docTitle) {
     const printedOn = new Date().toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
+    const headerCss = `
+        .casepm-print-page { page-break-after: always; break-after: page; page-break-inside: avoid; break-inside: avoid-page; }
+        .casepm-print-page:last-child { page-break-after: auto; break-after: auto; }
+        .casepm-print-header { margin-bottom: 10px; border-bottom: 1.5px solid #222; padding-bottom: 10px; }
+        .casepm-print-header-table { width: 100%; border-collapse: collapse; }
+        .casepm-print-header-table td { border: none; vertical-align: middle; padding: 0; }
+        .casepm-print-header-brand { width: 56px; padding-right: 12px; vertical-align: top; }
+        .casepm-print-logo { display: block; max-width: 52px; max-height: 40px; object-fit: contain; }
+        .casepm-print-logo-placeholder { width: 40px; height: 40px; border-radius: 4px; background: #1a1a1a; color: #fff; font-size: 16pt; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+        .casepm-print-header-center { padding-right: 16px; vertical-align: top; }
+        .casepm-print-company-name { font-size: 8pt; font-weight: 600; color: #444; margin-bottom: 3px; }
+        .casepm-print-title { font-size: 13pt; font-weight: 700; letter-spacing: 0.5px; color: #111; text-transform: uppercase; line-height: 1.15; }
+        .casepm-print-location { margin-top: 4px; font-size: 7pt; color: #555; }
+        .casepm-print-location .label { font-weight: 700; text-transform: uppercase; font-size: 6pt; color: #777; }
+        .casepm-print-header-right { text-align: right; width: 34%; vertical-align: top; }
+        .casepm-print-meta { text-align: right; font-size: 7pt; line-height: 1.4; color: #222; }
+        .casepm-print-meta .label { font-weight: 700; text-transform: uppercase; font-size: 6pt; color: #666; }
+        .casepm-print-footer { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; margin-top: 12px; padding-top: 6px; border-top: 1px solid #ccc; font-size: 7pt; color: #666; }
+        .casepm-print-footer .center { text-align: center; }
+        .casepm-print-footer .right { text-align: right; }
+        .casepm-rfi-detail { font-size: 9pt; line-height: 1.45; color: #111; }
+        .casepm-rfi-detail .rfi-detail-identifier { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; flex-wrap: wrap; }
+        .casepm-rfi-detail .rfi-detail-number { font-family: 'Courier New', Courier, monospace; font-size: 12pt; font-weight: 700; color: #111; }
+        .casepm-rfi-detail .rfi-detail-status { font-size: 7.5pt; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #555; padding: 2px 8px; border: 1px solid #ccc; border-radius: 3px; }
+        .casepm-rfi-detail .rfi-detail-subject { font-size: 13pt; font-weight: 700; margin-bottom: 12px; color: #111; line-height: 1.25; }
+        .casepm-rfi-detail .rfi-detail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px 16px; margin-bottom: 14px; font-size: 8pt; }
+        .casepm-rfi-detail .rfi-detail-grid .label { display: block; font-size: 6.5pt; text-transform: uppercase; letter-spacing: 0.04em; color: #666; font-weight: 700; margin-bottom: 1px; }
+        .casepm-rfi-detail .rfi-detail-box { border: 1px solid #ccc; border-radius: 2px; padding: 10px 12px; margin-bottom: 10px; white-space: pre-wrap; min-height: 40px; }
+        .casepm-rfi-detail .rfi-detail-box h4 { margin: 0 0 6px; font-size: 7pt; text-transform: uppercase; letter-spacing: 0.05em; color: #555; font-weight: 700; }
+        .casepm-rfi-detail .rfi-detail-list { margin: 0; padding-left: 16px; font-size: 8pt; }`;
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(docTitle || 'Print')}</title>
       <style>
         @page { size: portrait; margin: 0.45in 0.5in; }
         body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #111; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        .casepm-print-page { page-break-after: always; break-after: page; }
-        .casepm-print-page:last-child { page-break-after: auto; break-after: auto; }
-        .casepm-print-header { display: grid; grid-template-columns: 1fr minmax(0, 2.4in); gap: 10px 14px; align-items: start; margin-bottom: 6px; border-bottom: 2px solid #111; padding-bottom: 6px; }
-        .casepm-print-title { font-size: 12pt; font-weight: 700; letter-spacing: 0.4px; color: #111; line-height: 1.15; }
-        .casepm-print-meta { text-align: right; font-size: 6.5pt; line-height: 1.35; color: #222; word-break: normal; overflow-wrap: normal; }
-        .casepm-print-meta .label { font-weight: 700; text-transform: uppercase; font-size: 6pt; color: #444; }
-        .casepm-print-footer { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; margin-top: 8px; padding-top: 4px; border-top: 1px solid #999; font-size: 7pt; color: #444; }
-        .casepm-print-footer .center { text-align: center; }
-        .casepm-print-footer .right { text-align: right; }
-        .casepm-rfi-detail { font-size: 9pt; line-height: 1.45; color: #111; }
-        .casepm-rfi-detail .rfi-detail-number { font-family: 'Courier New', Courier, monospace; font-size: 11pt; font-weight: 700; margin-bottom: 2px; }
-        .casepm-rfi-detail .rfi-detail-subject { font-size: 12pt; font-weight: 700; margin-bottom: 10px; }
-        .casepm-rfi-detail .rfi-detail-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 12px; margin-bottom: 12px; font-size: 8pt; }
-        .casepm-rfi-detail .rfi-detail-grid .label { display: block; font-size: 6.5pt; text-transform: uppercase; letter-spacing: 0.04em; color: #666; font-weight: 700; margin-bottom: 1px; }
-        .casepm-rfi-detail .rfi-detail-box { border: 1px solid #333; padding: 8px 10px; margin-bottom: 10px; white-space: pre-wrap; min-height: 48px; }
-        .casepm-rfi-detail .rfi-detail-box h4 { margin: 0 0 4px; font-size: 7pt; text-transform: uppercase; letter-spacing: 0.05em; color: #555; }
-        .casepm-rfi-detail .rfi-detail-list { margin: 0; padding-left: 16px; font-size: 8pt; }
+        ${headerCss}
       </style></head><body>${bodyHtml.replace('__PRINTED_ON__', esc(printedOn))}</body></html>`;
     printHtmlInIframe(html, { landscape: false, delay: 400 });
   }
@@ -793,8 +1001,11 @@
     formatPrintCell,
     pruneEmptyColumns,
     rebalanceColumnWidths,
+    isEmptyPrintCell,
+    getCompanyMeta,
     getProjectMeta,
     buildPrintHeaderHtml,
+    buildPrintFooterHtml,
     showFieldPicker,
     buildPrintTable,
     buildPrintDocument,

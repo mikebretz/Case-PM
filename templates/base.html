@@ -294,6 +294,11 @@
     {% if current_user.is_authenticated %}
     <script>
         window.CASEPM_CURRENT_USER = {{ current_user_profile | tojson }};
+        window.CASEPM_COMPANY_INFO = {
+            name: {{ (company_info.get('company_name') or 'Case PM')|tojson }},
+            dba: {{ (company_info.get('dba_name') or '')|tojson }},
+            logo: {{ (company_logo_url or '')|tojson }},
+        };
     </script>
     {% endif %}
 

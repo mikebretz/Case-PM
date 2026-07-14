@@ -1023,15 +1023,28 @@
 
   const RFI_BASE_PRINT_COLUMNS = [
     { key: 'number', label: 'RFI #', width: '6%', mono: true, alwaysShow: true },
-    { key: 'subject', label: 'Subject', width: '14%', logPhrase: true, logWords: 4 },
-    { key: 'drawing_reference', label: 'Drawing', width: '7%', mono: true },
-    { key: 'spec_reference', label: 'Spec', width: '7%', mono: true },
+    { key: 'subject', label: 'Subject', width: '16%', logPhrase: true, logWords: 4, alwaysShow: true },
     { key: 'received_from_company', label: 'From', width: '10%', logPhrase: true, logWords: 3 },
     { key: 'to_party', label: 'To', width: '8%', logPhrase: true, logWords: 3 },
     { key: 'status', label: 'Status', width: '8%', align: 'center', alwaysShow: true },
     { key: 'ball_in_court_role', label: 'Ball<br>in Court', width: '8%', align: 'center' },
     { key: 'due_date', label: 'Due', width: '7%', align: 'center' },
     { key: 'date', label: 'Initiated', width: '7%', align: 'center' },
+  ];
+
+  const RFI_REFERENCE_PRINT_COLUMNS = [
+    { key: 'drawing_reference', label: 'Drawing', width: '7%', mono: true },
+    { key: 'spec_reference', label: 'Spec', width: '7%', mono: true },
+  ];
+
+  const RFI_DATE_COLUMN_KEYS = ['due_date', 'date'];
+
+  const RFI_CONTENT_OPTIONS = [
+    { key: 'dates', label: 'Include date columns', default: true },
+    { key: 'drawing', label: 'Include drawing reference', default: true },
+    { key: 'spec', label: 'Include spec reference', default: true },
+    { key: 'location', label: 'Show location in header', default: false },
+    { key: 'printedDate', label: 'Show printed date in footer', default: true },
   ];
 
   const RFI_OPTIONAL_PRINT_FIELDS = [
@@ -1047,6 +1060,49 @@
     { key: 'schedule_impact_days', label: 'Schedule Days', default: false },
     { key: 'notes', label: 'Notes', default: false },
   ];
+
+  const RFI_DETAIL_PRINT_OPTIONS = [
+    { key: 'dates', label: 'Include dates', default: true },
+    { key: 'drawing', label: 'Include drawing reference', default: true },
+    { key: 'spec', label: 'Include spec reference', default: true },
+    { key: 'discipline', label: 'Include discipline', default: false },
+    { key: 'impacts', label: 'Include cost & schedule impact', default: true },
+    { key: 'responses', label: 'Include responses', default: true },
+    { key: 'attachments', label: 'Include attachments', default: true },
+    { key: 'linked', label: 'Include linked COs / PCOs', default: true },
+    { key: 'location', label: 'Show location in header', default: false },
+    { key: 'printedDate', label: 'Show printed date in footer', default: true },
+  ];
+
+  function resolveRfiPrintColumns(selectedOptionalKeys, contentOptions) {
+    const opts = contentOptions || {};
+    let columns = [...RFI_BASE_PRINT_COLUMNS];
+    if (opts.drawing !== false) columns.splice(2, 0, RFI_REFERENCE_PRINT_COLUMNS[0]);
+    if (opts.spec !== false) {
+      const insertAt = columns.findIndex(c => c.key === 'received_from_company');
+      columns.splice(insertAt >= 0 ? insertAt : 2, 0, RFI_REFERENCE_PRINT_COLUMNS[1]);
+    }
+    if (opts.dates === false) {
+      columns = columns.filter(c => !RFI_DATE_COLUMN_KEYS.includes(c.key));
+    }
+    const optional = RFI_OPTIONAL_PRINT_FIELDS
+      .filter(f => (selectedOptionalKeys || []).includes(f.key))
+      .map(f => ({
+        key: f.key,
+        label: f.label.replace(/ /g, '<br>'),
+        width: '7%',
+        logPhrase: ['question', 'official_answer', 'notes'].includes(f.key),
+        logWords: 4,
+      }));
+    return [...columns, ...optional];
+  }
+
+  function hasPrintValue(value) {
+    const P = global.CasePMPrint;
+    if (P && P.isEmptyPrintCell) return !P.isEmptyPrintCell(value);
+    const text = value == null ? '' : String(value).replace(/\s+/g, ' ').trim();
+    return !!text && text !== '—' && text !== '-';
+  }
 
   function printValue(r, key) {
     if (key === 'due_date' || key === 'date') return fmtDate(r[key]);
@@ -1105,36 +1161,65 @@
     });
   }
 
-  function buildRfiDetailPrintHtml(r) {
+  function buildRfiDetailPrintHtml(r, printOpts) {
+    const opts = printOpts || {};
     const meta = getRfiPrintMeta();
     const P = global.CasePMPrint;
     const e = P ? P.esc : esc;
-    const field = (label, value) => `<div><span class="label">${e(label)}</span>${e(value || '—')}</div>`;
-    const attachments = (r.attachments || []).map(att => `<li>${e(att.original_name || att.filename || 'File')}</li>`).join('');
-    const responses = (r.responses || []).map(resp => `<li>${e(resp.user_name)} — ${fmtDate(resp.created_at)}${resp.is_official ? ' (Official)' : ''}: ${e(resp.body)}</li>`).join('');
-    const linked = [
+    const field = (label, value) => {
+      if (!hasPrintValue(value)) return '';
+      return `<div><span class="label">${e(label)}</span>${e(value)}</div>`;
+    };
+
+    const metaFields = [];
+    if (hasPrintValue(r.priority)) metaFields.push(field('Priority', r.priority));
+    if (opts.dates !== false) {
+      if (hasPrintValue(fmtDate(r.due_date))) metaFields.push(field('Due Date', fmtDate(r.due_date)));
+      if (hasPrintValue(fmtDate(r.date))) metaFields.push(field('Initiated', fmtDate(r.date)));
+    }
+    if (hasPrintValue(r.ball_in_court_role)) metaFields.push(field('Ball in Court', r.ball_in_court_role));
+    if (opts.drawing !== false && hasPrintValue(r.drawing_reference)) metaFields.push(field('Drawing', r.drawing_reference));
+    if (opts.spec !== false && hasPrintValue(r.spec_reference)) metaFields.push(field('Spec', r.spec_reference));
+    if (opts.discipline !== false && hasPrintValue(r.discipline)) metaFields.push(field('Discipline', r.discipline));
+    if (hasPrintValue(r.rfi_manager_name)) metaFields.push(field('RFI Manager', r.rfi_manager_name));
+    const fromVal = r.received_from_company || r.from_party;
+    if (hasPrintValue(fromVal)) metaFields.push(field('From', fromVal));
+    const toVal = (r.assignees || []).join(', ') || r.to_party;
+    if (hasPrintValue(toVal)) metaFields.push(field('To / Assignee', toVal));
+    if (opts.impacts !== false) {
+      if (hasPrintValue(r.cost_impact_amount)) {
+        metaFields.push(field('Cost Impact', '$' + Number(r.cost_impact_amount).toLocaleString()));
+      }
+      if (hasPrintValue(r.schedule_impact_days)) {
+        metaFields.push(field('Schedule Impact', `${r.schedule_impact_days} days`));
+      }
+    }
+
+    const attachments = opts.attachments !== false
+      ? (r.attachments || []).map(att => `<li>${e(att.original_name || att.filename || 'File')}</li>`).join('')
+      : '';
+    const responses = opts.responses !== false
+      ? (r.responses || []).map(resp => `<li>${e(resp.user_name)} — ${fmtDate(resp.created_at)}${resp.is_official ? ' (Official)' : ''}: ${e(resp.body)}</li>`).join('')
+      : '';
+    const linked = opts.linked !== false ? [
       ...(r.linked_change_orders || []).map(c => `CO ${e(c.number)} — ${e(c.title)}`),
       ...(r.linked_pcos || []).map(p => `PCO ${e(p.number)} — ${e(p.title)}`),
-    ].join('; ');
+    ].join('; ') : '';
+
+    const headerOpts = { showLocation: opts.location !== false };
+    const statusBadge = hasPrintValue(r.status)
+      ? `<span class="rfi-detail-status">${e(r.status)}</span>`
+      : '';
+
     return `<div class="casepm-print-page">
-      ${global.CasePMPrint.buildPrintHeaderHtml(meta, 'REQUEST FOR INFORMATION')}
+      ${global.CasePMPrint.buildPrintHeaderHtml(meta, 'REQUEST FOR INFORMATION', headerOpts)}
       <div class="casepm-rfi-detail">
-        <div class="rfi-detail-number">${e(r.number)}</div>
-        <div class="rfi-detail-subject">${e(r.subject)}</div>
-        <div class="rfi-detail-grid">
-          ${field('Status', r.status)}
-          ${field('Priority', r.priority)}
-          ${field('Due Date', fmtDate(r.due_date))}
-          ${field('Ball in Court', r.ball_in_court_role)}
-          ${field('Drawing', r.drawing_reference)}
-          ${field('Spec', r.spec_reference)}
-          ${field('Discipline', r.discipline)}
-          ${field('RFI Manager', r.rfi_manager_name)}
-          ${field('From', r.received_from_company || r.from_party)}
-          ${field('To / Assignee', (r.assignees || []).join(', ') || r.to_party)}
-          ${field('Cost Impact', r.cost_impact_amount ? '$' + Number(r.cost_impact_amount).toLocaleString() : '—')}
-          ${field('Schedule Impact', r.schedule_impact_days ? `${r.schedule_impact_days} days` : '—')}
+        <div class="rfi-detail-identifier">
+          <span class="rfi-detail-number">${e(r.number)}</span>
+          ${statusBadge}
         </div>
+        <div class="rfi-detail-subject">${e(r.subject || '')}</div>
+        ${metaFields.length ? `<div class="rfi-detail-grid">${metaFields.join('')}</div>` : ''}
         <div class="rfi-detail-box"><h4>Question</h4>${e(r.question || '—')}</div>
         ${r.official_answer ? `<div class="rfi-detail-box"><h4>Official Answer</h4>${e(r.official_answer)}</div>` : ''}
         ${responses ? `<div class="rfi-detail-box"><h4>Responses</h4><ul class="rfi-detail-list">${responses}</ul></div>` : ''}
@@ -1143,7 +1228,7 @@
       </div>
       <div class="casepm-print-footer">
         <span>Confidential</span>
-        <span class="center">__PRINTED_ON__</span>
+        <span class="center">${opts.printedDate !== false ? '__PRINTED_ON__' : ''}</span>
         <span class="right">Page 1</span>
       </div>
     </div>`;
@@ -1162,7 +1247,14 @@
         return;
       }
     }
-    const html = buildRfiDetailPrintHtml(r);
+    const picked = await global.CasePMPrint.showFieldPicker({
+      title: `Print RFI ${r.number}`,
+      note: 'Empty fields (drawing, spec, discipline, etc.) are omitted automatically from the printout.',
+      contentOptions: RFI_DETAIL_PRINT_OPTIONS,
+      fields: [],
+    });
+    if (!picked) return;
+    const html = buildRfiDetailPrintHtml(r, picked.contentOptions);
     await triggerRfiPrint(html, {
       title: `RFI ${r.number}`,
       filenameBase: `RFI_${r.number || r.id}`,
@@ -1176,19 +1268,12 @@
     if (typeof global.CasePMPrint === 'undefined') { alert('Print module not loaded'); return; }
     const picked = await global.CasePMPrint.showFieldPicker({
       title: 'Print RFI Log',
-      note: 'Standard RFI register columns are always included. Choose extra columns to append on the right.',
+      note: 'Standard RFI register columns are always included. Drawing, spec, and date columns can be toggled above. Empty columns are omitted automatically.',
+      contentOptions: RFI_CONTENT_OPTIONS,
       fields: RFI_OPTIONAL_PRINT_FIELDS,
     });
     if (!picked) return;
-    const optional = RFI_OPTIONAL_PRINT_FIELDS.filter(f => picked.fields.includes(f.key))
-      .map(f => ({
-        key: f.key,
-        label: f.label.replace(/ /g, '<br>'),
-        width: '7%',
-        logPhrase: ['question', 'official_answer', 'notes'].includes(f.key),
-        logWords: 4,
-      }));
-    const columns = [...RFI_BASE_PRINT_COLUMNS, ...optional];
+    const columns = resolveRfiPrintColumns(picked.fields, picked.contentOptions);
     const rows = filteredRfis().map(r => {
       const obj = {};
       columns.forEach(c => { obj[c.key] = printValue(r, c.key); });
@@ -1198,7 +1283,11 @@
     const html = global.CasePMPrint.buildPrintDocument({
       meta,
       sections: [{ title: 'RFI LOG', columns, rows, emptyMessage: 'No RFIs to print.' }],
-      rowsPerPage: 24,
+      rowsPerPage: 22,
+      printOptions: {
+        showLocation: picked.contentOptions?.location !== false,
+        showPrintedDate: picked.contentOptions?.printedDate !== false,
+      },
     });
     await triggerRfiPrint(html, {
       title: 'RFI Log',
