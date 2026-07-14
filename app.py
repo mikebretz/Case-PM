@@ -14233,8 +14233,10 @@ def api_remove_subcontractor_from_project():
             'commitments': [{'id': c.id, 'number': c.number, 'status': c.status} for c in matching_commitments],
         }), 400
 
-    if force and approved_commitments and current_user.role != 'Admin':
-        return jsonify({'error': 'Only administrators can force-remove subcontractors with approved commitments'}), 403
+    if force and approved_commitments:
+        from developer_tools import is_admin_or_developer
+        if not is_admin_or_developer(current_user):
+            return jsonify({'error': 'Only administrators or developers can force-remove subcontractors with approved commitments'}), 403
 
     voided = void_subcontractor_commitments(
         project_id, company_id, company_name,
@@ -14315,8 +14317,10 @@ def api_clear_all_subcontractors_for_project():
             'can_force': True,
             'commitments': [{'id': c.id, 'number': c.number, 'status': c.status} for c in approved_subs],
         }), 400
-    if approved_subs and force and current_user.role != 'Admin':
-        return jsonify({'error': 'Only administrators can force-clear subcontractors with approved commitments'}), 403
+    if approved_subs and force:
+        from developer_tools import is_admin_or_developer
+        if not is_admin_or_developer(current_user):
+            return jsonify({'error': 'Only administrators or developers can force-clear subcontractors with approved commitments'}), 403
 
     _, pay_state = load_state(PayAppProjectState, project_id)
     pay_state = pay_state or {}
@@ -14358,9 +14362,10 @@ def api_clear_all_subcontractors_for_project():
 @app.route('/api/pay-applications/clear-all-subcontractors-program', methods=['POST'])
 @login_required
 def api_clear_all_subcontractors_program():
-    """Admin: clear subcontractor SOV/pay-app data across every project."""
-    if current_user.role != 'Admin':
-        return jsonify({'error': 'Admin only'}), 403
+    """Admin/Developer: clear subcontractor SOV/pay-app data across every project."""
+    from developer_tools import is_admin_or_developer
+    if not is_admin_or_developer(current_user):
+        return jsonify({'error': 'Admin or Developer access required'}), 403
 
     from pay_app_persistence import (
         get_pay_app_state as load_state,
