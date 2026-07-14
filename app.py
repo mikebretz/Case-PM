@@ -3824,6 +3824,8 @@ def api_create_rfi():
         project_id = body.get('project_id') or get_current_project_id()
         if not project_id:
             return jsonify({'error': 'project_id required'}), 400
+        from financial_security import require_financial_project_access
+        project_id = require_financial_project_access(current_user, project_id, Project)
         subject = (body.get('subject') or '').strip()
         if not subject:
             return jsonify({'error': 'subject required'}), 400
@@ -3849,6 +3851,9 @@ def api_create_rfi():
         db.session.add(rfi)
         db.session.commit()
         return jsonify({'ok': True, 'rfi': rfi_to_dict(rfi)})
+    except (ValueError, PermissionError) as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 403
     except Exception as exc:
         db.session.rollback()
         return jsonify({'error': str(exc)}), 500
@@ -10734,7 +10739,12 @@ def api_commitment_workflow(commitment_id):
         commitment_workflow_action, commitment_to_dict, notify_ball_in_court,
         sync_commitment_to_budget, sync_commitment_to_sub_sov,
     )
+    from financial_security import require_financial_project_access
     c = Commitment.query.get_or_404(commitment_id)
+    try:
+        require_financial_project_access(current_user, c.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     body = request.get_json(silent=True) or {}
     action = body.get('action')
     try:
@@ -14062,11 +14072,16 @@ def api_import_pay_app_local():
 def api_pay_app_workflow():
     from pay_app_persistence import get_pay_app_state, save_pay_app_state
     from pay_app_workflow import process_pay_app_workflow
+    from financial_security import require_financial_project_access
 
     body = request.get_json(silent=True) or {}
     project_id = body.get('project_id') or get_current_project_id()
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
+    try:
+        project_id = require_financial_project_access(current_user, project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     project_id = int(project_id)
     entity_type = body.get('entity_type') or 'g702'
     entity_key = body.get('entity_key') or body.get('period_number') or body.get('company_id')
@@ -14502,7 +14517,12 @@ def api_change_orders_link_options():
 @login_required
 def api_change_order_workflow(co_id):
     from co_persistence import process_change_order_workflow, co_to_dict, is_subcontract_co
+    from financial_security import require_financial_project_access
     co = ChangeOrder.query.get_or_404(co_id)
+    try:
+        require_financial_project_access(current_user, co.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     body = request.get_json(silent=True) or {}
     action = body.get('action')
     try:
@@ -14735,7 +14755,12 @@ def api_update_pco(pco_id):
 @login_required
 def api_pco_workflow(pco_id):
     from co_persistence import process_pco_workflow, pco_to_dict
+    from financial_security import require_financial_project_access
     pco = PotentialChangeOrder.query.get_or_404(pco_id)
+    try:
+        require_financial_project_access(current_user, pco.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     body = request.get_json(silent=True) or {}
     try:
         result = process_pco_workflow(
