@@ -64,7 +64,7 @@ echo ================================================
 echo.
 echo On every remote PC:
 echo   1. Hard-refresh: Ctrl+Shift+R
-echo   2. Footer must show: Case PM · build %BUILD%
+echo   2. Or open http://YOUR-SERVER:5000/api/version — running_build must be %BUILD%
 echo.
 echo If the footer build id did NOT change, the wrong PC
 echo may be running the server, or the server did not restart.

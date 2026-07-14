@@ -644,20 +644,10 @@
                     {% endif %}
                 </div>
                 <div class="flex items-center gap-4 flex-shrink-0">
-                    {% if request.endpoint == 'pay_applications_page' %}
-                    <button type="button" id="footerSaveBtn" onclick="window.casepmTriggerSave && window.casepmTriggerSave()" class="px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold whitespace-nowrap">
-                        <i class="fa-solid fa-save mr-1"></i>Save
-                    </button>
-                    {% elif request.endpoint == 'budget_page' %}
-                    <button type="button" id="footerSaveBtn" onclick="typeof saveBudget === 'function' && saveBudget()" class="px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold whitespace-nowrap">
-                        <i class="fa-solid fa-save mr-1"></i>Save
-                    </button>
-                    {% endif %}
                     <div class="flex items-center gap-1.5">
                         <div class="w-2 h-2 bg-emerald-500 rounded-full status-dot"></div>
                         <span>Connected</span>
                     </div>
-                    <span{% if restart_required %} class="text-amber-400 font-medium" title="New code on disk — restart RUN-AS-SERVER.bat on the server PC"{% endif %}>Case PM · build {{ asset_v }}{% if restart_required %} · restart server{% endif %}</span>
                 </div>
             </div>
         </div>

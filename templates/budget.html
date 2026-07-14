@@ -50,13 +50,6 @@
   tr:hover td.budget-sticky-1 { background: #27272a; }
   thead .budget-sticky-0,
   thead .budget-sticky-1 { z-index: 22; }
-  .casepm-floating-save {
-    position: fixed;
-    bottom: 3.5rem;
-    right: 1rem;
-    z-index: 250;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-  }
 </style>
 
 <div id="budgetPrintSheet" class="casepm-print-root" aria-hidden="true"></div>
@@ -105,10 +98,6 @@
         </a>
     </div>
 </div>
-
-<button type="button" id="budgetFloatingSaveBtn" onclick="saveBudget()" class="casepm-floating-save flex items-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-semibold text-white" title="Save budget (Ctrl+S)">
-    <i class="fa-solid fa-save"></i><span>Save</span>
-</button>
 
 <!-- SUMMARY CARDS -->
 <div class="bg-zinc-900 border border-zinc-700 rounded-md p-4 flex-shrink-0 mb-4">
