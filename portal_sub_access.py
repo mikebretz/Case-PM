@@ -39,8 +39,78 @@ def is_sub_vendor_portal_user(user) -> bool:
         return False
 
 
-def sub_vendor_company_id(user) -> int | None:
+def resolve_sub_vendor_company(user, Company=None, db=None, persist_link: bool = False):
+    """
+    Resolve a sub/vendor's company from company_id, primary/financial contact, or name.
+    Returns (company_id, company_name, company_row) — any field may be None.
+    """
+    if not user:
+        return None, None, None
+    if Company is None:
+        try:
+            from app import Company as CompanyModel
+            Company = CompanyModel
+        except Exception:
+            Company = None
+    if Company is None:
+        return None, None, None
+
+    uid = getattr(user, 'id', None)
+    company = None
+
     cid = getattr(user, 'company_id', None)
+    if cid is not None:
+        try:
+            company = Company.query.get(int(cid))
+        except (TypeError, ValueError):
+            company = None
+
+    if company is None and uid is not None:
+        try:
+            company = Company.query.filter(
+                (Company.primary_contact_user_id == int(uid))
+                | (Company.financial_contact_user_id == int(uid))
+            ).first()
+        except Exception:
+            company = None
+
+    cname = (getattr(user, 'company', None) or '').strip()
+    if company is None and cname:
+        try:
+            from sqlalchemy import func
+            company = Company.query.filter(func.lower(Company.name) == cname.lower()).first()
+        except Exception:
+            company = None
+
+    if company is None:
+        return None, None, None
+
+    if persist_link and db is not None:
+        changed = False
+        if getattr(user, 'company_id', None) != company.id:
+            user.company_id = company.id
+            changed = True
+        if (getattr(user, 'company', None) or '').strip() != (company.name or '').strip():
+            user.company = company.name
+            changed = True
+        if changed:
+            try:
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
+    return company.id, company.name, company
+
+
+def user_has_linked_vendor_company(user, Company=None, db=None, persist_link: bool = False) -> bool:
+    if not is_sub_vendor_portal_user(user):
+        return True
+    cid, _, _ = resolve_sub_vendor_company(user, Company, db, persist_link=persist_link)
+    return cid is not None
+
+
+def sub_vendor_company_id(user) -> int | None:
+    cid, _, _ = resolve_sub_vendor_company(user)
     if cid is not None:
         try:
             return int(cid)
@@ -52,9 +122,11 @@ def sub_vendor_company_id(user) -> int | None:
 def sub_vendor_company_keys(user) -> set[str]:
     """Keys used in pay app state dicts for this vendor."""
     keys: set[str] = set()
-    cid = sub_vendor_company_id(user)
+    cid, cname, _ = resolve_sub_vendor_company(user)
     if cid is not None:
         keys.add(str(cid))
+    if cname:
+        keys.add(cname)
     name = (getattr(user, 'company', None) or '').strip()
     if name:
         keys.add(name)
@@ -122,13 +194,12 @@ def get_commitment_project_ids(user, Commitment=None) -> set[int]:
 
 
 def user_is_company_contact(user, Company=None) -> bool:
-    cid = sub_vendor_company_id(user)
-    if not user or not cid or Company is None:
+    if not user or Company is None:
+        return False
+    cid, _, company = resolve_sub_vendor_company(user, Company)
+    if not cid or not company:
         return False
     try:
-        company = Company.query.get(int(cid))
-        if not company:
-            return False
         uid = int(user.id)
         return uid in {
             int(x) for x in (

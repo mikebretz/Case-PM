@@ -546,10 +546,12 @@
                     <div class="section-header px-2 mb-0.5">Billing</div>
                 </div>
 
+                {% if not is_sub_vendor_portal or sub_vendor_company_linked %}
                 <a href="{{ url_for('pay_applications_page', project_id=active_project.id) if active_project else url_for('pay_applications_page') }}" data-nav-module="pay_applications" class="nav-link nav-hide-architect flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'pay_applications_page' %}active{% endif %}">
                     <i class="fa-solid fa-file-invoice-dollar w-5"></i>
                     <span>Pay Applications</span>
                 </a>
+                {% endif %}
 
                 <!-- Field & Docs -->
                 <div class="px-2 section-block">
