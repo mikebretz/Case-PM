@@ -46,11 +46,21 @@ def access_urls(host: str, port: int) -> dict[str, list[str]]:
     return {'local': local, 'lan': lan}
 
 
+def _startup_build() -> str:
+    try:
+        from flask import current_app
+        return str(current_app.config.get('CASEPM_STARTUP_BUILD') or '?')
+    except Exception:
+        return '?'
+
+
 def print_startup_banner(host: str, port: int, remote: bool) -> None:
     urls = access_urls(host, port)
+    build = _startup_build()
     print('\n' + '=' * 75)
     print('CASE PM SERVER')
     print('=' * 75)
+    print(f'  Build: {build}  (footer on every page must match after updates)')
     print(f'  Listening on: {host}:{port}')
     print()
     print('  On this computer:')
@@ -80,4 +90,9 @@ def print_startup_banner(host: str, port: int, remote: bool) -> None:
         print('    2. Run ALLOW-REMOTE-ACCESS.bat once (Windows Firewall)')
         print('    3. Share http://YOUR-LAN-IP:5000 — never use 127.0.0.1 from another PC')
         print('    4. Different network? Use START-INTERNET-TUNNEL.bat')
+        print()
+        print('  AFTER CODE UPDATES (remote users still see old screens):')
+        print('    1. On THIS server PC: double-click PULL-AND-RESTART-SERVER.bat')
+        print('    2. Or Developer → Program Updates → Pull, then close this window and re-run RUN-AS-SERVER.bat')
+        print('    3. Remote PCs: hard-refresh (Ctrl+Shift+R); footer build id must change')
     print('=' * 75 + '\n')

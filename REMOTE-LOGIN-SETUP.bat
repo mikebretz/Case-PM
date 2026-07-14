@@ -31,6 +31,7 @@ echo   - Do NOT use run.bat for remote access
 echo   - Keep the server window OPEN while others are using Case PM
 echo   - Share the http://192.168.x.x:5000 address shown below
 echo     ^(NOT 127.0.0.1 — that only works on THIS computer^)
+echo   - After GitHub updates: PULL-AND-RESTART-SERVER.bat on this PC
 echo.
 echo For someone on a DIFFERENT network ^(home, job site, etc.^):
 echo   After the server starts, run START-INTERNET-TUNNEL.bat

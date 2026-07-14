@@ -61,8 +61,14 @@
     const protectedEl = document.getElementById('devProtectedPaths');
     const gitPullBtn = document.getElementById('devGitPullBtn');
     const gitStatusEl = document.getElementById('devGitPullStatus');
+    const restartEl = document.getElementById('devRestartBanner');
 
-    if (versionEl) versionEl.textContent = `v${data.version || '?'}`;
+    if (versionEl) {
+      const running = data.running_build || '?';
+      versionEl.textContent = data.restart_required
+        ? `v${data.version || '?'} · running ${running}`
+        : `v${data.version || '?'} · ${running}`;
+    }
     if (folderEl) folderEl.value = data.snapshot_folder || '';
     if (countEl) countEl.textContent = String(data.snapshot_count ?? 0);
 
@@ -83,6 +89,18 @@
     }
     if (protectedEl) {
       protectedEl.textContent = (data.user_data_protected || ['instance/', 'uploads/']).join(', ');
+    }
+    if (restartEl) {
+      if (data.restart_required) {
+        restartEl.classList.remove('hidden');
+        restartEl.textContent =
+          `Server is still running build ${data.running_build || '?'}. ` +
+          `Disk has ${git.commit || '?'}. Close RUN-AS-SERVER.bat and run PULL-AND-RESTART-SERVER.bat ` +
+          `(or restart run.bat on this PC only).`;
+      } else {
+        restartEl.classList.add('hidden');
+        restartEl.textContent = '';
+      }
     }
   }
 
@@ -261,7 +279,11 @@
       const json = await api('/api/developer/updates/git-pull', { method: 'POST' });
       const after = json.result?.git_after;
       CasePMDialog?.alert(
-        `Git pull complete.\n\nNow at: ${after?.commit || '?'} — ${after?.subject || ''}\n\nRestart run.bat and hard-refresh your browser.`,
+        `Git pull complete.\n\nNow at: ${after?.commit || '?'} — ${after?.subject || ''}\n\n` +
+          'RESTART REQUIRED for remote users:\n' +
+          '• Server PC: run PULL-AND-RESTART-SERVER.bat\n' +
+          '• Or close RUN-AS-SERVER.bat and open it again\n' +
+          '• Remote PCs: Ctrl+Shift+R — footer build id must change',
         'success'
       );
       await loadUpdatesPanel();

@@ -214,6 +214,13 @@
                 Your database, uploads, and program settings in <code class="text-emerald-400/90">instance/</code> are never included or overwritten.
                 Use <a href="{{ url_for('program_settings') }}?tab=backup" class="text-emerald-400 hover:underline">Program Settings → Backup</a> for user data backups.
             </p>
+            <div class="mt-4 rounded-lg border border-amber-900/40 bg-amber-950/30 px-4 py-3 text-sm text-amber-200/90">
+                <strong class="text-amber-300">Remote users still see old screens?</strong>
+                Code changes in Cursor/GitHub apply to the <em>server PC</em> only after pull <strong>and</strong> restart.
+                On the computer running <code class="text-amber-100/90">RUN-AS-SERVER.bat</code>, double-click
+                <code class="text-amber-100/90">PULL-AND-RESTART-SERVER.bat</code>, then hard-refresh remote browsers (Ctrl+Shift+R).
+                Footer build id must match the latest commit.
+            </div>
         </div>
 
         <div class="dev-card">
@@ -249,6 +256,7 @@
                 </label>
                 <div id="devUpdateGitInfo" class="text-xs text-zinc-500 font-mono break-all">Checking git…</div>
                 <div id="devGitPullStatus" class="text-xs text-zinc-500"></div>
+                <div id="devRestartBanner" class="hidden text-xs text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-md px-3 py-2"></div>
                 <button type="button" id="devGitPullBtn" class="dev-tool-btn w-full" onclick="CasePMDeveloperConsole.gitPullUpdate()">
                     <i class="fa-brands fa-github text-zinc-300"></i><span>Pull from GitHub (origin/main)</span>
                 </button>
