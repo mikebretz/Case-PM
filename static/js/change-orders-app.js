@@ -519,6 +519,7 @@
           <div class="flex items-center justify-center gap-2 flex-wrap">
             ${showSubmit ? `<button onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 rounded-md text-xs font-medium">Submit</button>` : ''}
             ${showApprove ? reviewButtonHtml(co.id) : ''}
+            <button onclick="CasePMChangeOrders.printDetail(${co.id})" class="p-1.5 text-zinc-300 hover:bg-zinc-800 rounded" title="Print / Sign-off"><i class="fa-solid fa-print"></i></button>
             <button onclick="CasePMChangeOrders.editSubCo(${co.id})" class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded" title="Edit"><i class="fa-solid fa-edit"></i></button>
           </div>
         </td>
@@ -562,6 +563,7 @@
           <div class="flex items-center justify-center gap-2 flex-wrap">
             ${showSubmit ? `<button onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 rounded-md text-xs font-medium">Submit</button>` : ''}
             ${showApprove ? reviewButtonHtml(co.id, approveLabel) : ''}
+            <button onclick="CasePMChangeOrders.printDetail(${co.id})" class="p-1.5 text-zinc-300 hover:bg-zinc-800 rounded" title="Print / Sign-off"><i class="fa-solid fa-print"></i></button>
             <button onclick="CasePMChangeOrders.editCo(${co.id})" class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded" title="Edit"><i class="fa-solid fa-edit"></i></button>
           </div>
         </td>
@@ -1537,16 +1539,10 @@
     return `<div><span class="label">${e(label)}</span>${e(value)}</div>`;
   }
 
-  function buildCoSigBlock(role, sig) {
+  function buildCoSigBlock(role) {
     const P = global.CasePMPrint;
+    if (P && P.buildManualSigBlock) return P.buildManualSigBlock(role);
     const e = P ? P.esc : esc;
-    if (sig && (sig.user_name || sig.signed_at)) {
-      return `<div class="co-doc-sig-block">
-        <div class="co-doc-sig-role">${e(role)}</div>
-        <div class="co-doc-sig-line"></div>
-        <div class="co-doc-sig-filled"><strong>${e(sig.user_name || '')}</strong>${sig.title ? `<br>${e(sig.title)}` : ''}${sig.signed_at ? `<br>${e(new Date(sig.signed_at).toLocaleDateString())}` : ''}</div>
-      </div>`;
-    }
     return `<div class="co-doc-sig-block">
       <div class="co-doc-sig-role">${e(role)}</div>
       <div style="margin-bottom:10px">Signature</div><div class="co-doc-sig-line"></div>
@@ -1554,6 +1550,12 @@
       <div style="margin-bottom:6px">Title</div><div class="co-doc-sig-line"></div>
       <div>Date</div><div class="co-doc-sig-line"></div>
     </div>`;
+  }
+
+  function coWritableField(label, value) {
+    const P = global.CasePMPrint;
+    if (P && P.buildWritableField) return P.buildWritableField(label, value);
+    return coDocField(label, value);
   }
 
   function buildCoDetailPrintHtml(co, printOpts) {
@@ -1570,16 +1572,16 @@
     const showWatermark = opts.draftWatermark !== false && co.status === 'Draft';
 
     const gridFields = [
-      coDocField(sub ? 'Subcontractor' : 'Contractor / Company', co.company_name),
-      coDocField('Contact', co.contact_name),
-      coDocField('Reason for Change', co.reason),
-      coDocField('Priority', co.priority),
-      coDocField('Contract Type', co.contract_type),
-      coDocField('Schedule Impact', co.schedule_impact_days ? `${co.schedule_impact_days} calendar days` : ''),
-      coDocField('Linked RFI', co.linked_rfi_id ? linkedRfiLabel(co.linked_rfi_id) : ''),
-      coDocField('Linked Commitment', co.linked_commitment_ref),
-      coDocField('Sub CO Type', sub ? co.sub_co_kind : ''),
-      coDocField('Linked Owner CO', co.linked_owner_co_id && co.linked_owner_co ? `${co.linked_owner_co.number} — ${fmt(co.linked_owner_co.amount)}` : ''),
+      coWritableField(sub ? 'Subcontractor' : 'Contractor / Company', co.company_name),
+      coWritableField('Contact', co.contact_name),
+      coWritableField('Reason for Change', co.reason),
+      coWritableField('Priority', co.priority),
+      coWritableField('Contract Type', co.contract_type),
+      coWritableField('Schedule Impact', co.schedule_impact_days ? `${co.schedule_impact_days} calendar days` : ''),
+      coWritableField('Linked RFI', co.linked_rfi_id ? linkedRfiLabel(co.linked_rfi_id) : ''),
+      coWritableField('Linked Commitment', co.linked_commitment_ref),
+      coWritableField('Sub CO Type', sub ? co.sub_co_kind : ''),
+      coWritableField('Linked Owner CO', co.linked_owner_co_id && co.linked_owner_co ? `${co.linked_owner_co.number} — ${fmt(co.linked_owner_co.amount)}` : ''),
     ].filter(Boolean).join('');
 
     const allocRows = allocs.map(a => `<tr>
@@ -1611,20 +1613,18 @@
       ? `<div class="co-doc-section"><h3>Attachments</h3><div class="co-doc-body">${(co.attachments || []).map(a => e(a.original_name || a.filename || 'File')).join('\n')}</div></div>`
       : '';
 
-    const sigs = co.approval_signatures || [];
-    const sigByRole = (role) => sigs.find(s => String(s.role || s.ball_in_court_role || '').toLowerCase().includes(role.toLowerCase()));
     let sigBlocks = '';
     if (opts.signatures !== false) {
       if (sub) {
         sigBlocks = `<div class="co-doc-sig-grid two-col">
-          ${buildCoSigBlock('General Contractor', sigByRole('manager') || sigByRole('contractor'))}
-          ${buildCoSigBlock('Subcontractor', sigByRole('sub') || sigByRole(co.company_name || 'subcontractor'))}
+          ${buildCoSigBlock('General Contractor')}
+          ${buildCoSigBlock('Subcontractor')}
         </div>`;
       } else {
         sigBlocks = `<div class="co-doc-sig-grid">
-          ${buildCoSigBlock('Contractor', sigByRole('manager') || sigByRole('contractor'))}
-          ${buildCoSigBlock('Architect / Engineer', sigByRole('architect'))}
-          ${buildCoSigBlock('Owner', sigByRole('owner'))}
+          ${buildCoSigBlock('Contractor')}
+          ${buildCoSigBlock('Architect / Engineer')}
+          ${buildCoSigBlock('Owner')}
         </div>`;
       }
     }
@@ -1654,10 +1654,11 @@
         </div>
         ${gridFields ? `<div class="co-doc-grid">${gridFields}</div>` : ''}
         <div class="co-doc-section">
-          <h3>Description of Change</h3>
-          <div class="co-doc-body">${e(co.description || co.title || '—')}</div>
+          ${P && P.buildWritableBox
+            ? P.buildWritableBox('Description of Change', co.description || co.title || '', { minHeight: 96 })
+            : `<h3>Description of Change</h3><div class="co-doc-body">${e(co.description || co.title || '—')}</div>`}
         </div>
-        ${co.notes && hasCoPrintValue(co.notes) ? `<div class="co-doc-section"><h3>Notes</h3><div class="co-doc-body">${e(co.notes)}</div></div>` : ''}
+        ${co.notes && hasCoPrintValue(co.notes) ? `<div class="co-doc-section">${P && P.buildWritableBox ? P.buildWritableBox('Notes', co.notes, { minHeight: 56 }) : `<h3>Notes</h3><div class="co-doc-body">${e(co.notes)}</div>`}</div>` : ''}
         <div class="co-doc-section"><h3>Contract Sum Adjustment</h3>${sumTable}</div>
         ${allocTable}
         ${attachments}
@@ -1667,7 +1668,7 @@
       <div class="casepm-print-footer">
         <span>Confidential</span>
         <span class="center">${opts.printedDate !== false ? '__PRINTED_ON__' : ''}</span>
-        <span class="right">Page 1</span>
+        <span class="right"></span>
       </div>
     </div>`;
   }
@@ -1716,14 +1717,16 @@
         return;
       }
     }
-    const picked = await global.CasePMPrint.showFieldPicker({
-      title: `Print ${co.number}`,
-      note: 'Print a sign-off ready change order document. Available for any status, including draft.',
-      contentOptions: CO_DETAIL_PRINT_OPTIONS,
-      fields: [],
-    });
-    if (!picked) return;
-    const html = buildCoDetailPrintHtml(co, picked.contentOptions);
+    const printOpts = {
+      signatures: true,
+      allocations: true,
+      approvalHistory: false,
+      attachments: true,
+      draftWatermark: co.status === 'Draft',
+      location: false,
+      printedDate: true,
+    };
+    const html = buildCoDetailPrintHtml(co, printOpts);
     await triggerCoPrint(html, {
       title: `Change Order ${co.number}`,
       filenameBase: `CO_${co.number || co.id}`,
@@ -1874,7 +1877,15 @@
       sections.push(buildRegisterSection('POTENTIAL CHANGE ORDER LOG', cols, filteredPcos(), pcoPrintValue));
     }
 
-    const html = global.CasePMPrint.buildPrintDocument({ meta, sections, rowsPerPage: 26 });
+    const html = global.CasePMPrint.buildPrintDocument({
+      meta,
+      sections,
+      flowing: true,
+      printOptions: {
+        showLocation: picked.contentOptions?.location !== false,
+        showPrintedDate: picked.contentOptions?.printedDate !== false,
+      },
+    });
     if (global.CasePMOutput) {
       await global.CasePMOutput.deliverHtml({
         title: 'Change Order Log',

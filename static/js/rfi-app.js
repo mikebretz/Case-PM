@@ -1166,40 +1166,34 @@
     const meta = getRfiPrintMeta();
     const P = global.CasePMPrint;
     const e = P ? P.esc : esc;
-    const field = (label, value) => {
+    const writableField = (label, value) => {
+      if (P && P.buildWritableField) return P.buildWritableField(label, value);
       if (!hasPrintValue(value)) return '';
       return `<div><span class="label">${e(label)}</span>${e(value)}</div>`;
     };
 
     const metaFields = [];
-    if (hasPrintValue(r.priority)) metaFields.push(field('Priority', r.priority));
+    if (hasPrintValue(r.priority) || P?.buildWritableField) metaFields.push(writableField('Priority', r.priority));
     if (opts.dates !== false) {
-      if (hasPrintValue(fmtDate(r.due_date))) metaFields.push(field('Due Date', fmtDate(r.due_date)));
-      if (hasPrintValue(fmtDate(r.date))) metaFields.push(field('Initiated', fmtDate(r.date)));
+      metaFields.push(writableField('Due Date', fmtDate(r.due_date)));
+      metaFields.push(writableField('Initiated', fmtDate(r.date)));
     }
-    if (hasPrintValue(r.ball_in_court_role)) metaFields.push(field('Ball in Court', r.ball_in_court_role));
-    if (opts.drawing !== false && hasPrintValue(r.drawing_reference)) metaFields.push(field('Drawing', r.drawing_reference));
-    if (opts.spec !== false && hasPrintValue(r.spec_reference)) metaFields.push(field('Spec', r.spec_reference));
-    if (opts.discipline !== false && hasPrintValue(r.discipline)) metaFields.push(field('Discipline', r.discipline));
-    if (hasPrintValue(r.rfi_manager_name)) metaFields.push(field('RFI Manager', r.rfi_manager_name));
+    metaFields.push(writableField('Ball in Court', r.ball_in_court_role));
+    if (opts.drawing !== false) metaFields.push(writableField('Drawing', r.drawing_reference));
+    if (opts.spec !== false) metaFields.push(writableField('Spec', r.spec_reference));
+    if (opts.discipline !== false) metaFields.push(writableField('Discipline', r.discipline));
+    if (hasPrintValue(r.rfi_manager_name) || P?.buildWritableField) metaFields.push(writableField('RFI Manager', r.rfi_manager_name));
     const fromVal = r.received_from_company || r.from_party;
-    if (hasPrintValue(fromVal)) metaFields.push(field('From', fromVal));
+    metaFields.push(writableField('From', fromVal));
     const toVal = (r.assignees || []).join(', ') || r.to_party;
-    if (hasPrintValue(toVal)) metaFields.push(field('To / Assignee', toVal));
+    metaFields.push(writableField('To / Assignee', toVal));
     if (opts.impacts !== false) {
-      if (hasPrintValue(r.cost_impact_amount)) {
-        metaFields.push(field('Cost Impact', '$' + Number(r.cost_impact_amount).toLocaleString()));
-      }
-      if (hasPrintValue(r.schedule_impact_days)) {
-        metaFields.push(field('Schedule Impact', `${r.schedule_impact_days} days`));
-      }
+      metaFields.push(writableField('Cost Impact', r.cost_impact_amount ? '$' + Number(r.cost_impact_amount).toLocaleString() : ''));
+      metaFields.push(writableField('Schedule Impact', r.schedule_impact_days ? `${r.schedule_impact_days} days` : ''));
     }
 
     const attachments = opts.attachments !== false
       ? (r.attachments || []).map(att => `<li>${e(att.original_name || att.filename || 'File')}</li>`).join('')
-      : '';
-    const responses = opts.responses !== false
-      ? (r.responses || []).map(resp => `<li>${e(resp.user_name)} — ${fmtDate(resp.created_at)}${resp.is_official ? ' (Official)' : ''}: ${e(resp.body)}</li>`).join('')
       : '';
     const linked = opts.linked !== false ? [
       ...(r.linked_change_orders || []).map(c => `CO ${e(c.number)} — ${e(c.title)}`),
@@ -1211,6 +1205,20 @@
       ? `<span class="rfi-detail-status">${e(r.status)}</span>`
       : '';
 
+    const questionBlock = P && P.buildWritableBox
+      ? P.buildWritableBox('Question', r.question || '', { minHeight: 100 })
+      : `<div class="rfi-detail-box"><h4>Question</h4>${e(r.question || '—')}</div>`;
+    const answerBlock = P && P.buildWritableBox
+      ? P.buildWritableBox('Official Answer / Response', r.official_answer || '', { minHeight: 120 })
+      : (r.official_answer ? `<div class="rfi-detail-box"><h4>Official Answer</h4>${e(r.official_answer)}</div>` : `<div class="rfi-detail-box"><h4>Official Answer / Response</h4><div class="write-area" style="min-height:120px;border:1px dashed #bbb;background:#fafafa"></div></div>`);
+
+    const sigBlocks = P && P.buildManualSigBlock
+      ? `<div class="casepm-manual-sigs">
+          ${P.buildManualSigBlock('Requested By')}
+          ${P.buildManualSigBlock('Responded By (Architect / Engineer)')}
+        </div>`
+      : '';
+
     return `<div class="casepm-print-page">
       ${global.CasePMPrint.buildPrintHeaderHtml(meta, 'REQUEST FOR INFORMATION', headerOpts)}
       <div class="casepm-rfi-detail">
@@ -1219,17 +1227,17 @@
           ${statusBadge}
         </div>
         <div class="rfi-detail-subject">${e(r.subject || '')}</div>
-        ${metaFields.length ? `<div class="rfi-detail-grid">${metaFields.join('')}</div>` : ''}
-        <div class="rfi-detail-box"><h4>Question</h4>${e(r.question || '—')}</div>
-        ${r.official_answer ? `<div class="rfi-detail-box"><h4>Official Answer</h4>${e(r.official_answer)}</div>` : ''}
-        ${responses ? `<div class="rfi-detail-box"><h4>Responses</h4><ul class="rfi-detail-list">${responses}</ul></div>` : ''}
+        ${metaFields.filter(Boolean).length ? `<div class="rfi-detail-grid">${metaFields.filter(Boolean).join('')}</div>` : ''}
+        ${questionBlock}
+        ${answerBlock}
         ${attachments ? `<div class="rfi-detail-box"><h4>Attachments</h4><ul class="rfi-detail-list">${attachments}</ul></div>` : ''}
         ${linked ? `<div class="rfi-detail-box"><h4>Linked Change Orders / PCOs</h4>${linked}</div>` : ''}
+        ${sigBlocks ? `<div class="co-doc-sigs"><h3>Authorization &amp; Sign-off</h3><p style="font-size:7.5pt;color:#555;margin:0 0 10px">Print, complete by hand, and return signed.</p>${sigBlocks}</div>` : ''}
       </div>
       <div class="casepm-print-footer">
         <span>Confidential</span>
         <span class="center">${opts.printedDate !== false ? '__PRINTED_ON__' : ''}</span>
-        <span class="right">Page 1</span>
+        <span class="right"></span>
       </div>
     </div>`;
   }
@@ -1247,20 +1255,25 @@
         return;
       }
     }
-    const picked = await global.CasePMPrint.showFieldPicker({
-      title: `Print RFI ${r.number}`,
-      note: 'Empty fields (drawing, spec, discipline, etc.) are omitted automatically from the printout.',
-      contentOptions: RFI_DETAIL_PRINT_OPTIONS,
-      fields: [],
-    });
-    if (!picked) return;
-    const html = buildRfiDetailPrintHtml(r, picked.contentOptions);
+    const printOpts = {
+      dates: true,
+      drawing: true,
+      spec: true,
+      discipline: true,
+      impacts: true,
+      attachments: true,
+      linked: true,
+      location: false,
+      printedDate: true,
+    };
+    const html = buildRfiDetailPrintHtml(r, printOpts);
     await triggerRfiPrint(html, {
       title: `RFI ${r.number}`,
       filenameBase: `RFI_${r.number || r.id}`,
       subfolder: 'Printed',
       portrait: true,
       docTitle: `RFI ${r.number}`,
+      bodyClass: 'printing-rfi-detail',
     });
   }
 
@@ -1283,7 +1296,7 @@
     const html = global.CasePMPrint.buildPrintDocument({
       meta,
       sections: [{ title: 'RFI LOG', columns, rows, emptyMessage: 'No RFIs to print.' }],
-      rowsPerPage: 22,
+      flowing: true,
       printOptions: {
         showLocation: picked.contentOptions?.location !== false,
         showPrintedDate: picked.contentOptions?.printedDate !== false,
