@@ -27,9 +27,14 @@ def register_change_event_routes(app, deps):
     @login_required
     def api_list_change_events():
         from change_event_persistence import change_event_to_dict
+        from financial_security import require_financial_project_access
         project_id = deps['request'].args.get('project_id', type=int) or get_current_project_id()
         if not project_id:
             return deps['jsonify']({'error': 'project_id required'}), 400
+        try:
+            project_id = require_financial_project_access(current_user, project_id, Project)
+        except (ValueError, PermissionError) as exc:
+            return deps['jsonify']({'error': str(exc)}), 403
         events = ChangeEvent.query.filter_by(project_id=int(project_id)).order_by(ChangeEvent.created_at.desc()).all()
         return deps['jsonify']({'change_events': [change_event_to_dict(e) for e in events]})
 
@@ -38,7 +43,12 @@ def register_change_event_routes(app, deps):
     def api_get_change_event(event_id):
         from change_event_persistence import change_event_to_dict, rfq_to_dict, cor_to_dict
         from co_persistence import pco_to_dict, is_subcontract_co
+        from financial_security import require_financial_project_access
         ce = ChangeEvent.query.get_or_404(event_id)
+        try:
+            require_financial_project_access(current_user, ce.project_id, Project)
+        except (ValueError, PermissionError) as exc:
+            return deps['jsonify']({'error': str(exc)}), 403
         rfqs = SubcontractorRFQ.query.filter_by(change_event_id=ce.id).all()
         rfq_payload = []
         for r in rfqs:
@@ -152,9 +162,14 @@ def register_change_event_routes(app, deps):
     @login_required
     def api_list_rfqs():
         from change_event_persistence import rfq_to_dict
+        from financial_security import require_financial_project_access
         project_id = deps['request'].args.get('project_id', type=int) or get_current_project_id()
         if not project_id:
             return deps['jsonify']({'error': 'project_id required'}), 400
+        try:
+            project_id = require_financial_project_access(current_user, project_id, Project)
+        except (ValueError, PermissionError) as exc:
+            return deps['jsonify']({'error': str(exc)}), 403
         rfqs = SubcontractorRFQ.query.filter_by(project_id=int(project_id)).order_by(SubcontractorRFQ.created_at.desc()).all()
         result = []
         for r in rfqs:
@@ -281,7 +296,12 @@ def register_change_event_routes(app, deps):
         """Subcontractor portal — submit quote for an RFQ sent to their company."""
         from change_event_persistence import rfq_workflow_action, rfq_to_dict, save_generic_allocations
         from sage_service import create_and_process_sage_event
+        from financial_security import require_financial_project_access
         rfq = SubcontractorRFQ.query.get_or_404(rfq_id)
+        try:
+            require_financial_project_access(current_user, rfq.project_id, Project)
+        except (ValueError, PermissionError) as exc:
+            return deps['jsonify']({'error': str(exc)}), 403
         body = deps['request'].get_json(silent=True) or {}
         portal = deps.get('user_portal_type_fn')
         is_sub = portal(current_user) == 'sub' if portal else current_user.role in ('Company User', 'Subcontractor Accountant')
@@ -315,9 +335,14 @@ def register_change_event_routes(app, deps):
     @login_required
     def api_list_cors():
         from change_event_persistence import cor_to_dict
+        from financial_security import require_financial_project_access
         project_id = deps['request'].args.get('project_id', type=int) or get_current_project_id()
         if not project_id:
             return deps['jsonify']({'error': 'project_id required'}), 400
+        try:
+            project_id = require_financial_project_access(current_user, project_id, Project)
+        except (ValueError, PermissionError) as exc:
+            return deps['jsonify']({'error': str(exc)}), 403
         cors = ChangeOrderRequest.query.filter_by(project_id=int(project_id)).order_by(ChangeOrderRequest.created_at.desc()).all()
         result = []
         for c in cors:

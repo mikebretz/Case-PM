@@ -435,7 +435,14 @@ def phase_pay_app_idor(result: SecResult, client, app, models, p_a, p_b, iso) ->
 
 def phase_permissions(result: SecResult, client, app, models, p_a, p_b) -> None:
     """hide_financials and client_portal_only flags enforced on API routes."""
+    from pay_app_persistence import save_pay_app_state
+
     uid = uuid.uuid4().hex[:8]
+    save_pay_app_state(models['PayAppProjectState'], models['db'], p_a.id, {
+        'contractorSOV': [{'id': 1, 'original': 1_000_000}],
+        'currentPayAppPeriod': {'periodNumber': 1, 'status': 'Draft'},
+    }, user_id=None)
+    models['db'].session.commit()
 
     hide_user = _make_flagged_user(models, p_a, uid, 'hidefin', {'hide_financials': True})
     token_hide = _login_client(client, hide_user, app)
@@ -479,6 +486,44 @@ def phase_permissions(result: SecResult, client, app, models, p_a, p_b) -> None:
     else:
         result.fail('client_portal_rfi_allowed', 'permissions', f'HTTP {rv_rfi2.status_code}', severity='warning')
 
+    rv_pay_respond = client.get(
+        f'/api/workflow/respond/pay_applications/1?project_id={p_a.id}',
+        headers=_csrf_headers(token_hide),
+    )
+    if rv_pay_respond.status_code == 403:
+        result.ok('hide_financials_pay_respond_blocked', 'permissions')
+    else:
+        result.fail('hide_financials_pay_respond_blocked', 'permissions', f'HTTP {rv_pay_respond.status_code}')
+
+
+def phase_portal_security(result: SecResult, client, app, models, p_a, p_b) -> None:
+    """Portal/subcontractor paths enforce project membership."""
+    from project_access import save_memberships_for_user
+
+    sub = models['users']['sub']
+    save_memberships_for_user(sub.id, [p_a.id], models['db'], ProjectMembership=models['ProjectMembership'])
+    models['db'].session.commit()
+
+    rfq_b = models['SubcontractorRFQ'](
+        project_id=p_b.id, number=f'PS-{uuid.uuid4().hex[:6]}',
+        title='portal test', status='Sent', ball_in_court_role='Subcontractor',
+        company_id=str(getattr(sub, 'company_id', '') or '1'),
+        company_name=getattr(sub, 'company', None) or 'Sub Co',
+    )
+    models['db'].session.add(rfq_b)
+    models['db'].session.commit()
+
+    token = _login_client(client, sub, app)
+    rv = client.post(
+        f'/api/rfqs/{rfq_b.id}/portal-quote',
+        json={'quoted_amount': 5000},
+        headers=_csrf_headers(token),
+    )
+    if rv.status_code == 403:
+        result.ok('portal_rfq_cross_project_blocked', 'portal')
+    else:
+        result.fail('portal_rfq_cross_project_blocked', 'portal', f'HTTP {rv.status_code}')
+
 
 def phase_read_idor(result: SecResult, client, app, models, p_a, p_b, iso) -> None:
     """Isolated user must not read foreign project financial/entity data."""
@@ -487,6 +532,9 @@ def phase_read_idor(result: SecResult, client, app, models, p_a, p_b, iso) -> No
     token = _login_client(client, iso, app)
     pm = models['users']['pm']
     PayAppProjectState = models['PayAppProjectState']
+    Document = models.get('Document')
+    ChangeEvent = models.get('ChangeEvent')
+    PotentialChangeOrder = models['PotentialChangeOrder']
 
     co_b = models['ChangeOrder'](
         project_id=p_b.id, number=f'RD-{uuid.uuid4().hex[:6]}',
@@ -502,12 +550,37 @@ def phase_read_idor(result: SecResult, client, app, models, p_a, p_b, iso) -> No
         project_id=p_b.id, number=f'RD-R-{uuid.uuid4().hex[:6]}',
         subject='read idor', status='Open', created_by_id=pm.id,
     )
-    models['db'].session.add_all([co_b, com_b, rfi_b])
+    sub_b = models['Submittal'](
+        project_id=p_b.id, number=f'RD-S-{uuid.uuid4().hex[:6]}',
+        description='read idor', status='Open',
+    )
+    pco_b = PotentialChangeOrder(
+        project_id=p_b.id, number=f'RD-P-{uuid.uuid4().hex[:6]}',
+        title='read idor', description='d', status='Open',
+        ball_in_court_role='Project Manager', created_by_id=pm.id,
+    )
+    to_add = [co_b, com_b, rfi_b, sub_b, pco_b]
+    ce_b = None
+    if ChangeEvent:
+        ce_b = ChangeEvent(
+            project_id=p_b.id, number=f'RD-CE-{uuid.uuid4().hex[:6]}',
+            title='read idor', status='Open', ball_in_court_role='Project Manager',
+            created_by_id=pm.id,
+        )
+        to_add.append(ce_b)
+    models['db'].session.add_all(to_add)
     models['db'].session.flush()
     save_pay_app_state(PayAppProjectState, models['db'], p_b.id, {
         'contractorSOV': [{'id': 1, 'original': 500_000}],
         'currentPayAppPeriod': {'periodNumber': 1, 'status': 'Draft'},
     }, user_id=None)
+    doc_b = None
+    if Document:
+        doc_b = Document(
+            project_id=p_b.id, name='secret.pdf', document_type='Other',
+            filename='secret.pdf', uploaded_by_id=pm.id,
+        )
+        models['db'].session.add(doc_b)
     models['db'].session.commit()
 
     read_cases = [
@@ -516,10 +589,23 @@ def phase_read_idor(result: SecResult, client, app, models, p_a, p_b, iso) -> No
         ('read_idor_co_by_id', f'/api/change-orders/{co_b.id}'),
         ('read_idor_commitment_by_id', f'/api/commitments/{com_b.id}'),
         ('read_idor_rfi_by_id', f'/api/rfis/{rfi_b.id}'),
+        ('read_idor_pco_by_id', f'/api/pcos/{pco_b.id}'),
+        ('read_idor_submittal_attachments', f'/api/submittals/{sub_b.id}/attachments'),
         ('read_idor_commitments_list', f'/api/commitments?project_id={p_b.id}'),
         ('read_idor_co_list', f'/api/change-orders?project_id={p_b.id}'),
+        ('read_idor_pco_list', f'/api/pcos?project_id={p_b.id}'),
+        ('read_idor_rfqs_list', f'/api/rfqs?project_id={p_b.id}'),
+        ('read_idor_cors_list', f'/api/cors?project_id={p_b.id}'),
         ('read_idor_budget_pending', f'/api/budget/pending-change-orders?project_id={p_b.id}'),
+        ('read_idor_aia_export', f'/api/commitments/{com_b.id}/aia/export'),
     ]
+    if ce_b:
+        read_cases.extend([
+            ('read_idor_change_event_by_id', f'/api/change-events/{ce_b.id}'),
+            ('read_idor_change_events_list', f'/api/change-events?project_id={p_b.id}'),
+        ])
+    if doc_b:
+        read_cases.append(('read_idor_document_download', f'/api/documents/{doc_b.id}/download'))
     for name, path in read_cases:
         rv = client.get(path, headers=_csrf_headers(token))
         if rv.status_code == 403:
@@ -899,7 +985,7 @@ def main() -> int:
         phases = {
             'persistence', 'auth', 'csrf', 'csrf_sweep', 'idor', 'read_idor',
             'respond_idor', 'pay_app_idor', 'permissions', 'workflow_event',
-            'role_matrix', 'legacy', 'workflow', 'financial', 'recovery',
+            'role_matrix', 'legacy', 'workflow', 'financial', 'recovery', 'portal',
         }
 
     import app as app_module
@@ -918,6 +1004,9 @@ def main() -> int:
         'SubcontractorRFQ': app_module.SubcontractorRFQ,
         'ProjectMembership': ProjectMembership,
         'PayAppProjectState': app_module.PayAppProjectState,
+        'PotentialChangeOrder': app_module.PotentialChangeOrder,
+        'ChangeEvent': getattr(app_module, 'ChangeEvent', None),
+        'Document': getattr(app_module, 'Document', None),
     }
 
     result = SecResult()
@@ -933,7 +1022,7 @@ def main() -> int:
             p_a = p_b = iso = None
             if phases & {
                 'csrf', 'csrf_sweep', 'idor', 'read_idor', 'respond_idor', 'pay_app_idor',
-                'permissions', 'workflow_event', 'role_matrix', 'legacy', 'recovery',
+                'permissions', 'workflow_event', 'role_matrix', 'legacy', 'recovery', 'portal',
             }:
                 p_a, p_b, iso = _setup_projects_and_users(models)
 
@@ -963,6 +1052,8 @@ def main() -> int:
                 phase_workflow_event_abuse(result, client, app_module.app, models, p_a, p_b, iso)
             if 'role_matrix' in phases:
                 phase_role_matrix(result, client, app_module.app, models, p_a)
+            if 'portal' in phases:
+                phase_portal_security(result, client, app_module.app, models, p_a, p_b)
             if 'legacy' in phases:
                 phase_legacy_routes(result, client, app_module.app, models, p_a)
             if 'recovery' in phases:

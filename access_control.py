@@ -32,6 +32,10 @@ FINANCIAL_MODULES = frozenset({
 
 # Longest prefixes first so specific rules win over general ones.
 API_PREFIX_MODULE = [
+    ('/api/workflow/respond/pay_applications', 'pay_applications'),
+    ('/api/workflow/respond/pay_app', 'pay_applications'),
+    ('/api/workflow/respond/payapp', 'pay_applications'),
+    ('/api/workflow/respond/g702', 'pay_applications'),
     ('/api/rfis', 'rfis'),
     ('/api/submittals', 'submittals'),
     ('/api/change-orders', 'change_orders'),

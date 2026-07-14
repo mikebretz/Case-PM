@@ -4041,6 +4041,7 @@ def _link_document_to_json_attachments(entity, project_id, doc_ids, attachments_
 def api_link_documents_to_entity():
     from rfi_persistence import _parse_json, apply_rfi_fields
     from co_persistence import append_attachment
+    from financial_security import require_financial_project_access
     body = request.get_json(silent=True) or {}
     entity_type = (body.get('entity_type') or '').lower().replace('-', '_')
     entity_id = body.get('entity_id')
@@ -4053,12 +4054,20 @@ def api_link_documents_to_entity():
     try:
         if entity_type == 'rfi':
             rfi = RFI.query.get_or_404(entity_id)
+            try:
+                require_financial_project_access(current_user, rfi.project_id, Project)
+            except (ValueError, PermissionError) as exc:
+                return jsonify({'error': str(exc)}), 403
             attachments, linked = _link_document_to_json_attachments(rfi, rfi.project_id, doc_ids, rfi.attachments_json)
             apply_rfi_fields(rfi, {'attachments': attachments})
             db.session.commit()
             return jsonify({'ok': True, 'linked': linked, 'attachments': _enrich_rfi_attachments(rfi.id, attachments)})
         if entity_type == 'submittal':
             submittal = Submittal.query.get_or_404(entity_id)
+            try:
+                require_financial_project_access(current_user, submittal.project_id, Project)
+            except (ValueError, PermissionError) as exc:
+                return jsonify({'error': str(exc)}), 403
             attachments, linked = _link_document_to_json_attachments(submittal, submittal.project_id, doc_ids, submittal.attachments_json)
             submittal.attachments_json = json.dumps(attachments)
             db.session.commit()
@@ -4070,6 +4079,10 @@ def api_link_documents_to_entity():
             return jsonify({'ok': True, 'linked': linked, 'attachments': attachments})
         if entity_type == 'daily_log':
             log = DailyLog.query.get_or_404(entity_id)
+            try:
+                require_financial_project_access(current_user, log.project_id, Project)
+            except (ValueError, PermissionError) as exc:
+                return jsonify({'error': str(exc)}), 403
             attachments, linked = _link_document_to_json_attachments(log, log.project_id, doc_ids, log.attachments_json)
             log.attachments_json = json.dumps(attachments)
             db.session.commit()
@@ -4081,6 +4094,10 @@ def api_link_documents_to_entity():
             return jsonify({'ok': True, 'linked': linked, 'attachments': attachments})
         if entity_type in ('change_order', 'co'):
             co = ChangeOrder.query.get_or_404(entity_id)
+            try:
+                require_financial_project_access(current_user, co.project_id, Project)
+            except (ValueError, PermissionError) as exc:
+                return jsonify({'error': str(exc)}), 403
             for raw_id in doc_ids:
                 doc = Document.query.get_or_404(int(raw_id))
                 if doc.project_id != co.project_id:
@@ -4399,8 +4416,13 @@ def update_submittal_status(submittal_id):
 @login_required
 def api_submittal_upload_attachment(submittal_id):
     from rfi_persistence import _parse_json
+    from financial_security import require_financial_project_access
 
     submittal = Submittal.query.get_or_404(submittal_id)
+    try:
+        require_financial_project_access(current_user, submittal.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     if 'file' not in request.files:
         return jsonify({'error': 'file required'}), 400
     f = request.files['file']
@@ -4441,6 +4463,13 @@ def api_submittal_upload_attachment(submittal_id):
 @app.route('/uploads/submittals/<int:submittal_id>/<path:filename>')
 @login_required
 def serve_submittal_attachment(submittal_id, filename):
+    from financial_security import require_financial_project_access
+
+    submittal = Submittal.query.get_or_404(submittal_id)
+    try:
+        require_financial_project_access(current_user, submittal.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     folder = os.path.join(app.config['UPLOAD_FOLDER'], 'submittals', str(submittal_id))
     return send_from_directory(folder, filename)
 
@@ -8419,7 +8448,12 @@ def api_documents_force_unlock(doc_id):
 @app.route('/api/documents/<int:doc_id>/download')
 @login_required
 def api_documents_download(doc_id):
+    from financial_security import require_financial_project_access
     doc = Document.query.get_or_404(doc_id)
+    try:
+        require_financial_project_access(current_user, doc.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     directory = os.path.join(app.config['UPLOAD_FOLDER'], 'documents', str(doc.project_id))
     if not os.path.isfile(os.path.join(directory, doc.filename)):
         return jsonify({'error': 'File not found'}), 404
@@ -9347,7 +9381,12 @@ def api_submittal_workflow(submittal_id):
 @login_required
 def api_submittal_list_attachments(submittal_id):
     from rfi_persistence import _parse_json
+    from financial_security import require_financial_project_access
     submittal = Submittal.query.get_or_404(submittal_id)
+    try:
+        require_financial_project_access(current_user, submittal.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     attachments = _parse_json(submittal.attachments_json, [])
     for a in attachments:
         if a.get('document_id'):
@@ -10982,7 +11021,12 @@ def api_commitment_sage_sync(commitment_id):
 def api_commitment_aia_export(commitment_id):
     from commitment_persistence import commitment_to_dict
     from aia_service import commitment_export_for_catina
+    from financial_security import require_financial_project_access
     c = Commitment.query.get_or_404(commitment_id)
+    try:
+        require_financial_project_access(current_user, c.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     allocs = CommitmentAllocation.query.filter_by(commitment_id=c.id).all()
     return jsonify(commitment_export_for_catina(commitment_to_dict(c, allocs)))
 
@@ -10992,7 +11036,12 @@ def api_commitment_aia_export(commitment_id):
 def api_commitment_catina_link(commitment_id):
     from commitment_persistence import commitment_to_dict
     from aia_service import build_catina_create_url, build_catina_open_url
+    from financial_security import require_financial_project_access
     c = Commitment.query.get_or_404(commitment_id)
+    try:
+        require_financial_project_access(current_user, c.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     allocs = CommitmentAllocation.query.filter_by(commitment_id=c.id).all()
     cdict = commitment_to_dict(c, allocs)
     active = Project.query.get(c.project_id)
@@ -11014,7 +11063,12 @@ def api_commitment_catina_link(commitment_id):
 def api_commitment_register_aia_document(commitment_id):
     from commitment_persistence import commitment_to_dict
     from aia_service import register_external_document as link_doc
+    from financial_security import require_financial_project_access
     c = Commitment.query.get_or_404(commitment_id)
+    try:
+        require_financial_project_access(current_user, c.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     body = request.get_json(silent=True) or {}
     provider = body.get('provider') or 'catina'
     doc_id = body.get('document_id') or body.get('external_document_id')
@@ -14692,9 +14746,15 @@ def serve_co_attachment(subpath):
 @login_required
 def api_list_pcos():
     from co_persistence import pco_to_dict
+    from financial_security import require_financial_project_access
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
+    try:
+        project_id = require_financial_project_access(current_user, project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    project_id = int(project_id)
     status = request.args.get('status')
     scope = (request.args.get('scope') or '').strip().lower()
     q = PotentialChangeOrder.query.filter_by(project_id=int(project_id))
@@ -14722,7 +14782,12 @@ def api_list_pcos():
 @login_required
 def api_get_pco(pco_id):
     from co_persistence import pco_to_dict
+    from financial_security import require_financial_project_access
     pco = PotentialChangeOrder.query.get_or_404(pco_id)
+    try:
+        require_financial_project_access(current_user, pco.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     allocs = PCOAllocation.query.filter_by(pco_id=pco.id).all()
     return jsonify(pco_to_dict(pco, allocs))
 
