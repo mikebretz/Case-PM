@@ -85,6 +85,7 @@ API_AUTH_ONLY_PREFIXES = (
     '/api/notifications',
     '/api/stats',
     '/api/presence/',
+    '/api/portal/',
 )
 
 METHOD_MIN_ACCESS = {
@@ -166,9 +167,16 @@ def user_global_flags(user) -> dict:
         return {
             'client_portal_only': bool(global_flags.get('client_portal_only')),
             'hide_financials': bool(global_flags.get('hide_financials')),
+            'sub_vendor_portal_only': bool(global_flags.get('sub_vendor_portal_only')),
+            'email_internal_only': bool(global_flags.get('email_internal_only')),
         }
     except Exception:
-        return {'client_portal_only': False, 'hide_financials': False}
+        return {
+            'client_portal_only': False,
+            'hide_financials': False,
+            'sub_vendor_portal_only': False,
+            'email_internal_only': False,
+        }
 
 
 def user_is_privileged(user) -> bool:
@@ -214,6 +222,22 @@ def guard_api_request(current_user):
     for prefix in API_AUTH_ONLY_PREFIXES:
         if path.startswith(prefix):
             return None
+
+    # Read-only pay-app defaults and commitments for sub/vendor portal users.
+    if request.method in ('GET', 'HEAD', 'OPTIONS'):
+        try:
+            from portal_sub_access import is_sub_vendor_portal_user
+            from case_workflow import user_has_module_access
+            if is_sub_vendor_portal_user(current_user):
+                if path.startswith('/api/program-settings/pay-apps') or path.startswith('/api/commitments'):
+                    return None
+            elif path.startswith('/api/program-settings/pay-apps'):
+                if user_has_module_access(current_user, 'pay_applications_sub', 'view'):
+                    return None
+                if user_has_module_access(current_user, 'pay_applications', 'view'):
+                    return None
+        except Exception:
+            pass
 
     # User self-service profile routes under /api/users/me are always allowed.
     if path.startswith('/api/users/me'):

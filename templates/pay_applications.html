@@ -2856,10 +2856,13 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         if (!isSubVendorPayPortalUser()) return;
         const settingsBtn = document.getElementById('payAppSettingsBtn');
         if (settingsBtn) settingsBtn.classList.add('hidden');
+        ['tab-sub-pay-app-tracker', 'tab-previous-sub-payapps', 'tab-previous-payapps', 'tab-payapp', 'tab-contractor-sov', 'tab-erp'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        });
         ensureSubVendorCompanyContext();
         if (!canAccessPayTab(currentPayAppTab)) {
-            const first = ['sub-sov', 'sub-pay-app-tracker', 'previous-sub-payapps'].find(t => canAccessPayTab(t));
-            if (first) switchPayAppTab(first);
+            switchPayAppTab('sub-sov');
         }
     }
 
@@ -3145,6 +3148,9 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     };
 
     function canAccessPayTab(tab) {
+        if (isSubVendorPayPortalUser()) {
+            return tab === 'sub-sov';
+        }
         const mod = PAY_TAB_MODULES[tab];
         if (!mod) return true;
         if (typeof canAccessModule === 'function') return canAccessModule(mod, 'view');
@@ -5799,30 +5805,42 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             const setupMessage = revisionDraft
                 ? '<span class="text-amber-300">Pushback revision — lines with billed-to-date cannot be changed or deleted. Add new lines or edit lines with no billing, then resubmit for approval.</span>'
                 : '<span class="text-zinc-400">Setup Mode — Build the original Schedule of Values. When ready, submit for approval.</span>';
-            workflowHTML = `
-                <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
-                    ${setupMessage}
-                    <button onclick="seedSubcontractorSOVFromBudget()" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
-                        <i class="fa-solid fa-download"></i> <span>Seed from Budget</span>
-                    </button>
+            const addLineBtn = subVendorMode ? '' : `
                     <button onclick="addLineToSelectedSub()" class="ml-1 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-plus"></i> <span>Add Line</span>
-                    </button>
-                    <button onclick="submitSubSOVForApproval()" class="ml-auto px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                    </button>`;
+            const seedBtn = subVendorMode ? '' : `
+                    <button onclick="seedSubcontractorSOVFromBudget()" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-download"></i> <span>Seed from Budget</span>
+                    </button>`;
+            workflowHTML = `
+                <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
+                    ${subVendorMode ? '<span class="text-zinc-400">View your approved Schedule of Values below.</span>' : setupMessage}
+                    ${seedBtn}
+                    ${addLineBtn}
+                    ${subVendorMode ? '' : `<button onclick="submitSubSOVForApproval()" class="ml-auto px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-paper-plane"></i> <span>Submit SOV for Approval</span>
-                    </button>
+                    </button>`}
                 </div>
             `;
         } else if (currentStatus === 'Pending Approval') {
-            workflowHTML = `
-                <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
-                    <span class="text-orange-400 font-medium">Pending Approval — Review the original SOV. Approve or request revision.</span>
-                    <button onclick="seedSubcontractorSOVFromBudget()" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
-                        <i class="fa-solid fa-download"></i> <span>Seed from Budget</span>
-                    </button>
+            const addLineBtn = subVendorMode ? '' : `
                     <button onclick="addLineToSelectedSub()" class="ml-1 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-plus"></i> <span>Add Line</span>
-                    </button>
+                    </button>`;
+            const seedBtn = subVendorMode ? '' : `
+                    <button onclick="seedSubcontractorSOVFromBudget()" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-download"></i> <span>Seed from Budget</span>
+                    </button>`;
+            workflowHTML = subVendorMode ? `
+                <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
+                    <span class="text-orange-400 font-medium">Pending Approval — Your schedule of values is awaiting GC review.</span>
+                </div>
+            ` : `
+                <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
+                    <span class="text-orange-400 font-medium">Pending Approval — Review the original SOV. Approve or request revision.</span>
+                    ${seedBtn}
+                    ${addLineBtn}
                     <button onclick="approveSubSOVSetup()" class="ml-auto px-4 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-check-double"></i> <span>Approve SOV Setup</span>
                     </button>
@@ -6059,7 +6077,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         tbody.innerHTML = '';
 
         if (subLines.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="13" class="px-6 py-10 text-center text-zinc-500">No SOV lines for this subcontractor yet. Click "Add Line to this Sub's SOV".</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="13" class="px-6 py-10 text-center text-zinc-500">${isSubVendorPayPortalUser() ? 'No schedule of values lines are available for your company on this project yet. Ask your GC to add your subcontractor SOV.' : 'No SOV lines for this subcontractor yet. Click "Add Line to this Sub\'s SOV".'}</td></tr>`;
             return;
         }
 
@@ -6325,6 +6343,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     }
 
     function addLineToSelectedSub() {
+        if (isSubVendorPayPortalUser()) return;
         if (!selectedSubCompanyId) {
             showCenteredAlert("Please select a subcontractor first.", "warning");
             return;
