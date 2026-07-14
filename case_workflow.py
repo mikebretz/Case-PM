@@ -754,7 +754,10 @@ def register_workflow(app, _db, models):
     @app.route('/api/workflow/respond/<module>/<int:entity_id>', methods=['GET', 'POST'])
     @login_required
     def api_workflow_respond(module, entity_id):
+        from financial_security import require_financial_project_access
+
         module_key = (module or '').lower().replace('-', '_')
+        Project = models.get('Project')
         try:
             if module_key in ('rfi', 'rfis'):
                 from rfi_persistence import get_linked_records
@@ -763,6 +766,10 @@ def register_workflow(app, _db, models):
                 if not RFI:
                     return jsonify({'error': 'RFI module unavailable'}), 500
                 rfi = RFI.query.get_or_404(entity_id)
+                try:
+                    require_financial_project_access(current_user, rfi.project_id, Project)
+                except (ValueError, PermissionError) as exc:
+                    return jsonify({'error': str(exc)}), 403
                 ChangeOrder = models.get('ChangeOrder')
                 PCO = models.get('PotentialChangeOrder')
                 linked_cos, linked_pcos = get_linked_records(rfi.id, ChangeOrder, PCO) if ChangeOrder and PCO else ([], [])
@@ -783,6 +790,10 @@ def register_workflow(app, _db, models):
                 if not ChangeOrder:
                     return jsonify({'error': 'Change order module unavailable'}), 500
                 co = ChangeOrder.query.get_or_404(entity_id)
+                try:
+                    require_financial_project_access(current_user, co.project_id, Project)
+                except (ValueError, PermissionError) as exc:
+                    return jsonify({'error': str(exc)}), 403
                 allocs = []
                 if ChangeOrderAllocation:
                     allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
@@ -839,6 +850,10 @@ def register_workflow(app, _db, models):
                 )
                 if not project_id:
                     return jsonify({'error': 'project_id required'}), 400
+                try:
+                    require_financial_project_access(current_user, project_id, Project)
+                except (ValueError, PermissionError) as exc:
+                    return jsonify({'error': str(exc)}), 403
                 record, state = get_pay_app_state(PayAppProjectState, project_id)
                 period = (state or {}).get('currentPayAppPeriod') or {}
                 if entity_id and str(period.get('periodNumber')) != str(entity_id):

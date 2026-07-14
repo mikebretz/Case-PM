@@ -77,12 +77,13 @@ def require_financial_project_access(user, project_id, Project=None):
         raise ValueError('project_id required')
     pid = int(project_id)
     try:
-        from project_access import user_can_access_project, user_bypasses_project_scope
+        from project_access import get_assigned_project_ids, user_bypasses_project_scope
         if user_bypasses_project_scope(user):
             return pid
         if Project is not None and not Project.query.get(pid):
             raise ValueError('Project not found')
-        if not user_can_access_project(user, pid, Project):
+        allowed = get_assigned_project_ids(user, Project)
+        if pid not in allowed:
             raise PermissionError('You do not have access to this project.')
     except PermissionError:
         raise

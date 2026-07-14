@@ -49,14 +49,19 @@ class SecResult:
 def _login_client(client, user, app):
     import secrets
     from access_control import SESSION_ACTIVITY_KEY
+    from flask import session as flask_session
+    from flask_login import login_user
 
     token = secrets.token_urlsafe(32)
     with client.session_transaction() as sess:
-        sess['_user_id'] = str(user.id)
-        sess['_fresh'] = True
-        sess['casepm_2fa_verified'] = True
-        sess[SESSION_ACTIVITY_KEY] = time.time()
-        sess['casepm_csrf_token'] = token
+        sess.clear()
+    with app.test_request_context():
+        login_user(user)
+        with client.session_transaction() as sess:
+            sess.update(dict(flask_session))
+            sess['casepm_2fa_verified'] = True
+            sess[SESSION_ACTIVITY_KEY] = time.time()
+            sess['casepm_csrf_token'] = token
     return token
 
 
@@ -313,6 +318,168 @@ def phase_idor(result: SecResult, client, app, models, p_a, p_b, iso) -> None:
         result.fail('idor_commitment_workflow_blocked', 'idor', f'HTTP {rv3.status_code}', severity='warning')
 
 
+def _make_flagged_user(models, p_a, uid: str, suffix: str, global_flags: dict):
+    """User on project A with custom permission flags."""
+    from permissions_catalog import permissions_from_role
+    from project_access import save_memberships_for_user
+    from user_permissions_persistence import save_user_permissions
+
+    db = models['db']
+    User = models['User']
+    email = f'sec.{suffix}.{uid}@casepm.test'
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        user = User(
+            first_name='Sec', last_name=suffix.title(), email=email,
+            role='Company User', status='Active',
+        )
+        user.set_password('SecTest!12345')
+        db.session.add(user)
+        db.session.flush()
+    perms = permissions_from_role('Company User')
+    perms['global'] = {**(perms.get('global') or {}), **global_flags, 'customized': True}
+    save_user_permissions(user, perms, db)
+    save_memberships_for_user(user.id, [p_a.id], db, ProjectMembership=models['ProjectMembership'])
+    db.session.commit()
+    return user
+
+
+def phase_respond_idor(result: SecResult, client, app, models, p_a, p_b, iso) -> None:
+    """Isolated user must not read or act via /api/workflow/respond on project B."""
+    token = _login_client(client, iso, app)
+    pm = models['users']['pm']
+
+    rfi_b = models['RFI'](
+        project_id=p_b.id, number=f'RSP-{uuid.uuid4().hex[:6]}',
+        subject='respond idor', status='Open', created_by_id=pm.id,
+    )
+    co_b = models['ChangeOrder'](
+        project_id=p_b.id, number=f'RSP-{uuid.uuid4().hex[:6]}',
+        title='respond idor', description='d', status='Draft', ball_in_court_role='Creator',
+    )
+    models['db'].session.add_all([rfi_b, co_b])
+    models['db'].session.commit()
+
+    rv = client.get(f'/api/workflow/respond/rfis/{rfi_b.id}', headers=_csrf_headers(token))
+    if rv.status_code == 403:
+        result.ok('respond_idor_rfi_get_blocked', 'respond_idor')
+    else:
+        result.fail('respond_idor_rfi_get_blocked', 'respond_idor', f'HTTP {rv.status_code}')
+
+    rv2 = client.post(
+        f'/api/workflow/respond/rfis/{rfi_b.id}',
+        json={'action': 'close'},
+        headers=_csrf_headers(token),
+    )
+    if rv2.status_code == 403:
+        result.ok('respond_idor_rfi_post_blocked', 'respond_idor')
+    else:
+        result.fail('respond_idor_rfi_post_blocked', 'respond_idor', f'HTTP {rv2.status_code}')
+
+    rv3 = client.get(f'/api/workflow/respond/co/{co_b.id}', headers=_csrf_headers(token))
+    if rv3.status_code == 403:
+        result.ok('respond_idor_co_get_blocked', 'respond_idor')
+    else:
+        result.fail('respond_idor_co_get_blocked', 'respond_idor', f'HTTP {rv3.status_code}')
+
+    rv4 = client.post(
+        f'/api/workflow/respond/co/{co_b.id}',
+        json={'action': 'submit'},
+        headers=_csrf_headers(token),
+    )
+    models['db'].session.refresh(co_b)
+    if rv4.status_code == 403 and co_b.status == 'Draft':
+        result.ok('respond_idor_co_post_blocked', 'respond_idor')
+    elif co_b.status != 'Draft':
+        result.fail('respond_idor_co_post_blocked', 'respond_idor', f'CO advanced to {co_b.status}')
+    else:
+        result.fail('respond_idor_co_post_blocked', 'respond_idor', f'HTTP {rv4.status_code}')
+
+
+def phase_pay_app_idor(result: SecResult, client, app, models, p_a, p_b, iso) -> None:
+    """Isolated user must not drive pay-app workflow on project B."""
+    from pay_app_persistence import save_pay_app_state
+
+    token = _login_client(client, iso, app)
+    PayAppProjectState = models['PayAppProjectState']
+    save_pay_app_state(PayAppProjectState, models['db'], p_b.id, {
+        'contractorSOV': [{'id': 1, 'original': 1_000_000}],
+        'currentPayAppPeriod': {
+            'periodNumber': 1,
+            'status': 'Draft',
+            'ball_in_court_role': 'Creator',
+        },
+        'payAppBillingLines': {},
+    }, user_id=None)
+    models['db'].session.commit()
+
+    rv = client.post(
+        '/api/pay-applications/workflow',
+        json={'project_id': p_b.id, 'action': 'submit', 'period_number': 1},
+        headers=_csrf_headers(token),
+    )
+    if rv.status_code == 403:
+        result.ok('pay_app_workflow_idor_blocked', 'pay_app_idor')
+    else:
+        result.fail('pay_app_workflow_idor_blocked', 'pay_app_idor', f'HTTP {rv.status_code}')
+
+    rv2 = client.get(
+        f'/api/workflow/respond/pay_applications/1?project_id={p_b.id}',
+        headers=_csrf_headers(token),
+    )
+    if rv2.status_code == 403:
+        result.ok('respond_idor_pay_app_get_blocked', 'pay_app_idor')
+    else:
+        result.fail('respond_idor_pay_app_get_blocked', 'pay_app_idor', f'HTTP {rv2.status_code}')
+
+
+def phase_permissions(result: SecResult, client, app, models, p_a, p_b) -> None:
+    """hide_financials and client_portal_only flags enforced on API routes."""
+    uid = uuid.uuid4().hex[:8]
+
+    hide_user = _make_flagged_user(models, p_a, uid, 'hidefin', {'hide_financials': True})
+    token_hide = _login_client(client, hide_user, app)
+
+    rv_budget = client.get(f'/api/budget/state?project_id={p_a.id}', headers=_csrf_headers(token_hide))
+    if rv_budget.status_code == 403:
+        result.ok('hide_financials_budget_blocked', 'permissions')
+    else:
+        result.fail('hide_financials_budget_blocked', 'permissions', f'HTTP {rv_budget.status_code}')
+
+    rv_pay = client.get(f'/api/pay-applications/state?project_id={p_a.id}', headers=_csrf_headers(token_hide))
+    if rv_pay.status_code == 403:
+        result.ok('hide_financials_pay_app_blocked', 'permissions')
+    else:
+        result.fail('hide_financials_pay_app_blocked', 'permissions', f'HTTP {rv_pay.status_code}')
+
+    rv_rfi = client.get(f'/api/rfis?project_id={p_a.id}', headers=_csrf_headers(token_hide))
+    if rv_rfi.status_code == 200:
+        result.ok('hide_financials_rfi_allowed', 'permissions')
+    else:
+        result.fail('hide_financials_rfi_allowed', 'permissions', f'HTTP {rv_rfi.status_code}', severity='warning')
+
+    portal_user = _make_flagged_user(models, p_a, uid, 'portal', {'client_portal_only': True})
+    token_portal = _login_client(client, portal_user, app)
+
+    rv_users = client.get('/api/users', headers=_csrf_headers(token_portal))
+    if rv_users.status_code == 403:
+        result.ok('client_portal_users_blocked', 'permissions')
+    else:
+        result.fail('client_portal_users_blocked', 'permissions', f'HTTP {rv_users.status_code}')
+
+    rv_audit = client.get('/api/audit-log/events', headers=_csrf_headers(token_portal))
+    if rv_audit.status_code == 403:
+        result.ok('client_portal_audit_blocked', 'permissions')
+    else:
+        result.fail('client_portal_audit_blocked', 'permissions', f'HTTP {rv_audit.status_code}')
+
+    rv_rfi2 = client.get(f'/api/rfis?project_id={p_a.id}', headers=_csrf_headers(token_portal))
+    if rv_rfi2.status_code == 200:
+        result.ok('client_portal_rfi_allowed', 'permissions')
+    else:
+        result.fail('client_portal_rfi_allowed', 'permissions', f'HTTP {rv_rfi2.status_code}', severity='warning')
+
+
 def phase_legacy_routes(result: SecResult, client, app, models, p_a) -> None:
     pm = models['users']['pm']
     token = _login_client(client, pm, app)
@@ -445,12 +612,15 @@ def main() -> int:
     parser.add_argument(
         '--phase',
         default='all',
-        help='Comma-separated: persistence,auth,csrf,idor,legacy,workflow,financial,recovery,all',
+        help='Comma-separated: persistence,auth,csrf,idor,respond_idor,pay_app_idor,permissions,legacy,workflow,financial,recovery,all',
     )
     args = parser.parse_args()
     phases = {p.strip() for p in args.phase.split(',')}
     if 'all' in phases:
-        phases = {'persistence', 'auth', 'csrf', 'idor', 'legacy', 'workflow', 'financial', 'recovery'}
+        phases = {
+            'persistence', 'auth', 'csrf', 'idor', 'respond_idor', 'pay_app_idor',
+            'permissions', 'legacy', 'workflow', 'financial', 'recovery',
+        }
 
     import app as app_module
     from unittest.mock import patch
@@ -467,6 +637,7 @@ def main() -> int:
         'Commitment': app_module.Commitment,
         'SubcontractorRFQ': app_module.SubcontractorRFQ,
         'ProjectMembership': ProjectMembership,
+        'PayAppProjectState': app_module.PayAppProjectState,
     }
 
     result = SecResult()
@@ -480,7 +651,7 @@ def main() -> int:
             models['users'] = _ensure_sim_users(models['db'], models['User'])
             client = app_module.app.test_client()
             p_a = p_b = iso = None
-            if phases & {'csrf', 'idor', 'legacy', 'recovery'}:
+            if phases & {'csrf', 'idor', 'respond_idor', 'pay_app_idor', 'permissions', 'legacy', 'recovery'}:
                 p_a, p_b, iso = _setup_projects_and_users(models)
 
             if 'persistence' in phases:
@@ -495,6 +666,12 @@ def main() -> int:
                 phase_csrf(result, client, app_module.app, models, p_a)
             if 'idor' in phases:
                 phase_idor(result, client, app_module.app, models, p_a, p_b, iso)
+            if 'respond_idor' in phases:
+                phase_respond_idor(result, client, app_module.app, models, p_a, p_b, iso)
+            if 'pay_app_idor' in phases:
+                phase_pay_app_idor(result, client, app_module.app, models, p_a, p_b, iso)
+            if 'permissions' in phases:
+                phase_permissions(result, client, app_module.app, models, p_a, p_b)
             if 'legacy' in phases:
                 phase_legacy_routes(result, client, app_module.app, models, p_a)
             if 'recovery' in phases:
