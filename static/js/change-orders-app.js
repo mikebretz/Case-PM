@@ -1513,15 +1513,13 @@
   }
 
   const CO_BASE_PRINT_COLUMNS = [
-    { key: 'number', label: 'CO #', width: '6%', mono: true },
-    { key: 'date', label: 'Date', width: '6%', align: 'center' },
-    { key: 'title', label: 'Title / Description', width: '16%', maxLen: 90 },
-    { key: 'company_name', label: 'Company', width: '10%', maxLen: 80 },
-    { key: 'contact_name', label: 'Contact', width: '8%', maxLen: 70 },
-    { key: 'cost_code', label: 'Cost<br>Code', width: '7%', mono: true },
-    { key: 'amount', label: 'Amount', width: '8%', align: 'right' },
-    { key: 'status', label: 'Status', width: '8%', align: 'center' },
-    { key: 'ball_in_court_role', label: 'Ball<br>in Court', width: '8%', align: 'center' },
+    { key: 'number', label: 'CO #', width: '7%', mono: true, alwaysShow: true },
+    { key: 'date', label: 'Date', width: '7%', align: 'center' },
+    { key: 'title', label: 'Title', width: '18%', logPhrase: true, logWords: 4 },
+    { key: 'company_name', label: 'Company', width: '12%', logPhrase: true, logWords: 3 },
+    { key: 'amount', label: 'Amount', width: '9%', align: 'right' },
+    { key: 'status', label: 'Status', width: '9%', align: 'center', alwaysShow: true },
+    { key: 'ball_in_court_role', label: 'Ball<br>in Court', width: '9%', align: 'center' },
   ];
 
   const CO_OPTIONAL_PRINT_FIELDS = [
@@ -1536,14 +1534,13 @@
   ];
 
   const PCO_BASE_PRINT_COLUMNS = [
-    { key: 'number', label: 'PCO #', width: '6%', mono: true },
-    { key: 'date', label: 'Date', width: '6%', align: 'center' },
-    { key: 'title', label: 'Title / Description', width: '18%', maxLen: 90 },
-    { key: 'company_name', label: 'Company', width: '10%', maxLen: 80 },
-    { key: 'contact_name', label: 'Contact', width: '8%', maxLen: 70 },
-    { key: 'estimated_amount', label: 'ROM', width: '8%', align: 'right' },
-    { key: 'status', label: 'Status', width: '8%', align: 'center' },
-    { key: 'ball_in_court_role', label: 'Ball<br>in Court', width: '8%', align: 'center' },
+    { key: 'number', label: 'PCO #', width: '7%', mono: true, alwaysShow: true },
+    { key: 'date', label: 'Date', width: '7%', align: 'center' },
+    { key: 'title', label: 'Title', width: '20%', logPhrase: true, logWords: 4 },
+    { key: 'company_name', label: 'Company', width: '12%', logPhrase: true, logWords: 3 },
+    { key: 'estimated_amount', label: 'ROM', width: '9%', align: 'right' },
+    { key: 'status', label: 'Status', width: '9%', align: 'center', alwaysShow: true },
+    { key: 'ball_in_court_role', label: 'Ball<br>in Court', width: '9%', align: 'center' },
   ];
 
   const PCO_OPTIONAL_PRINT_FIELDS = [
@@ -1556,7 +1553,14 @@
   function coPrintValue(co, key) {
     if (key === 'date') return fmtDate(co.date);
     if (key === 'amount') return fmt(co.amount);
-    if (key === 'title') return co.title || co.description || '';
+    if (key === 'title') {
+      const raw = co.title || co.description || '';
+      return global.CasePMPrint?.logPhrase ? global.CasePMPrint.logPhrase(raw, 4) : raw;
+    }
+    if (key === 'company_name' || key === 'contact_name' || key === 'description' || key === 'notes') {
+      const raw = co[key] ?? '';
+      return global.CasePMPrint?.logPhrase ? global.CasePMPrint.logPhrase(raw, 3) : raw;
+    }
     if (key === 'cost_code') return co.cost_code || (co.allocations?.[0]?.cost_code) || '';
     if (key === 'sov_synced_at') return co.sov_synced_at ? 'Yes' : 'No';
     return co[key] ?? '';
@@ -1565,6 +1569,14 @@
   function pcoPrintValue(pco, key) {
     if (key === 'estimated_amount') return fmt(pco.estimated_amount);
     if (key === 'date') return fmtDate(pco.date);
+    if (key === 'title' || key === 'notes' || key === 'reason') {
+      const raw = pco[key] ?? '';
+      return global.CasePMPrint?.logPhrase ? global.CasePMPrint.logPhrase(raw, 4) : raw;
+    }
+    if (key === 'company_name' || key === 'contact_name') {
+      const raw = pco[key] ?? '';
+      return global.CasePMPrint?.logPhrase ? global.CasePMPrint.logPhrase(raw, 3) : raw;
+    }
     if (key === 'change_order_id') return pco.change_order_id ? `CO ${pco.change_order_id}` : '';
     return pco[key] ?? '';
   }
@@ -1602,7 +1614,9 @@
         width: c.width,
         align: c.align,
         mono: c.mono,
-        maxLen: c.maxLen,
+        logPhrase: c.logPhrase,
+        logWords: c.logWords,
+        alwaysShow: c.alwaysShow,
       })),
       rows: data,
       emptyMessage: `No ${title.toLowerCase()} records.`,

@@ -640,6 +640,7 @@
         <td class="px-4 py-3 text-center text-xs">${attCell}</td>
         <td class="px-4 py-3 text-center" onclick="event.stopPropagation()">
           <div class="flex items-center justify-center gap-1">
+            <button onclick="CasePMRfis.printDetail(${r.id})" class="p-1.5 text-zinc-300 hover:bg-zinc-800 rounded" title="Print RFI"><i class="fa-solid fa-print"></i></button>
             <button onclick="CasePMRfis.openResponder(${r.id})" class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded" title="Review &amp; Respond"><i class="fa-solid fa-reply"></i></button>
             ${isStaffPortal() ? `<button onclick="CasePMRfis.edit(${r.id})" class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded" title="Edit"><i class="fa-solid fa-edit"></i></button>` : ''}
           </div>
@@ -871,13 +872,16 @@
     }).join('');
 
     el.innerHTML = `
-      <div class="flex items-start justify-between mb-4">
-        <div>
+      <div class="flex items-start justify-between mb-4 gap-3">
+        <div class="min-w-0">
           <div class="font-mono text-sky-400 text-lg">${esc(r.number)}</div>
           <h2 class="text-xl font-semibold mt-1">${esc(r.subject)}</h2>
           <div class="flex flex-wrap gap-2 mt-2">${statusBadge(r.status)} ${priorityBadge(r.priority)} ${ballBadge(r.ball_in_court_role)}</div>
         </div>
-        <button onclick="CasePMRfis.closeDrawer()" class="text-zinc-400 hover:text-white text-xl">&times;</button>
+        <div class="flex items-center gap-2 flex-shrink-0">
+          <button type="button" onclick="CasePMRfis.printDetail(${r.id})" class="px-3 py-1.5 text-xs bg-white text-zinc-900 hover:bg-zinc-100 rounded-md font-semibold border border-zinc-300"><i class="fa-solid fa-print mr-1"></i>Print</button>
+          <button onclick="CasePMRfis.closeDrawer()" class="text-zinc-400 hover:text-white text-xl leading-none">&times;</button>
+        </div>
       </div>
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs mb-4">
         <div><span class="text-zinc-500">Due</span><div class="${r.is_overdue ? 'text-red-400' : ''}">${fmtDate(r.due_date)}</div></div>
@@ -919,7 +923,6 @@
         <div class="space-y-1">${linked}</div>
       </div>
       <div class="flex flex-wrap gap-2 pt-3 border-t border-zinc-700">
-        <button type="button" onclick="CasePMRfis.printDetail()" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md border border-zinc-700"><i class="fa-solid fa-print mr-1"></i>Print RFI</button>
         <button onclick="CasePMRfis.openResponder(${r.id})" class="px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md font-semibold"><i class="fa-solid fa-reply mr-1"></i>Review &amp; Respond</button>
         ${isStaffPortal() ? `
         <button onclick="CasePMRfis.workflow(${r.id}, 'submit')" class="px-3 py-1.5 text-xs bg-sky-800 hover:bg-sky-700 rounded-md">Send for Review</button>
@@ -1019,22 +1022,22 @@
   }
 
   const RFI_BASE_PRINT_COLUMNS = [
-    { key: 'number', label: 'RFI #', width: '5%', mono: true },
-    { key: 'subject', label: 'Subject', width: '12%', maxLen: 80 },
-    { key: 'question', label: 'Question', width: '14%', maxLen: 110 },
-    { key: 'drawing_reference', label: 'Drawing', width: '6%', mono: true },
-    { key: 'spec_reference', label: 'Spec', width: '6%', mono: true },
-    { key: 'received_from_company', label: 'From<br>Company', width: '8%', maxLen: 70 },
-    { key: 'to_party', label: 'To', width: '6%', maxLen: 60 },
-    { key: 'priority', label: 'Priority', width: '5%', align: 'center' },
-    { key: 'status', label: 'Status', width: '7%', align: 'center' },
-    { key: 'ball_in_court_role', label: 'Ball<br>in Court', width: '7%', align: 'center' },
-    { key: 'due_date', label: 'Due<br>Date', width: '6%', align: 'center' },
-    { key: 'official_answer', label: 'Official<br>Answer', width: '12%', maxLen: 110 },
-    { key: 'date', label: 'Date<br>Initiated', width: '6%', align: 'center' },
+    { key: 'number', label: 'RFI #', width: '6%', mono: true, alwaysShow: true },
+    { key: 'subject', label: 'Subject', width: '14%', logPhrase: true, logWords: 4 },
+    { key: 'drawing_reference', label: 'Drawing', width: '7%', mono: true },
+    { key: 'spec_reference', label: 'Spec', width: '7%', mono: true },
+    { key: 'received_from_company', label: 'From', width: '10%', logPhrase: true, logWords: 3 },
+    { key: 'to_party', label: 'To', width: '8%', logPhrase: true, logWords: 3 },
+    { key: 'status', label: 'Status', width: '8%', align: 'center', alwaysShow: true },
+    { key: 'ball_in_court_role', label: 'Ball<br>in Court', width: '8%', align: 'center' },
+    { key: 'due_date', label: 'Due', width: '7%', align: 'center' },
+    { key: 'date', label: 'Initiated', width: '7%', align: 'center' },
   ];
 
   const RFI_OPTIONAL_PRINT_FIELDS = [
+    { key: 'question', label: 'Question (short)', default: false },
+    { key: 'official_answer', label: 'Official Answer (short)', default: false },
+    { key: 'priority', label: 'Priority', default: false },
     { key: 'from_party', label: 'From Party', default: false },
     { key: 'responsible_contractor', label: 'Responsible Contractor', default: false },
     { key: 'rfi_manager_name', label: 'RFI Manager', default: false },
@@ -1048,6 +1051,14 @@
   function printValue(r, key) {
     if (key === 'due_date' || key === 'date') return fmtDate(r[key]);
     if (key === 'cost_impact_amount') return r.cost_impact_amount ? '$' + Number(r.cost_impact_amount).toLocaleString() : '';
+    if (key === 'question' || key === 'official_answer' || key === 'notes') {
+      const P = global.CasePMPrint;
+      return P && P.logPhrase ? P.logPhrase(r[key], 4) : (r[key] ?? '');
+    }
+    if (key === 'subject' || key === 'received_from_company' || key === 'to_party') {
+      const P = global.CasePMPrint;
+      return P && P.logPhrase ? P.logPhrase(r[key], 4) : (r[key] ?? '');
+    }
     return r[key] ?? '';
   }
 
@@ -1098,7 +1109,6 @@
     const meta = getRfiPrintMeta();
     const P = global.CasePMPrint;
     const e = P ? P.esc : esc;
-    const loc = meta.location ? `<div style="margin-top:4px;font-size:7pt"><span class="label">LOCATION</span><br>${e(meta.location)}</div>` : '';
     const field = (label, value) => `<div><span class="label">${e(label)}</span>${e(value || '—')}</div>`;
     const attachments = (r.attachments || []).map(att => `<li>${e(att.original_name || att.filename || 'File')}</li>`).join('');
     const responses = (r.responses || []).map(resp => `<li>${e(resp.user_name)} — ${fmtDate(resp.created_at)}${resp.is_official ? ' (Official)' : ''}: ${e(resp.body)}</li>`).join('');
@@ -1107,16 +1117,7 @@
       ...(r.linked_pcos || []).map(p => `PCO ${e(p.number)} — ${e(p.title)}`),
     ].join('; ');
     return `<div class="casepm-print-page">
-      <div class="casepm-print-header">
-        <div>
-          <div class="casepm-print-title">REQUEST FOR INFORMATION</div>
-          ${loc}
-        </div>
-        <div class="casepm-print-meta">
-          ${meta.number ? `<div><span class="label">PROJECT ID</span><br>${e(meta.number)}</div>` : ''}
-          ${meta.name ? `<div style="margin-top:4px"><span class="label">PROJECT NAME</span><br>${e(meta.name)}</div>` : ''}
-        </div>
-      </div>
+      ${global.CasePMPrint.buildPrintHeaderHtml(meta, 'REQUEST FOR INFORMATION')}
       <div class="casepm-rfi-detail">
         <div class="rfi-detail-number">${e(r.number)}</div>
         <div class="rfi-detail-subject">${e(r.subject)}</div>
@@ -1148,10 +1149,19 @@
     </div>`;
   }
 
-  async function printDetail() {
-    const r = state.drawerRecord;
-    if (!r) return;
+  async function printDetail(id) {
     if (typeof global.CasePMPrint === 'undefined') { alert('Print module not loaded'); return; }
+    let r = state.drawerRecord;
+    const targetId = id || r?.id;
+    if (!targetId) return;
+    if (!r || r.id !== targetId) {
+      try {
+        r = await api(`/api/rfis/${targetId}`);
+      } catch (e) {
+        alert(e.message);
+        return;
+      }
+    }
     const html = buildRfiDetailPrintHtml(r);
     await triggerRfiPrint(html, {
       title: `RFI ${r.number}`,
@@ -1171,7 +1181,13 @@
     });
     if (!picked) return;
     const optional = RFI_OPTIONAL_PRINT_FIELDS.filter(f => picked.fields.includes(f.key))
-      .map(f => ({ key: f.key, label: f.label.replace(/ /g, '<br>'), width: '6%', maxLen: 80 }));
+      .map(f => ({
+        key: f.key,
+        label: f.label.replace(/ /g, '<br>'),
+        width: '7%',
+        logPhrase: ['question', 'official_answer', 'notes'].includes(f.key),
+        logWords: 4,
+      }));
     const columns = [...RFI_BASE_PRINT_COLUMNS, ...optional];
     const rows = filteredRfis().map(r => {
       const obj = {};

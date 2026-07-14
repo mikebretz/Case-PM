@@ -194,7 +194,7 @@
 </div>
 
 <!-- Fixed Bottom Status Bar -->
-<div id="sageSyncStatusBar" class="fixed bottom-0 left-56 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">
+<div id="sageSyncStatusBar" class="no-print fixed bottom-0 left-56 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">
     <div class="flex items-center gap-4">
         <span id="sageSyncStatusText">Sage 300 · Loading sync status…</span>
         <button onclick="openSageSyncLogModal()" class="text-emerald-400 hover:text-emerald-300 underline">View Sage Log</button>
@@ -1512,17 +1512,17 @@
 
     // ==================== PRINT (ALDI-style register) ====================
     const BUDGET_PRINT_COLUMNS = [
-        { key: 'cost_code', label: 'Cost<br>Code', width: '7%', mono: true },
-        { key: 'description', label: 'Description', width: '16%', maxLen: 80 },
-        { key: 'cost_type', label: 'Cost<br>Type', width: '7%' },
-        { key: 'original_budget', label: 'Original', width: '8%', align: 'right' },
-        { key: 'approved_changes', label: 'Approved<br>COs', width: '8%', align: 'right' },
-        { key: 'pending', label: 'Pending', width: '7%', align: 'right' },
-        { key: 'committed', label: 'Committed', width: '8%', align: 'right' },
-        { key: 'revised', label: 'Revised', width: '8%', align: 'right' },
-        { key: 'actual', label: 'Actual', width: '8%', align: 'right' },
-        { key: 'variance', label: 'Variance', width: '8%', align: 'right' },
-        { key: 'percent_complete', label: '%<br>Complete', width: '6%', align: 'right' },
+        { key: 'cost_code', label: 'Cost<br>Code', width: '8%', mono: true, alwaysShow: true },
+        { key: 'description', label: 'Description', width: '18%', logPhrase: true, logWords: 4 },
+        { key: 'cost_type', label: 'Cost<br>Type', width: '8%' },
+        { key: 'original_budget', label: 'Original', width: '9%', align: 'right' },
+        { key: 'approved_changes', label: 'Approved<br>COs', width: '9%', align: 'right' },
+        { key: 'pending', label: 'Pending', width: '8%', align: 'right' },
+        { key: 'committed', label: 'Committed', width: '9%', align: 'right' },
+        { key: 'revised', label: 'Revised', width: '9%', align: 'right' },
+        { key: 'actual', label: 'Actual', width: '9%', align: 'right' },
+        { key: 'variance', label: 'Variance', width: '9%', align: 'right' },
+        { key: 'percent_complete', label: '%<br>Done', width: '7%', align: 'right' },
     ];
 
     function buildBudgetPrintRows() {
@@ -1546,7 +1546,9 @@
             }
             rows.push({
                 cost_code: line.cost_code,
-                description: line.description,
+                description: (typeof CasePMPrint !== 'undefined' && CasePMPrint.logPhrase)
+                    ? CasePMPrint.logPhrase(line.description, 4)
+                    : line.description,
                 cost_type: line.cost_type,
                 original_budget: formatCurrency(line.original_budget),
                 approved_changes: formatCurrency(line.approved_changes),
@@ -1563,17 +1565,20 @@
 
     function buildBudgetPrintTable(rows) {
         const esc = (s) => (typeof CasePMPrint !== 'undefined' && CasePMPrint.esc) ? CasePMPrint.esc(s) : String(s ?? '');
-        const truncate = (val, max) => (typeof CasePMPrint !== 'undefined' && CasePMPrint.truncatePrintText)
-            ? CasePMPrint.truncatePrintText(val, max)
-            : String(val || '');
-        const head = BUDGET_PRINT_COLUMNS.map(c => `<th${c.width ? ` style="width:${c.width}"` : ''}>${c.label}</th>`).join('');
+        const dataRows = rows.filter(r => !r.__division);
+        const activeColumns = (typeof CasePMPrint !== 'undefined')
+            ? CasePMPrint.rebalanceColumnWidths(CasePMPrint.pruneEmptyColumns(BUDGET_PRINT_COLUMNS, dataRows))
+            : BUDGET_PRINT_COLUMNS;
+        const head = activeColumns.map(c => `<th${c.width ? ` style="width:${c.width}"` : ''}>${c.label}</th>`).join('');
         const body = rows.map(row => {
             if (row.__division) {
-                return `<tr><td colspan="${BUDGET_PRINT_COLUMNS.length}" style="background:#f0f0f0;font-weight:700;padding:4px 6px;">${esc(row.label)}</td></tr>`;
+                return `<tr><td colspan="${activeColumns.length}" style="background:#f0f0f0;font-weight:700;padding:4px 6px;">${esc(row.label)}</td></tr>`;
             }
-            const cells = BUDGET_PRINT_COLUMNS.map(c => {
+            const cells = activeColumns.map(c => {
                 let val = row[c.key] ?? '';
-                if (c.maxLen) val = truncate(val, c.maxLen);
+                if (typeof CasePMPrint !== 'undefined' && CasePMPrint.formatPrintCell) {
+                    val = CasePMPrint.formatPrintCell(val, c);
+                }
                 let cls = '';
                 if (c.mono) cls = ' class="mono' + (c.align === 'right' ? ' r"' : '"');
                 else if (c.align === 'right') cls = ' class="r"';

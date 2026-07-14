@@ -5,7 +5,9 @@
   'use strict';
 
   const STYLE_ID = 'casepm-print-picker-styles';
-  const PRINT_SHEET_STYLE_ID = 'casepm-print-sheet-styles';
+  const PRINT_SHEET_STYLE_ID = 'casepm-print-sheet-styles-v2';
+
+  const EMPTY_CELL_VALUES = new Set(['', '—', '-', '–', 'n/a', 'na', 'none', 'null', 'undefined']);
 
   function esc(s) {
     if (s == null) return '';
@@ -16,11 +18,69 @@
       .replace(/"/g, '&quot;');
   }
 
+  function normalizePrintCell(value) {
+    if (value == null) return '';
+    return String(value).replace(/\s+/g, ' ').trim();
+  }
+
+  function isEmptyPrintCell(value) {
+    const text = normalizePrintCell(value).toLowerCase();
+    if (!text || EMPTY_CELL_VALUES.has(text)) return true;
+    if (text === '$0' || text === '$0.00' || text === '0%' || text === '0.00%') return true;
+    return false;
+  }
+
+  /** Short register label — first meaningful phrase / few whole words, not full descriptions. */
+  function logPhrase(value, maxWords) {
+    const text = normalizePrintCell(value);
+    if (!text) return '';
+    const limit = maxWords || 4;
+    const clause = text.split(/\s*[.;]\s+|\s+—\s+|\n+/)[0].trim();
+    const words = clause.split(/\s+/).filter(Boolean);
+    if (!words.length) return '';
+    const phrase = words.slice(0, limit).join(' ');
+    if (words.length > limit) return `${phrase}…`;
+    return phrase;
+  }
+
   function truncatePrintText(value, maxLen) {
-    const text = value == null ? '' : String(value).replace(/\s+/g, ' ').trim();
-    const limit = maxLen || 120;
+    const text = normalizePrintCell(value);
+    const limit = maxLen || 48;
     if (text.length <= limit) return text;
-    return `${text.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
+    const slice = text.slice(0, limit);
+    const lastSpace = slice.lastIndexOf(' ');
+    const trimmed = (lastSpace > 12 ? slice.slice(0, lastSpace) : slice).trimEnd();
+    return `${trimmed}…`;
+  }
+
+  function formatPrintCell(value, column) {
+    if (column.check || column.mono) return value ?? '';
+    if (column.logPhrase) return logPhrase(value, column.logWords || 4);
+    if (column.maxLen) return truncatePrintText(value, column.maxLen);
+    if (column.clamp === false) return value ?? '';
+    const text = normalizePrintCell(value);
+    if (text.length > 56) return truncatePrintText(text, 56);
+    return text;
+  }
+
+  function pruneEmptyColumns(columns, rows) {
+    return columns.filter((col) => {
+      if (col.alwaysShow || col.check) return true;
+      return rows.some((row) => {
+        const raw = typeof col.format === 'function' ? col.format(row) : (row[col.key] ?? '');
+        return !isEmptyPrintCell(formatPrintCell(raw, col));
+      });
+    });
+  }
+
+  function rebalanceColumnWidths(columns) {
+    if (!columns.length) return columns;
+    const total = columns.reduce((sum, col) => sum + (parseFloat(col.width) || 0), 0) || columns.length;
+    return columns.map((col) => {
+      const pct = parseFloat(col.width);
+      const width = pct ? `${Math.max(4, Math.round((pct / total) * 100))}%` : `${Math.round(100 / columns.length)}%`;
+      return { ...col, width };
+    });
   }
 
   /** Shared ALDI-style project header meta for all log prints. */
@@ -140,13 +200,14 @@
   }
 
   function ensurePrintSheetStyles(bodyClass) {
-    if (document.getElementById(PRINT_SHEET_STYLE_ID)) return;
+    const existing = document.getElementById(PRINT_SHEET_STYLE_ID);
+    if (existing) existing.remove();
     const cls = bodyClass || 'casepm-printing';
     const style = document.createElement('style');
     style.id = PRINT_SHEET_STYLE_ID;
     style.textContent = `
       @media print {
-        @page { size: landscape; margin: 0.3in 0.35in; }
+        @page { size: landscape; margin: 0.35in 0.5in 0.35in 0.4in; }
         body.${cls},
         body.casepm-printing,
         body.printing-submittal-log,
@@ -276,8 +337,14 @@
         body.printing-budget-log #appFooterBar,
         body.printing-budget-log #appShell > .flex.flex-1 > div.h-10,
         body.printing-budget-log .budget-page,
+        body.printing-budget-log #sageSyncStatusBar,
         body.printing-budget-log .no-print,
         body.printing-budget-log dialog {
+          display: none !important;
+        }
+        body.printing-co-log #sageSyncStatusBar,
+        body.printing-rfi-log #sageSyncStatusBar,
+        body.printing-submittal-log #sageSyncStatusBar {
           display: none !important;
         }
         .casepm-print-page, .submittal-print-page {
@@ -289,28 +356,45 @@
           break-after: auto;
         }
         .casepm-print-header, .submittal-print-header {
-          display: grid;
-          grid-template-columns: 1fr auto;
-          gap: 8px 16px;
-          align-items: start;
           margin-bottom: 6px;
           border-bottom: 2px solid #111;
           padding-bottom: 6px;
         }
+        .casepm-print-header-table, .submittal-print-header-table {
+          width: 100%;
+          border-collapse: collapse;
+        }
+        .casepm-print-header-table td, .submittal-print-header-table td {
+          border: none;
+          vertical-align: top;
+          padding: 0;
+        }
+        .casepm-print-header-left, .submittal-print-header-left { padding-right: 12px; }
+        .casepm-print-header-right, .submittal-print-header-right {
+          text-align: right;
+          width: 34%;
+          padding-left: 10px;
+          white-space: normal;
+          word-break: normal;
+          overflow-wrap: normal;
+        }
         .casepm-print-title, .submittal-print-title {
-          font-size: 13pt;
+          font-size: 12pt;
           font-weight: 700;
-          letter-spacing: 0.5px;
+          letter-spacing: 0.4px;
           color: #111;
-          line-height: 1.1;
+          line-height: 1.15;
         }
         .casepm-print-meta, .submittal-print-meta {
           text-align: right;
           font-size: 6.5pt;
-          line-height: 1.3;
+          line-height: 1.35;
           color: #222;
-          max-width: 42%;
-          word-break: break-word;
+          word-break: normal;
+          overflow-wrap: normal;
+        }
+        .casepm-print-meta > div, .submittal-print-meta > div {
+          margin-bottom: 3px;
         }
         .casepm-print-meta .label, .submittal-print-meta .label {
           font-weight: 700;
@@ -322,27 +406,29 @@
           width: 100%;
           border-collapse: collapse;
           table-layout: fixed;
-          font-size: 6.5pt;
-          line-height: 1.2;
+          font-size: 6pt;
+          line-height: 1.15;
         }
         .casepm-print-table th, .casepm-print-table td,
         .submittal-print-table th, .submittal-print-table td {
           border: 1px solid #333;
           padding: 2px 3px;
-          vertical-align: top;
-          word-wrap: break-word;
-          overflow-wrap: anywhere;
-          max-height: 32pt;
+          vertical-align: middle;
+          word-break: normal;
+          overflow-wrap: normal;
+          white-space: nowrap;
           overflow: hidden;
+          text-overflow: ellipsis;
         }
         .casepm-print-table th, .submittal-print-table th {
           background: #f0f0f0;
           font-weight: 700;
           text-align: center;
-          font-size: 5.5pt;
+          font-size: 5pt;
           text-transform: uppercase;
-          line-height: 1.15;
+          line-height: 1.1;
           padding: 3px 2px;
+          white-space: normal;
         }
         .casepm-print-table td.c, .submittal-print-table td.c { text-align: center; }
         .casepm-print-table td.r, .submittal-print-table td.r { text-align: right; }
@@ -524,15 +610,16 @@
   }
 
   function buildPrintTable(columns, rows, emptyMessage) {
+    const activeColumns = rebalanceColumnWidths(pruneEmptyColumns(columns, rows));
     if (!rows.length) {
-      return `<table class="casepm-print-table"><tbody><tr><td colspan="${Math.max(columns.length, 1)}" style="text-align:center;padding:16px;color:#666">${esc(emptyMessage || 'No records to print.')}</td></tr></tbody></table>`;
+      const span = Math.max(activeColumns.length, 1);
+      return `<table class="casepm-print-table"><tbody><tr><td colspan="${span}" style="text-align:center;padding:16px;color:#666">${esc(emptyMessage || 'No records to print.')}</td></tr></tbody></table>`;
     }
-    const head = columns.map(c => `<th${c.width ? ` style="width:${c.width}"` : ''}>${c.label}</th>`).join('');
+    const head = activeColumns.map(c => `<th${c.width ? ` style="width:${c.width}"` : ''}>${c.label}</th>`).join('');
     const body = rows.map(row => {
-      const cells = columns.map(c => {
-        let val = typeof c.format === 'function' ? c.format(row) : (row[c.key] ?? '');
-        if (c.maxLen) val = truncatePrintText(val, c.maxLen);
-        else if (c.clamp !== false && typeof val === 'string' && val.length > 140) val = truncatePrintText(val, 140);
+      const cells = activeColumns.map(c => {
+        const raw = typeof c.format === 'function' ? c.format(row) : (row[c.key] ?? '');
+        const val = formatPrintCell(raw, c);
         let cls = '';
         if (c.check) cls = ' class="check"';
         else if (c.mono) cls = ' class="mono' + (c.align === 'center' ? ' c"' : '"');
@@ -545,6 +632,26 @@
     return `<table class="casepm-print-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
   }
 
+  function buildPrintHeaderHtml(meta, title) {
+    const loc = meta.location
+      ? `<div style="margin-top:4px;font-size:6.5pt"><span class="label" style="font-weight:700">LOCATION</span><br>${esc(meta.location)}</div>`
+      : '';
+    return `<div class="casepm-print-header">
+      <table class="casepm-print-header-table"><tr>
+        <td class="casepm-print-header-left">
+          <div class="casepm-print-title">${esc(title)}</div>
+          ${loc}
+        </td>
+        <td class="casepm-print-header-right">
+          <div class="casepm-print-meta">
+            ${meta.number ? `<div><span class="label">PROJECT ID</span><br>${esc(meta.number)}</div>` : ''}
+            ${meta.name ? `<div><span class="label">PROJECT NAME</span><br>${esc(meta.name)}</div>` : ''}
+          </div>
+        </td>
+      </tr></table>
+    </div>`;
+  }
+
   function buildPrintDocument(opts) {
     const meta = opts.meta || {};
     const printedOn = new Date().toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
@@ -554,7 +661,7 @@
 
     sections.forEach(section => {
       const rows = section.rows || [];
-      const columns = section.columns || [];
+      const columns = rebalanceColumnWidths(pruneEmptyColumns(section.columns || [], rows));
       if (!rows.length) {
         pages.push(buildPageBlock(meta, section.title, buildPrintTable(columns, [], section.emptyMessage), printedOn, 1, 1));
         return;
@@ -571,19 +678,9 @@
   }
 
   function buildPageBlock(meta, title, tableHtml, printedOn, pageNum, totalPages, sectionContinued) {
-    const loc = meta.location ? `<div style="margin-top:4px;font-size:7pt"><span class="label" style="font-weight:700">LOCATION</span><br>${esc(meta.location)}</div>` : '';
     const sectionNote = sectionContinued ? `<div class="casepm-print-section-title">${esc(title)} (continued)</div>` : '';
     return `
-      <div class="casepm-print-header">
-        <div>
-          <div class="casepm-print-title">${esc(title)}</div>
-          ${loc}
-        </div>
-        <div class="casepm-print-meta">
-          ${meta.number ? `<div><span class="label">PROJECT ID</span><br>${esc(meta.number)}</div>` : ''}
-          ${meta.name ? `<div style="margin-top:4px"><span class="label">PROJECT NAME</span><br>${esc(meta.name)}</div>` : ''}
-        </div>
-      </div>
+      ${buildPrintHeaderHtml(meta, title)}
       ${sectionNote}
       ${tableHtml}
       <div class="casepm-print-footer">
@@ -614,9 +711,9 @@
         body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #111; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         .casepm-print-page { page-break-after: always; break-after: page; }
         .casepm-print-page:last-child { page-break-after: auto; break-after: auto; }
-        .casepm-print-header { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; align-items: start; margin-bottom: 6px; border-bottom: 2px solid #111; padding-bottom: 6px; }
-        .casepm-print-title { font-size: 13pt; font-weight: 700; letter-spacing: 0.5px; color: #111; line-height: 1.1; }
-        .casepm-print-meta { text-align: right; font-size: 6.5pt; line-height: 1.3; color: #222; max-width: 42%; word-break: break-word; }
+        .casepm-print-header { display: grid; grid-template-columns: 1fr minmax(0, 2.4in); gap: 10px 14px; align-items: start; margin-bottom: 6px; border-bottom: 2px solid #111; padding-bottom: 6px; }
+        .casepm-print-title { font-size: 12pt; font-weight: 700; letter-spacing: 0.4px; color: #111; line-height: 1.15; }
+        .casepm-print-meta { text-align: right; font-size: 6.5pt; line-height: 1.35; color: #222; word-break: normal; overflow-wrap: normal; }
         .casepm-print-meta .label { font-weight: 700; text-transform: uppercase; font-size: 6pt; color: #444; }
         .casepm-print-footer { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; margin-top: 8px; padding-top: 4px; border-top: 1px solid #999; font-size: 7pt; color: #444; }
         .casepm-print-footer .center { text-align: center; }
@@ -691,8 +788,13 @@
 
   global.CasePMPrint = {
     esc,
+    logPhrase,
     truncatePrintText,
+    formatPrintCell,
+    pruneEmptyColumns,
+    rebalanceColumnWidths,
     getProjectMeta,
+    buildPrintHeaderHtml,
     showFieldPicker,
     buildPrintTable,
     buildPrintDocument,
