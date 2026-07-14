@@ -14394,6 +14394,14 @@ def api_save_pay_app_state():
         merged = sanitize_pay_app_state(existing, patch)
     else:
         merged = sanitize_pay_app_state(existing, patch)
+    alloc_errors = []
+    try:
+        from pay_app_persistence import validate_sub_sov_cost_code_allocations
+        alloc_errors = validate_sub_sov_cost_code_allocations(merged)
+    except Exception:
+        pass
+    if alloc_errors:
+        return jsonify({'error': alloc_errors[0], 'allocation_errors': alloc_errors}), 400
     try:
         from portal_sub_access import is_sub_vendor_portal_user, sub_vendor_company_keys
         if is_sub_vendor_portal_user(current_user):

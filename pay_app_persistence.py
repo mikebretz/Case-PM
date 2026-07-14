@@ -155,6 +155,57 @@ def normalize_cost_code(code):
     return str(code).replace(' ', '').replace('-', '').upper()
 
 
+def _contractor_line_co_amount(line):
+    if not isinstance(line, dict):
+        return 0.0
+    return float(line.get('co_amount') or line.get('change_orders') or 0)
+
+
+def validate_sub_sov_cost_code_allocations(state_data, tolerance=0.01):
+    """Ensure no cost code is over-allocated across all subcontractor SOV lines vs G703."""
+    contractor = state_data.get('contractorSOV') or []
+    sub_sov = state_data.get('subcontractorSOV') or {}
+    if not isinstance(contractor, list) or not isinstance(sub_sov, dict):
+        return []
+
+    gc_totals = {}
+    display_codes = {}
+    for line in contractor:
+        if not isinstance(line, dict):
+            continue
+        norm = normalize_cost_code(line.get('cost_code'))
+        if not norm:
+            continue
+        amt = float(line.get('original') or 0) + _contractor_line_co_amount(line)
+        gc_totals[norm] = gc_totals.get(norm, 0.0) + amt
+        display_codes[norm] = line.get('cost_code') or norm
+
+    sub_totals = {}
+    for _cid, lines in sub_sov.items():
+        for line in lines or []:
+            if not isinstance(line, dict):
+                continue
+            norm = normalize_cost_code(line.get('cost_code'))
+            if not norm:
+                continue
+            amt = float(line.get('original_commitment') or line.get('original') or 0)
+            amt += float(line.get('change_orders') or 0)
+            sub_totals[norm] = sub_totals.get(norm, 0.0) + amt
+
+    errors = []
+    for norm, sub_amt in sub_totals.items():
+        gc = gc_totals.get(norm, 0.0)
+        if gc <= 0:
+            continue
+        if sub_amt > gc + tolerance:
+            label = display_codes.get(norm, norm)
+            errors.append(
+                f'Cost code {label} is over-allocated: subcontractors total '
+                f'${sub_amt:,.2f} exceeds G703 ${gc:,.2f}'
+            )
+    return errors
+
+
 def apply_co_to_contractor_sov(state_data, amount, cost_code=None, description=None):
     """Add approved change order amount to contractor SOV co_amount."""
     lines = state_data.get('contractorSOV') or []
