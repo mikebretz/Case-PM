@@ -18,6 +18,7 @@
   let saveTimer = null;
   let serverVersion = 0;
   let enabled = true;
+  let saveInFlight = null;
 
   function projectId() {
     if (typeof CasePMWorkflow !== 'undefined' && CasePMWorkflow.projectId) {
@@ -95,7 +96,28 @@
 
   function scheduleSave(patch) {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => saveToServer(patch, false), 800);
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      saveToServer(patch, false);
+    }, 800);
+  }
+
+  function isSavePending() {
+    return !!saveTimer || !!saveInFlight;
+  }
+
+  async function flushSave() {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    if (saveInFlight) {
+      try { await saveInFlight; } catch { /* ignore */ }
+    }
+    saveInFlight = saveToServer(null, true);
+    try {
+      return await saveInFlight;
+    } finally {
+      saveInFlight = null;
+    }
   }
 
   function patchSafeSetLocalStorage() {
@@ -202,12 +224,26 @@
     }
     await importLocalIfServerEmpty();
     await loadFromServer();
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden' && (saveTimer || saveInFlight)) {
+          flushSave().catch(() => {});
+        }
+      });
+      window.addEventListener('pagehide', () => {
+        if (saveTimer || saveInFlight) {
+          flushSave().catch(() => {});
+        }
+      });
+    }
   }
 
   global.CasePMPayAppSync = {
     init,
     loadFromServer,
     saveToServer,
+    flushSave,
+    isSavePending,
     collectLocalBundle,
     applyBundleToLocal,
     applyContractorSovToLocal,

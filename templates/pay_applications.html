@@ -203,10 +203,14 @@
              class="cursor-pointer text-lg font-bold px-4 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-emerald-400 rounded-2xl font-mono transition-colors">
             Rev 01
         </div>
-        <div id="unsavedDot" class="hidden w-2.5 h-2.5 bg-amber-500 rounded-full"></div>
+        <div id="unsavedDot" class="hidden w-2.5 h-2.5 bg-amber-500 rounded-full" title="Unsaved changes"></div>
+        <span id="payAppSaveStatus" class="hidden text-xs text-emerald-400">Saved</span>
     </div>
 
     <div class="flex items-center gap-2 flex-nowrap">
+        <button id="savePayAppBtn" onclick="savePayApplications()" class="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium transition-colors h-[38px]">
+            <i class="fa-solid fa-save"></i><span>Save</span>
+        </button>
         <button onclick="exportPayApplications()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
             <i class="fa-solid fa-download"></i><span>Export</span>
         </button>
@@ -363,6 +367,14 @@
             </button>
         </div>
         <div id="editSubSOVContent"></div>
+    </div>
+</dialog>
+
+<dialog id="payAppNavigationWarningModal" class="modal rounded-md w-full max-w-md p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
+    <div class="p-6">
+        <h3 class="text-lg font-semibold mb-2">Unsaved Pay Application Changes</h3>
+        <p class="text-sm text-zinc-400 mb-4">Schedule of Values and billing edits are stored on the server when saved. Save before leaving so remote sessions see your work.</p>
+        <div id="payAppNavigationWarningButtons" class="flex flex-col gap-2"></div>
     </div>
 </dialog>
 
@@ -2557,6 +2569,115 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         if (dot) dot.classList.add('hidden');
     }
 
+    function showPayAppSaveStatus(message, isError) {
+        const el = document.getElementById('payAppSaveStatus');
+        if (!el) return;
+        el.textContent = message || 'Saved';
+        el.classList.remove('hidden', 'text-emerald-400', 'text-red-400');
+        el.classList.add(isError ? 'text-red-400' : 'text-emerald-400');
+        clearTimeout(showPayAppSaveStatus._timer);
+        showPayAppSaveStatus._timer = setTimeout(() => el.classList.add('hidden'), 2500);
+    }
+
+    async function persistPayAppStateNow(options) {
+        const silent = options && options.silent;
+        if (typeof CasePMPayAppSync === 'undefined') return null;
+        const saver = CasePMPayAppSync.flushSave || (() => CasePMPayAppSync.saveToServer(null, true));
+        const result = await saver();
+        if (result && result.ok !== false) {
+            hideUnsavedIndicator();
+            if (!silent) showPayAppSaveStatus('Saved to server');
+        } else if (!silent) {
+            showPayAppSaveStatus('Save failed — try again', true);
+        }
+        return result;
+    }
+
+    async function savePayApplications() {
+        const btn = document.getElementById('savePayAppBtn');
+        if (btn) {
+            btn.disabled = true;
+            btn.classList.add('opacity-70');
+        }
+        try {
+            casepmStore.setItem('contractorSOV', JSON.stringify(contractorSOV));
+            casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+            casepmStore.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
+            const result = await persistPayAppStateNow({ silent: true });
+            if (result && result.ok !== false) {
+                logPayAppAudit('PAY_APP_STATE_SAVED', {
+                    contractorLines: contractorSOV.length,
+                    subcontractorCount: Object.keys(subcontractorSOV || {}).length,
+                });
+                showCenteredAlert('Pay application data saved to the server.', 'success');
+            } else {
+                showCenteredAlert('Could not save to the server. Check your connection and try again.', 'error');
+            }
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-70');
+            }
+        }
+    }
+
+    let pendingPayAppNavigationUrl = null;
+
+    function bindPayAppNavigationGuards() {
+        document.querySelectorAll('a[href]').forEach((link) => {
+            if (link.dataset.payAppNavGuard) return;
+            const href = link.getAttribute('href') || '';
+            if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+            link.dataset.payAppNavGuard = '1';
+            link.addEventListener('click', warnBeforeLeavingPayApp, true);
+        });
+    }
+
+    function payAppHasPendingChanges() {
+        return hasUnsavedChanges || (typeof CasePMPayAppSync !== 'undefined' && CasePMPayAppSync.isSavePending && CasePMPayAppSync.isSavePending());
+    }
+
+    function warnBeforeLeavingPayApp(e) {
+        if (!payAppHasPendingChanges()) return;
+        e.preventDefault();
+        pendingPayAppNavigationUrl = e.currentTarget.getAttribute('href');
+        const container = document.getElementById('payAppNavigationWarningButtons');
+        const modal = document.getElementById('payAppNavigationWarningModal');
+        if (!container || !modal) return;
+        container.innerHTML = `
+            <button type="button" onclick="stayOnPayAppPage()" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Stay and Edit</button>
+            <button type="button" onclick="savePayAppAndLeave()" class="w-full px-5 py-3 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Save &amp; Leave</button>
+            <button type="button" onclick="leavePayAppWithoutSaving()" class="w-full px-5 py-3 rounded-md bg-red-600 hover:bg-red-500 text-sm font-semibold">Leave without Saving</button>
+        `;
+        modal.showModal();
+    }
+
+    function stayOnPayAppPage() {
+        const modal = document.getElementById('payAppNavigationWarningModal');
+        if (modal) modal.close();
+        pendingPayAppNavigationUrl = null;
+    }
+
+    async function savePayAppAndLeave() {
+        const modal = document.getElementById('payAppNavigationWarningModal');
+        if (modal) modal.close();
+        await savePayApplications();
+        if (pendingPayAppNavigationUrl) {
+            window.location.href = pendingPayAppNavigationUrl;
+            pendingPayAppNavigationUrl = null;
+        }
+    }
+
+    function leavePayAppWithoutSaving() {
+        const modal = document.getElementById('payAppNavigationWarningModal');
+        if (modal) modal.close();
+        hideUnsavedIndicator();
+        if (pendingPayAppNavigationUrl) {
+            window.location.href = pendingPayAppNavigationUrl;
+            pendingPayAppNavigationUrl = null;
+        }
+    }
+
     function isCurrentUserApprover() {
         const ball = currentPayAppPeriod && currentPayAppPeriod.ball_in_court_role;
         if (ball && typeof CasePMPayAppWorkflow !== 'undefined') {
@@ -4650,6 +4771,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         showUnsavedIndicator();
         btn.closest('dialog').close();
         renderPayAppContent();
+        persistPayAppStateNow({ silent: true });
     }
 
     function deleteContractorSOVLine(id) {
@@ -4697,13 +4819,34 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
     }
 
     function seedContractorSOVFromBudget() {
+        openSeedSOVFromBudgetModal('contractor');
+    }
+
+    function seedSubcontractorSOVFromBudget() {
+        if (!selectedSubCompanyId) {
+            showCenteredAlert('Select a subcontractor first, then seed budget lines into their Schedule of Values.', 'warning');
+            return;
+        }
+        openSeedSOVFromBudgetModal('sub', selectedSubCompanyId);
+    }
+
+    function openSeedSOVFromBudgetModal(target, companyId) {
         const budgetLines = JSON.parse(casepmStore.getItem('budgetLines')) || [];
         if (budgetLines.length === 0) {
             showCenteredAlert("No budget lines found to seed from. Please add budget lines in the Budget page first.");
             return;
         }
 
-        // Show searchable modal to select which lines to seed (active search)
+        const isSub = target === 'sub';
+        const companyKey = isSub ? canonicalSubCompanyId(companyId) : '';
+        const existingLines = isSub
+            ? (getSubCompanyMapEntry(subcontractorSOV, companyKey) || [])
+            : contractorSOV;
+        const title = isSub ? 'Seed Subcontractor SOV from Budget' : 'Seed Contractor SOV from Budget';
+        const help = isSub
+            ? 'Select budget lines to import as original commitment amounts for this subcontractor. Existing cost codes will be skipped.'
+            : 'Select budget lines to import as Contractor SOV lines. Existing cost codes will be skipped.';
+
         const modal = document.createElement('dialog');
         modal.className = 'modal rounded-md p-0 text-white w-full max-w-2xl';
         modal.style.backgroundColor = '#18181b';
@@ -4712,12 +4855,12 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         let html = `
             <div class="p-6">
                 <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-xl font-semibold">Seed Contractor SOV from Budget</h3>
+                    <h3 class="text-xl font-semibold">${title}</h3>
                     <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
                         <i class="fa-solid fa-times text-xl"></i>
                     </button>
                 </div>
-                <div class="text-sm text-zinc-400 mb-3">Select budget lines to import as Contractor SOV lines. Existing cost codes will be skipped.</div>
+                <div class="text-sm text-zinc-400 mb-3">${help}</div>
                 
                 <input type="text" id="seedSearchInput" placeholder="Search cost codes or descriptions..." 
                        class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm mb-3 focus:border-emerald-600"
@@ -4737,7 +4880,9 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         `;
 
         budgetLines.forEach((b, idx) => {
-            const exists = contractorSOV.some(s => s.cost_code === b.cost_code);
+            const exists = isSub
+                ? existingLines.some(s => s.cost_code === b.cost_code)
+                : contractorSOV.some(s => s.cost_code === b.cost_code);
             const checked = exists ? '' : 'checked';
             const disabled = exists ? 'disabled class="opacity-50"' : '';
             html += `
@@ -4766,31 +4911,24 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         document.body.appendChild(modal);
         modal.showModal();
 
-        // Store budgetLines temporarily for confirm
         window._seedBudgetLines = budgetLines;
+        window._seedTarget = target;
+        window._seedCompanyId = companyKey;
 
-        // Robust interactivity: row clicks + direct checkbox support + reliable select all + dblclick
         setTimeout(() => {
             const table = modal.querySelector('#seedTable');
             if (!table) return;
 
-            // Event delegation for row clicks (more reliable than per-row handlers)
             table.addEventListener('click', function(e) {
                 const row = e.target.closest('tr[data-idx]');
                 if (!row) return;
                 const cb = row.querySelector('.seed-checkbox');
                 if (!cb || cb.disabled) return;
-
-                // If user clicked directly on checkbox or its label area, let native behavior happen
-                if (e.target.tagName === 'INPUT' || e.target.closest('input[type="checkbox"]')) {
-                    return;
-                }
-                // Otherwise toggle
+                if (e.target.tagName === 'INPUT' || e.target.closest('input[type="checkbox"]')) return;
                 cb.checked = !cb.checked;
                 cb.dispatchEvent(new Event('change', { bubbles: true }));
             });
 
-            // Also support double-click on row to toggle (user requested)
             table.addEventListener('dblclick', function(e) {
                 const row = e.target.closest('tr[data-idx]');
                 if (!row) return;
@@ -4801,26 +4939,14 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                 }
             });
 
-            // Individual checkbox change (native toggle works; we can add visual if needed later)
-            table.querySelectorAll('.seed-checkbox').forEach(cb => {
-                cb.onchange = function() {
-                    // Keep native checked state; no extra logic needed
-                };
-            });
-
-            // Reliable Select All (only affects non-disabled; works even after filter because hidden rows stay in DOM)
             const selectAllCb = modal.querySelector('#seedSelectAll');
             if (selectAllCb) {
                 selectAllCb.onchange = function() {
-                    const isChecked = selectAllCb.checked;
                     table.querySelectorAll('.seed-checkbox:not(:disabled)').forEach(cb => {
-                        cb.checked = isChecked;
+                        cb.checked = selectAllCb.checked;
                     });
                 };
             }
-
-            // Bonus: clicking the header "Cost Code" or "Description" text also toggles if on a data row
-            // (already covered by delegation above)
         }, 100);
     }
 
@@ -4860,12 +4986,13 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
     function confirmSeedFromBudget(btn) {
         const modal = btn.closest('dialog');
         const budgetLines = window._seedBudgetLines || [];
+        const seedTarget = window._seedTarget || 'contractor';
+        const seedCompanyId = window._seedCompanyId || '';
         const selectedIdxs = [];
         modal.querySelectorAll('.seed-checkbox:checked:not(:disabled)').forEach(cb => {
             selectedIdxs.push(parseInt(cb.value));
         });
 
-        // Group by cost_code (ignore Cost Type) and consolidate amounts
         const grouped = new Map();
         selectedIdxs.forEach(idx => {
             const b = budgetLines[idx];
@@ -4881,34 +5008,64 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             }
             const g = grouped.get(key);
             g.original_budget += (b.original_budget || 0);
-            // Keep first description; if needed could append but single is fine for SOV
         });
 
         let added = 0;
-        grouped.forEach((g, key) => {
-            const exists = contractorSOV.some(s => s.cost_code === key);
-            if (!exists) {
-                contractorSOV.push({
-                    id: Date.now() + Math.random(),
-                    cost_code: g.cost_code,
-                    description: g.description,
-                    original: g.original_budget,
-                    co_amount: 0,
-                    billed_to_date: 0,
-                    percent_complete: 0,
-                    notes: g.notes
-                });
-                added++;
+        if (seedTarget === 'sub') {
+            if (!seedCompanyId) {
+                showCenteredAlert('Select a subcontractor before seeding.', 'warning');
+                return;
             }
-        });
+            if (!subcontractorSOV[seedCompanyId]) subcontractorSOV[seedCompanyId] = [];
+            grouped.forEach((g, key) => {
+                const exists = subcontractorSOV[seedCompanyId].some(s => s.cost_code === key);
+                if (!exists) {
+                    subcontractorSOV[seedCompanyId].push({
+                        id: Date.now() + Math.random(),
+                        cost_code: g.cost_code,
+                        description: g.description,
+                        original_commitment: g.original_budget,
+                        change_orders: 0,
+                        billed_to_date: 0,
+                        work_this_period: 0,
+                        materials_stored: 0,
+                        notes: g.notes
+                    });
+                    added++;
+                }
+            });
+            casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+            logPayAppAudit('SUB_SOV_SEEDED_FROM_BUDGET', { companyId: seedCompanyId, linesAdded: added });
+        } else {
+            grouped.forEach((g, key) => {
+                const exists = contractorSOV.some(s => s.cost_code === key);
+                if (!exists) {
+                    contractorSOV.push({
+                        id: Date.now() + Math.random(),
+                        cost_code: g.cost_code,
+                        description: g.description,
+                        original: g.original_budget,
+                        co_amount: 0,
+                        billed_to_date: 0,
+                        percent_complete: 0,
+                        notes: g.notes
+                    });
+                    added++;
+                }
+            });
+            casepmStore.setItem('contractorSOV', JSON.stringify(contractorSOV));
+            logPayAppAudit('CONTRACTOR_SOV_SEEDED_FROM_BUDGET', { linesAdded: added });
+        }
 
-        casepmStore.setItem('contractorSOV', JSON.stringify(contractorSOV));
         modal.close();
         modal.remove();
         delete window._seedBudgetLines;
+        delete window._seedTarget;
+        delete window._seedCompanyId;
 
-        // Success feedback removed per user request (seeded lines now visible in table)
+        showUnsavedIndicator();
         renderPayAppContent();
+        persistPayAppStateNow({ silent: true });
     }
 
     // ==================== SUBCONTRACTOR SOV TAB ====================
@@ -5106,7 +5263,10 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             workflowHTML = `
                 <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
                     <span class="text-zinc-400">Setup Mode — Build the original Schedule of Values. When ready, submit for approval.</span>
-                    <button onclick="addLineToSelectedSub()" class="ml-3 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                    <button onclick="seedSubcontractorSOVFromBudget()" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-download"></i> <span>Seed from Budget</span>
+                    </button>
+                    <button onclick="addLineToSelectedSub()" class="ml-1 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-plus"></i> <span>Add Line</span>
                     </button>
                     <button onclick="submitSubSOVForApproval()" class="ml-auto px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
@@ -5118,7 +5278,10 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             workflowHTML = `
                 <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
                     <span class="text-orange-400 font-medium">Pending Approval — Review the original SOV. Approve or request revision.</span>
-                    <button onclick="addLineToSelectedSub()" class="ml-3 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                    <button onclick="seedSubcontractorSOVFromBudget()" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-download"></i> <span>Seed from Budget</span>
+                    </button>
+                    <button onclick="addLineToSelectedSub()" class="ml-1 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-plus"></i> <span>Add Line</span>
                     </button>
                     <button onclick="approveSubSOVSetup()" class="ml-auto px-4 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
@@ -6050,6 +6213,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         showUnsavedIndicator();
         btn.closest('dialog').close();
         renderPayAppContent();
+        persistPayAppStateNow({ silent: true });
     }
 
     async function deleteSubSOVLine(companyId, lineId) {
@@ -9172,6 +9336,14 @@ function printSubcontractorG703(companyId) {
             applyPayTabPermissions();
             renderPayAppContent();
             renderSageSyncStatus();
+            bindPayAppNavigationGuards();
+
+            window.addEventListener('beforeunload', (e) => {
+                if (payAppHasPendingChanges()) {
+                    e.preventDefault();
+                    e.returnValue = '';
+                }
+            });
 
             const params = new URLSearchParams(location.search);
             if (params.get('tab') === 'erp') switchPayAppTab('erp');
@@ -9228,10 +9400,7 @@ function printSubcontractorG703(companyId) {
         document.addEventListener('keydown', function(e) {
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
                 e.preventDefault();
-                // Auto-save is already happening via localStorage in functions
-                const dot = document.getElementById('unsavedDot');
-                if (dot) dot.classList.add('hidden');
-                hasUnsavedChanges = false;
+                savePayApplications();
             }
         });
 
