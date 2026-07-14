@@ -282,16 +282,17 @@
           <button type="button" class="dev-tool-btn !w-auto !py-1.5 !px-3 text-xs" data-live-open-popup data-session-key="${sk}">
             <i class="fa-solid fa-up-right-from-square text-sky-400"></i><span>Open full screen window</span>
           </button>
+          <div class="text-[10px] text-zinc-500">Optional — larger view in a new window</div>
           <div class="text-right text-xs">
             <div id="devLiveWatchOnline" class="${session.online ? 'text-emerald-400' : 'text-zinc-500'}">${session.online ? '● Online' : '○ Idle'}</div>
             <div id="devLiveWatchSeen" class="text-zinc-500">Seen ${escapeHtml(formatSeenAgo(session.last_seen_at))}</div>
           </div>
         </div>
       </div>
-      <div class="dev-live-screen mb-4" data-live-open-popup data-session-key="${sk}" title="Click to open full screen watch window">
+      <div class="dev-live-screen mb-4">
         ${thumbUrl
           ? `<img src="${thumbUrl}" alt="Live viewport" id="devLiveThumb">`
-          : '<div class="text-zinc-500 text-xs p-6 text-center">Viewport snapshot loading — opens in a full screen window when you select a user. Captures refresh every ~5s from their browser.</div>'}
+          : '<div class="dev-live-screen-placeholder text-xs p-6 text-center">Viewport snapshot loading — captures refresh every ~5s from their browser.</div>'}
       </div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm mb-3">
         <div class="bg-zinc-900 border border-zinc-800 rounded-md p-3">
@@ -358,18 +359,10 @@
     if (panel) {
       panel.innerHTML = '<div class="text-zinc-500 text-sm text-center py-16">Loading session…</div>';
     }
-    const popupOk = openLiveWatchPopup(sessionKey);
     api(`/api/developer/presence/session/${encodeURIComponent(sessionKey)}`)
       .then((detail) => {
         if (detail.session) {
           renderLiveWatchPanel(detail.session, true);
-          if (!popupOk) {
-            const shell = document.getElementById('devLiveWatchShell');
-            if (shell && !shell.querySelector('.dev-live-popup-blocked')) {
-              shell.insertAdjacentHTML('afterbegin',
-                '<div class="dev-live-popup-blocked text-amber-300/90 text-xs mb-3 px-1">Popup blocked — allow popups for this site, or click Open full screen window.</div>');
-            }
-          }
         } else {
           showLiveWatchError('Session not found.');
         }

@@ -8,8 +8,8 @@
         * { box-sizing: border-box; margin: 0; padding: 0; }
         html, body { height: 100%; }
         body {
-            background: #09090b;
-            color: #e4e4e7;
+            background: #fafafa;
+            color: #27272a;
             font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
             display: flex;
             flex-direction: column;
@@ -22,21 +22,21 @@
             justify-content: space-between;
             gap: 1rem;
             padding: 0.65rem 1rem;
-            border-bottom: 1px solid #27272a;
-            background: #18181b;
+            border-bottom: 1px solid #e4e4e7;
+            background: #fff;
         }
         header h1 { font-size: 0.95rem; font-weight: 600; }
         header .meta { font-size: 0.75rem; color: #71717a; margin-top: 0.15rem; }
-        header .status { font-size: 0.75rem; color: #a1a1aa; text-align: right; }
-        header .online { color: #34d399; }
+        header .status { font-size: 0.75rem; color: #52525b; text-align: right; }
+        header .online { color: #059669; }
         .screen-wrap {
             flex: 1;
             min-height: 0;
-            background: #000;
+            background: #f4f4f5;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 0.35rem;
+            padding: 0.5rem;
         }
         .screen-wrap img {
             max-width: 100%;
@@ -45,17 +45,19 @@
             height: auto;
             object-fit: contain;
             display: block;
+            background: #f4f4f5;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
         }
         .placeholder {
-            color: #71717a;
+            color: #52525b;
             text-align: center;
             max-width: 28rem;
             padding: 2rem;
             font-size: 0.875rem;
             line-height: 1.5;
         }
-        .placeholder strong { color: #a1a1aa; }
-        .error { color: #fca5a5; }
+        .placeholder strong { color: #3f3f46; }
+        .error { color: #dc2626; }
     </style>
 </head>
 <body>
