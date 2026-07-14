@@ -981,6 +981,71 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         return String(code).replace(/[\s-]/g, '').toUpperCase();
     }
 
+    function getContractorLinesForSOV() {
+        if (typeof contractorSOV !== 'undefined' && Array.isArray(contractorSOV) && contractorSOV.length > 0) {
+            return contractorSOV;
+        }
+        try {
+            return JSON.parse(casepmStore.getItem('contractorSOV') || '[]');
+        } catch (e) {
+            return [];
+        }
+    }
+
+    /** GC G703 current total (original + COs) for a cost code. */
+    function getContractorG703TotalForCostCode(costCode) {
+        const norm = normalizeCostCode(costCode);
+        if (!norm) return 0;
+        let total = 0;
+        getContractorLinesForSOV().forEach(l => {
+            if (normalizeCostCode(l.cost_code) === norm) {
+                total += (l.original || 0) + getContractorLineCoAmount(l);
+            }
+        });
+        return total;
+    }
+
+    /** Sum committed across all subs on a cost code (original + COs). */
+    function sumSubCommittedOnCostCode(costCode, excludeCompanyId = null, excludeLineId = null) {
+        const norm = normalizeCostCode(costCode);
+        if (!norm) return { total: 0, bySub: {} };
+        let total = 0;
+        const bySub = {};
+        Object.keys(subcontractorSOV || {}).forEach(cid => {
+            (subcontractorSOV[cid] || []).forEach(l => {
+                if (normalizeCostCode(l.cost_code) !== norm) return;
+                if (excludeLineId != null && String(cid) === String(excludeCompanyId) && l.id === excludeLineId) {
+                    return;
+                }
+                const amt = (l.original_commitment || 0) + (l.change_orders || 0);
+                total += amt;
+                bySub[cid] = (bySub[cid] || 0) + amt;
+            });
+        });
+        return { total, bySub };
+    }
+
+    /** Allocation reconciliation for a cost code vs contractor G703. */
+    function getCostCodeAllocationInfo(costCode, excludeCompanyId = null, excludeLineId = null) {
+        const gcTotal = getContractorG703TotalForCostCode(costCode);
+        const { total: allocated, bySub } = sumSubCommittedOnCostCode(costCode, excludeCompanyId, excludeLineId);
+        const remaining = gcTotal > 0 ? Math.max(0, gcTotal - allocated) : 0;
+        const pctAllocated = gcTotal > 0 ? Math.min(100, (allocated / gcTotal) * 100) : 0;
+        const pctRemaining = gcTotal > 0 ? Math.max(0, 100 - pctAllocated) : 100;
+        const fullyAllocated = gcTotal > 0 && remaining < 0.01;
+        return { gcTotal, allocated, remaining, pctAllocated, pctRemaining, fullyAllocated, bySub };
+    }
+
+    function subAlreadyHasCostCode(companyId, costCode, excludeLineId = null) {
+        const norm = normalizeCostCode(costCode);
+        if (!norm || !companyId) return false;
+        const lines = getSubCompanyMapEntry(subcontractorSOV, companyId) || subcontractorSOV[companyId] || [];
+        return lines.some(l => {
+            if (excludeLineId != null && l.id === excludeLineId) return false;
+            return normalizeCostCode(l.cost_code) === norm;
+        });
+    }
+
     function getSubcontractedCostForCode(code) {
         const norm = normalizeCostCode(code);
         let total = 0;
@@ -4643,11 +4708,17 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             return;
         }
 
+        const subModalOpen = document.getElementById('editSubSOVModal')?.open;
+        const isSubPicker = Boolean(subModalOpen && currentEditingSubCompanyId);
+        const isNewSubLine = isSubPicker && !currentEditingLineId;
+        const pickerCompanyId = isSubPicker ? currentEditingSubCompanyId : null;
+        const pickerExcludeLineId = isSubPicker ? currentEditingLineId : null;
+
         const modal = document.createElement('dialog');
         modal.className = 'modal rounded-md p-0 text-white';
         modal.style.backgroundColor = '#18181b';
         modal.style.border = '1px solid #3f3f46';
-        modal.style.width = 'min(520px, 95vw)';
+        modal.style.width = 'min(620px, 95vw)';
         modal.style.maxHeight = '70vh';
 
         let html = `
@@ -4658,6 +4729,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                         <i class="fa-solid fa-times text-lg"></i>
                     </button>
                 </div>
+                ${isSubPicker ? '<p class="text-[11px] text-zinc-500 mb-2">Fully allocated cost codes are hidden. Partially allocated codes show how much remains across all subcontractors.</p>' : ''}
 
                 <input type="text" id="sovCodeSearch" placeholder="Search cost codes or descriptions..." 
                        class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm mb-3 focus:border-emerald-600"
@@ -4669,25 +4741,49 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                             <tr>
                                 <th class="px-3 py-1.5 text-left font-medium text-zinc-400 w-28">Code</th>
                                 <th class="px-3 py-1.5 text-left font-medium text-zinc-400">Description</th>
+                                ${isSubPicker ? '<th class="px-3 py-1.5 text-right font-medium text-zinc-400 w-36">Available</th>' : ''}
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-zinc-800">
         `;
 
         const seen = new Set();
+        let rowCount = 0;
         sourceData.forEach(item => {
             const code = item.cost_code || item.code || '';
             const desc = item.description || item.desc || '';
-            if (code && !seen.has(code)) {
-                seen.add(code);
-                html += `
+            const norm = normalizeCostCode(code);
+            if (!code || seen.has(norm)) return;
+            seen.add(norm);
+
+            let allocCell = '';
+            if (isSubPicker) {
+                const info = getCostCodeAllocationInfo(code, pickerCompanyId, pickerExcludeLineId);
+                if (isNewSubLine && info.fullyAllocated) {
+                    return;
+                }
+                if (info.gcTotal <= 0) {
+                    allocCell = '<td class="px-3 py-1.5 text-right text-[10px] text-amber-400">No G703 line</td>';
+                } else if (info.fullyAllocated) {
+                    allocCell = `<td class="px-3 py-1.5 text-right text-[10px] text-red-400">100% allocated</td>`;
+                } else {
+                    allocCell = `<td class="px-3 py-1.5 text-right text-[10px] text-emerald-400 font-mono">${formatCurrency(info.remaining)}<br><span class="text-zinc-500">${info.pctRemaining.toFixed(0)}% left</span></td>`;
+                }
+            }
+
+            rowCount++;
+            html += `
                     <tr class="hover:bg-zinc-800/70 cursor-pointer sov-code-pick-row" data-code="${escHtmlAttr(code)}" data-desc="${escHtmlAttr(desc)}">
                         <td class="px-3 py-1.5 font-mono text-emerald-400 text-xs">${escHtmlAttr(code)}</td>
                         <td class="px-3 py-1.5 text-sm">${escHtmlAttr(desc)}</td>
+                        ${allocCell}
                     </tr>
                 `;
-            }
         });
+
+        if (!rowCount) {
+            html += `<tr><td colspan="${isSubPicker ? 3 : 2}" class="px-3 py-6 text-center text-zinc-500 text-sm">All cost codes are fully allocated to other subcontractors, or no G703 lines exist yet.</td></tr>`;
+        }
 
         html += `
                         </tbody>
@@ -4750,27 +4846,19 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         if (codeInput) codeInput.value = code;
         if (descInput) descInput.value = desc;
 
-        // Auto-fill Original Commitment from Contractor G703 total for this code (only for Sub SOV modal, and only if empty/$0)
+        // Auto-fill Original Commitment with remaining G703 allocation for this code (Sub SOV only)
         if (originalInput && codeInput && codeInput.id === 'subCostCode') {
             const currentVal = (originalInput.value || '').replace(/[$,]/g, '');
             if (!currentVal || parseFloat(currentVal) === 0) {
-                // Look up GC total for this code (robust)
-                let contractorLines = [];
-                if (typeof contractorSOV !== 'undefined' && Array.isArray(contractorSOV) && contractorSOV.length > 0) {
-                    contractorLines = contractorSOV;
-                } else {
-                    try { contractorLines = JSON.parse(casepmStore.getItem('contractorSOV') || '[]'); } catch (e) { contractorLines = []; }
-                }
-                const norm = (code || '').trim().toUpperCase();
-                let gcTotal = 0;
-                contractorLines.forEach(l => {
-                    if ((l.cost_code || '').trim().toUpperCase() === norm) {
-                        // Contractor SOV uses "original" field
-                        gcTotal += (l.original || 0) + getContractorLineCoAmount(l);
-                    }
-                });
-                if (gcTotal > 0) {
-                    originalInput.value = formatCurrency(gcTotal);
+                const editingCid = currentEditingSubCompanyId;
+                const editingLineId = currentEditingLineId;
+                const info = getCostCodeAllocationInfo(code, editingCid, editingLineId);
+                if (info.gcTotal <= 0) {
+                    showCenteredAlert(`Cost code ${code} is not on the Contractor G703 yet. Add it in the G703 tab first.`, 'warning');
+                } else if (info.fullyAllocated) {
+                    showCenteredAlert(`Cost code ${code} is fully allocated (${formatCurrency(info.gcTotal)} / 100%). Choose a different code or reduce another sub's commitment.`, 'warning');
+                } else if (info.remaining > 0) {
+                    originalInput.value = formatCurrency(info.remaining);
                 }
             }
         }
@@ -5095,7 +5183,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             : contractorSOV;
         const title = isSub ? 'Seed Subcontractor SOV from Budget' : 'Seed Contractor SOV from Budget';
         const help = isSub
-            ? 'Select budget lines to import as original commitment amounts for this subcontractor. Existing cost code + cost type combinations will be skipped.'
+            ? 'Select budget lines to import. Amounts are capped to what remains unallocated on each cost code across all subcontractors. Fully allocated codes are disabled.'
             : 'Select budget lines to import as Contractor SOV lines. Existing cost code + cost type combinations will be skipped.';
 
         const modal = document.createElement('dialog');
@@ -5126,6 +5214,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                                 <th class="px-3 py-2 text-left font-medium text-zinc-400 w-32">Cost Type</th>
                                 <th class="px-3 py-2 text-left font-medium text-zinc-400">Description</th>
                                 <th class="px-3 py-2 text-right font-medium text-zinc-400 w-28">Original Budget</th>
+                                ${isSub ? '<th class="px-3 py-2 text-right font-medium text-zinc-400 w-28">Available</th>' : ''}
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-zinc-800">
@@ -5136,8 +5225,22 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             const exists = isSub
                 ? existingLines.some(s => seedBudgetLineKey(s) === lineKey)
                 : contractorSOV.some(s => seedBudgetLineKey(s) === lineKey);
-            const checked = exists ? '' : 'checked';
-            const disabled = exists ? 'disabled class="opacity-50"' : '';
+            let disabled = exists ? 'disabled class="opacity-50"' : '';
+            let checked = exists ? '' : 'checked';
+            let availCell = '';
+            if (isSub && !exists) {
+                const info = getCostCodeAllocationInfo(b.cost_code, companyKey, null);
+                if (info.gcTotal <= 0 || info.fullyAllocated) {
+                    disabled = 'disabled class="opacity-40"';
+                    checked = '';
+                    availCell = info.gcTotal <= 0
+                        ? '<td class="px-3 py-1.5 text-right text-[10px] text-amber-400">No G703</td>'
+                        : '<td class="px-3 py-1.5 text-right text-[10px] text-red-400">100%</td>';
+                } else {
+                    const cap = Math.min(b.original_budget || 0, info.remaining);
+                    availCell = `<td class="px-3 py-1.5 text-right text-[10px] text-emerald-400 font-mono">${formatCurrency(cap)}<br><span class="text-zinc-500">${info.pctRemaining.toFixed(0)}% left</span></td>`;
+                }
+            }
             const costTypeLabel = b.cost_type || '—';
             html += `
                 <tr data-idx="${idx}" onclick="toggleSeedRowCheckbox(this)" style="cursor: pointer;">
@@ -5146,6 +5249,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                     <td class="px-3 py-1.5 text-xs text-zinc-300">${costTypeLabel}</td>
                     <td class="px-3 py-1.5 text-sm">${b.description}</td>
                     <td class="px-3 py-1.5 text-right font-mono text-sm">${formatCurrency(b.original_budget || 0)}</td>
+                    ${isSub ? availCell : ''}
                 </tr>
             `;
         });
@@ -5267,6 +5371,8 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         });
 
         let added = 0;
+        let skippedAllocation = 0;
+        const runningRemaining = {};
         if (seedTarget === 'sub') {
             if (!seedCompanyId) {
                 showCenteredAlert('Select a subcontractor before seeding.', 'warning');
@@ -5275,24 +5381,47 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             if (!subcontractorSOV[seedCompanyId]) subcontractorSOV[seedCompanyId] = [];
             grouped.forEach((g, key) => {
                 const exists = subcontractorSOV[seedCompanyId].some(s => seedBudgetLineKey(s) === key);
-                if (!exists) {
-                    subcontractorSOV[seedCompanyId].push({
-                        id: Date.now() + Math.random(),
-                        cost_code: g.cost_code,
-                        cost_type: g.cost_type,
-                        description: g.description,
-                        original_commitment: g.original_budget,
-                        change_orders: 0,
-                        billed_to_date: 0,
-                        work_this_period: 0,
-                        materials_stored: 0,
-                        notes: g.notes
-                    });
-                    added++;
+                if (exists) return;
+                if (subAlreadyHasCostCode(seedCompanyId, g.cost_code)) {
+                    skippedAllocation++;
+                    return;
                 }
+                const norm = normalizeCostCode(g.cost_code);
+                if (runningRemaining[norm] === undefined) {
+                    runningRemaining[norm] = getCostCodeAllocationInfo(g.cost_code, seedCompanyId, null).remaining;
+                }
+                const gcTotal = getContractorG703TotalForCostCode(g.cost_code);
+                if (gcTotal <= 0 || runningRemaining[norm] <= 0) {
+                    skippedAllocation++;
+                    return;
+                }
+                const commitAmt = Math.min(g.original_budget || 0, runningRemaining[norm]);
+                if (commitAmt <= 0) {
+                    skippedAllocation++;
+                    return;
+                }
+                runningRemaining[norm] -= commitAmt;
+                subcontractorSOV[seedCompanyId].push({
+                    id: Date.now() + Math.random(),
+                    cost_code: g.cost_code,
+                    cost_type: g.cost_type,
+                    description: g.description,
+                    original_commitment: commitAmt,
+                    change_orders: 0,
+                    billed_to_date: 0,
+                    work_this_period: 0,
+                    materials_stored: 0,
+                    notes: g.notes
+                });
+                added++;
             });
             casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
-            logPayAppAudit('SUB_SOV_SEEDED_FROM_BUDGET', { companyId: seedCompanyId, linesAdded: added });
+            logPayAppAudit('SUB_SOV_SEEDED_FROM_BUDGET', { companyId: seedCompanyId, linesAdded: added, skippedAllocation });
+            if (skippedAllocation > 0 && added === 0) {
+                showCenteredAlert('No lines were seeded — selected cost codes are fully allocated to other subs or missing from G703.', 'warning');
+            } else if (skippedAllocation > 0) {
+                showCenteredAlert(`Seeded ${added} line(s). ${skippedAllocation} skipped (fully allocated or duplicate on this sub).`, 'info');
+            }
         } else {
             grouped.forEach((g, key) => {
                 const exists = contractorSOV.some(s => seedBudgetLineKey(s) === key);
@@ -6138,7 +6267,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                         </div>
                         <div id="costCodeProjected" class="text-[10px] text-emerald-500"></div>
                     </div>
-                    <div class="text-[10px] text-zinc-500 mt-1">Contractor G703 Total shown above. "Total left after this entry" = G703 minus (other subs committed + what you are entering now). Cannot exceed G703 on Save.</div>
+                    <div class="text-[10px] text-zinc-500 mt-1">Reconciles against Contractor G703. Other subs' commitments reduce what you can allocate. Cannot exceed 100% of the G703 line across all subcontractors.</div>
                 </div>
 
                 <div>
@@ -6187,59 +6316,34 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         }
         display.classList.remove('hidden');
 
-        const normCode = costCode.toUpperCase().replace(/[\s-]/g, ''); // normalize: remove spaces/dashes
-
-        // === 1. Contractor (GC) G703 "Current" Total for this code (from main Contractor Schedule of Values) ===
-        let gcG703Total = 0;
-        let contractorLines = [];
-        if (typeof contractorSOV !== 'undefined' && Array.isArray(contractorSOV) && contractorSOV.length > 0) {
-            contractorLines = contractorSOV;
-        } else {
-            try { contractorLines = JSON.parse(casepmStore.getItem('contractorSOV') || '[]'); } catch (e) { contractorLines = []; }
-        }
-        contractorLines.forEach(l => {
-            const lCode = (l.cost_code || '').toUpperCase().replace(/[\s-]/g, '');
-            if (lCode === normCode) {
-                // Contractor SOV lines use "original" + "change_orders" (this is the "Current" column value)
-                gcG703Total += (l.original || 0) + getContractorLineCoAmount(l);
-            }
-        });
-
-        // === 2. Other subs committed — sum of ALL other sub SOV lines on this code (from every sub) ===
-        // We exclude ONLY the exact line we are currently editing (so the user sees the true remaining room)
-        let otherSubsCommitted = 0;
         const editingCid = currentEditingSubCompanyId;
         const editingLineId = currentEditingLineId;
+        const baseInfo = getCostCodeAllocationInfo(costCode, editingCid, editingLineId);
+        const gcG703Total = baseInfo.gcTotal;
 
-        Object.keys(subcontractorSOV || {}).forEach(cid => {
-            (subcontractorSOV[cid] || []).forEach(l => {
-                const lCode = (l.cost_code || '').toUpperCase().replace(/[\s-]/g, '');
-                if (lCode !== normCode) return;
-
-                // Skip ONLY the exact line we are editing right now
-                if (editingLineId && String(cid) === String(editingCid) && l.id === editingLineId) {
-                    return;
-                }
-                otherSubsCommitted += (l.original_commitment || 0) + (l.change_orders || 0);
-            });
-        });
-
-        // === 3. What the user is currently typing in Original Commitment + Change Orders ===
         let thisEntry = 0;
         if (originalEl) thisEntry += parseMoneyInput(originalEl);
         if (coEl) thisEntry += parseMoneyInput(coEl);
 
-        const totalAfterThisEntry = otherSubsCommitted + thisEntry;
-        const leftAfterThisEntry = gcG703Total - totalAfterThisEntry;
+        const totalAfterThisEntry = baseInfo.allocated + thisEntry;
+        const leftAfterThisEntry = gcG703Total > 0 ? gcG703Total - totalAfterThisEntry : 0;
+        const pctAfter = gcG703Total > 0 ? Math.min(100, (totalAfterThisEntry / gcG703Total) * 100) : 0;
+        const pctLeft = gcG703Total > 0 ? Math.max(0, 100 - pctAfter) : 100;
 
-        // Update display
         valueEl.textContent = formatCurrency(gcG703Total);
 
         if (projectedEl) {
             let html = '';
-            html += `Other subs committed: <span class="font-mono">${formatCurrency(otherSubsCommitted)}</span><br>`;
-            const leftColor = leftAfterThisEntry < 0 ? 'text-red-400' : 'text-emerald-400';
-            html += `Total left after this entry: <span class="font-mono font-semibold ${leftColor}">${formatCurrency(leftAfterThisEntry)}</span>`;
+            if (gcG703Total <= 0) {
+                html += '<span class="text-amber-400">No Contractor G703 line for this code yet.</span><br>';
+            } else {
+                html += `Allocated by other subs: <span class="font-mono">${formatCurrency(baseInfo.allocated)}</span> <span class="text-zinc-500">(${baseInfo.pctAllocated.toFixed(0)}%)</span><br>`;
+            }
+            const leftColor = leftAfterThisEntry < -0.01 ? 'text-red-400' : 'text-emerald-400';
+            html += `Remaining after this entry: <span class="font-mono font-semibold ${leftColor}">${formatCurrency(Math.max(0, leftAfterThisEntry))}</span>`;
+            if (gcG703Total > 0) {
+                html += ` <span class="text-zinc-500">(${pctLeft.toFixed(0)}% left)</span>`;
+            }
             projectedEl.innerHTML = html;
         }
     }
@@ -6462,43 +6566,40 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             return;
         }
 
-        // === HARD VALIDATION: Cannot overbill a cost code beyond the GC's G703 total (Original + COs) when summed across ALL subs ===
-        // Reconciles commitments from every subcontractor against the main contractor's G703 line total for that code.
-        const contractorSOVLines = JSON.parse(casepmStore.getItem('contractorSOV')) || [];
-        let gcG703Total = 0;
-        contractorSOVLines.forEach(l => {
-            if (l.cost_code === costCode) {
-                gcG703Total += (l.original || 0) + getContractorLineCoAmount(l);
-            }
-        });
+        // === HARD VALIDATION: Cannot over-allocate a cost code beyond the GC G703 total across ALL subs ===
+        const gcG703Total = getContractorG703TotalForCostCode(costCode);
+        const allocInfo = getCostCodeAllocationInfo(costCode, companyId, lineId || null);
+        const otherSubsCommitted = allocInfo.allocated;
 
-        // Sum what all OTHER subs have already committed to this cost code (exclude current line if editing)
-        let otherSubsCommitted = 0;
-        Object.keys(subcontractorSOV || {}).forEach(cid => {
-            const lines = subcontractorSOV[cid] || [];
-            lines.forEach(l => {
-                if (l.cost_code === costCode) {
-                    // When editing an existing line, exclude it from the "other" sum
-                    if (lineId && l.id === lineId && String(cid) === String(companyId)) {
-                        return;
-                    }
-                    otherSubsCommitted += (l.original_commitment || 0) + (l.change_orders || 0);
-                }
-            });
-        });
+        if (gcG703Total <= 0) {
+            showCenteredAlert(
+                `Cost code ${costCode} is not on the Contractor G703 (G703 tab). Add the GC line first before assigning it to a subcontractor.`,
+                'error'
+            );
+            return;
+        }
+
+        if (!lineId && subAlreadyHasCostCode(companyId, costCode)) {
+            showCenteredAlert(
+                `This subcontractor already has a line on cost code ${costCode}. Edit the existing line or choose a different code.`,
+                'warning'
+            );
+            return;
+        }
 
         const thisLineCommitment = original + changeOrders;
         const wouldBeTotalForCode = otherSubsCommitted + thisLineCommitment;
 
-        if (gcG703Total > 0 && wouldBeTotalForCode > gcG703Total) {
+        if (wouldBeTotalForCode > gcG703Total + 0.01) {
             const remaining = Math.max(0, gcG703Total - otherSubsCommitted);
+            const pctLeft = gcG703Total > 0 ? Math.max(0, ((remaining / gcG703Total) * 100)) : 0;
             showCenteredAlert(
-                `BLOCKED: This would overbill Cost Code ${costCode} on the G703.\n\n` +
-                `GC G703 Total for this code: ${formatCurrency(gcG703Total)}\n` +
+                `BLOCKED: This would over-allocate cost code ${costCode}.\n\n` +
+                `GC G703 total: ${formatCurrency(gcG703Total)} (100%)\n` +
                 `Already committed by other subs: ${formatCurrency(otherSubsCommitted)}\n` +
                 `This line would commit: ${formatCurrency(thisLineCommitment)}\n` +
-                `Remaining available: ${formatCurrency(remaining)}\n\n` +
-                `You cannot commit more to a cost code than the GC has on their G703.`,
+                `Remaining available: ${formatCurrency(remaining)} (${pctLeft.toFixed(0)}%)\n\n` +
+                `You cannot allocate more than 100% of a cost code across all subcontractors.`,
                 'error'
             );
             return;
