@@ -155,12 +155,23 @@
     return html2canvasLoading;
   }
 
+  function captureBackground(el) {
+    let node = el;
+    while (node && node !== document.documentElement) {
+      const bg = global.getComputedStyle(node).backgroundColor;
+      if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') return bg;
+      node = node.parentElement;
+    }
+    return '#18181b';
+  }
+
   async function captureThumbnail() {
     if (document.hidden) return null;
     const targets = [
+      document.getElementById('mainContent'),
+      document.querySelector('#appShell > .flex-1.flex.flex-col'),
       document.getElementById('appShell'),
       document.querySelector('main'),
-      document.getElementById('mainContent'),
       document.body,
     ].filter(Boolean);
     const seen = new Set();
@@ -174,10 +185,11 @@
           logging: false,
           useCORS: true,
           allowTaint: true,
+          backgroundColor: captureBackground(shell),
           ignoreElements: (node) => node.id === 'devUnlockBanner',
         });
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.65);
-        if (dataUrl && dataUrl.length > 1000) return dataUrl;
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.72);
+        if (dataUrl && dataUrl.length > 4000) return dataUrl;
       } catch (err) {
         console.warn('[CasePM Presence] thumbnail capture failed', shell.id || shell.tagName, err);
       }
