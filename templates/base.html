@@ -393,10 +393,12 @@
                         {% endif %}
                     </div>
                     <div class="border-t border-zinc-800 p-2">
+                        {% if not is_sub_vendor_portal %}
                         <a href="{{ url_for('projects_page') }}"
                            class="block w-full py-2 text-center text-xs bg-zinc-800 hover:bg-zinc-700 rounded-lg text-zinc-200 transition-colors">
                             <i class="fa-solid fa-folder-plus mr-1"></i> Manage All Projects
                         </a>
+                        {% endif %}
                     </div>
                 </div>
             </div>

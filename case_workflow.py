@@ -525,7 +525,10 @@ def register_workflow(app, _db, models):
             'isSub': is_sub_user(current_user),
             'isArchitect': is_architect_user(current_user),
             'isSubVendorPayPortal': is_sub_vendor_portal_user(current_user),
-            'emailInternalOnly': bool((perms.get('global') or {}).get('email_internal_only')),
+            'emailInternalOnly': bool(
+                (perms.get('global') or {}).get('email_internal_only')
+                or is_sub_vendor_portal_user(current_user)
+            ),
         })
 
     @app.route('/api/internal-messages')

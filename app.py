@@ -407,10 +407,10 @@ def _guard_module_route_access():
             flash('Client portal access only — module not available.', 'error')
             return redirect(url_for('dashboard'))
         try:
-            from portal_sub_access import is_sub_vendor_portal_user, SUB_VENDOR_ALLOWED_MODULES
+            from portal_sub_access import is_sub_vendor_portal_user, SUB_VENDOR_ALLOWED_MODULES, portal_home_redirect
             if is_sub_vendor_portal_user(current_user) and module_key not in SUB_VENDOR_ALLOWED_MODULES:
                 flash('This module is not available for subcontractor portal users.', 'error')
-                return redirect(url_for('dashboard'))
+                return portal_home_redirect(current_user)
         except Exception:
             pass
         if not user_has_module_access(current_user, module_key, 'view'):
@@ -2249,14 +2249,16 @@ def get_dashboard_stats():
 @app.route('/')
 def index():
     if current_user.is_authenticated:
-        return redirect(url_for('dashboard'))
+        from portal_sub_access import portal_home_redirect
+        return portal_home_redirect(current_user)
     return redirect(url_for('login'))
 
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for('dashboard'))
+        from portal_sub_access import portal_home_redirect
+        return portal_home_redirect(current_user)
 
     def _login_page():
         from connector_download import is_connector_request, mark_connector_response
@@ -2327,7 +2329,8 @@ def login():
             return redirect(url_for('force_change_password'))
 
         flash(f'Welcome back, {user.first_name}!', 'success')
-        return redirect(url_for('dashboard'))
+        from portal_sub_access import portal_home_redirect
+        return portal_home_redirect(user)
 
     return _login_page()
 
@@ -2457,7 +2460,8 @@ def logout():
 @login_required
 def force_change_password():
     if not current_user.must_change_password:
-        return redirect(url_for('dashboard'))
+        from portal_sub_access import portal_home_redirect
+        return portal_home_redirect(current_user)
 
     if request.method == 'POST':
         new_password = request.form.get('new_password')
@@ -2507,7 +2511,8 @@ def verify_2fa():
 
     if not user_needs_2fa(current_user) and not request.args.get('setup'):
         mark_2fa_verified(True)
-        return redirect(url_for('dashboard'))
+        from portal_sub_access import portal_home_redirect
+        return portal_home_redirect(current_user)
 
     setup_mode = request.args.get('setup') or not user_has_totp_configured(current_user)
     setup_secret = session.get('pending_totp_secret')
@@ -2530,7 +2535,8 @@ def verify_2fa():
                 db.session.commit()
                 write_audit('2FA_ENABLED', current_user.email, module='security', category='settings', commit=True)
                 flash('Two-factor authentication is enabled.', 'success')
-                return redirect(url_for('dashboard'))
+                from portal_sub_access import portal_home_redirect
+                return portal_home_redirect(current_user)
         else:
             if verify_code(current_user, code):
                 mark_2fa_verified(True)
@@ -2539,7 +2545,8 @@ def verify_2fa():
                 ensure_csrf_token()
                 write_audit('2FA_LOGIN_OK', current_user.email, module='security', category='login', commit=True)
                 flash('Verification successful.', 'success')
-                return redirect(url_for('dashboard'))
+                from portal_sub_access import portal_home_redirect
+                return portal_home_redirect(current_user)
             write_audit('2FA_LOGIN_FAILED', current_user.email, module='security', category='login', commit=True)
             flash('Invalid code. Try again.', 'error')
 
@@ -2761,6 +2768,9 @@ def api_audit_security_summary():
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    from portal_sub_access import is_sub_vendor_portal_user, portal_home_redirect
+    if is_sub_vendor_portal_user(current_user):
+        return portal_home_redirect(current_user)
     active = get_active_project()
     return render_template('dashboard.html', active_project=active)
 
@@ -14425,10 +14435,12 @@ def api_save_pay_app_state():
         project_id = require_financial_project_access(current_user, project_id, Project)
     except (ValueError, PermissionError) as exc:
         return jsonify({'error': str(exc)}), 403
-    patch = filter_pay_app_patch_for_sub_vendor(current_user, body.get('data') or body.get('patch') or {})
-    full_replace = bool(body.get('full_replace'))
     record, existing = load_state(PayAppProjectState, project_id)
     existing = dict(existing or {})
+    patch = filter_pay_app_patch_for_sub_vendor(
+        current_user, body.get('data') or body.get('patch') or {}, existing,
+    )
+    full_replace = bool(body.get('full_replace'))
     if full_replace:
         merged = sanitize_pay_app_state(existing, patch)
     else:
