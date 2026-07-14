@@ -12464,6 +12464,14 @@ def program_settings():
     )
 
 
+@app.route('/developer/live-watch')
+@login_required
+@developer_required
+def developer_live_watch_page():
+    session_key = (request.args.get('session') or '').strip()
+    return render_template('developer_live_watch.html', session_key=session_key)
+
+
 @app.route('/developer')
 @login_required
 @developer_required
