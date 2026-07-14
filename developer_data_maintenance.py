@@ -9,7 +9,7 @@ MODULE_CATALOG: list[dict[str, Any]] = [
     {'key': 'documents', 'label': 'Documents', 'description': 'Files, folders, versions, markups, and share links', 'icon': 'fa-folder-open', 'color': 'text-violet-400', 'scope': 'project'},
     {'key': 'drawings', 'label': 'Drawings', 'description': 'Sheets, revisions, markups, and drawing uploads', 'icon': 'fa-drafting-compass', 'color': 'text-cyan-400', 'scope': 'project'},
     {'key': 'rfis', 'label': 'RFIs', 'description': 'RFI log and attachment folders', 'icon': 'fa-circle-question', 'color': 'text-blue-400', 'scope': 'project'},
-    {'key': 'change_orders', 'label': 'Change Orders', 'description': 'PCOs, change orders, allocations, and attachments', 'icon': 'fa-file-contract', 'color': 'text-emerald-400', 'scope': 'project'},
+    {'key': 'change_orders', 'label': 'Change Orders', 'description': 'Change orders, PCOs, change events, RFQs, CORs, allocations, and attachments', 'icon': 'fa-file-contract', 'color': 'text-emerald-400', 'scope': 'project'},
     {'key': 'commitments', 'label': 'Commitments', 'description': 'Subcontracts, POs, allocations, and files', 'icon': 'fa-handshake', 'color': 'text-orange-400', 'scope': 'project'},
     {'key': 'budget', 'label': 'Budget', 'description': 'Budget worksheet state per project', 'icon': 'fa-chart-pie', 'color': 'text-teal-400', 'scope': 'project'},
     {'key': 'pay_apps', 'label': 'Pay Applications', 'description': 'G702/G703 and subcontractor pay app state', 'icon': 'fa-file-invoice-dollar', 'color': 'text-amber-400', 'scope': 'project'},
@@ -177,24 +177,54 @@ def _clear_change_orders(db, project_ids, models, upload_root):
   ChangeOrderRevision = models['ChangeOrderRevision']
   PotentialChangeOrder = models['PotentialChangeOrder']
   PCOAllocation = models['PCOAllocation']
+  ChangeEvent = models.get('ChangeEvent')
+  SubcontractorRFQ = models.get('SubcontractorRFQ')
+  RFQAllocation = models.get('RFQAllocation')
+  ChangeOrderRequest = models.get('ChangeOrderRequest')
+  CORAllocation = models.get('CORAllocation')
 
   co_ids = [r.id for r in ChangeOrder.query.filter(ChangeOrder.project_id.in_(project_ids)).with_entities(ChangeOrder.id).all()]
   pco_ids = [r.id for r in PotentialChangeOrder.query.filter(PotentialChangeOrder.project_id.in_(project_ids)).with_entities(PotentialChangeOrder.id).all()]
 
+  stats = {'change_orders_deleted': 0, 'pcos_deleted': 0, 'change_events_deleted': 0}
+
+  if pco_ids:
+    PotentialChangeOrder.query.filter(PotentialChangeOrder.id.in_(pco_ids)).update(
+      {PotentialChangeOrder.change_order_id: None}, synchronize_session=False
+    )
+
   if co_ids:
+    ChangeOrder.query.filter(ChangeOrder.id.in_(co_ids)).update(
+      {ChangeOrder.linked_owner_co_id: None}, synchronize_session=False
+    )
     ChangeOrderAllocation.query.filter(ChangeOrderAllocation.change_order_id.in_(co_ids)).delete(synchronize_session=False)
     ChangeOrderRevision.query.filter(ChangeOrderRevision.change_order_id.in_(co_ids)).delete(synchronize_session=False)
     for cid in co_ids:
       _safe_rmtree(os.path.join(upload_root, 'change_orders', str(cid)))
-    ChangeOrder.query.filter(ChangeOrder.id.in_(co_ids)).delete(synchronize_session=False)
+    stats['change_orders_deleted'] = ChangeOrder.query.filter(ChangeOrder.id.in_(co_ids)).delete(synchronize_session=False)
 
   if pco_ids:
     PCOAllocation.query.filter(PCOAllocation.pco_id.in_(pco_ids)).delete(synchronize_session=False)
     for pid in pco_ids:
       _safe_rmtree(os.path.join(upload_root, 'change_orders', f'pco_{pid}'))
-    PotentialChangeOrder.query.filter(PotentialChangeOrder.id.in_(pco_ids)).delete(synchronize_session=False)
+    stats['pcos_deleted'] = PotentialChangeOrder.query.filter(PotentialChangeOrder.id.in_(pco_ids)).delete(synchronize_session=False)
 
-  return {'change_orders_deleted': len(co_ids), 'pcos_deleted': len(pco_ids)}
+  if ChangeEvent is not None:
+    ce_ids = [r.id for r in ChangeEvent.query.filter(ChangeEvent.project_id.in_(project_ids)).with_entities(ChangeEvent.id).all()]
+    if ce_ids:
+      if ChangeOrderRequest is not None and CORAllocation is not None:
+        cor_ids = [r.id for r in ChangeOrderRequest.query.filter(ChangeOrderRequest.change_event_id.in_(ce_ids)).with_entities(ChangeOrderRequest.id).all()]
+        if cor_ids:
+          CORAllocation.query.filter(CORAllocation.cor_id.in_(cor_ids)).delete(synchronize_session=False)
+        ChangeOrderRequest.query.filter(ChangeOrderRequest.change_event_id.in_(ce_ids)).delete(synchronize_session=False)
+      if SubcontractorRFQ is not None and RFQAllocation is not None:
+        rfq_ids = [r.id for r in SubcontractorRFQ.query.filter(SubcontractorRFQ.change_event_id.in_(ce_ids)).with_entities(SubcontractorRFQ.id).all()]
+        if rfq_ids:
+          RFQAllocation.query.filter(RFQAllocation.rfq_id.in_(rfq_ids)).delete(synchronize_session=False)
+        SubcontractorRFQ.query.filter(SubcontractorRFQ.change_event_id.in_(ce_ids)).delete(synchronize_session=False)
+      stats['change_events_deleted'] = ChangeEvent.query.filter(ChangeEvent.id.in_(ce_ids)).delete(synchronize_session=False)
+
+  return stats
 
 
 def _clear_commitments(db, project_ids, models, upload_root):
@@ -428,8 +458,10 @@ def build_models_dict(app_models: dict):
   required = [
     'Project', 'Document', 'DocumentFolder', 'DocumentShareLink', 'DocumentFolderShareLink',
     'DocumentVersion', 'DocumentComment', 'DocumentActivity', 'DocumentMarkup', 'DocumentFolderPermission',
-    'Drawing', 'DrawingRevision', 'DrawingMarkup', 'RFI', 'ChangeOrder', 'ChangeOrderAllocation',
-    'ChangeOrderRevision', 'PotentialChangeOrder', 'PCOAllocation', 'Commitment', 'CommitmentAllocation',
+    'Drawing', 'DrawingRevision', 'DrawingMarkup', 'RFI',     'ChangeOrder', 'ChangeOrderAllocation',
+    'ChangeOrderRevision', 'PotentialChangeOrder', 'PCOAllocation',
+    'ChangeEvent', 'SubcontractorRFQ', 'RFQAllocation', 'ChangeOrderRequest', 'CORAllocation',
+    'Commitment', 'CommitmentAllocation',
     'BudgetProjectState', 'PayAppProjectState', 'Submittal', 'PunchItem', 'DailyLog', 'ManpowerEntry',
     'EquipmentEntry', 'WeeklyReport', 'SafetyReport', 'SafetyCertification', 'SafetyTrainingEvent',
     'ScheduleData', 'ScheduleTask', 'Delivery', 'PermitInspectionItem', 'MeetingMinute', 'MeetingActionItem',

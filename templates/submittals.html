@@ -2921,7 +2921,6 @@ function buildSubmittalPrintSheet(selectedOptionalFields, contentOptions) {
         columns = CasePMPrint.rebalanceColumnWidths(CasePMPrint.pruneEmptyColumns(columns, registerRows));
     }
     const printedOn = new Date().toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
-    const ROWS_PER_PAGE = 22;
     const pages = [];
     const colSpan = columns.length;
     const headerOpts = {
@@ -2929,6 +2928,14 @@ function buildSubmittalPrintSheet(selectedOptionalFields, contentOptions) {
         showLocation: printOpts.location !== false,
     };
     const showPrintedDate = printOpts.printedDate !== false;
+    const paginate = (typeof CasePMPrint !== 'undefined' && CasePMPrint.paginateLogRows)
+        ? CasePMPrint.paginateLogRows
+        : (rows) => {
+            const perPage = 16;
+            const out = [];
+            for (let i = 0; i < rows.length; i += perPage) out.push(rows.slice(i, i + perPage));
+            return out.length ? out : [[]];
+        };
 
     function submittalFooter(pageNum, totalPages) {
         const pageLabel = totalPages > 1 ? `Page ${pageNum} of ${totalPages}` : `Page ${pageNum}`;
@@ -2946,15 +2953,15 @@ function buildSubmittalPrintSheet(selectedOptionalFields, contentOptions) {
             </tbody></table>
             ${submittalFooter(1, 1)}`);
     } else {
-        const totalPages = Math.ceil(rows.length / ROWS_PER_PAGE);
-        for (let p = 0; p < totalPages; p++) {
-            const chunk = rows.slice(p * ROWS_PER_PAGE, (p + 1) * ROWS_PER_PAGE);
+        const rowPages = paginate(rows, { columnCount: columns.length });
+        const totalPages = rowPages.length;
+        rowPages.forEach((chunk, p) => {
             let html = buildSubmittalPrintPageHeader(meta, p > 0, headerOpts);
             html += buildSubmittalPrintTableHead(columns);
             html += chunk.map(item => buildSubmittalPrintRow(item, columns)).join('');
             html += `</tbody></table>${submittalFooter(p + 1, totalPages)}`;
             pages.push(html);
-        }
+        });
     }
 
     const body = pages.map(html => `<div class="submittal-print-page">${html}</div>`).join('');

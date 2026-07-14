@@ -317,6 +317,7 @@
             <p class="text-[11px] text-zinc-500 mt-1">External approvers (Owner, Architect) see this summary without the full change order screen.</p>
         </div>
         <div class="flex justify-end gap-3">
+            <button type="button" onclick="CasePMChangeOrders.printDetail()" class="px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm"><i class="fa-solid fa-print mr-1"></i> Print</button>
             <button type="button" onclick="document.getElementById('coApprovalModal').close()" class="px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Cancel</button>
             <button type="button" id="coApprovalRejectBtn" onclick="CasePMChangeOrders.confirmApprovalAction('reject')" class="px-5 py-2.5 bg-red-950 hover:bg-red-900 border border-red-800 rounded-md text-sm text-red-300">Reject</button>
             <button type="button" id="coApprovalApproveBtn" onclick="CasePMChangeOrders.confirmApprovalAction('approve')" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Approve</button>
