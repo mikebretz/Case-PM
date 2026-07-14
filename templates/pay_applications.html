@@ -2,10 +2,10 @@
 
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="{{ url_for('static', filename='js/casepm-workflow.js') }}"></script>
-<script src="{{ url_for('static', filename='js/pay-app-sync.js') }}"></script>
-<script src="{{ url_for('static', filename='js/pay-app-workflow.js') }}"></script>
-<script src="{{ url_for('static', filename='js/accounting-reconcile.js') }}"></script>
+<script src="{{ static_v('js/casepm-workflow.js') }}"></script>
+<script src="{{ static_v('js/pay-app-sync.js') }}"></script>
+<script src="{{ static_v('js/pay-app-workflow.js') }}"></script>
+<script src="{{ static_v('js/accounting-reconcile.js') }}"></script>
 
 <style>
   /* Exact match to budget.html aesthetics */
@@ -139,6 +139,13 @@
   .pay-app-toolbar-actions {
     min-width: 0;
   }
+  .casepm-floating-save {
+    position: fixed;
+    bottom: 3.5rem;
+    right: 1rem;
+    z-index: 250;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  }
   .pay-app-stack {
     display: flex;
     flex-direction: column;
@@ -235,6 +242,10 @@
         </button>
     </div>
 </div>
+
+<button type="button" id="payAppFloatingSaveBtn" onclick="savePayApplications()" class="casepm-floating-save flex items-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-semibold text-white" title="Save pay applications (Ctrl+S)">
+    <i class="fa-solid fa-save"></i><span>Save</span>
+</button>
 
 <!-- TABS (clean, consistent with budget style) -->
 <div class="mt-4 flex border-b border-zinc-700 flex-shrink-0">
@@ -395,38 +406,6 @@
             </button>
         </div>
         <div id="contractorSOVModalContent"></div>
-    </div>
-</dialog>
-
-<!-- User Profile Modal -->
-<dialog id="userProfileModal" class="modal rounded-md w-full max-w-md p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
-    <div class="p-6">
-        <h3 class="text-lg font-semibold mb-4">User Profile</h3>
-        
-        <div class="mb-4">
-            <div class="flex items-center gap-3 mb-3">
-                <div class="w-12 h-12 bg-zinc-700 rounded-full overflow-hidden flex-shrink-0">
-                    <img src="https://i.pravatar.cc/48?img=68" class="w-full h-full object-cover">
-                </div>
-                <div>
-                    <div class="font-semibold">Michael Bretz</div>
-                    <div class="text-xs text-zinc-400">Project Manager • Case Contracting</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="mb-4">
-            <label class="block text-sm text-zinc-300 mb-1.5">Signature Line (for G702 prints)</label>
-            <input type="text" id="userSignatureInput" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" 
-                   placeholder="e.g. Michael Bretz, Project Manager">
-            <div class="text-[10px] text-zinc-500 mt-1">This appears in the signature block on printed G702 forms.</div>
-        </div>
-
-        <div class="flex justify-end gap-3 mt-6">
-            <button onclick="saveUserSignature(); document.getElementById('userProfileModal').close()" 
-                    class="px-5 py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-medium">Save Signature</button>
-            <button onclick="document.getElementById('userProfileModal').close()" class="px-5 py-2 rounded-md bg-zinc-700">Close</button>
-        </div>
     </div>
 </dialog>
 
@@ -2783,21 +2762,8 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         return true;
     }
 
-    function canEditPayApplications() {
-        const role = (document.body && document.body.getAttribute('data-current-user-role')) || '';
-        if (role === 'Admin' || role === 'Developer') return true;
-        if (window.CASEPM_IS_DEVELOPER) return true;
-        if (typeof canAccessModule === 'function') {
-            return canAccessModule('pay_applications_gc', 'edit')
-                || canAccessModule('pay_applications_sub', 'edit')
-                || canAccessModule('pay_applications', 'edit');
-        }
-        return true;
-    }
-
     function applyPayAppToolbarPermissions() {
-        const saveBtn = document.getElementById('savePayAppBtn');
-        if (saveBtn) saveBtn.classList.toggle('hidden', !canEditPayApplications());
+        /* Save is always shown — floating + toolbar buttons stay visible for staff. */
     }
 
     function applyPayTabPermissions() {
@@ -9100,26 +9066,7 @@ function printSubcontractorG703(companyId) {
 
     // End of Lien Waiver Compliance Engine
 
-    function showUserProfileModal() {
-        const modal = document.getElementById('userProfileModal');
-        modal.showModal();
-        
-        // Load existing signature
-        setTimeout(() => {
-            const input = document.getElementById('userSignatureInput');
-            if (input) {
-                input.value = casepmStore.getItem('userSignature') || 'Michael Bretz, Project Manager — Case Contracting';
-            }
-        }, 50);
-    }
-
-    function saveUserSignature() {
-        const input = document.getElementById('userSignatureInput');
-        if (input && input.value.trim()) {
-            casepmStore.setItem('userSignature', input.value.trim());
-            // Success feedback removed per user request (signature state saved)
-        }
-    }
+    // Profile uses global CasePMUserProfile from base.html (do not override here).
 
     function showPayAppVersionHistory() {
         alert("Version history for Pay Applications will be available after first publish (similar to Budget).");

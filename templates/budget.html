@@ -2,8 +2,8 @@
 
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="{{ url_for('static', filename='js/budget-sync.js') }}"></script>
-<script src="{{ url_for('static', filename='js/accounting-reconcile.js') }}"></script>
+<script src="{{ static_v('js/budget-sync.js') }}"></script>
+<script src="{{ static_v('js/accounting-reconcile.js') }}"></script>
 
 <style>
   /* Hide native datalist dropdown arrow for cleaner look - we use "view all codes" for full selector */
@@ -50,6 +50,13 @@
   tr:hover td.budget-sticky-1 { background: #27272a; }
   thead .budget-sticky-0,
   thead .budget-sticky-1 { z-index: 22; }
+  .casepm-floating-save {
+    position: fixed;
+    bottom: 3.5rem;
+    right: 1rem;
+    z-index: 250;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  }
 </style>
 
 <div id="budgetPrintSheet" class="casepm-print-root" aria-hidden="true"></div>
@@ -98,6 +105,10 @@
         </a>
     </div>
 </div>
+
+<button type="button" id="budgetFloatingSaveBtn" onclick="saveBudget()" class="casepm-floating-save flex items-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-semibold text-white" title="Save budget (Ctrl+S)">
+    <i class="fa-solid fa-save"></i><span>Save</span>
+</button>
 
 <!-- SUMMARY CARDS -->
 <div class="bg-zinc-900 border border-zinc-700 rounded-md p-4 flex-shrink-0 mb-4">
@@ -366,25 +377,10 @@
                 <label class="block text-sm mb-1.5 text-zinc-300">Description</label>
                 <input type="text" id="newCostCodeDescInput" placeholder="e.g. Electrical - Rough In" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white">
             </div>
-            <div>
-                <label class="block text-sm mb-1.5 text-zinc-300">Cost Type</label>
-                <select id="newCostCodeTypeInput" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white"></select>
-            </div>
         </div>
         <div class="flex justify-end gap-3">
             <button onclick="document.getElementById('newCostCodeModal').close()" class="px-5 py-2 rounded-md bg-zinc-700">Cancel</button>
             <button onclick="confirmAddNewCostCode()" class="px-6 py-2 rounded-md bg-emerald-600">Add Cost Code</button>
-        </div>
-    </div>
-</dialog>
-
-<!-- User Profile Modal -->
-<dialog id="userProfileModal" class="modal rounded-md w-full max-w-md p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
-    <div class="p-6">
-        <h3 class="text-lg font-semibold mb-4">User Profile</h3>
-        <p class="text-sm text-zinc-400">Profile settings coming soon.</p>
-        <div class="mt-6 text-right">
-            <button onclick="document.getElementById('userProfileModal').close()" class="px-5 py-2 rounded-md bg-zinc-700">Close</button>
         </div>
     </div>
 </dialog>
@@ -2059,9 +2055,7 @@
     // ==================== CENTERED ALERT ====================
     // Uses global showCenteredAlert from casepm-dialog.js (loaded in base.html)
 
-    function showUserProfileModal() {
-        document.getElementById('userProfileModal').showModal();
-    }
+    // Profile uses global CasePMUserProfile from base.html (do not override here).
 
     // ==================== UNSAVED INDICATOR ====================
     function showUnsavedIndicator() {
@@ -2159,24 +2153,13 @@
     function addNewCostCodeModal() {
         const codeInput = document.getElementById('newCostCodeInput');
         const descInput = document.getElementById('newCostCodeDescInput');
-        const typeSelect = document.getElementById('newCostCodeTypeInput');
         if (codeInput) codeInput.value = '';
         if (descInput) descInput.value = '';
-        if (typeSelect) {
-            typeSelect.innerHTML = '';
-            costTypes.forEach((type) => {
-                const opt = document.createElement('option');
-                opt.value = type;
-                opt.textContent = type;
-                typeSelect.appendChild(opt);
-            });
-        }
         document.getElementById('newCostCodeModal').showModal();
     }
     async function confirmAddNewCostCode() {
         const code = (document.getElementById('newCostCodeInput').value || '').trim();
         const desc = (document.getElementById('newCostCodeDescInput').value || '').trim();
-        const type = (document.getElementById('newCostCodeTypeInput').value || 'Subcontract').trim();
         if (!code || !desc) {
             showCenteredAlert('Cost code and description are required.');
             return;
@@ -2190,7 +2173,7 @@
 
         const exists = customCostCodes.some(c => c.code === code);
         if (!exists) {
-            customCostCodes.push({ code, description: desc, cost_type: type });
+            customCostCodes.push({ code, description: desc });
         } else {
             showCenteredAlert(`Cost code ${code} is already in the list.`);
             return;
