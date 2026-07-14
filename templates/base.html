@@ -169,6 +169,9 @@
             display: none !important;
         }
         .portal-sub .nav-sub-only { display: block !important; }
+        .portal-sub-vendor .nav-link[data-nav-module="dashboard"],
+        .portal-sub-vendor .nav-link[data-nav-module="projects"],
+        .portal-sub-vendor .nav-hide-sub-vendor { display: none !important; }
         .portal-sub .portal-banner-sub,
         .portal-architect .portal-banner-architect {
             display: flex;
@@ -273,7 +276,7 @@
     <script src="{{ static_v('js/developer-actions.js') }}"></script>
     {% endif %}
 </head>
-<body class="bg-zinc-950 text-zinc-200 h-screen overflow-hidden {% if is_sub_portal %}portal-sub{% elif is_architect_portal %}portal-architect{% else %}portal-staff{% endif %}"
+<body class="bg-zinc-950 text-zinc-200 h-screen overflow-hidden {% if is_sub_portal %}portal-sub{% elif is_architect_portal %}portal-architect{% else %}portal-staff{% endif %}{% if is_sub_vendor_portal %} portal-sub-vendor{% endif %}"
       data-page-module="{{ page_module|default('app') }}"
       data-current-user="{{ current_user.full_name if current_user.is_authenticated else '' }}"
       data-current-user-id="{{ current_user.id if current_user.is_authenticated else '' }}"
@@ -442,20 +445,20 @@
                     <div class="section-header px-2 mb-0.5">Main</div>
                 </div>
                 
-                <a href="{{ url_for('dashboard') }}" data-nav-module="dashboard" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'dashboard' %}active{% endif %}">
+                <a href="{{ url_for('dashboard') }}" data-nav-module="dashboard" class="nav-link nav-hide-sub-vendor flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'dashboard' %}active{% endif %}">
                     <i class="fa-solid fa-home w-5"></i>
                     <span>Dashboard</span>
                 </a>
                 
-                <a href="{{ url_for('projects_page') }}" data-nav-module="projects" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'projects_page' %}active{% endif %}">
+                <a href="{{ url_for('projects_page') }}" data-nav-module="projects" class="nav-link nav-staff-only nav-hide-sub-vendor flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'projects_page' %}active{% endif %}">
                     <i class="fa-solid fa-folder w-5"></i>
                     <span>Projects</span>
                 </a>
 
                 <!-- NEW: Email -->
-                <a href="{{ url_for('email_page') }}" data-nav-module="email" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'email_page' %}active{% endif %}">
+                <a href="{{ url_for('email_page') }}{% if is_sub_vendor_portal %}?tab=internal{% endif %}" data-nav-module="email" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'email_page' %}active{% endif %}">
                     <i class="fa-solid fa-envelope w-5"></i>
-                    <span>Email</span>
+                    <span>{% if is_sub_vendor_portal %}Internal Messages{% else %}Email{% endif %}</span>
                 </a>
 
                 <a href="{{ url_for('safety_page', project_id=active_project.id) if active_project else url_for('safety_page') }}" data-nav-module="safety" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'safety_page' %}active{% endif %}">

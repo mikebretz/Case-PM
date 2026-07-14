@@ -406,6 +406,13 @@ def _guard_module_route_access():
         ):
             flash('Client portal access only — module not available.', 'error')
             return redirect(url_for('dashboard'))
+        try:
+            from portal_sub_access import is_sub_vendor_portal_user, SUB_VENDOR_ALLOWED_MODULES
+            if is_sub_vendor_portal_user(current_user) and module_key not in SUB_VENDOR_ALLOWED_MODULES:
+                flash('This module is not available for subcontractor portal users.', 'error')
+                return redirect(url_for('dashboard'))
+        except Exception:
+            pass
         if not user_has_module_access(current_user, module_key, 'view'):
             if request.path.startswith('/api/'):
                 return jsonify({'error': 'You do not have permission to access this module.'}), 403
@@ -811,14 +818,16 @@ def inject_project_context():
     portal = {}
     try:
         from case_workflow import get_role_permissions, user_portal_type, is_sub_user, is_architect_user
+        from portal_sub_access import is_sub_vendor_portal_user
         portal = {
             'portal_type': user_portal_type(current_user),
             'is_sub_portal': is_sub_user(current_user),
             'is_architect_portal': is_architect_user(current_user),
+            'is_sub_vendor_portal': is_sub_vendor_portal_user(current_user),
             'role_permissions': get_role_permissions(current_user),
         }
     except Exception:
-        portal = {'portal_type': 'staff', 'is_sub_portal': False, 'is_architect_portal': False}
+        portal = {'portal_type': 'staff', 'is_sub_portal': False, 'is_architect_portal': False, 'is_sub_vendor_portal': False}
     company_info = {}
     company_logo_url = ''
     try:
@@ -2970,6 +2979,9 @@ def api_current_project():
         project = Project.query.get(project_id)
         if not project:
             return jsonify({'error': 'Invalid project_id'}), 404
+        from project_access import user_can_access_project
+        if not user_can_access_project(current_user, project_id, Project):
+            return jsonify({'error': 'You do not have access to this project.'}), 403
         session[CURRENT_PROJECT_SESSION_KEY] = project_id
         return jsonify({
             'ok': True,
@@ -6045,6 +6057,64 @@ def api_companies_list():
         projs = projects_for_company(Project, c) if include_projects else None
         out.append(serialize_company(c, projects=projs))
     return jsonify({'ok': True, 'companies': out})
+
+
+@app.route('/api/companies/<int:company_id>/users', methods=['GET'])
+@login_required
+def api_company_linked_users(company_id):
+    """Users linked to a company (for Companies → Who to Contact)."""
+    from sqlalchemy import func
+    company = Company.query.get_or_404(company_id)
+    rows = User.query.filter(
+        User.status == 'Active',
+        (
+            (User.company_id == company_id)
+            | (func.lower(User.company) == company.name.lower())
+            | (User.id == company.primary_contact_user_id)
+            | (User.id == company.financial_contact_user_id)
+        ),
+    ).order_by(User.last_name, User.first_name).all()
+    users = []
+    for u in rows:
+        users.append({
+            'id': u.id,
+            'firstName': u.first_name,
+            'lastName': u.last_name,
+            'email': u.email,
+            'phone': u.phone or '',
+            'jobTitle': getattr(u, 'job_title', None) or '',
+            'role': u.role or '',
+            'company_id': u.company_id,
+        })
+    return jsonify({'ok': True, 'users': users})
+
+
+@app.route('/api/companies/<int:company_id>/link-user', methods=['POST'])
+@login_required
+@users_module_required
+def api_company_link_user(company_id):
+    """Assign a user to this company (company membership lives on Companies, not User Management)."""
+    company = Company.query.get_or_404(company_id)
+    body = request.get_json(silent=True) or {}
+    user_id = body.get('user_id')
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'user_id required'}), 400
+    user = User.query.get_or_404(user_id)
+    user.company_id = company.id
+    user.company = company.name
+    db.session.commit()
+    write_audit(
+        'Linked user to company',
+        f'{user.full_name} → {company.name}',
+        module='companies',
+        category='update',
+        target_type='Company',
+        target_id=company.id,
+        commit=True,
+    )
+    return jsonify({'ok': True, 'user_id': user.id, 'company_id': company.id})
 
 
 @app.route('/api/companies/<int:company_id>/projects', methods=['GET'])
@@ -14213,6 +14283,8 @@ def api_get_pay_app_state():
     record, data = load_state(PayAppProjectState, project_id)
     if not record:
         return jsonify({'project_id': project_id, 'data': None, 'version': 0})
+    from financial_security import filter_pay_app_state_for_sub_vendor
+    data = filter_pay_app_state_for_sub_vendor(current_user, data)
     return jsonify({
         'project_id': project_id,
         'data': data,
@@ -14225,7 +14297,7 @@ def api_get_pay_app_state():
 @login_required
 def api_save_pay_app_state():
     from pay_app_persistence import get_pay_app_state as load_state, save_pay_app_state as persist_state
-    from financial_security import require_financial_project_access, sanitize_pay_app_state
+    from financial_security import require_financial_project_access, sanitize_pay_app_state, filter_pay_app_patch_for_sub_vendor
     body = request.get_json(silent=True) or {}
     project_id = body.get('project_id') or get_current_project_id()
     if not project_id:
@@ -14234,13 +14306,29 @@ def api_save_pay_app_state():
         project_id = require_financial_project_access(current_user, project_id, Project)
     except (ValueError, PermissionError) as exc:
         return jsonify({'error': str(exc)}), 403
-    patch = body.get('data') or body.get('patch') or {}
+    patch = filter_pay_app_patch_for_sub_vendor(current_user, body.get('data') or body.get('patch') or {})
     full_replace = bool(body.get('full_replace'))
     record, existing = load_state(PayAppProjectState, project_id)
+    existing = dict(existing or {})
     if full_replace:
         merged = sanitize_pay_app_state(existing, patch)
     else:
         merged = sanitize_pay_app_state(existing, patch)
+    try:
+        from portal_sub_access import is_sub_vendor_portal_user, sub_vendor_company_keys
+        if is_sub_vendor_portal_user(current_user):
+            allowed = sub_vendor_company_keys(current_user)
+            for field in ('subcontractorSOV', 'subSOVStatus', 'subPayAppHistory', 'subPendingSubmissions', 'subPayAppNumbers'):
+                prev = existing.get(field) if isinstance(existing.get(field), dict) else {}
+                new = merged.get(field) if isinstance(merged.get(field), dict) else {}
+                kept = {k: v for k, v in prev.items() if str(k) not in allowed}
+                owned = {k: v for k, v in new.items() if str(k) in allowed}
+                merged[field] = {**kept, **owned}
+            for field in ('contractorSOV', 'currentPayAppPeriod', 'payAppHistory', 'previousPayApps'):
+                if field in existing:
+                    merged[field] = existing[field]
+    except Exception:
+        pass
     record = persist_state(PayAppProjectState, db, project_id, merged, current_user.id)
     reconcile_result = None
     try:

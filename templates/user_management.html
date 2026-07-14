@@ -403,10 +403,8 @@
                         <!-- Company Dropdown (connected to Companies page) -->
                         <div>
                             <label class="block text-sm mb-1.5 text-zinc-300">Company</label>
-                            <select id="companySelect" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
-                                <option value="">-- No Company / Internal --</option>
-                            </select>
-                            <div class="text-[10px] text-zinc-500 mt-0.5">Companies from your Companies page</div>
+                            <div id="companyDisplay" class="w-full bg-zinc-900 border border-zinc-800 rounded-md px-4 py-2 text-sm text-zinc-400">— Not linked — assign in Companies &amp; Vendors</div>
+                            <p class="text-[10px] text-zinc-500 mt-1">Use <strong class="text-zinc-400">Companies → Who to Contact → Add user</strong> to link this person to a vendor/sub.</p>
                         </div>
 
                         <!-- Address with Use Company button -->
@@ -448,7 +446,7 @@
 
                         <div>
                             <label class="flex items-center gap-2 text-sm text-zinc-300 mt-6">
-                                <input type="checkbox" id="accessEnabled" class="accent-emerald-600" checked onchange="syncAccessToCompany()">
+                                <input type="checkbox" id="accessEnabled" class="accent-emerald-600" onchange="syncAccessToCompany()">
                                 <span>Grant Access to Software</span>
                             </label>
                             <div class="text-[10px] text-zinc-500">Turning off also disables in linked company contact.</div>
@@ -876,24 +874,15 @@
     function setPermissionsToDropdowns() {}
 
     // ==================== COMPANY DROPDOWN (connected to Companies page) ====================
-    function populateCompanyDropdown(selectedCompanyName = '') {
-        const select = document.getElementById('companySelect');
-        if (!select) return;
-        select.innerHTML = '<option value="">-- No Company / Internal --</option>';
-        companies.forEach(company => {
-            const name = company.company_name || company.name || company.companyName || '';
-            if (!name) return;
-            const opt = document.createElement('option');
-            opt.value = name;
-            opt.textContent = name;
-            if (name === selectedCompanyName) opt.selected = true;
-            select.appendChild(opt);
-        });
+    function updateCompanyDisplay(companyName) {
+        const el = document.getElementById('companyDisplay');
+        if (!el) return;
+        el.textContent = (companyName || '').trim() || '— Not linked — assign in Companies & Vendors';
     }
 
     function useCompanyAddress() {
-        const companyName = document.getElementById('companySelect').value;
-        if (!companyName) {
+        const companyName = (document.getElementById('companyDisplay')?.textContent || '').trim();
+        if (!companyName || companyName.startsWith('—')) {
             showCenteredAlert("Please select a company first.");
             return;
         }
@@ -1650,7 +1639,7 @@
         loadMailboxAccessForUser(null);
 
         // Populate company dropdown from Companies page
-        populateCompanyDropdown();
+        updateCompanyDisplay('');
 
         // Permissions fresh
         const permContainer = document.getElementById('permissionsContainer');
@@ -1661,7 +1650,7 @@
 
         // Default access on
         const accessChk = document.getElementById('accessEnabled');
-        if (accessChk) accessChk.checked = true;
+        if (accessChk) accessChk.checked = false;
 
         // Default Role for new user
         const roleSelect = document.getElementById('role');
@@ -1760,7 +1749,7 @@
         pendingProfileImageFile = null;
 
         // Company dropdown
-        populateCompanyDropdown(user.company || '');
+        updateCompanyDisplay(user.company || '');
 
         // Phones
         setPhoneNumbersToUI(user.phones || []);
@@ -1885,7 +1874,8 @@
 
             const permissions = getPermissionsFromMatrix();
             const phones = getPhoneNumbersFromUI();
-            const companyName = document.getElementById('companySelect').value;
+            const existingUser = id ? users.find(u => u.id == id) : null;
+            const companyName = existingUser?.company || '';
 
             let oldUserForLog = null;
             if (id) {
@@ -1922,6 +1912,7 @@
                 mark_invite_sent: markInviteSentOnSave,
                 role: document.getElementById('role') ? document.getElementById('role').value : 'Viewer',
                 company: companyName,
+                company_id: existingUser?.company_id || null,
                 address: document.getElementById('address').value.trim(),
                 phones: phones,
                 status: document.getElementById('status').value,

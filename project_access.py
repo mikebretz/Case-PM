@@ -49,6 +49,18 @@ def get_assigned_project_ids(user, Project=None, ProjectMembership=None) -> set[
                 ids.add(int(p.id))
         except Exception:
             pass
+    try:
+        from portal_sub_access import get_commitment_project_ids
+        Commitment = None
+        try:
+            from app import Commitment as CommitmentModel
+            Commitment = CommitmentModel
+        except Exception:
+            pass
+        if Commitment is not None:
+            ids |= get_commitment_project_ids(user, Commitment)
+    except Exception:
+        pass
     return ids
 
 
