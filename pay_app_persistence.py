@@ -623,3 +623,159 @@ def void_subcontractor_commitments(
     if voided:
         db.session.flush()
     return voided
+
+
+SUBCONTRACTOR_PAY_STATE_FIELDS = (
+    'subcontractorSOV', 'subPayAppHistory', 'subPendingSubmissions',
+    'subPayAppNumbers', 'subSOVStatus', 'subLienWaivers', 'subLienWaiverArchive',
+    'previousSubPayAppArchive',
+)
+
+
+def _sub_sov_line_has_activity(line):
+    """True when a line has billings or in-period work that should survive without a commitment."""
+    if not isinstance(line, dict):
+        return False
+    for field in ('billed_to_date', 'co_billed_to_date', 'work_this_period', 'materials_stored'):
+        if float(line.get(field) or 0) != 0:
+            return True
+    return False
+
+
+def _sub_pay_state_has_vendor_activity(state, company_key):
+    """True when a vendor key has pay-app history, pending work, or status beyond an empty SOV."""
+    key = str(company_key).strip()
+    if not key:
+        return False
+
+    for field in ('subPayAppHistory', 'subPendingSubmissions', 'subPayAppNumbers', 'subSOVStatus', 'subLienWaivers'):
+        mapping = state.get(field) or {}
+        if isinstance(mapping, dict) and key in mapping:
+            return True
+
+    archive = state.get('previousSubPayAppArchive') or []
+    if isinstance(archive, list):
+        for entry in archive:
+            if not isinstance(entry, dict):
+                continue
+            entry_key = str(entry.get('companyId') or entry.get('company_id') or '').strip()
+            if entry_key == key:
+                return True
+
+    lien_archive = state.get('subLienWaiverArchive') or {}
+    if isinstance(lien_archive, dict) and key in lien_archive:
+        return True
+
+    return False
+
+
+def _commitment_matches_sov_key(com, company_key):
+    """True when a commitment belongs to the subcontractor SOV bucket key."""
+    from accounting_reconcile import _canonical_company_key
+
+    canon_key = str(company_key).strip()
+    if not canon_key:
+        return False
+    com_canon = _canonical_company_key(getattr(com, 'company_id', None), com.company_name)
+    if canon_key == com_canon:
+        return True
+    if str(getattr(com, 'company_id', None) or '').strip() == canon_key:
+        return True
+    if (getattr(com, 'company_name', None) or '').strip() == canon_key:
+        return True
+    return False
+
+
+def _active_subcontract_commitment_keys(commitments):
+    """Canonical vendor keys for non-void subcontract commitments."""
+    from accounting_reconcile import _canonical_company_key
+
+    keys = set()
+    for com in commitments or []:
+        if getattr(com, 'commitment_type', None) != 'Subcontract':
+            continue
+        if getattr(com, 'status', None) in ('Void', 'Rejected'):
+            continue
+        keys.add(_canonical_company_key(getattr(com, 'company_id', None), com.company_name))
+        cid = str(getattr(com, 'company_id', None) or '').strip()
+        cname = (getattr(com, 'company_name', None) or '').strip()
+        if cid:
+            keys.add(cid)
+        if cname:
+            keys.add(cname)
+    return {k for k in keys if k}
+
+
+def _sov_key_has_active_commitment(company_key, commitments):
+    for com in commitments or []:
+        if getattr(com, 'commitment_type', None) != 'Subcontract':
+            continue
+        if getattr(com, 'status', None) in ('Void', 'Rejected'):
+            continue
+        if _commitment_matches_sov_key(com, company_key):
+            return True
+    return False
+
+
+def prune_orphan_subcontractor_sov(state, commitments=None):
+    """Drop subcontractor SOV vendors/lines that no longer have backing commitments or activity."""
+    from accounting_reconcile import normalize_sub_sov_keys
+
+    state = state or {}
+    sub_sov = normalize_sub_sov_keys(state.get('subcontractorSOV') or {})
+    commitments = commitments or []
+
+    removed_keys = []
+    removed_lines = 0
+    cleaned = {}
+
+    for company_key, lines in (sub_sov or {}).items():
+        has_commitment = _sov_key_has_active_commitment(company_key, commitments)
+        kept_lines = []
+        for line in lines or []:
+            if has_commitment or _sub_sov_line_has_activity(line):
+                kept_lines.append(line)
+            else:
+                removed_lines += 1
+
+        if kept_lines:
+            cleaned[company_key] = kept_lines
+        elif has_commitment or _sub_pay_state_has_vendor_activity(state, company_key):
+            cleaned[company_key] = []
+        else:
+            removed_keys.append(company_key)
+
+    state['subcontractorSOV'] = normalize_sub_sov_keys(cleaned)
+    return {'removed_keys': removed_keys, 'removed_lines': removed_lines}
+
+
+def clear_all_subcontractor_pay_data(state):
+    """Remove all subcontractor SOV and pay-app artifacts from in-memory pay state."""
+    state = state or {}
+    cleared = {}
+    for field in SUBCONTRACTOR_PAY_STATE_FIELDS:
+        before = state.get(field)
+        if field == 'previousSubPayAppArchive':
+            state[field] = []
+            cleared[field] = len(before) if isinstance(before, list) else 0
+        else:
+            count = len(before) if isinstance(before, dict) else 0
+            state[field] = {}
+            cleared[field] = count
+    return {'cleared': cleared}
+
+
+def void_all_subcontractor_commitments(project_id, *, Commitment, db, user_id=None):
+    """Void every subcontract commitment on a project."""
+    voided = []
+    for com in Commitment.query.filter_by(project_id=project_id).all():
+        if getattr(com, 'commitment_type', None) != 'Subcontract':
+            continue
+        if com.status == 'Void':
+            continue
+        com.status = 'Void'
+        com.ball_in_court_role = None
+        voided.append({'id': com.id, 'number': com.number, 'status': com.status})
+    if voided:
+        db.session.flush()
+    return voided

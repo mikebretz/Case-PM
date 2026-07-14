@@ -14243,6 +14243,11 @@ def api_remove_subcontractor_from_project():
     )
 
     purge_result = purge_subcontractor_from_pay_state(pay_state, company_id, company_name)
+    from pay_app_persistence import prune_orphan_subcontractor_sov
+    prune_result = prune_orphan_subcontractor_sov(
+        pay_state,
+        Commitment.query.filter_by(project_id=project_id).all(),
+    )
     record = persist_state(PayAppProjectState, db, project_id, pay_state, current_user.id)
 
     reconcile_result = None
@@ -14269,9 +14274,145 @@ def api_remove_subcontractor_from_project():
         'company_name': company_name,
         'voided_commitments': voided,
         'purge': purge_result,
+        'prune': prune_result,
         'version': record.version,
         'reconcile_result': reconcile_result,
     })
+
+
+@app.route('/api/pay-applications/clear-all-subcontractors', methods=['POST'])
+@login_required
+def api_clear_all_subcontractors_for_project():
+    """Clear all subcontractor SOV/pay-app data for one project and void sub commitments."""
+    from pay_app_persistence import (
+        get_pay_app_state as load_state,
+        save_pay_app_state as persist_state,
+        clear_all_subcontractor_pay_data,
+        void_all_subcontractor_commitments,
+        prune_orphan_subcontractor_sov,
+    )
+    from financial_security import require_financial_project_access
+
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    force = bool(body.get('force', True))
+
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+
+    try:
+        project_id = int(require_financial_project_access(current_user, project_id, Project))
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+
+    approved_subs = [
+        c for c in Commitment.query.filter_by(project_id=project_id).all()
+        if c.commitment_type == 'Subcontract' and c.status not in ('Draft', 'Rejected', 'Void')
+    ]
+    if approved_subs and not force:
+        return jsonify({
+            'error': 'Project has approved subcontract commitments. Use force=true to void them and clear all subcontractor data.',
+            'can_force': True,
+            'commitments': [{'id': c.id, 'number': c.number, 'status': c.status} for c in approved_subs],
+        }), 400
+    if approved_subs and force and current_user.role != 'Admin':
+        return jsonify({'error': 'Only administrators can force-clear subcontractors with approved commitments'}), 403
+
+    _, pay_state = load_state(PayAppProjectState, project_id)
+    pay_state = pay_state or {}
+    voided = void_all_subcontractor_commitments(
+        project_id, Commitment=Commitment, db=db, user_id=current_user.id,
+    ) if force else []
+    cleared = clear_all_subcontractor_pay_data(pay_state)
+    prune_result = prune_orphan_subcontractor_sov(pay_state, [])
+    record = persist_state(PayAppProjectState, db, project_id, pay_state, current_user.id)
+
+    reconcile_result = None
+    try:
+        from accounting_reconcile import reconcile_project_accounting
+        reconcile_result = reconcile_project_accounting(
+            project_id,
+            current_user.id,
+            ChangeOrder=ChangeOrder,
+            ChangeOrderAllocation=ChangeOrderAllocation,
+            Commitment=Commitment,
+            CommitmentAllocation=CommitmentAllocation,
+            BudgetProjectState=BudgetProjectState,
+            PayAppProjectState=PayAppProjectState,
+            db=db,
+        )
+    except Exception as exc:
+        reconcile_result = {'error': str(exc)}
+
+    return jsonify({
+        'ok': True,
+        'project_id': project_id,
+        'voided_commitments': voided,
+        'cleared': cleared,
+        'prune': prune_result,
+        'version': record.version,
+        'reconcile_result': reconcile_result,
+    })
+
+
+@app.route('/api/pay-applications/clear-all-subcontractors-program', methods=['POST'])
+@login_required
+def api_clear_all_subcontractors_program():
+    """Admin: clear subcontractor SOV/pay-app data across every project."""
+    if current_user.role != 'Admin':
+        return jsonify({'error': 'Admin only'}), 403
+
+    from pay_app_persistence import (
+        get_pay_app_state as load_state,
+        save_pay_app_state as persist_state,
+        clear_all_subcontractor_pay_data,
+        void_all_subcontractor_commitments,
+        prune_orphan_subcontractor_sov,
+    )
+
+    body = request.get_json(silent=True) or {}
+    force = bool(body.get('force', True))
+    project_ids = body.get('project_ids')
+    if project_ids:
+        projects = Project.query.filter(Project.id.in_(project_ids)).all()
+    else:
+        projects = Project.query.all()
+
+    results = []
+    for project in projects:
+        approved_subs = [
+            c for c in Commitment.query.filter_by(project_id=project.id).all()
+            if c.commitment_type == 'Subcontract' and c.status not in ('Draft', 'Rejected', 'Void')
+        ]
+        if approved_subs and not force:
+            results.append({
+                'project_id': project.id,
+                'project_name': project.name,
+                'skipped': True,
+                'reason': 'approved_sub_commitments',
+                'commitments': len(approved_subs),
+            })
+            continue
+
+        _, pay_state = load_state(PayAppProjectState, project.id)
+        pay_state = pay_state or {}
+        voided = void_all_subcontractor_commitments(
+            project.id, Commitment=Commitment, db=db, user_id=current_user.id,
+        ) if force else []
+        cleared = clear_all_subcontractor_pay_data(pay_state)
+        prune_result = prune_orphan_subcontractor_sov(pay_state, [])
+        record = persist_state(PayAppProjectState, db, project.id, pay_state, current_user.id)
+        results.append({
+            'project_id': project.id,
+            'project_name': project.name,
+            'voided_commitments': len(voided),
+            'cleared': cleared,
+            'prune': prune_result,
+            'version': record.version,
+        })
+
+    db.session.commit()
+    return jsonify({'ok': True, 'projects': results, 'count': len(results)})
 
 
 @app.route('/api/pay-applications/workflow', methods=['POST'])
