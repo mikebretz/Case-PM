@@ -2201,40 +2201,54 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     function renderSubSOVAdminActions(companyId) {
         const host = document.getElementById('subSovAdminActionsHost');
         if (!host) return;
-        if (!companyId || !isPayAppAdminOrAbove()) {
+        if (!companyId) {
             host.innerHTML = '';
             host.classList.add('hidden');
             return;
         }
         host.classList.remove('hidden');
         const status = getSubSOVStatus(companyId);
-        if (isSubSOVApproved(companyId)) {
+        if (isSubSOVApproved(companyId) || status === 'Pending Approval') {
             host.innerHTML = `
                 <div class="flex flex-wrap items-center gap-2">
-                    <span class="text-[10px] uppercase tracking-wide text-yellow-400/90 font-semibold">Developer / Admin</span>
-                    <button type="button" onclick="rejectApprovedSubSOVToDraft(${jsArg(companyId)})"
+                    <button type="button" onclick="requestRevisionSubSOV(${jsArg(companyId)})"
                             class="px-3 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded text-xs font-medium inline-flex items-center gap-1.5">
-                        <i class="fa-solid fa-undo"></i> <span>Pushback SOV to Draft</span>
+                        <i class="fa-solid fa-redo"></i> <span>Request Revision</span>
                     </button>
+                    <span class="text-[10px] text-zinc-500">Send SOV back to the sub for changes</span>
                 </div>
             `;
-        } else if (status === 'Pending Approval') {
+        } else if (isSubSOVRevisionDraft(companyId)) {
             host.innerHTML = `
-                <div class="flex flex-wrap items-center gap-2">
-                    <span class="text-[10px] uppercase tracking-wide text-yellow-400/90 font-semibold">Developer / Admin</span>
-                    <button type="button" onclick="rejectSubSOVSetup()"
-                            class="px-3 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded text-xs font-medium inline-flex items-center gap-1.5">
-                        <i class="fa-solid fa-undo"></i> <span>Pushback SOV to Sub (Draft)</span>
-                    </button>
+                <div class="text-xs text-amber-400">
+                    Revision in progress — update lines and resubmit for approval.
                 </div>
             `;
         } else {
             host.innerHTML = `
                 <div class="text-xs text-zinc-500">
                     SOV status: <span class="text-zinc-300">${status}</span> —
-                    Pushback to Draft is available once the SOV setup is approved.
+                    Request Revision is available after submit or approval.
                 </div>
             `;
+        }
+    }
+
+    /** Always-available SOV revision entry point (approved → pushback draft; pending → reject setup). */
+    function requestRevisionSubSOV(companyId) {
+        const cid = companyId || selectedSubCompanyId || selectedTrackerSubId;
+        if (!cid) {
+            showCenteredAlert('Select a subcontractor first.', 'warning');
+            return;
+        }
+        const status = getSubSOVStatus(cid);
+        if (isSubSOVApproved(cid)) {
+            rejectApprovedSubSOVToDraft(cid);
+        } else if (status === 'Pending Approval') {
+            if (!selectedSubCompanyId) selectedSubCompanyId = cid;
+            rejectSubSOVSetup();
+        } else {
+            showCenteredAlert(`SOV is currently "${status}". Request Revision is available when the SOV is approved or pending approval.`, 'info');
         }
     }
 
@@ -5035,6 +5049,13 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         openSeedSOVFromBudgetModal('sub', selectedSubCompanyId);
     }
 
+    function seedBudgetLineKey(line) {
+        if (!line) return '';
+        const code = (line.cost_code || '').trim();
+        const ctype = (line.cost_type || '').trim();
+        return `${code}::${ctype}`;
+    }
+
     function openSeedSOVFromBudgetModal(target, companyId) {
         const budgetLines = JSON.parse(casepmStore.getItem('budgetLines')) || [];
         if (budgetLines.length === 0) {
@@ -5049,11 +5070,11 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             : contractorSOV;
         const title = isSub ? 'Seed Subcontractor SOV from Budget' : 'Seed Contractor SOV from Budget';
         const help = isSub
-            ? 'Select budget lines to import as original commitment amounts for this subcontractor. Existing cost codes will be skipped.'
-            : 'Select budget lines to import as Contractor SOV lines. Existing cost codes will be skipped.';
+            ? 'Select budget lines to import as original commitment amounts for this subcontractor. Existing cost code + cost type combinations will be skipped.'
+            : 'Select budget lines to import as Contractor SOV lines. Existing cost code + cost type combinations will be skipped.';
 
         const modal = document.createElement('dialog');
-        modal.className = 'modal rounded-md p-0 text-white w-full max-w-2xl';
+        modal.className = 'modal rounded-md p-0 text-white w-full max-w-3xl';
         modal.style.backgroundColor = '#18181b';
         modal.style.border = '1px solid #3f3f46';
 
@@ -5067,7 +5088,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 </div>
                 <div class="text-sm text-zinc-400 mb-3">${help}</div>
                 
-                <input type="text" id="seedSearchInput" placeholder="Search cost codes or descriptions..." 
+                <input type="text" id="seedSearchInput" placeholder="Search cost codes, cost types, or descriptions..." 
                        class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm mb-3 focus:border-emerald-600"
                        oninput="filterSeedTable(this)">
                 
@@ -5077,6 +5098,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                             <tr>
                                 <th class="px-3 py-2 w-8"><input type="checkbox" id="seedSelectAll"></th>
                                 <th class="px-3 py-2 text-left font-medium text-zinc-400 w-28">Cost Code</th>
+                                <th class="px-3 py-2 text-left font-medium text-zinc-400 w-32">Cost Type</th>
                                 <th class="px-3 py-2 text-left font-medium text-zinc-400">Description</th>
                                 <th class="px-3 py-2 text-right font-medium text-zinc-400 w-28">Original Budget</th>
                             </tr>
@@ -5085,15 +5107,18 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         `;
 
         budgetLines.forEach((b, idx) => {
+            const lineKey = seedBudgetLineKey(b);
             const exists = isSub
-                ? existingLines.some(s => s.cost_code === b.cost_code)
-                : contractorSOV.some(s => s.cost_code === b.cost_code);
+                ? existingLines.some(s => seedBudgetLineKey(s) === lineKey)
+                : contractorSOV.some(s => seedBudgetLineKey(s) === lineKey);
             const checked = exists ? '' : 'checked';
             const disabled = exists ? 'disabled class="opacity-50"' : '';
+            const costTypeLabel = b.cost_type || '—';
             html += `
                 <tr data-idx="${idx}" onclick="toggleSeedRowCheckbox(this)" style="cursor: pointer;">
                     <td class="px-3 py-1.5 text-center" onclick="event.stopImmediatePropagation();"><input type="checkbox" class="seed-checkbox" value="${idx}" ${checked} ${disabled} onclick="event.stopImmediatePropagation();"></td>
                     <td class="px-3 py-1.5 font-mono text-emerald-400 text-xs">${b.cost_code}</td>
+                    <td class="px-3 py-1.5 text-xs text-zinc-300">${costTypeLabel}</td>
                     <td class="px-3 py-1.5 text-sm">${b.description}</td>
                     <td class="px-3 py-1.5 text-right font-mono text-sm">${formatCurrency(b.original_budget || 0)}</td>
                 </tr>
@@ -5202,10 +5227,11 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         selectedIdxs.forEach(idx => {
             const b = budgetLines[idx];
             if (!b) return;
-            const key = b.cost_code;
+            const key = seedBudgetLineKey(b);
             if (!grouped.has(key)) {
                 grouped.set(key, {
                     cost_code: b.cost_code,
+                    cost_type: b.cost_type || '',
                     description: b.description,
                     original_budget: 0,
                     notes: b.notes || ''
@@ -5223,11 +5249,12 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             }
             if (!subcontractorSOV[seedCompanyId]) subcontractorSOV[seedCompanyId] = [];
             grouped.forEach((g, key) => {
-                const exists = subcontractorSOV[seedCompanyId].some(s => s.cost_code === key);
+                const exists = subcontractorSOV[seedCompanyId].some(s => seedBudgetLineKey(s) === key);
                 if (!exists) {
                     subcontractorSOV[seedCompanyId].push({
                         id: Date.now() + Math.random(),
                         cost_code: g.cost_code,
+                        cost_type: g.cost_type,
                         description: g.description,
                         original_commitment: g.original_budget,
                         change_orders: 0,
@@ -5243,11 +5270,12 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             logPayAppAudit('SUB_SOV_SEEDED_FROM_BUDGET', { companyId: seedCompanyId, linesAdded: added });
         } else {
             grouped.forEach((g, key) => {
-                const exists = contractorSOV.some(s => s.cost_code === key);
+                const exists = contractorSOV.some(s => seedBudgetLineKey(s) === key);
                 if (!exists) {
                     contractorSOV.push({
                         id: Date.now() + Math.random(),
                         cost_code: g.cost_code,
+                        cost_type: g.cost_type,
                         description: g.description,
                         original: g.original_budget,
                         co_amount: 0,
@@ -5556,11 +5584,6 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                             <i class="fa-solid fa-check-double"></i> 
                             <span>Approve Application</span>
                         </button>
-                        <button onclick="requestRevisionSubPayApp(${jsArg(selectedSubCompanyId)})" 
-                                class="px-5 py-2 bg-yellow-600 hover:bg-yellow-500 text-white rounded text-sm font-medium flex items-center gap-2">
-                            <i class="fa-solid fa-redo"></i> 
-                            <span>Request Revision</span>
-                        </button>
                         ${hasWaiver ? `
                             <div class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-900/60 border border-emerald-600 rounded-md text-sm ml-2">
                                 <i class="fa-solid fa-file-contract text-emerald-400"></i>
@@ -5578,6 +5601,13 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                         </div>
                     `;
                 }
+                buttonsHTML += `
+                    <button onclick="requestRevisionSubPayApp(${jsArg(selectedSubCompanyId)})" 
+                            class="px-5 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded text-sm font-medium flex items-center gap-2">
+                        <i class="fa-solid fa-redo"></i> 
+                        <span>Request Revision (Pay App)</span>
+                    </button>
+                `;
             } else {
                 // Normal ready-to-bill state
                 statusMessage = isZeroComplianceDraft
@@ -5640,18 +5670,13 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                     <div class="px-4 py-3 flex items-center gap-3 flex-wrap">
                         <span class="text-emerald-400 font-medium">${statusMessage}</span>
                         ${buttonsHTML}
+                        <button onclick="requestRevisionSubSOV(${jsArg(selectedSubCompanyId)})" class="px-4 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                            <i class="fa-solid fa-redo"></i> <span>Request Revision</span>
+                        </button>
                         <button onclick="viewSubSOVAudit()" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5 ml-auto">
                             <i class="fa-solid fa-history"></i> <span>Approval History</span>
                         </button>
                     </div>
-                    ${isPayAppAdminOrAbove() ? `
-                    <div class="px-4 py-2 flex items-center gap-3 border-t border-zinc-700 bg-yellow-950/20">
-                        <span class="text-xs text-yellow-400/90 font-medium">Admin — Schedule of Values</span>
-                        <button onclick="rejectApprovedSubSOVToDraft(${jsArg(selectedSubCompanyId)})" class="px-4 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
-                            <i class="fa-solid fa-undo"></i> <span>Pushback SOV to Draft</span>
-                        </button>
-                    </div>
-                    ` : ''}
                 </div>
             `;
         }
@@ -6567,10 +6592,6 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     }
 
     function rejectApprovedSubSOVToDraft(companyId) {
-        if (!isPayAppAdminOrAbove()) {
-            showCenteredAlert('Only Admin or Developer can push an approved SOV back to draft.', 'warning');
-            return;
-        }
         if (!isSubSOVApproved(companyId)) {
             showCenteredAlert('Only an approved subcontractor SOV can be pushed back to draft.', 'warning');
             return;
@@ -6585,7 +6606,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 <div class="flex items-start gap-3 mb-4">
                     <i class="fa-solid fa-undo text-yellow-400 text-xl mt-0.5"></i>
                     <div>
-                        <h3 class="text-lg font-semibold">Pushback to Draft?</h3>
+                        <h3 class="text-lg font-semibold">Request Revision?</h3>
                         <p class="text-sm text-zinc-400 mt-1">Returns this subcontractor SOV to Draft for revision. Lines with billed-to-date amounts cannot be changed or deleted. Lines with no billing may still be edited. New lines may be added. Resubmit and approve when ready.</p>
                     </div>
                 </div>
@@ -6593,7 +6614,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 <textarea id="subSovRejectNotes" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm" placeholder="Explain what needs to change"></textarea>
                 <div class="flex justify-end gap-3 mt-6">
                     <button id="cancelRejectDraftBtn" class="px-6 py-2.5 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm">Cancel</button>
-                    <button id="confirmRejectDraftBtn" class="px-8 py-2.5 rounded-md bg-yellow-600 hover:bg-yellow-500 text-sm font-semibold">Pushback to Draft</button>
+                    <button id="confirmRejectDraftBtn" class="px-8 py-2.5 rounded-md bg-yellow-600 hover:bg-yellow-500 text-sm font-semibold">Request Revision</button>
                 </div>
             </div>
         `;
@@ -9887,13 +9908,12 @@ function printSubcontractorG703(companyId) {
             </div>
         `;
 
-        // Workflow bar — admin SOV pushback when a sub is selected
-        if (selectedTrackerSubId && isPayAppAdminOrAbove() && isSubSOVApproved(selectedTrackerSubId)) {
+        // Workflow bar — Request Revision when a sub is selected
+        if (selectedTrackerSubId) {
             workflowBar.innerHTML = `
                 <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
-                    <span class="text-xs text-yellow-400/90 font-medium">Admin — Schedule of Values</span>
-                    <button onclick="rejectApprovedSubSOVToDraft(${jsArg(selectedTrackerSubId)})" class="ml-auto px-4 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
-                        <i class="fa-solid fa-undo"></i> <span>Pushback SOV to Draft</span>
+                    <button onclick="requestRevisionSubSOV(${jsArg(selectedTrackerSubId)})" class="px-4 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-redo"></i> <span>Request Revision (SOV)</span>
                     </button>
                 </div>
             `;
@@ -10155,12 +10175,10 @@ function printSubcontractorG703(companyId) {
             </div>
 
             <div class="flex flex-wrap gap-2 pt-2 border-t border-zinc-700">
-                ${isPayAppAdminOrAbove() && isSubSOVApproved(companyId) ? `
-                    <button onclick="rejectApprovedSubSOVToDraft(${jsArg(companyId)});" 
-                            class="px-4 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white text-xs rounded font-medium flex items-center gap-1.5">
-                        <i class="fa-solid fa-undo"></i> <span>Pushback SOV to Draft (Admin)</span>
-                    </button>
-                ` : ''}
+                <button onclick="requestRevisionSubSOV(${jsArg(companyId)});" 
+                        class="px-4 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white text-xs rounded font-medium flex items-center gap-1.5">
+                    <i class="fa-solid fa-redo"></i> <span>Request Revision (SOV)</span>
+                </button>
                 ${canRequestRevision ? `
                     <button onclick="requestRevisionSubPayApp(${jsArg(companyId)}${revisionArg});" 
                             class="px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded font-medium flex items-center gap-1.5">
