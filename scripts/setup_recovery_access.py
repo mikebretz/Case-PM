@@ -46,7 +46,45 @@ def main() -> int:
         help='Read email/password from CASEPM_SETUP_* env vars (used by SETUP-RECOVERY-ACCESS.bat)',
     )
     parser.add_argument('--regenerate-token', action='store_true', help='Generate a new one-click access token')
+    parser.add_argument(
+        '--token-only',
+        action='store_true',
+        help='Only regenerate access_token using existing recovery.access (no password prompt)',
+    )
     args = parser.parse_args()
+
+    os.makedirs('instance', exist_ok=True)
+    path = os.path.join('instance', 'recovery.access')
+    existing = {}
+    if os.path.isfile(path):
+        try:
+            with open(path, encoding='utf-8') as fh:
+                existing = json.load(fh) or {}
+        except (OSError, json.JSONDecodeError):
+            existing = {}
+
+    if args.token_only or (args.regenerate_token and existing.get('email') and existing.get('password') is not None):
+        email = str(existing.get('email', '')).strip().lower()
+        password = existing.get('password')
+        if not email or password is None:
+            print('instance/recovery.access is missing email or password. Run full setup.', file=sys.stderr)
+            return 1
+        token = secrets.token_urlsafe(32)
+        payload = {
+            **existing,
+            'email': email,
+            'password': password,
+            'access_token': token,
+            'note': existing.get('note') or 'Owner break-glass access. Back up this file off-site. Never commit to git.',
+        }
+        with open(path, 'w', encoding='utf-8') as fh:
+            json.dump(payload, fh, indent=2)
+            fh.write('\n')
+        print('')
+        print('Recovery access_token regenerated in instance/recovery.access')
+        print(f'  Email:  {email}')
+        print('')
+        return 0
 
     email = (args.email or '').strip().lower()
     password = args.password or ''
@@ -67,16 +105,6 @@ def main() -> int:
         print('Password is required.', file=sys.stderr)
         return 1
 
-    os.makedirs('instance', exist_ok=True)
-    path = os.path.join('instance', 'recovery.access')
-    existing = {}
-    if os.path.isfile(path):
-        try:
-            with open(path, encoding='utf-8') as fh:
-                existing = json.load(fh) or {}
-        except (OSError, json.JSONDecodeError):
-            existing = {}
-
     token = existing.get('access_token') or ''
     if args.regenerate_token or not token:
         token = secrets.token_urlsafe(32)
@@ -96,7 +124,7 @@ def main() -> int:
     print(f'  Email:  {email}')
     print('  Password: (stored in file — not shown)')
     print('')
-    print('Use RECOVERY-ACCESS.bat to open the recovery login, or browse to:')
+    print('Use EMERGENCY-RECOVERY.bat or RECOVERY-ACCESS.bat to open the recovery login, or browse to:')
     print('  http://127.0.0.1:5000/recovery')
     print('')
     print('Keep a copy of instance/recovery.access on a USB drive or personal cloud folder.')
