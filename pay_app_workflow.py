@@ -369,8 +369,61 @@ def _resolve_sub_sov_status(state, company_key):
     return sub_sov_status, key, entry
 
 
-def sub_sov_workflow_action(state, company_key, action, user):
+def _clear_sub_sov_revision_fields(entry):
+  """Remove revision / legacy unlock metadata after re-approval."""
+  for field in (
+      'revision_requested_by_id', 'revision_requested_at', 'revision_notes',
+      'revision_locked_line_ids', 'revision_locked_billed',
+      'unlockedBy', 'unlockedDate',
+  ):
+      entry.pop(field, None)
+  return entry
+
+
+def sub_sov_reject_approved_to_draft(state, company_key, user, comments=''):
+    """Admin/Developer: push an approved sub SOV back to Draft for controlled revision."""
+    from developer_tools import is_admin_or_developer
+
+    if not is_admin_or_developer(user):
+        raise ValueError('Only Admin or Developer can reject an approved sub SOV to draft')
+
+    sub_sov_status, key, entry = _resolve_sub_sov_status(state, company_key)
+    status = entry.get('status') or 'Draft'
+    if status != 'Approved':
+        raise ValueError('Only an approved sub SOV can be rejected to draft')
+
+    sub_sov = state.get('subcontractorSOV') or {}
+    lines = sub_sov.get(key) or sub_sov.get(company_key) or []
+    locked_line_ids = []
+    locked_billed = {}
+    for line in lines or []:
+        if not isinstance(line, dict):
+            continue
+        line_id = line.get('id')
+        if line_id is None:
+            continue
+        locked_line_ids.append(line_id)
+        locked_billed[str(line_id)] = {
+            'billed_to_date': float(line.get('billed_to_date') or 0),
+            'co_billed_to_date': float(line.get('co_billed_to_date') or 0),
+        }
+
+    entry = _clear_sub_sov_revision_fields(entry)
+    entry['status'] = 'Draft'
+    entry['ball_in_court_role'] = SUB_SOV_BALL['Draft']
+    entry['revision_requested_by_id'] = getattr(user, 'id', None)
+    entry['revision_requested_at'] = datetime.utcnow().isoformat() + 'Z'
+    entry['revision_notes'] = (comments or '').strip()
+    entry['revision_locked_line_ids'] = locked_line_ids
+    entry['revision_locked_billed'] = locked_billed
+    sub_sov_status[key] = entry
+    state['subSOVStatus'] = sub_sov_status
+    return entry['status'], False
+
+
+def sub_sov_workflow_action(state, company_key, action, user, body=None):
     action = (action or '').lower()
+    body = body or {}
     sub_sov_status, key, entry = _resolve_sub_sov_status(state, company_key)
     status = entry.get('status') or 'Draft'
     if action == 'submit':
@@ -389,9 +442,12 @@ def sub_sov_workflow_action(state, company_key, action, user):
             raise ValueError('Only Project Manager can reject sub SOV setup')
         entry['status'] = 'Rejected'
         entry['ball_in_court_role'] = SUB_SOV_BALL['Rejected']
+        _clear_sub_sov_revision_fields(entry)
         sub_sov_status[key] = entry
         state['subSOVStatus'] = sub_sov_status
         return entry['status'], False
+    if action == 'reject_to_draft':
+        return sub_sov_reject_approved_to_draft(state, company_key, user, body.get('comments') or '')
     if action == 'approve':
         if status != 'Pending Approval':
             raise ValueError('Sub SOV is not pending approval')
@@ -401,10 +457,11 @@ def sub_sov_workflow_action(state, company_key, action, user):
         entry['ball_in_court_role'] = None
         entry['approved_at'] = datetime.utcnow().isoformat() + 'Z'
         entry['approved_by_id'] = getattr(user, 'id', None)
+        _clear_sub_sov_revision_fields(entry)
         sub_sov_status[key] = entry
         state['subSOVStatus'] = sub_sov_status
         return entry['status'], True
-    raise ValueError('action must be submit, approve, or reject')
+    raise ValueError('action must be submit, approve, reject, or reject_to_draft')
 
 
 def sub_pay_app_workflow_action(state, company_key, action, user, body=None):
@@ -592,10 +649,10 @@ def process_pay_app_workflow(
     """Unified pay app workflow for API + approval responder."""
     body = body or {}
     action = (action or '').lower()
-    if action not in ('submit', 'approve', 'reject'):
-        raise ValueError('action must be submit, approve, or reject')
+    if action not in ('submit', 'approve', 'reject', 'reject_to_draft'):
+        raise ValueError('action must be submit, approve, reject, or reject_to_draft')
     comments = (body.get('comments') or body.get('comment') or '').strip()
-    if action == 'reject' and not comments:
+    if action in ('reject', 'reject_to_draft') and not comments:
         raise ValueError('Rejection requires a comment')
 
     entity_type = (entity_type or '').lower()
@@ -743,16 +800,16 @@ def process_pay_app_workflow(
             raise ValueError('company_id required for sub SOV workflow')
         _, _, entry = _resolve_sub_sov_status(state, company_key)
         old_status = entry.get('status') or 'Draft'
-        new_status, final_approved = sub_sov_workflow_action(state, company_key, action, user)
+        new_status, final_approved = sub_sov_workflow_action(state, company_key, action, user, body)
         append_pay_app_approval_history(state, 'sub_sov', company_key, action, user, comments, old_status, new_status)
         if action == 'submit':
             notify_pay_app_ball(project_id, 'Project Manager',
                 title=f'Sub SOV submitted — {company_key}',
                 description='Subcontractor SOV setup requires PM approval.',
                 entity_type='sub_sov', entity_key=company_key, User=User)
-        elif action == 'reject':
+        elif action in ('reject', 'reject_to_draft'):
             notify_pay_app_ball(project_id, 'Subcontractor',
-                title='Sub SOV revision requested',
+                title='Sub SOV revision requested' if action == 'reject' else 'Approved Sub SOV returned to draft',
                 description=comments,
                 entity_type='sub_sov', entity_key=company_key, User=User)
     else:

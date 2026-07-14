@@ -2171,6 +2171,40 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         return statusData.status || 'Draft';
     }
 
+    function getSubSOVStatusEntry(companyId) {
+        if (!companyId) return {};
+        return subSOVStatus[companyId] || subSOVStatus[String(companyId)] || {};
+    }
+
+    function isPayAppAdminOrAbove() {
+        const el = document.documentElement;
+        return el.dataset.isAdmin === '1' || el.dataset.isDeveloper === '1';
+    }
+
+    function isSubSOVRevisionDraft(companyId) {
+        const entry = getSubSOVStatusEntry(companyId);
+        return entry.status === 'Draft' && !!(entry.revisionRequestedAt || entry.revision_requested_at);
+    }
+
+    function revisionLockedLineIdsFor(entry) {
+        return entry.revisionLockedLineIds || entry.revision_locked_line_ids || [];
+    }
+
+    function revisionLockedBilledFor(entry) {
+        return entry.revisionLockedBilled || entry.revision_locked_billed || {};
+    }
+
+    function isRevisionLockedLine(companyId, lineId) {
+        if (!companyId || lineId == null) return false;
+        const ids = revisionLockedLineIdsFor(getSubSOVStatusEntry(companyId));
+        return ids.some((id) => String(id) === String(lineId));
+    }
+
+    function getRevisionLockedBilledSnapshot(companyId, lineId) {
+        const snap = revisionLockedBilledFor(getSubSOVStatusEntry(companyId));
+        return snap[String(lineId)] || snap[lineId] || null;
+    }
+
     function updateSubSOVStatus(companyId, newStatus, extra = {}) {
         if (!companyId) return;
         if (!subSOVStatus[companyId]) subSOVStatus[companyId] = {};
@@ -5362,9 +5396,13 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         let workflowHTML = '';
 
         if (currentStatus === 'Draft' || currentStatus === 'Rejected') {
+            const revisionDraft = isSubSOVRevisionDraft(selectedSubCompanyId);
+            const setupMessage = revisionDraft
+                ? '<span class="text-amber-300">Revision mode — existing lines and billed-to-date amounts are locked. Add new lines or edit commitments on existing lines, then resubmit for approval.</span>'
+                : '<span class="text-zinc-400">Setup Mode — Build the original Schedule of Values. When ready, submit for approval.</span>';
             workflowHTML = `
                 <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
-                    <span class="text-zinc-400">Setup Mode — Build the original Schedule of Values. When ready, submit for approval.</span>
+                    ${setupMessage}
                     <button onclick="seedSubcontractorSOVFromBudget()" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-download"></i> <span>Seed from Budget</span>
                     </button>
@@ -5532,10 +5570,12 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                     <span class="text-emerald-400 font-medium">${statusMessage}</span>
                     ${buttonsHTML}
                     
-                    <button onclick="unlockSubSOV(${jsArg(selectedSubCompanyId)})" class="ml-auto px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
-                        <i class="fa-solid fa-unlock"></i> <span>Unlock SOV (Admin)</span>
+                    ${isPayAppAdminOrAbove() ? `
+                    <button onclick="rejectApprovedSubSOVToDraft(${jsArg(selectedSubCompanyId)})" class="ml-auto px-4 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-undo"></i> <span>Reject to Draft (Admin)</span>
                     </button>
-                    <button onclick="viewSubSOVAudit()" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                    ` : ''}
+                    <button onclick="viewSubSOVAudit()" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5${isPayAppAdminOrAbove() ? '' : ' ml-auto'}">
                         <i class="fa-solid fa-history"></i> <span>Approval History</span>
                     </button>
                 </div>
@@ -5594,7 +5634,8 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         const company = companies.find(c => c.id == selectedSubCompanyId);
         const isPrimaryContact = company && isUserPrimaryContactForCompany(company);
         const subStatus = getSubSOVStatus(selectedSubCompanyId);
-        const isSubApprovedLocked = (subStatus === 'Approved') && !(subSOVStatus[selectedSubCompanyId] && subSOVStatus[selectedSubCompanyId].unlockedBy);
+        const revisionDraft = isSubSOVRevisionDraft(selectedSubCompanyId);
+        const isSubApprovedLocked = (subStatus === 'Approved') && !revisionDraft;
 
         // Header
         thead.innerHTML = `
@@ -5688,6 +5729,8 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 row.ondblclick = () => editSubSOVLine(selectedSubCompanyId, line.id);
             }
 
+            const lineDeleteBlocked = revisionDraft && isRevisionLockedLine(selectedSubCompanyId, line.id);
+
             // Calculate Current = Original + Change Orders
             const coAmount = line.change_orders || 0;
             const currentTotal = current + coAmount;
@@ -5709,7 +5752,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 <td class="px-4 py-2 text-[15px] text-zinc-400 notes-cell" title="${(line.notes || '').replace(/"/g, '&quot;')}">${line.notes || ''}</td>
                 <td class="px-3 py-2 text-center">
                     <button onclick="event.stopImmediatePropagation(); showSOVLineAudit(${line.id}, 'sub', ${jsArg(selectedSubCompanyId)})" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
-                    ${!isSubApprovedLocked ? `<button onclick="event.stopImmediatePropagation(); deleteSubSOVLine(${jsArg(selectedSubCompanyId)}, ${line.id})" class="text-red-400 hover:text-red-300 p-1 ml-1" title="Delete"><i class="fa-solid fa-trash"></i></button>` : ''}
+                    ${!isSubApprovedLocked && !lineDeleteBlocked ? `<button onclick="event.stopImmediatePropagation(); deleteSubSOVLine(${jsArg(selectedSubCompanyId)}, ${line.id})" class="text-red-400 hover:text-red-300 p-1 ml-1" title="Delete"><i class="fa-solid fa-trash"></i></button>` : ''}
                 </td>
             `;
             tbody.appendChild(row);
@@ -5896,11 +5939,11 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
         // Robust Primary Contact check
         const isPrimary = company && isUserPrimaryContactForCompany(company);
-        const statusData = subSOVStatus[companyId] || {};
+        const statusData = getSubSOVStatusEntry(companyId);
         const isApproved = statusData.status === 'Approved';
-        const isUnlocked = statusData.status === 'Draft' && statusData.unlockedBy;
-        // When adding a new line (!lineId), always allow editing structure (button is hidden when Approved)
-        const canEditStructure = devUnlockActive() || !lineId || !isApproved || isUnlocked;
+        const revisionDraft = isSubSOVRevisionDraft(companyId);
+        const isRevisionLockedExisting = revisionDraft && lineId && isRevisionLockedLine(companyId, lineId);
+        const canEditStructure = devUnlockActive() || !lineId || !isApproved || isRevisionLockedExisting;
 
         let line = null;
         if (lineId && subcontractorSOV[companyId]) {
@@ -5911,7 +5954,8 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             <div class="mb-4">
                 <div class="text-sm text-zinc-400">For: <span class="font-medium text-white">${company ? (company.name || company.company_name) : 'Subcontractor'}</span></div>
                 ${isPrimary ? '<div class="text-xs text-emerald-400 mt-1">Primary Contact Mode — Original Commitment locked</div>' : ''}
-                ${isApproved && !canEditStructure ? '<div class="text-xs text-amber-400 mt-1">SOV is Approved & Locked. Use "Unlock for Revision" (Admin only) to edit structure.</div>' : ''}
+                ${isApproved && !canEditStructure ? '<div class="text-xs text-amber-400 mt-1">SOV is Approved & Locked. Use "Reject to Draft" (Admin only) to request structural revisions.</div>' : ''}
+                ${isRevisionLockedExisting ? '<div class="text-xs text-amber-400 mt-1">Revision mode — billed-to-date on this line cannot change. Commitment fields may be edited.</div>' : ''}
             </div>
 
             <div class="space-y-4">
@@ -6315,14 +6359,20 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         if (lineId) {
             const line = subcontractorSOV[companyId].find(l => l.id === lineId);
             if (line) {
+                const prevBilled = line.billed_to_date || 0;
+                const prevCoBilled = line.co_billed_to_date || 0;
                 line.cost_code = costCode;
                 line.description = desc;
                 if (!document.getElementById('subOriginal').readOnly) line.original_commitment = original;
                 line.change_orders = changeOrders;
                 line.notes = notes;
-                // NOTE: work_this_period, materials_stored, and billed_to_date are NOT touched here.
-                // They are managed exclusively via the separate Billing modal (saveSubSOVBillingLine)
-                // when the Sub SOV is in Approved status and you are entering period billing amounts.
+                if (isSubSOVRevisionDraft(companyId) && isRevisionLockedLine(companyId, lineId)) {
+                    const snap = getRevisionLockedBilledSnapshot(companyId, lineId);
+                    line.billed_to_date = snap ? snap.billed_to_date : prevBilled;
+                    line.co_billed_to_date = snap ? snap.co_billed_to_date : prevCoBilled;
+                }
+                // NOTE: work_this_period, materials_stored, and billed_to_date are NOT touched here
+                // except in revision mode where billed_to_date is frozen to the approved snapshot.
             }
         } else {
             subcontractorSOV[companyId].push({
@@ -6346,6 +6396,10 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     }
 
     async function deleteSubSOVLine(companyId, lineId) {
+        if (isSubSOVRevisionDraft(companyId) && isRevisionLockedLine(companyId, lineId)) {
+            showCenteredAlert('Existing SOV lines cannot be deleted during revision. Add new lines only.', 'warning');
+            return;
+        }
         if (!await payAppConfirm("Delete this line from the subcontractor's SOV?", { title: 'Delete Line', danger: true })) return;
         let changed = false;
         subCompanyKeyVariants(companyId).forEach((key) => {
@@ -6425,8 +6479,16 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         renderPayAppContent();
     }
 
-    function unlockSubSOV(companyId) {
-        // Styled centered confirmation modal (replaces native confirm which appears at top)
+    function rejectApprovedSubSOVToDraft(companyId) {
+        if (!isPayAppAdminOrAbove()) {
+            showCenteredAlert('Only Admin or Developer can reject an approved SOV to draft.', 'warning');
+            return;
+        }
+        if (getSubSOVStatus(companyId) !== 'Approved') {
+            showCenteredAlert('Only an approved subcontractor SOV can be rejected to draft.', 'warning');
+            return;
+        }
+
         const confirmModal = document.createElement('dialog');
         confirmModal.className = 'modal rounded-md w-full max-w-md p-0 text-white';
         confirmModal.style.backgroundColor = '#18181b';
@@ -6434,33 +6496,49 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         confirmModal.innerHTML = `
             <div class="p-6">
                 <div class="flex items-start gap-3 mb-4">
-                    <i class="fa-solid fa-unlock text-amber-400 text-xl mt-0.5"></i>
+                    <i class="fa-solid fa-undo text-yellow-400 text-xl mt-0.5"></i>
                     <div>
-                        <h3 class="text-lg font-semibold">Unlock Subcontractor SOV for Revision?</h3>
-                        <p class="text-sm text-zinc-400 mt-1">This will allow changes to Original Commitment and structure. Only do this if absolutely necessary. The subcontractor will need to resubmit for approval afterward.</p>
+                        <h3 class="text-lg font-semibold">Reject Approved SOV to Draft?</h3>
+                        <p class="text-sm text-zinc-400 mt-1">Returns this subcontractor SOV to Draft for revision. Existing lines and billed-to-date amounts stay locked. New lines may be added. The sub must resubmit and the SOV must be approved again.</p>
                     </div>
                 </div>
+                <label class="block text-sm text-zinc-300 mb-1.5">Revision notes (required)</label>
+                <textarea id="subSovRejectNotes" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm" placeholder="Explain what needs to change"></textarea>
                 <div class="flex justify-end gap-3 mt-6">
-                    <button id="cancelUnlockBtn" class="px-6 py-2.5 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm">Cancel</button>
-                    <button id="confirmUnlockBtn" class="px-8 py-2.5 rounded-md bg-amber-600 hover:bg-amber-500 text-sm font-semibold">Yes, Unlock for Revision</button>
+                    <button id="cancelRejectDraftBtn" class="px-6 py-2.5 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm">Cancel</button>
+                    <button id="confirmRejectDraftBtn" class="px-8 py-2.5 rounded-md bg-yellow-600 hover:bg-yellow-500 text-sm font-semibold">Reject to Draft</button>
                 </div>
             </div>
         `;
         document.body.appendChild(confirmModal);
         confirmModal.showModal();
 
-        confirmModal.querySelector('#cancelUnlockBtn').onclick = () => {
+        confirmModal.querySelector('#cancelRejectDraftBtn').onclick = () => {
             confirmModal.close();
             confirmModal.remove();
         };
-        confirmModal.querySelector('#confirmUnlockBtn').onclick = () => {
+        confirmModal.querySelector('#confirmRejectDraftBtn').onclick = () => {
+            const comments = (confirmModal.querySelector('#subSovRejectNotes')?.value || '').trim();
+            if (!comments) {
+                showCenteredAlert('Revision notes are required.', 'warning');
+                return;
+            }
             confirmModal.close();
             confirmModal.remove();
             const company = companies.find(c => c.id == companyId);
-            updateSubSOVStatus(companyId, 'Draft', { unlockedBy: 'Michael Bretz', unlockedDate: new Date().toISOString() });
-            logPayAppAudit('SUB_SOV_UNLOCKED', { company: company ? (company.name || company.company_name) : companyId, by: 'Michael Bretz' });
-            // Success feedback removed per user request (edit mode active)
-            renderPayAppContent();
+            CasePMPayAppWorkflow.workflow('sub_sov', 'reject_to_draft', {
+                entity_key: companyId,
+                company_id: companyId,
+                comments,
+            }).then(() => {
+                reloadPayAppStateFromStorage();
+                logPayAppAudit('SUB_SOV_REJECTED_TO_DRAFT', {
+                    company: company ? (company.name || company.company_name) : companyId,
+                    notes: comments,
+                });
+                renderPayAppContent();
+                persistPayAppStateNow({ silent: true });
+            }).catch((err) => showCenteredAlert(err.message || 'Reject to draft failed', 'error'));
         };
     }
 
