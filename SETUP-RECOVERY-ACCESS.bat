@@ -76,7 +76,7 @@ if not "%EXITCODE%"=="0" (
 )
 
 echo.
-echo Done. Use RECOVERY-ACCESS.bat anytime you need break-glass entry.
+echo Done. Use EMERGENCY-RECOVERY.bat anytime you need break-glass entry.
 echo.
 pause
 exit /b 0
