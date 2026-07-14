@@ -143,8 +143,8 @@
     position: fixed;
     bottom: 3.5rem;
     right: 1rem;
-    z-index: 250;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    z-index: 9999;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
   }
   .pay-app-stack {
     display: flex;
@@ -243,10 +243,6 @@
     </div>
 </div>
 
-<button type="button" id="payAppFloatingSaveBtn" onclick="savePayApplications()" class="casepm-floating-save flex items-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-semibold text-white" title="Save pay applications (Ctrl+S)">
-    <i class="fa-solid fa-save"></i><span>Save</span>
-</button>
-
 <!-- TABS (clean, consistent with budget style) -->
 <div class="mt-4 flex border-b border-zinc-700 flex-shrink-0">
     <button onclick="switchPayAppTab('previous-payapps')" id="tab-previous-payapps"
@@ -327,6 +323,10 @@
 
 </div>
 </div>
+
+<button type="button" id="payAppFloatingSaveBtn" onclick="savePayApplications()" class="casepm-floating-save flex items-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-semibold text-white" title="Save pay applications (Ctrl+S)">
+    <i class="fa-solid fa-save"></i><span>Save</span>
+</button>
 
 <!-- ==================== ALL MODALS (styled exactly like budget.html) ==================== -->
 
@@ -515,6 +515,62 @@
 </dialog>
 
 <script>
+    function parseStoreJson(key, fallback) {
+        try {
+            const raw = casepmStore.getItem(key);
+            if (raw == null || raw === '') return fallback;
+            return JSON.parse(raw);
+        } catch (e) {
+            console.warn('[PayApp] Ignoring corrupt local data for', key, e);
+            return fallback;
+        }
+    }
+
+    function resolvePayAppProjectId() {
+        if (typeof CasePMWorkflow !== 'undefined' && CasePMWorkflow.projectId) {
+            const pid = CasePMWorkflow.projectId();
+            if (pid) return pid;
+        }
+        const raw = localStorage.getItem('casepm_current_project_id');
+        const n = raw ? parseInt(raw, 10) : 0;
+        return n > 0 ? n : null;
+    }
+
+    function collectPayAppStateBundle() {
+        if (typeof CasePMPayAppSync !== 'undefined' && CasePMPayAppSync.collectLocalBundle) {
+            return CasePMPayAppSync.collectLocalBundle();
+        }
+        const keys = [
+            'contractorSOV', 'payAppBillingLines', 'currentPayAppPeriod', 'payAppHistory',
+            'subcontractorSOV', 'subPayAppHistory', 'subPendingSubmissions', 'subPayAppNumbers',
+            'subSOVStatus', 'subLienWaivers', 'subLienWaiverArchive', 'previousSubPayAppArchive',
+            'mainLienWaiver', 'payAppRetainagePercent', 'requireLienWaiverOnSubPayApp',
+            'requireSubmissionDeadline', 'submissionDeadlineDay', 'allowZeroDollarSubPayApps',
+            'requireAllSubPayAppsBeforeG702Submit', 'payAppAuditLog', 'sageSyncAutoEnabled',
+            'contractorSOVLocked',
+        ];
+        const bundle = {};
+        keys.forEach((key) => {
+            const raw = casepmStore.getItem(key);
+            if (raw != null) {
+                try { bundle[key] = JSON.parse(raw); } catch { bundle[key] = raw; }
+            }
+        });
+        return bundle;
+    }
+
+    document.addEventListener('keydown', function (e) {
+        if (!(e.ctrlKey || e.metaKey) || String(e.key).toLowerCase() !== 's') return;
+        if (typeof savePayApplications !== 'function') return;
+        e.preventDefault();
+        savePayApplications();
+    }, true);
+
+    window.casepmTriggerSave = function () {
+        if (typeof savePayApplications === 'function') return savePayApplications();
+        alert('Pay Applications is still loading. Wait a moment and try again.');
+    };
+
     const SERVER_ORIGINAL_CONTRACT_AMOUNT = {{ project_original_contract_amount|tojson if project_original_contract_amount is not none else 'null' }};
     const SERVER_CONTRACT_VALUE = {{ project_contract_value|tojson if project_contract_value is not none else 'null' }};
     const SERVER_CONTRACT_AMOUNT = {{ project_contract_amount|tojson if project_contract_amount is not none else 'null' }};
@@ -582,25 +638,25 @@
         }
     }
 
-    // ==================== DATA & STATE (v77.1 - Period 1 Month/Date Picker restored for Draft + when pushed back via Request Revision. Billed to Date snapshot restore working. Top banner confirmation clean.) ====================
-    let payApplications = JSON.parse(casepmStore.getItem('payApplications')) || [];
-    let contractorSOV = JSON.parse(casepmStore.getItem('contractorSOV')) || [];
-    let subcontractorSOV = JSON.parse(casepmStore.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
-    let companies = JSON.parse(casepmStore.getItem('casepm_companies')) || [];
+    // ==================== DATA & STATE ====================
+    let payApplications = parseStoreJson('payApplications', []);
+    let contractorSOV = parseStoreJson('contractorSOV', []);
+    let subcontractorSOV = parseStoreJson('subcontractorSOV', {});
+    let companies = parseStoreJson('casepm_companies', []);
     let projectCommitmentsCache = [];
-    let budgetLines = JSON.parse(casepmStore.getItem('budgetLines')) || [];
-    let payAppAuditLog = JSON.parse(casepmStore.getItem('payAppAuditLog')) || [];
+    let budgetLines = parseStoreJson('budgetLines', []);
+    let payAppAuditLog = parseStoreJson('payAppAuditLog', []);
 
     let currentPayAppTab = 'payapp';
-    let currentPayAppPeriod = JSON.parse(casepmStore.getItem('currentPayAppPeriod')) || null;
-    let payAppBillingLines = JSON.parse(casepmStore.getItem('payAppBillingLines')) || {}; // { sovLineId: {workThisPeriod, materialsStored} }
+    let currentPayAppPeriod = parseStoreJson('currentPayAppPeriod', null);
+    let payAppBillingLines = parseStoreJson('payAppBillingLines', {});
     let selectedSubCompanyId = null;
     let selectedTrackerSubId = null;
     let hasUnsavedChanges = false;
     let payAppCollapsedDivisions = new Set();
     let defaultRetainagePercent = parseFloat(casepmStore.getItem('payAppRetainagePercent') || '10');
-let subSOVStatus = JSON.parse(casepmStore.getItem('subSOVStatus') || '{}'); // { [companyId]: { status: ..., unlockedBy?, ... } }
-let lienWaivers = JSON.parse(casepmStore.getItem('lienWaivers') || '{}'); // { [companyId]: { filename: string, uploadedAt: string, submitted: boolean } }
+    let subSOVStatus = parseStoreJson('subSOVStatus', {});
+    let lienWaivers = parseStoreJson('lienWaivers', {});
 let requireLienWaiverOnSubPayApp = casepmStore.getItem('requireLienWaiverOnSubPayApp') !== 'false'; // default true
 let requireSubmissionDeadline = casepmStore.getItem('requireSubmissionDeadline') === 'true';
 let submissionDeadlineDay = casepmStore.getItem('submissionDeadlineDay') || '';
@@ -681,20 +737,14 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     }
 
 // Main Contractor (GC) Lien Waiver for current period (separate from Sub waivers)
-let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); // { periodNumber: { filename, dataUrl, uploadedDate } }
-
-    // Subcontractor Pay App specific state (for Submit Application workflow)
-    let subLienWaivers = JSON.parse(casepmStore.getItem('subLienWaivers') || '{}'); // { companyId: { periodNumber: { filename, dataUrl, uploadedDate } } }
-    let subLienWaiverArchive = JSON.parse(casepmStore.getItem('subLienWaiverArchive') || '{}'); // canonical PDF store keyed by companyId -> periodKey
-    let subPayAppHistory = JSON.parse(casepmStore.getItem('subPayAppHistory') || '{}'); // { companyId: { periodNumber: { periodInfo, lines, totalBilledThisPeriod, submittedDate, lienWaiver } } }
-    let subPayAppNumbers = JSON.parse(casepmStore.getItem('subPayAppNumbers') || '{}'); // { companyId: currentPayAppNumber }
-    let subPendingSubmissions = JSON.parse(casepmStore.getItem('subPendingSubmissions') || '{}'); // { companyId: { periodNumber, lines: [...], totalBilledThisPeriod, lienWaiver, submittedDate } }  // LEFT-HAND pending until final Approve
-
-    // NEW: Append-only archive for Previous Sub Pay Apps (never filtered, never deleted, only appended to)
-    let previousSubPayAppArchive = JSON.parse(casepmStore.getItem('previousSubPayAppArchive') || '[]');
-
-    // History of previous (Approved) Pay Applications
-    let payAppHistory = JSON.parse(casepmStore.getItem('payAppHistory')) || [];
+    let mainLienWaiver = parseStoreJson('mainLienWaiver', {});
+    let subLienWaivers = parseStoreJson('subLienWaivers', {});
+    let subLienWaiverArchive = parseStoreJson('subLienWaiverArchive', {});
+    let subPayAppHistory = parseStoreJson('subPayAppHistory', {});
+    let subPayAppNumbers = parseStoreJson('subPayAppNumbers', {});
+    let subPendingSubmissions = parseStoreJson('subPendingSubmissions', {});
+    let previousSubPayAppArchive = parseStoreJson('previousSubPayAppArchive', []);
+    let payAppHistory = parseStoreJson('payAppHistory', []);
 
     // Original contract amount from project Financial & Contract tab (synced via budgetContractAmount key)
     let budgetContractAmount = 0;
@@ -1227,19 +1277,19 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
     }
 
     function reloadPayAppStateFromStorage() {
-        contractorSOV = JSON.parse(casepmStore.getItem('contractorSOV')) || [];
-        payAppBillingLines = JSON.parse(casepmStore.getItem('payAppBillingLines')) || {};
-        currentPayAppPeriod = JSON.parse(casepmStore.getItem('currentPayAppPeriod') || 'null');
-        payAppHistory = JSON.parse(casepmStore.getItem('payAppHistory')) || [];
-        subcontractorSOV = JSON.parse(casepmStore.getItem('subcontractorSOV')) || {};
-        subPayAppHistory = JSON.parse(casepmStore.getItem('subPayAppHistory') || '{}');
-        subPendingSubmissions = JSON.parse(casepmStore.getItem('subPendingSubmissions') || '{}');
-        subPayAppNumbers = JSON.parse(casepmStore.getItem('subPayAppNumbers') || '{}');
-        subSOVStatus = JSON.parse(casepmStore.getItem('subSOVStatus') || '{}');
-        subLienWaivers = JSON.parse(casepmStore.getItem('subLienWaivers') || '{}');
-        subLienWaiverArchive = JSON.parse(casepmStore.getItem('subLienWaiverArchive') || '{}');
-        previousSubPayAppArchive = JSON.parse(casepmStore.getItem('previousSubPayAppArchive') || '[]');
-        mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}');
+        contractorSOV = parseStoreJson('contractorSOV', []);
+        payAppBillingLines = parseStoreJson('payAppBillingLines', {});
+        currentPayAppPeriod = parseStoreJson('currentPayAppPeriod', null);
+        payAppHistory = parseStoreJson('payAppHistory', []);
+        subcontractorSOV = parseStoreJson('subcontractorSOV', {});
+        subPayAppHistory = parseStoreJson('subPayAppHistory', {});
+        subPendingSubmissions = parseStoreJson('subPendingSubmissions', {});
+        subPayAppNumbers = parseStoreJson('subPayAppNumbers', {});
+        subSOVStatus = parseStoreJson('subSOVStatus', {});
+        subLienWaivers = parseStoreJson('subLienWaivers', {});
+        subLienWaiverArchive = parseStoreJson('subLienWaiverArchive', {});
+        previousSubPayAppArchive = parseStoreJson('previousSubPayAppArchive', []);
+        mainLienWaiver = parseStoreJson('mainLienWaiver', {});
         defaultRetainagePercent = parseFloat(casepmStore.getItem('payAppRetainagePercent') || '10');
         sageSyncAutoEnabled = casepmStore.getItem('sageSyncAutoEnabled') !== 'false';
         budgetContractAmount = projectOriginalContractAmount || parseFloat(casepmStore.getItem('budgetContractAmount')) || resolveServerContractAmount() || 0;
@@ -2612,24 +2662,55 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
     async function persistPayAppStateNow(options) {
         const silent = options && options.silent;
-        if (typeof CasePMPayAppSync === 'undefined') return null;
-        const saver = CasePMPayAppSync.flushSave || (() => CasePMPayAppSync.saveToServer(null, true));
-        const result = await saver();
+        const pid = resolvePayAppProjectId();
+        if (!pid) {
+            const err = { ok: false, error: 'No project selected. Use the project dropdown in the header, then save again.' };
+            if (!silent) showPayAppSaveStatus(err.error, true);
+            return err;
+        }
+
+        let result = null;
+        if (typeof CasePMPayAppSync !== 'undefined') {
+            const saver = CasePMPayAppSync.flushSave || (() => CasePMPayAppSync.saveToServer(null, true));
+            result = await saver();
+        } else {
+            try {
+                const res = await fetch('/api/pay-applications/state', {
+                    method: 'PUT',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        project_id: pid,
+                        full_replace: true,
+                        data: collectPayAppStateBundle(),
+                    }),
+                });
+                const json = await res.json().catch(() => ({}));
+                result = res.ok ? { ok: true, ...json } : { ok: false, error: json.error || `Save failed (HTTP ${res.status})` };
+            } catch (e) {
+                result = { ok: false, error: e.message || 'Network error while saving' };
+            }
+        }
+
         if (result && result.ok !== false) {
             hideUnsavedIndicator();
             if (!silent) showPayAppSaveStatus('Saved to server');
         } else if (!silent) {
-            showPayAppSaveStatus('Save failed — try again', true);
+            showPayAppSaveStatus(result?.error || 'Save failed', true);
         }
         return result;
     }
 
     async function savePayApplications() {
-        const btn = document.getElementById('savePayAppBtn');
-        if (btn) {
+        const buttons = [
+            document.getElementById('savePayAppBtn'),
+            document.getElementById('payAppFloatingSaveBtn'),
+            document.getElementById('footerSaveBtn'),
+        ].filter(Boolean);
+        buttons.forEach((btn) => {
             btn.disabled = true;
             btn.classList.add('opacity-70');
-        }
+        });
         try {
             casepmStore.setItem('contractorSOV', JSON.stringify(contractorSOV));
             casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
@@ -2642,15 +2723,21 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                 });
                 showCenteredAlert('Pay application data saved to the server.', 'success');
             } else {
-                showCenteredAlert('Could not save to the server. Check your connection and try again.', 'error');
+                const msg = (result && result.error)
+                    || 'Could not save to the server. Select a project in the header, check your connection, and try again.';
+                showCenteredAlert(msg, 'error');
             }
+        } catch (err) {
+            showCenteredAlert(err.message || 'Save failed unexpectedly.', 'error');
         } finally {
-            if (btn) {
+            buttons.forEach((btn) => {
                 btn.disabled = false;
                 btn.classList.remove('opacity-70');
-            }
+            });
         }
     }
+
+    window.savePayApplications = savePayApplications;
 
     let pendingPayAppNavigationUrl = null;
 
@@ -9441,13 +9528,7 @@ function printSubcontractorG703(companyId) {
             }
         });
 
-        // Keyboard shortcuts
-        document.addEventListener('keydown', function(e) {
-            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-                e.preventDefault();
-                savePayApplications();
-            }
-        });
+        // Keyboard shortcut registered at script load (capture phase)
 
         console.log('%c[Case PM] Pay Applications page initialized (clean v3 - aesthetics + workflow fixed) [v76.47 - Dropdown population now keyed ONLY to subs added to this job via subcontractorSOV (fixes Clear All Subs + individual Remove not clearing list)]', 'color:#10b981');
     }

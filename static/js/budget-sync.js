@@ -67,7 +67,14 @@
 
   async function saveToServer(patch, fullReplace) {
     const pid = projectId();
-    if (!pid || !enabled) return null;
+    if (!pid || !enabled) {
+      return {
+        ok: false,
+        error: !pid
+          ? 'No project selected. Choose a project from the header dropdown, then save again.'
+          : 'Budget sync is disabled.',
+      };
+    }
     const body = {
       project_id: pid,
       full_replace: !!fullReplace,
@@ -81,13 +88,15 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      if (!res.ok) return null;
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return { ok: false, error: json.error || `Save failed (HTTP ${res.status})` };
+      }
       serverVersion = json.version || serverVersion;
-      return json;
+      return { ok: true, ...json };
     } catch (e) {
       console.warn('[BudgetSync] save failed', e);
-      return null;
+      return { ok: false, error: e.message || 'Network error while saving' };
     }
   }
 
