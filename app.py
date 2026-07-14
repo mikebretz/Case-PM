@@ -862,10 +862,16 @@ def inject_project_context():
     )
     sub_vendor_company_linked = True
     try:
-        from portal_sub_access import is_sub_vendor_portal_user, resolve_sub_vendor_company
+        from portal_sub_access import (
+            is_sub_vendor_portal_user,
+            resolve_sub_vendor_company,
+            ensure_sub_vendor_project_memberships,
+        )
         if is_sub_vendor_portal_user(current_user):
             cid, _, _ = resolve_sub_vendor_company(current_user, Company, db, persist_link=True)
             sub_vendor_company_linked = cid is not None
+            if sub_vendor_company_linked:
+                ensure_sub_vendor_project_memberships(current_user, db)
     except Exception:
         sub_vendor_company_linked = True
     csrf_token = ''
@@ -6202,6 +6208,11 @@ def api_company_set_contact(company_id):
             company.phone = user.phone
     else:
         company.financial_contact_user_id = user_id
+    try:
+        from portal_sub_access import grant_company_contact_project_memberships
+        grant_company_contact_project_memberships(user, company, db)
+    except Exception:
+        pass
     db.session.commit()
     write_audit(
         f'Set {contact_type} contact',

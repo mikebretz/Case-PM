@@ -246,6 +246,89 @@ def filter_pay_app_state_for_sub_vendor(user, data: dict | None) -> dict | None:
     return out
 
 
+def get_company_job_project_ids(company, Commitment=None, PayAppProjectState=None) -> set[int]:
+    """Projects where a company has commitments or subcontractor SOV lines."""
+    if not company:
+        return set()
+    if Commitment is None:
+        try:
+            from app import Commitment as CommitmentModel
+            Commitment = CommitmentModel
+        except Exception:
+            Commitment = None
+    if PayAppProjectState is None:
+        try:
+            from app import PayAppProjectState as PayAppModel
+            PayAppProjectState = PayAppModel
+        except Exception:
+            PayAppProjectState = None
+    ids: set[int] = set()
+    cid = getattr(company, 'id', None)
+    cname = (getattr(company, 'name', None) or '').strip().lower()
+    cid_s = str(cid) if cid is not None else ''
+    if Commitment is not None:
+        try:
+            for row in Commitment.query.all():
+                row_cid = str(getattr(row, 'company_id', '') or '').strip()
+                row_name = (getattr(row, 'company_name', '') or '').strip().lower()
+                matched = False
+                if cid_s and row_cid and row_cid == cid_s:
+                    matched = True
+                elif cname and row_name and (row_name == cname or cname in row_name or row_name in cname):
+                    matched = True
+                if matched:
+                    pid = getattr(row, 'project_id', None)
+                    if pid is not None:
+                        ids.add(int(pid))
+        except Exception:
+            pass
+    if PayAppProjectState is not None:
+        try:
+            from pay_app_persistence import _parse_state, _find_sub_sov_keys_for_company
+            for record in PayAppProjectState.query.all():
+                payload = _parse_state(record)
+                sub_sov = payload.get('subcontractorSOV') or {}
+                if _find_sub_sov_keys_for_company(sub_sov, cid, getattr(company, 'name', None)):
+                    pid = getattr(record, 'project_id', None)
+                    if pid is not None:
+                        ids.add(int(pid))
+        except Exception:
+            pass
+    return ids
+
+
+def grant_company_contact_project_memberships(user, company, db, ProjectMembership=None) -> set[int]:
+    """Ensure a company contact can access every job site linked to that company."""
+    if not user or not company or not db:
+        return set()
+    PM = ProjectMembership
+    if PM is None:
+        try:
+            from case_workflow import ProjectMembership as PMModel
+            PM = PMModel
+        except Exception:
+            return set()
+    if PM is None:
+        return set()
+    project_ids = get_company_job_project_ids(company)
+    if not project_ids:
+        return set()
+    uid = int(user.id)
+    existing = {int(row.project_id) for row in PM.query.filter_by(user_id=uid).all()}
+    changed = False
+    for pid in sorted(project_ids):
+        if pid in existing:
+            continue
+        db.session.add(PM(project_id=pid, user_id=uid, role='Subcontractor'))
+        changed = True
+    if changed:
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+    return project_ids
+
+
 def get_sub_vendor_pay_app_project_ids(user, PayAppProjectState=None) -> set[int]:
     """Projects where this vendor appears in subcontractor SOV / status maps."""
     if not is_sub_vendor_portal_user(user):
@@ -285,8 +368,17 @@ def get_sub_vendor_project_ids(user, Project=None, ProjectMembership=None, Commi
             Commitment = CommitmentModel
         except Exception:
             Commitment = None
+    if PayAppProjectState is None:
+        try:
+            from app import PayAppProjectState as PayAppModel
+            PayAppProjectState = PayAppModel
+        except Exception:
+            PayAppProjectState = None
     ids |= get_commitment_project_ids(user, Commitment)
     ids |= get_sub_vendor_pay_app_project_ids(user, PayAppProjectState)
+    _, _, company = resolve_sub_vendor_company(user)
+    if company is not None:
+        ids |= get_company_job_project_ids(company, Commitment, PayAppProjectState)
     return ids
 
 
@@ -304,23 +396,76 @@ def portal_home_redirect(user):
 
 
 def get_commitment_project_ids(user, Commitment=None) -> set[int]:
-    cid = sub_vendor_company_id(user)
-    if not cid or Commitment is None:
+    cid, cname, company = resolve_sub_vendor_company(user)
+    if Commitment is None:
         return set()
+    names_to_match: set[str] = set()
+    for raw in (cname, getattr(user, 'company', None), company.name if company else None):
+        name = (raw or '').strip().lower()
+        if name:
+            names_to_match.add(name)
     ids: set[int] = set()
-    cid_s = str(cid)
-    cname = (getattr(user, 'company', None) or '').strip().lower()
+    cid_s = str(cid) if cid is not None else ''
     try:
         for row in Commitment.query.all():
             row_cid = str(getattr(row, 'company_id', '') or '').strip()
             row_name = (getattr(row, 'company_name', '') or '').strip().lower()
-            if row_cid == cid_s or (cname and row_name == cname):
+            matched = False
+            if cid_s and row_cid and row_cid == cid_s:
+                matched = True
+            elif row_name and row_name in names_to_match:
+                matched = True
+            elif row_name and names_to_match:
+                for name in names_to_match:
+                    if name and (name in row_name or row_name in name):
+                        matched = True
+                        break
+            if matched:
                 pid = getattr(row, 'project_id', None)
                 if pid is not None:
                     ids.add(int(pid))
     except Exception:
         pass
     return ids
+
+
+def ensure_sub_vendor_project_memberships(user, db, ProjectMembership=None) -> set[int]:
+    """Grant project membership rows for jobs this sub vendor is linked to."""
+    if not is_sub_vendor_portal_user(user) or db is None:
+        return set()
+    PM = ProjectMembership
+    if PM is None:
+        try:
+            from case_workflow import ProjectMembership as PMModel
+            PM = PMModel
+        except Exception:
+            return set()
+    if PM is None:
+        return set()
+    try:
+        from app import Project
+    except Exception:
+        Project = None
+    project_ids = get_sub_vendor_project_ids(user, Project, PM)
+    if not project_ids:
+        return set()
+    uid = int(user.id)
+    existing = {
+        int(row.project_id)
+        for row in PM.query.filter_by(user_id=uid).all()
+    }
+    changed = False
+    for pid in sorted(project_ids):
+        if pid in existing:
+            continue
+        db.session.add(PM(project_id=pid, user_id=uid, role='Subcontractor'))
+        changed = True
+    if changed:
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+    return project_ids
 
 
 def user_is_company_contact(user, Company=None) -> bool:
