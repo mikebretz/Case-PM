@@ -132,6 +132,13 @@
     overflow: hidden;
     box-sizing: border-box;
   }
+  .pay-app-toolbar {
+    flex-shrink: 0;
+    gap: 0.75rem;
+  }
+  .pay-app-toolbar-actions {
+    min-width: 0;
+  }
   .pay-app-stack {
     display: flex;
     flex-direction: column;
@@ -196,34 +203,34 @@
 <div class="pay-app-stack">
 
 <!-- PAGE TOOLBAR (project + user profile live in base.html) -->
-<div class="flex items-center justify-between flex-shrink-0">
-    <div class="flex items-center gap-3">
-        <div class="text-2xl font-semibold text-white">Pay Applications</div>
+<div class="pay-app-toolbar flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+    <div class="flex items-center gap-3 min-w-0 flex-wrap">
+        <div class="text-2xl font-semibold text-white whitespace-nowrap">Pay Applications</div>
         <div id="payAppRevisionBadge" onclick="showPayAppVersionHistory()" 
              class="cursor-pointer text-lg font-bold px-4 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-emerald-400 rounded-2xl font-mono transition-colors">
             Rev 01
         </div>
         <div id="unsavedDot" class="hidden w-2.5 h-2.5 bg-amber-500 rounded-full" title="Unsaved changes"></div>
         <span id="payAppSaveStatus" class="hidden text-xs text-emerald-400">Saved</span>
-    </div>
-
-    <div class="flex items-center gap-2 flex-nowrap">
-        <button id="savePayAppBtn" onclick="savePayApplications()" class="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium transition-colors h-[38px]">
+        <button id="savePayAppBtn" onclick="savePayApplications()" class="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold transition-colors h-[38px] flex-shrink-0">
             <i class="fa-solid fa-save"></i><span>Save</span>
         </button>
+    </div>
+
+    <div class="pay-app-toolbar-actions flex items-center gap-2 flex-wrap justify-start lg:justify-end">
         <button onclick="exportPayApplications()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
-            <i class="fa-solid fa-download"></i><span>Export</span>
+            <i class="fa-solid fa-download"></i><span class="hidden sm:inline">Export</span>
         </button>
 
         <button onclick="importPayApplications()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
-            <i class="fa-solid fa-upload"></i><span>Import</span>
+            <i class="fa-solid fa-upload"></i><span class="hidden sm:inline">Import</span>
         </button>
 
-        <button onclick="printCurrentPayApp()" class="flex items-center gap-2 px-5 py-2 min-w-[210px] bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
-            <i class="fa-solid fa-print"></i><span>Print AIA G702 / G703</span>
+        <button onclick="printCurrentPayApp()" class="flex items-center gap-2 px-4 py-2 lg:px-5 lg:min-w-[210px] bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
+            <i class="fa-solid fa-print"></i><span class="hidden md:inline">Print AIA G702 / G703</span><span class="md:hidden">Print</span>
         </button>
 
-        <button onclick="showSettingsModal()" class="w-10 h-10 flex items-center justify-center bg-zinc-800 hover:bg-zinc-700 rounded-md">
+        <button onclick="showSettingsModal()" class="w-10 h-10 flex items-center justify-center bg-zinc-800 hover:bg-zinc-700 rounded-md flex-shrink-0">
             <i class="fa-solid fa-cog"></i>
         </button>
     </div>
@@ -2774,6 +2781,23 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                 || canAccessModule('pay_applications_gc', 'edit');
         }
         return true;
+    }
+
+    function canEditPayApplications() {
+        const role = (document.body && document.body.getAttribute('data-current-user-role')) || '';
+        if (role === 'Admin' || role === 'Developer') return true;
+        if (window.CASEPM_IS_DEVELOPER) return true;
+        if (typeof canAccessModule === 'function') {
+            return canAccessModule('pay_applications_gc', 'edit')
+                || canAccessModule('pay_applications_sub', 'edit')
+                || canAccessModule('pay_applications', 'edit');
+        }
+        return true;
+    }
+
+    function applyPayAppToolbarPermissions() {
+        const saveBtn = document.getElementById('savePayAppBtn');
+        if (saveBtn) saveBtn.classList.toggle('hidden', !canEditPayApplications());
     }
 
     function applyPayTabPermissions() {
@@ -9407,6 +9431,7 @@ function printSubcontractorG703(companyId) {
             if (lastSub) selectedSubCompanyId = canonicalSubCompanyId(lastSub);
 
             applyPayTabPermissions();
+            applyPayAppToolbarPermissions();
             renderPayAppContent();
             renderSageSyncStatus();
             bindPayAppNavigationGuards();

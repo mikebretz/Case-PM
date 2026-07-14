@@ -58,43 +58,43 @@
 <div class="budget-stack">
 
 <!-- TOOLBAR (matches Pay Apps / Commitments / Change Orders) -->
-<div class="flex items-center justify-between flex-shrink-0 mb-4 gap-3">
-    <div class="flex items-center gap-3 min-w-0">
+<div class="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between flex-shrink-0 mb-4">
+    <div class="flex items-center gap-3 min-w-0 flex-wrap">
         <div class="text-2xl font-semibold text-white whitespace-nowrap">Budget</div>
         <div id="revisionBadge" onclick="showVersionHistory()"
              class="cursor-pointer text-lg font-bold px-4 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-emerald-400 rounded-2xl font-mono transition-colors">
             Rev 01
         </div>
         <div id="unsavedDot" class="hidden w-2.5 h-2.5 bg-amber-500 rounded-full"></div>
-        <div class="text-xs text-zinc-500 hidden lg:block">Contract · SOV · Sage 300</div>
-    </div>
-    <div class="flex items-center gap-2 flex-wrap justify-end">
-        <button onclick="exportBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px]">
-            <i class="fa-solid fa-download"></i><span class="hidden md:inline">Export</span>
-        </button>
-        <button id="importBtn" onclick="importBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px]">
-            <i class="fa-solid fa-upload"></i><span class="hidden md:inline">Import</span>
-        </button>
-        <button onclick="printBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px]">
-            <i class="fa-solid fa-print"></i><span class="hidden md:inline">Print</span>
-        </button>
-        <button onclick="viewPendingChanges()" class="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-medium h-[38px]">
-            <i class="fa-solid fa-clock"></i><span class="hidden md:inline">Pending COs</span>
-        </button>
-        <button onclick="saveBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium h-[38px]">
+        <div class="text-xs text-zinc-500 hidden xl:block">Contract · SOV · Sage 300</div>
+        <button onclick="saveBudget()" class="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold h-[38px] flex-shrink-0">
             <i class="fa-solid fa-save"></i><span>Save</span>
         </button>
-        <button id="publishBtn" onclick="publishBudget()" class="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold h-[38px]">
+    </div>
+    <div class="flex items-center gap-2 flex-wrap justify-start lg:justify-end min-w-0">
+        <button onclick="exportBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px]">
+            <i class="fa-solid fa-download"></i><span class="hidden sm:inline">Export</span>
+        </button>
+        <button id="importBtn" onclick="importBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px]">
+            <i class="fa-solid fa-upload"></i><span class="hidden sm:inline">Import</span>
+        </button>
+        <button onclick="printBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px]">
+            <i class="fa-solid fa-print"></i><span class="hidden sm:inline">Print</span>
+        </button>
+        <button onclick="viewPendingChanges()" class="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-medium h-[38px]">
+            <i class="fa-solid fa-clock"></i><span class="hidden sm:inline">Pending COs</span>
+        </button>
+        <button id="publishBtn" onclick="publishBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-semibold h-[38px]">
             <i class="fa-solid fa-upload"></i><span>Publish</span>
         </button>
         <button id="addLineBtn" onclick="showAddBudgetLineModal()" class="flex items-center gap-2 px-5 py-2 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-sm font-semibold h-[38px]">
             <i class="fa-solid fa-plus"></i><span>Add Line</span>
         </button>
-        <button onclick="showSettingsModal()" class="w-10 h-10 flex items-center justify-center bg-zinc-800 hover:bg-zinc-700 rounded-md">
+        <button onclick="showSettingsModal()" class="w-10 h-10 flex items-center justify-center bg-zinc-800 hover:bg-zinc-700 rounded-md flex-shrink-0">
             <i class="fa-solid fa-cog"></i>
         </button>
         <a href="{{ url_for('forecast_page', project_id=active_project.id) if active_project else url_for('forecast_page') }}" class="flex items-center gap-2 px-4 py-2 bg-violet-900/50 hover:bg-violet-800/60 border border-violet-700 rounded-md text-sm font-medium h-[38px] text-violet-200">
-            <i class="fa-solid fa-chart-line"></i><span>Forecast</span>
+            <i class="fa-solid fa-chart-line"></i><span class="hidden sm:inline">Forecast</span>
         </a>
     </div>
 </div>
