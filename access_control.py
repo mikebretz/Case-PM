@@ -13,6 +13,17 @@ from flask import jsonify, request, session
 
 SESSION_ACTIVITY_KEY = 'casepm_last_activity'
 
+
+def reset_session_activity():
+    """Fresh activity timestamp — call after every successful login."""
+    session[SESSION_ACTIVITY_KEY] = time.time()
+    session.modified = True
+
+
+def clear_session_activity():
+    session.pop(SESSION_ACTIVITY_KEY, None)
+    session.modified = True
+
 FINANCIAL_MODULES = frozenset({
     'budget', 'forecast', 'commitments', 'pay_applications',
     'pay_applications_gc', 'pay_applications_sub', 'pay_applications_lien_waivers',
