@@ -874,6 +874,9 @@ def register_workflow(app, _db, models):
                     require_financial_project_access(current_user, project_id, Project)
                 except (ValueError, PermissionError) as exc:
                     return jsonify({'error': str(exc)}), 403
+                from access_control import user_global_flags
+                if user_global_flags(current_user).get('hide_financials'):
+                    return jsonify({'error': 'Financial data is not available for your account.'}), 403
                 record, state = get_pay_app_state(PayAppProjectState, project_id)
                 period = (state or {}).get('currentPayAppPeriod') or {}
                 if entity_id and str(period.get('periodNumber')) != str(entity_id):
