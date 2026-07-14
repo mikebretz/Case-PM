@@ -221,6 +221,8 @@ def developer_required(f):
     def decorated_function(*args, **kwargs):
         from developer_tools import is_developer
         if not current_user.is_authenticated or not is_developer(current_user):
+            if (request.path or '').startswith('/api/'):
+                return jsonify({'error': 'Developer access only.'}), 403
             flash("Developer access only.", "error")
             return redirect(url_for('dashboard'))
         return f(*args, **kwargs)
@@ -13430,6 +13432,8 @@ def favicon():
 def page_not_found(e):
     if request.path == '/favicon.ico':
         return '', 204
+    if (request.path or '').startswith('/api/'):
+        return jsonify({'error': 'Not found', 'path': request.path}), 404
     return 'Page not found', 404
 
 

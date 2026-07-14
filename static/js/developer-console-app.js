@@ -6,8 +6,17 @@
 
   async function api(path, opts) {
     const res = await fetch(path, { credentials: 'same-origin', ...opts });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json.error || res.statusText);
+    const contentType = res.headers.get('content-type') || '';
+    const json = contentType.includes('application/json')
+      ? await res.json().catch(() => ({}))
+      : {};
+    if (!res.ok) {
+      const msg = json.error || res.statusText || 'Request failed';
+      if (res.status === 404 && path.includes('/api/developer/presence')) {
+        throw new Error('Presence API not found — restart the server (PULL-AND-RESTART-SERVER.bat), then hard-refresh this page.');
+      }
+      throw new Error(msg);
+    }
     return json;
   }
 
@@ -28,6 +37,31 @@
       clearInterval(livePollTimer);
       livePollTimer = null;
     }
+  }
+
+  function showLiveUsersError(message) {
+    const host = document.getElementById('devLiveUserList');
+    const statusEl = document.getElementById('devLiveRefreshStatus');
+    const countEl = document.getElementById('devLiveOnlineCount');
+    const text = message || 'Could not load live users.';
+    if (host) {
+      host.innerHTML = `
+        <div class="text-red-300/90 text-center py-6 text-xs space-y-2 px-3">
+          <div class="font-medium">${escapeHtml(text)}</div>
+          <div class="text-zinc-500">On the server PC, run <code class="text-zinc-400">PULL-AND-RESTART-SERVER.bat</code>, then hard-refresh (Ctrl+Shift+R).</div>
+        </div>`;
+    }
+    if (countEl) countEl.textContent = '— online';
+    if (statusEl) statusEl.textContent = text;
+  }
+
+  function showLiveWatchError(message) {
+    const host = document.getElementById('devLiveWatchPanel');
+    if (!host) return;
+    host.innerHTML = `
+      <div class="text-red-300/90 text-sm text-center py-16 px-4 space-y-2">
+        <div>${escapeHtml(message || 'Could not load session.')}</div>
+      </div>`;
   }
 
   function formatSeenAgo(iso) {
@@ -207,7 +241,7 @@
         if (detail.session) renderLiveWatchPanel(detail.session, false);
       }
     } catch (err) {
-      if (statusEl) statusEl.textContent = err.message || 'Refresh failed';
+      showLiveUsersError(err.message || 'Refresh failed');
     }
   }
 
@@ -217,11 +251,18 @@
     document.querySelectorAll('.dev-live-user').forEach((el) => {
       el.classList.toggle('active', el.dataset.sessionKey === sessionKey);
     });
+    const panel = document.getElementById('devLiveWatchPanel');
+    if (panel) {
+      panel.innerHTML = '<div class="text-zinc-500 text-sm text-center py-16">Loading session…</div>';
+    }
     api(`/api/developer/presence/session/${encodeURIComponent(sessionKey)}`)
       .then((detail) => {
         if (detail.session) renderLiveWatchPanel(detail.session, true);
+        else showLiveWatchError('Session not found.');
       })
-      .catch(() => {});
+      .catch((err) => {
+        showLiveWatchError(err.message || 'Could not load session.');
+      });
   }
 
   function loadLiveUsersPanel() {
