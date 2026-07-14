@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<script src="{{ url_for('static', filename='js/developer-console-app.js') }}"></script>
+<script src="{{ static_v('js/developer-console-app.js') }}"></script>
 <style>
 .dev-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 1rem 1rem 0; overflow: hidden; box-sizing: border-box; }
 .dev-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; max-width: 1200px; margin: 0 auto; width: 100%; }

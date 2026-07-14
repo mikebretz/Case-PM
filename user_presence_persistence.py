@@ -57,6 +57,7 @@ def ensure_user_presence_schema(db):
             ))
     except Exception:
         db.session.rollback()
+    _backfill_last_seen_epoch(db)
     db.session.commit()
     os.makedirs(THUMBNAIL_DIR, exist_ok=True)
     _schema_ready = True
@@ -68,6 +69,30 @@ def _now_iso():
 
 def _now_epoch():
     return int(time.time())
+
+
+def _iso_to_epoch(value):
+    dt = _parse_iso(value)
+    if not dt:
+        return 0
+    if dt.tzinfo:
+        dt = dt.replace(tzinfo=None)
+    return int(dt.timestamp())
+
+
+def _backfill_last_seen_epoch(db):
+    """Repair rows written before last_seen_epoch was populated."""
+    rows = db.session.execute(text('''
+        SELECT id, last_seen_at FROM user_presence_sessions
+        WHERE last_seen_epoch IS NULL OR last_seen_epoch = 0
+    ''')).fetchall()
+    for row in rows:
+        epoch = _iso_to_epoch(row[1])
+        if epoch:
+            db.session.execute(
+                text('UPDATE user_presence_sessions SET last_seen_epoch = :epoch WHERE id = :id'),
+                {'epoch': epoch, 'id': row[0]},
+            )
 
 
 def _parse_iso(value):
@@ -242,6 +267,7 @@ def _serialize_row(row):
 def list_online_presence(db, include_offline_minutes=30):
     ensure_user_presence_schema(db)
     cutoff_epoch = _now_epoch() - int(include_offline_minutes * 60)
+    cutoff_iso = (datetime.utcnow() - timedelta(minutes=include_offline_minutes)).isoformat() + 'Z'
     rows = db.session.execute(text('''
         SELECT session_key, user_id, user_name, user_email, user_role,
                page_path, page_title, page_module, project_id, project_name, active_tab,
@@ -249,8 +275,9 @@ def list_online_presence(db, include_offline_minutes=30):
                last_seen_at, last_seen_epoch
         FROM user_presence_sessions
         WHERE last_seen_epoch >= :cutoff
-        ORDER BY last_seen_epoch DESC
-    '''), {'cutoff': cutoff_epoch}).fetchall()
+           OR (last_seen_epoch = 0 AND last_seen_at >= :cutoff_iso)
+        ORDER BY last_seen_epoch DESC, last_seen_at DESC
+    '''), {'cutoff': cutoff_epoch, 'cutoff_iso': cutoff_iso}).fetchall()
 
     sessions = [_serialize_row(r) for r in rows]
     by_user = {}
