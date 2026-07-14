@@ -527,3 +527,99 @@ def sync_change_order_to_sov(
         'subcontractorSOV': state.get('subcontractorSOV'),
         'schedule': schedule_result,
     }
+
+
+def commitment_matches_vendor(commitment, company_id=None, company_name=None):
+    """True when a commitment belongs to the given subcontractor vendor."""
+    if getattr(commitment, 'commitment_type', None) != 'Subcontract':
+        return False
+    cid = str(company_id or '').strip()
+    cname = (company_name or '').strip().lower()
+    com_cid = str(getattr(commitment, 'company_id', None) or '').strip()
+    com_name = (commitment.company_name or '').strip().lower()
+    if cid and com_cid and cid == com_cid:
+        return True
+    if cname and com_name and cname == com_name:
+        return True
+    return False
+
+
+def purge_subcontractor_from_pay_state(state, company_id=None, company_name=None):
+    """Remove a subcontractor and all pay-app artifacts from in-memory pay state."""
+    from accounting_reconcile import normalize_sub_sov_keys
+
+    state = state or {}
+    keys = _find_sub_sov_keys_for_company(state.get('subcontractorSOV') or {}, company_id, company_name)
+    if not keys:
+        keys = _find_sub_sov_keys_for_company(state.get('subcontractorSOV') or {}, None, company_name)
+
+    key_set = set(str(k) for k in keys)
+
+    def drop_keys(mapping):
+        if not isinstance(mapping, dict):
+            return 0
+        removed = 0
+        for k in list(mapping.keys()):
+            if str(k) in key_set:
+                del mapping[k]
+                removed += 1
+        return removed
+
+    purged = {}
+    for field in (
+        'subcontractorSOV', 'subPayAppHistory', 'subPendingSubmissions',
+        'subPayAppNumbers', 'subSOVStatus', 'subLienWaivers', 'subLienWaiverArchive',
+    ):
+        mapping = state.get(field) or {}
+        if not isinstance(mapping, dict):
+            mapping = {}
+        purged[field] = drop_keys(mapping)
+        state[field] = mapping
+
+    archive = state.get('previousSubPayAppArchive') or []
+    if isinstance(archive, list):
+        before = len(archive)
+        state['previousSubPayAppArchive'] = [
+            entry for entry in archive
+            if str(entry.get('companyId') or entry.get('company_id') or '') not in key_set
+            and str(entry.get('companyName') or entry.get('company_name') or '').strip().lower()
+            != (company_name or '').strip().lower()
+        ]
+        purged['previousSubPayAppArchive'] = before - len(state['previousSubPayAppArchive'])
+    else:
+        purged['previousSubPayAppArchive'] = 0
+
+    state['subcontractorSOV'] = normalize_sub_sov_keys(state.get('subcontractorSOV') or {})
+    return {'purged': purged, 'keys': keys}
+
+
+def void_subcontractor_commitments(
+    project_id,
+    company_id=None,
+    company_name=None,
+    *,
+    Commitment,
+    db,
+    user_id=None,
+    allow_approved=True,
+):
+    """Void subcontract commitments for a vendor so reconcile stops re-seeding their SOV."""
+    commitments = Commitment.query.filter_by(project_id=project_id).all()
+    voided = []
+    for com in commitments:
+        if not commitment_matches_vendor(com, company_id, company_name):
+            continue
+        if com.status == 'Void':
+            continue
+        if com.status not in ('Draft', 'Rejected', 'Void') and not allow_approved:
+            continue
+        if com.status not in ('Draft', 'Rejected', 'Void'):
+            com.status = 'Void'
+            com.ball_in_court_role = None
+        else:
+            com.status = 'Void'
+            com.ball_in_court_role = None
+        voided.append({'id': com.id, 'number': com.number, 'status': com.status})
+    if voided:
+        db.session.flush()
+    return voided

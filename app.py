@@ -14154,6 +14154,120 @@ def api_import_pay_app_local():
     return jsonify({'ok': True, 'version': record.version})
 
 
+@app.route('/api/pay-applications/remove-subcontractor', methods=['POST'])
+@login_required
+def api_remove_subcontractor_from_project():
+    """Remove a subcontractor from pay app state and void related commitments."""
+    from pay_app_persistence import (
+        get_pay_app_state as load_state,
+        save_pay_app_state as persist_state,
+        purge_subcontractor_from_pay_state,
+        void_subcontractor_commitments,
+        commitment_matches_vendor,
+    )
+    from financial_security import require_financial_project_access
+
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    company_id = body.get('company_id') or body.get('companyId')
+    company_name = (body.get('company_name') or body.get('companyName') or '').strip()
+    force = bool(body.get('force'))
+
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    if not company_id and not company_name:
+        return jsonify({'error': 'company_id or company_name required'}), 400
+
+    try:
+        project_id = int(require_financial_project_access(current_user, project_id, Project))
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+
+    _, pay_state = load_state(PayAppProjectState, project_id)
+    pay_state = pay_state or {}
+
+    sub_hist = pay_state.get('subPayAppHistory') or {}
+    hist_keys = []
+    from pay_app_persistence import _find_sub_sov_keys_for_company
+    for k in _find_sub_sov_keys_for_company(sub_hist, company_id, company_name):
+        hist_for_sub = sub_hist.get(k) or {}
+        has_pushed = any(
+            isinstance(entry, dict) and entry.get('archived') is True
+            for entry in hist_for_sub.values()
+        )
+        has_active = any(
+            isinstance(entry, dict)
+            and entry.get('status') in ('Approved', 'Pending Approval')
+            and entry.get('archived') is not True
+            for entry in hist_for_sub.values()
+        )
+        if has_pushed and not force:
+            return jsonify({
+                'error': 'Subcontractor has pay applications in Previous Sub Pay Apps. Use force=true to remove anyway.',
+                'can_force': True,
+            }), 400
+        if has_active and not force:
+            return jsonify({
+                'error': 'Subcontractor has an active pay application in the tracker. Clear the tracker first or use force=true.',
+                'can_force': True,
+            }), 400
+
+    matching_commitments = [
+        c for c in Commitment.query.filter_by(project_id=project_id).all()
+        if commitment_matches_vendor(c, company_id, company_name)
+    ]
+    approved_commitments = [c for c in matching_commitments if c.status not in ('Draft', 'Rejected', 'Void')]
+    if approved_commitments and not force:
+        return jsonify({
+            'error': (
+                'This subcontractor has approved commitment(s) that keep re-syncing their Schedule of Values. '
+                'Use force=true to void the commitment(s) and remove them.'
+            ),
+            'can_force': True,
+            'commitments': [{'id': c.id, 'number': c.number, 'status': c.status} for c in matching_commitments],
+        }), 400
+
+    if force and approved_commitments and current_user.role != 'Admin':
+        return jsonify({'error': 'Only administrators can force-remove subcontractors with approved commitments'}), 403
+
+    voided = void_subcontractor_commitments(
+        project_id, company_id, company_name,
+        Commitment=Commitment, db=db, user_id=current_user.id,
+        allow_approved=force,
+    )
+
+    purge_result = purge_subcontractor_from_pay_state(pay_state, company_id, company_name)
+    record = persist_state(PayAppProjectState, db, project_id, pay_state, current_user.id)
+
+    reconcile_result = None
+    try:
+        from accounting_reconcile import reconcile_project_accounting
+        reconcile_result = reconcile_project_accounting(
+            project_id,
+            current_user.id,
+            ChangeOrder=ChangeOrder,
+            ChangeOrderAllocation=ChangeOrderAllocation,
+            Commitment=Commitment,
+            CommitmentAllocation=CommitmentAllocation,
+            BudgetProjectState=BudgetProjectState,
+            PayAppProjectState=PayAppProjectState,
+            db=db,
+        )
+    except Exception as exc:
+        reconcile_result = {'error': str(exc)}
+
+    return jsonify({
+        'ok': True,
+        'project_id': project_id,
+        'company_id': company_id,
+        'company_name': company_name,
+        'voided_commitments': voided,
+        'purge': purge_result,
+        'version': record.version,
+        'reconcile_result': reconcile_result,
+    })
+
+
 @app.route('/api/pay-applications/workflow', methods=['POST'])
 @login_required
 def api_pay_app_workflow():
