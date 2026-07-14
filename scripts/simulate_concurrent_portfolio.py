@@ -66,6 +66,10 @@ class ProjectScenario:
     rfi_per_month: float
     co_per_month: float
     pay_periods: int | None = None
+    submittal_per_month: float = 0
+    rfq_per_month: float = 0
+    change_event_per_month: float = 0
+    reconcile_every: int = 1
 
     @property
     def end_month(self) -> int:
@@ -158,7 +162,9 @@ def _create_user_pool(db, User, scenario: ProjectScenario, project_id: int, Proj
 
     pool = []
     base = scenario.slug
-    for i in range(scenario.user_count):
+    # Cap sim users for runtime; full count recorded in scenario.user_count for reporting
+    sim_users = min(scenario.user_count, 100)
+    for i in range(sim_users):
         email = f'sim.{base}.u{i:04d}@casepm.test'
         u = User.query.filter_by(email=email).first()
         role = ROLE_POOL[i % len(ROLE_POOL)]
@@ -203,14 +209,15 @@ def _setup_project(rt: ProjectRuntime, models: dict, global_month: int) -> None:
 
     rt.users = _ensure_sim_users(db, User)
     ts = datetime.utcnow().strftime('%H%M%S')
+    uniq = rt.uid[:8]
     project = Project(
-        number=f'PF-{sc.slug.upper()}-{ts}',
+        number=f'PF-{sc.slug.upper()}-{uniq}',
         name=f'Portfolio {sc.name}',
         client='Portfolio Sim Owner',
         contract_value=sc.contract_value,
         status='Active',
-        sage_job_number=f'PF{sc.slug}{ts}',
-        accounting_project_number=f'PF-{sc.slug}',
+        sage_job_number=f'PF{sc.slug}{uniq}',
+        accounting_project_number=f'PF-{sc.slug}-{uniq}',
     )
     db.session.add(project)
     db.session.commit()
@@ -219,7 +226,8 @@ def _setup_project(rt: ProjectRuntime, models: dict, global_month: int) -> None:
 
     if ProjectMembership:
         rt.user_pool = _create_user_pool(db, User, sc, project.id, ProjectMembership)
-        rt.result.metrics['users_assigned'] = len(rt.user_pool)
+        rt.result.metrics['users_assigned'] = sc.user_count
+        rt.result.metrics['users_simulated'] = len(rt.user_pool)
 
     budget_lines = []
     cv = sc.contract_value
@@ -314,12 +322,9 @@ def _setup_project(rt: ProjectRuntime, models: dict, global_month: int) -> None:
     from pay_app_persistence import get_pay_app_state
     from pay_app_workflow import sub_sov_workflow_action
     _, pay_state = get_pay_app_state(PayAppProjectState, project.id)
-    sub_status = pay_state.get('subSOVStatus') or {}
     for key in list((pay_state.get('subcontractorSOV') or {}).keys()):
-        sub_status[key] = {'status': 'Draft'}
         sub_sov_workflow_action(pay_state, key, 'submit', rt.users['sub'])
         sub_sov_workflow_action(pay_state, key, 'approve', rt.users['pm'])
-    pay_state['subSOVStatus'] = sub_status
     save_pay_app_state(PayAppProjectState, db, project.id, pay_state, user_id=None)
     rt.setup_done = True
 
@@ -462,6 +467,135 @@ def _spawn_cos(rt: ProjectRuntime, models: dict, count: float, global_month: int
     rt.result.metrics['cos_created'] = rt.result.metrics.get('cos_created', 0) + n
 
 
+def _spawn_submittals(rt: ProjectRuntime, models: dict, count: float, global_month: int) -> None:
+    if count <= 0:
+        return
+    Submittal = models.get('Submittal')
+    if not Submittal:
+        return
+    from submittal_persistence import apply_submittal_fields, submittal_workflow_action
+
+    db = models['db']
+    users = rt.users
+    n = int(count) + (1 if random.random() < (count % 1) else 0)
+    codes = [c[0] for c in rt.scenario.trade_mix if '01-' not in c[0]]
+    seq = rt.result.metrics.get('submittals_created', 0)
+    for _ in range(n):
+        seq += 1
+        spec = random.choice(codes) if codes else '09-250'
+        num = f'SUB-{rt.uid}-M{global_month:02d}-{seq:05d}'
+        sub = Submittal(
+            project_id=rt.project.id,
+            number=num,
+            description=f'Sim submittal {num}',
+            spec_section=spec,
+            status='Draft',
+            priority=random.choice(['Medium', 'High', 'Critical']),
+            submitted_by='Sim Sub Co',
+            date=datetime.utcnow().date(),
+        )
+        apply_submittal_fields(sub, {}, is_create=True)
+        db.session.add(sub)
+        db.session.flush()
+        try:
+            submittal_workflow_action(sub, 'send_to_sub', users['pm'])
+            submittal_workflow_action(sub, 'return_from_sub', users['sub'])
+            submittal_workflow_action(sub, 'submit_to_architect', users['pm'])
+            decision = random.choice([
+                'No Exceptions Taken', 'Reviewed as Noted', 'Revise & Resubmit', 'Rejected',
+            ])
+            submittal_workflow_action(sub, 'architect_decision', users['arch'], {'decision': decision})
+            if decision == 'No Exceptions Taken':
+                submittal_workflow_action(sub, 'close', users['pm'])
+        except ValueError as exc:
+            rt.result.add('warning', 'submittal', f'{num}: {exc}')
+    db.session.commit()
+    rt.result.metrics['submittals_created'] = seq
+
+
+def _spawn_rfqs(rt: ProjectRuntime, models: dict, count: float, global_month: int) -> None:
+    if count <= 0:
+        return
+    SubcontractorRFQ = models.get('SubcontractorRFQ')
+    if not SubcontractorRFQ:
+        return
+    from change_event_persistence import rfq_workflow_action, save_generic_allocations
+
+    db = models['db']
+    users = rt.users
+    n = int(count) + (1 if random.random() < (count % 1) else 0)
+    codes = [c[0] for c in rt.scenario.trade_mix if '01-' not in c[0]]
+    scale = rt.scenario.contract_value / 30_000_000.0
+    seq = rt.result.metrics.get('rfqs_created', 0)
+    sub_com = next((c for c in rt.commitments if c.commitment_type == 'Subcontract'), None)
+    for _ in range(n):
+        seq += 1
+        code = random.choice(codes) if codes else '09-250'
+        amt = round(random.uniform(50_000, 400_000) * max(scale, 0.35), 2)
+        num = f'RFQ-{rt.uid}-M{global_month:02d}-{seq:05d}'
+        rfq = SubcontractorRFQ(
+            project_id=rt.project.id,
+            number=num,
+            title=f'Sim RFQ {num}',
+            status='Draft',
+            ball_in_court_role='Creator',
+            company_id=sub_com.company_id if sub_com else str(rt.project.id),
+            created_by_id=users['pm'].id,
+        )
+        db.session.add(rfq)
+        db.session.flush()
+        save_generic_allocations(models['RFQAllocation'], 'rfq_id', rfq.id, [{
+            'cost_code': code, 'cost_type': 'Subcontract', 'amount': amt,
+        }], db)
+        try:
+            rfq_workflow_action(rfq, 'send', users['pm'])
+            rfq_workflow_action(rfq, 'quote', users['sub'], [{
+                'cost_code': code, 'amount': amt, 'quoted_amount': round(amt * 1.05, 2),
+            }])
+            if random.random() < 0.8:
+                rfq_workflow_action(rfq, 'accept', users['pm'])
+        except ValueError as exc:
+            rt.result.add('warning', 'rfq', f'{num}: {exc}')
+    db.session.commit()
+    rt.result.metrics['rfqs_created'] = seq
+
+
+def _spawn_change_events(rt: ProjectRuntime, models: dict, count: float, global_month: int) -> None:
+    if count <= 0:
+        return
+    ChangeEvent = models.get('ChangeEvent')
+    if not ChangeEvent:
+        return
+    from change_event_persistence import apply_change_event_fields, change_event_workflow_action
+
+    db = models['db']
+    users = rt.users
+    n = int(count) + (1 if random.random() < (count % 1) else 0)
+    seq = rt.result.metrics.get('change_events_created', 0)
+    for _ in range(n):
+        seq += 1
+        num = f'CE-{rt.uid}-M{global_month:02d}-{seq:05d}'
+        ce = ChangeEvent(
+            project_id=rt.project.id,
+            number=num,
+            title=f'Sim change event {num}',
+            status='Open',
+            ball_in_court_role='Creator',
+            created_by_id=users['pm'].id,
+        )
+        apply_change_event_fields(ce, {})
+        db.session.add(ce)
+        db.session.flush()
+        try:
+            change_event_workflow_action(ce, 'submit', users['pm'])
+            if random.random() < 0.6:
+                change_event_workflow_action(ce, 'approve', users['pm'])
+        except ValueError as exc:
+            rt.result.add('warning', 'change_event', f'{num}: {exc}')
+    db.session.commit()
+    rt.result.metrics['change_events_created'] = seq
+
+
 def _run_pay_period(rt: ProjectRuntime, models: dict, period_num: int, global_month: int) -> None:
     from pay_app_persistence import get_pay_app_state, save_pay_app_state
     from pay_app_workflow import process_pay_app_workflow, sub_pay_app_workflow_action
@@ -581,16 +715,17 @@ def _run_pay_period(rt: ProjectRuntime, models: dict, period_num: int, global_mo
     except Exception as exc:
         rt.result.add('critical', 'pay_app', f'G702 period {period_num}: {type(exc).__name__}: {exc}')
 
-    reconcile_project_accounting(
-        rt.project.id, None,
-        ChangeOrder=models['ChangeOrder'],
-        ChangeOrderAllocation=models['ChangeOrderAllocation'],
-        Commitment=models['Commitment'],
-        CommitmentAllocation=models['CommitmentAllocation'],
-        BudgetProjectState=models['BudgetProjectState'],
-        PayAppProjectState=PayAppProjectState,
-        db=db,
-    )
+    if rt.scenario.reconcile_every <= 1 or period_num % rt.scenario.reconcile_every == 0:
+        reconcile_project_accounting(
+            rt.project.id, None,
+            ChangeOrder=models['ChangeOrder'],
+            ChangeOrderAllocation=models['ChangeOrderAllocation'],
+            Commitment=models['Commitment'],
+            CommitmentAllocation=models['CommitmentAllocation'],
+            BudgetProjectState=models['BudgetProjectState'],
+            PayAppProjectState=PayAppProjectState,
+            db=db,
+        )
 
 
 def _verify_user_access(rt: ProjectRuntime, models: dict) -> None:
@@ -626,6 +761,9 @@ def _run_month_tick(rt: ProjectRuntime, models: dict, global_month: int) -> None
             _setup_project(rt, models, global_month)
         _spawn_rfis(rt, models, sc.rfi_per_month, global_month)
         _spawn_cos(rt, models, sc.co_per_month, global_month)
+        _spawn_submittals(rt, models, sc.submittal_per_month, global_month)
+        _spawn_rfqs(rt, models, sc.rfq_per_month, global_month)
+        _spawn_change_events(rt, models, sc.change_event_per_month, global_month)
         period_num = local + 1
         _run_pay_period(rt, models, period_num, global_month)
         if local == sc.duration_months - 1:
@@ -633,6 +771,7 @@ def _run_month_tick(rt: ProjectRuntime, models: dict, global_month: int) -> None
             rt.result.metrics['pay_periods_completed'] = rt.pay_periods_completed
     except Exception as exc:
         rt.result.add('critical', 'fatal', f'month {global_month}: {type(exc).__name__}: {exc}')
+        models['db'].session.rollback()
         traceback.print_exc()
 
 
@@ -646,32 +785,38 @@ def _overlap_pct(a: ProjectScenario, b: ProjectScenario) -> float:
     return round(overlap / shorter * 100, 1) if shorter else 0.0
 
 
-def run_portfolio(models: dict) -> list[ProjectRuntime]:
-    horizons = max(s.end_month for s in PORTFOLIO_SCENARIOS) + 1
+def run_portfolio(models: dict, scenarios: list[ProjectScenario] | None = None, *, verbose: bool = True) -> list[ProjectRuntime]:
+    scenarios = scenarios or PORTFOLIO_SCENARIOS
+    horizons = max(s.end_month for s in scenarios) + 1
     runtimes = [
         ProjectRuntime(scenario=s, result=SimResult(name=s.name, project_id=0))
-        for s in PORTFOLIO_SCENARIOS
+        for s in scenarios
     ]
 
-    print('Portfolio timeline overlaps (% of shorter project / % of Mega 100M timeline):')
-    mega = PORTFOLIO_SCENARIOS[0]
-    for i, a in enumerate(PORTFOLIO_SCENARIOS):
-        for b in PORTFOLIO_SCENARIOS[i + 1:]:
-            pct = _overlap_pct(a, b)
-            start = max(a.start_month, b.start_month)
-            end = min(a.end_month, b.end_month)
-            overlap_months = max(0, end - start + 1)
-            mega_pct = round(overlap_months / mega.duration_months * 100, 1)
-            print(f'  {a.slug} vs {b.slug}: {pct}% shorter / {mega_pct}% of mega timeline')
+    if verbose:
+        print('Portfolio timeline overlaps (% of shorter project / % of Mega 100M timeline):')
+        mega = max(scenarios, key=lambda s: s.contract_value)
+        for i, a in enumerate(scenarios):
+            for b in scenarios[i + 1:]:
+                pct = _overlap_pct(a, b)
+                start = max(a.start_month, b.start_month)
+                end = min(a.end_month, b.end_month)
+                overlap_months = max(0, end - start + 1)
+                mega_pct = round(overlap_months / mega.duration_months * 100, 1) if mega.duration_months else 0
+                print(f'  {a.slug} vs {b.slug}: {pct}% shorter / {mega_pct}% of largest timeline')
 
     for global_month in range(horizons):
         active = [rt for rt in runtimes if rt.scenario.start_month <= global_month <= rt.scenario.end_month]
         if not active:
             continue
         random.shuffle(active)
-        print(f'\n--- Global month {global_month} ({len(active)} active projects) ---')
+        if verbose:
+            print(f'\n--- Global month {global_month} ({len(active)} active projects) ---')
+            for rt in active:
+                print(f'  tick: {rt.scenario.name} (local month {global_month - rt.scenario.start_month})')
+        elif global_month % 6 == 0 or global_month == horizons - 1:
+            print(f'  month {global_month}/{horizons - 1}: {len(active)} active projects', flush=True)
         for rt in active:
-            print(f'  tick: {rt.scenario.name} (local month {global_month - rt.scenario.start_month})')
             _run_month_tick(rt, models, global_month)
             models['db'].session.commit()
 
