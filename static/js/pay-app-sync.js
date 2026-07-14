@@ -51,7 +51,7 @@
     });
   }
 
-  async function loadFromServer() {
+  async function loadFromServer(options) {
     const pid = projectId();
     if (!pid || !enabled) return null;
     try {
@@ -59,7 +59,11 @@
       if (!res.ok) return null;
       const json = await res.json();
       if (!json.data) return null;
-      serverVersion = json.version || 0;
+      const incomingVersion = json.version || 0;
+      if (options && options.skipIfSameVersion && incomingVersion <= serverVersion) {
+        return json;
+      }
+      serverVersion = incomingVersion;
       applyBundleToLocal(json.data);
       return json;
     } catch (e) {
@@ -226,6 +230,27 @@
     return json;
   }
 
+  async function refreshIfNewer() {
+    if (saveTimer || saveInFlight) return null;
+    const pid = projectId();
+    if (!pid || !enabled) return null;
+    try {
+      const res = await fetch(`/api/pay-applications/state?project_id=${pid}`, { credentials: 'same-origin' });
+      if (!res.ok) return null;
+      const json = await res.json();
+      if (!json.data) return null;
+      const incomingVersion = json.version || 0;
+      if (incomingVersion <= serverVersion) return null;
+      serverVersion = incomingVersion;
+      applyBundleToLocal(json.data);
+      global.dispatchEvent(new CustomEvent('casepm:payapp-state-refreshed', { detail: json.data }));
+      return json;
+    } catch (e) {
+      console.warn('[PayAppSync] refresh failed', e);
+      return null;
+    }
+  }
+
   async function init() {
     patchSafeSetLocalStorage();
     if (typeof CasePMWorkflow !== 'undefined') {
@@ -259,6 +284,7 @@
     applySubSovToLocal,
     applyCoSyncResult,
     refreshFromServer,
+    refreshIfNewer,
     queueSageEvent,
     fetchSageEvents,
     SYNC_KEYS,

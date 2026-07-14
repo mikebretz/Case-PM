@@ -694,7 +694,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         const ids = [];
         Object.keys(subSOVData || {}).forEach((key) => {
             const lines = subSOVData[key];
-            if (!Array.isArray(lines) || lines.length === 0) return;
+            if (!Array.isArray(lines)) return;
             const cid = canonicalSubCompanyId(key);
             if (cid == null || seen.has(String(cid))) return;
             seen.add(String(cid));
@@ -6678,6 +6678,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
         // Refresh the Subcontractor Schedule of Values tab so the new sub appears in the dropdown
         renderPayAppContent();
+        persistPayAppStateNow({ silent: true });
 
         // Auto-select the newly added sub
         setTimeout(() => {
@@ -6729,6 +6730,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
         // Refresh to update dropdown and view
         renderPayAppContent();
+        persistPayAppStateNow({ silent: true });
 
         // Success feedback removed per user request (link state + add lines enabled)
     }
@@ -9491,6 +9493,25 @@ function printSubcontractorG703(companyId) {
             reloadPayAppStateFromStorage();
             renderPayAppContent();
         });
+
+        function refreshPayAppFromServerIfIdle() {
+            if (payAppHasPendingChanges()) return;
+            if (typeof CasePMPayAppSync === 'undefined' || !CasePMPayAppSync.refreshIfNewer) return;
+            CasePMPayAppSync.refreshIfNewer().then((json) => {
+                if (json && json.data) {
+                    reloadPayAppStateFromStorage();
+                    renderPayAppContent();
+                }
+            }).catch(() => {});
+        }
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') refreshPayAppFromServerIfIdle();
+        });
+        window.addEventListener('focus', refreshPayAppFromServerIfIdle);
+        setInterval(() => {
+            if (document.visibilityState === 'visible') refreshPayAppFromServerIfIdle();
+        }, 20000);
         window.addEventListener('casepm:approval-responded', async (e) => {
             const d = e.detail || {};
             if (d.local || d.module !== 'Pay Applications') return;
