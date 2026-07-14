@@ -114,6 +114,27 @@ window.SUBMITTAL_PROJECT_CTX = {
       font-family: Arial, Helvetica, sans-serif;
       font-size: 7pt;
     }
+    .submittal-flowing-register {
+      background: #fff;
+      color: #111;
+    }
+    .submittal-flowing-register .submittal-print-header {
+      page-break-after: avoid;
+      break-after: avoid-page;
+    }
+    .submittal-flowing-register .submittal-print-table thead,
+    .submittal-flowing-register .casepm-print-table thead {
+      display: table-header-group;
+    }
+    .submittal-flowing-register .submittal-print-table tr,
+    .submittal-flowing-register .casepm-print-table tr {
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .submittal-flowing-register .submittal-print-footer {
+      page-break-before: avoid;
+      break-before: avoid-page;
+    }
     .submittal-print-page {
       page-break-after: always;
       break-after: page;
@@ -2917,54 +2938,41 @@ function buildSubmittalPrintSheet(selectedOptionalFields, contentOptions) {
         columns.forEach(col => { obj[col.key] = submittalPrintCellValue(item, col.key); });
         return obj;
     });
+    if (typeof CasePMPrint !== 'undefined' && CasePMPrint.buildFlowingRegisterHtml) {
+        const body = CasePMPrint.buildFlowingRegisterHtml(meta, 'SUBMITTAL LOG', columns, registerRows, {
+            classPrefix: 'submittal-print-',
+            sheetClass: 'submittal-flowing-register',
+            showLocation: printOpts.location !== false,
+            showPrintedDate: printOpts.printedDate !== false,
+            emptyMessage: 'No submittals to print.',
+        });
+        const sheet = document.getElementById('submittalPrintSheet');
+        if (sheet) sheet.innerHTML = body;
+        return body;
+    }
     if (typeof CasePMPrint !== 'undefined') {
         columns = CasePMPrint.rebalanceColumnWidths(CasePMPrint.pruneEmptyColumns(columns, registerRows));
     }
     const printedOn = new Date().toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
-    const pages = [];
-    const colSpan = columns.length;
     const headerOpts = {
         classPrefix: 'submittal-print-',
         showLocation: printOpts.location !== false,
     };
     const showPrintedDate = printOpts.printedDate !== false;
-    const paginate = (typeof CasePMPrint !== 'undefined' && CasePMPrint.paginateLogRows)
-        ? CasePMPrint.paginateLogRows
-        : (rows) => {
-            const perPage = 16;
-            const out = [];
-            for (let i = 0; i < rows.length; i += perPage) out.push(rows.slice(i, i + perPage));
-            return out.length ? out : [[]];
-        };
-
-    function submittalFooter(pageNum, totalPages) {
-        const pageLabel = totalPages > 1 ? `Page ${pageNum} of ${totalPages}` : `Page ${pageNum}`;
-        return `<div class="submittal-print-footer">
-            <span>Confidential</span>
-            <span class="center">${showPrintedDate ? printedOn : ''}</span>
-            <span class="right">${pageLabel}</span>
-        </div>`;
-    }
-
+    const colSpan = columns.length;
+    let inner = buildSubmittalPrintPageHeader(meta, false, headerOpts);
+    inner += buildSubmittalPrintTableHead(columns);
     if (!rows.length) {
-        pages.push(`${buildSubmittalPrintPageHeader(meta, false, headerOpts)}
-            ${buildSubmittalPrintTableHead(columns)}
-            <tr><td colspan="${colSpan}" style="text-align:center;padding:16px;color:#666">No submittals to print.</td></tr>
-            </tbody></table>
-            ${submittalFooter(1, 1)}`);
+        inner += `<tr><td colspan="${colSpan}" style="text-align:center;padding:16px;color:#666">No submittals to print.</td></tr>`;
     } else {
-        const rowPages = paginate(rows, { columnCount: columns.length });
-        const totalPages = rowPages.length;
-        rowPages.forEach((chunk, p) => {
-            let html = buildSubmittalPrintPageHeader(meta, p > 0, headerOpts);
-            html += buildSubmittalPrintTableHead(columns);
-            html += chunk.map(item => buildSubmittalPrintRow(item, columns)).join('');
-            html += `</tbody></table>${submittalFooter(p + 1, totalPages)}`;
-            pages.push(html);
-        });
+        inner += rows.map(item => buildSubmittalPrintRow(item, columns)).join('');
     }
-
-    const body = pages.map(html => `<div class="submittal-print-page">${html}</div>`).join('');
+    inner += `</tbody></table><div class="submittal-print-footer">
+        <span>Confidential</span>
+        <span class="center">${showPrintedDate ? printedOn : ''}</span>
+        <span class="right"></span>
+    </div>`;
+    const body = `<div class="submittal-flowing-register">${inner}</div>`;
     const sheet = document.getElementById('submittalPrintSheet');
     if (sheet) sheet.innerHTML = body;
     return body;

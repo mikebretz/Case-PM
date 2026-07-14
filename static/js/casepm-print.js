@@ -405,6 +405,101 @@
           page-break-after: auto;
           break-after: auto;
         }
+        .casepm-flowing-register, .submittal-flowing-register {
+          background: #fff;
+          color: #111;
+        }
+        .casepm-flowing-register .casepm-print-header,
+        .submittal-flowing-register .submittal-print-header {
+          page-break-after: avoid;
+          break-after: avoid-page;
+        }
+        .casepm-flowing-register .casepm-print-table thead,
+        .submittal-flowing-register .submittal-print-table thead,
+        .submittal-flowing-register .casepm-print-table thead {
+          display: table-header-group;
+        }
+        .casepm-flowing-register .casepm-print-table tr,
+        .submittal-flowing-register .submittal-print-table tr,
+        .submittal-flowing-register .casepm-print-table tr {
+          page-break-inside: avoid;
+          break-inside: avoid;
+        }
+        .casepm-flowing-register .casepm-print-footer,
+        .submittal-flowing-register .submittal-print-footer {
+          page-break-before: avoid;
+          break-before: avoid-page;
+        }
+        .casepm-manual-sigs {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 14px;
+          margin-top: 16px;
+          page-break-inside: avoid;
+        }
+        .casepm-manual-sigs.three-col { grid-template-columns: repeat(3, 1fr); }
+        .casepm-manual-sig-block {
+          border: 1px solid #ccc;
+          border-radius: 2px;
+          padding: 10px;
+          font-size: 7.5pt;
+        }
+        .casepm-manual-sig-role {
+          font-size: 6.5pt;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: #666;
+          margin-bottom: 8px;
+        }
+        .casepm-manual-field {
+          margin-bottom: 6px;
+          font-size: 7pt;
+        }
+        .casepm-manual-field .label {
+          display: block;
+          font-size: 6pt;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: #666;
+          font-weight: 700;
+          margin-bottom: 2px;
+        }
+        .casepm-manual-field .line {
+          border-bottom: 1px solid #888;
+          min-height: 20px;
+        }
+        .casepm-manual-field .value {
+          padding: 2px 0;
+          color: #222;
+        }
+        .casepm-manual-box {
+          border: 1px solid #ccc;
+          border-radius: 2px;
+          padding: 10px 12px;
+          margin-bottom: 10px;
+        }
+        .casepm-manual-box h4 {
+          margin: 0 0 6px;
+          font-size: 7pt;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: #555;
+          font-weight: 700;
+        }
+        .casepm-manual-box .prefill {
+          font-size: 8pt;
+          color: #444;
+          white-space: pre-wrap;
+          margin-bottom: 8px;
+          padding-bottom: 6px;
+          border-bottom: 1px dashed #ccc;
+        }
+        .casepm-manual-box .write-area {
+          border: 1px dashed #bbb;
+          border-radius: 2px;
+          background: #fafafa;
+        }
         .casepm-print-header, .submittal-print-header {
           margin-bottom: 8px;
           border-bottom: 1.5px solid #222;
@@ -847,10 +942,11 @@
     const opts = options || {};
     const columnCount = opts.columnCount || 12;
     const fullHeader = opts.fullHeader !== false;
-    let rows = fullHeader ? 18 : 22;
+    let rows = fullHeader ? 12 : 16;
     if (columnCount > 10) rows -= Math.ceil((columnCount - 10) / 2);
-    if (columnCount > 18) rows -= 2;
-    return Math.max(8, Math.min(24, rows));
+    if (columnCount > 16) rows -= 3;
+    if (columnCount > 20) rows -= 2;
+    return Math.max(6, Math.min(18, rows));
   }
 
   /** Split register rows into page chunks (smaller first page when full header is used). */
@@ -872,11 +968,75 @@
   function buildPrintFooterHtml(printedOn, pageNum, totalPages, options) {
     const opts = options || {};
     const showDate = opts.showPrintedDate !== false;
-    const pageLabel = totalPages > 1 ? `Page ${pageNum} of ${totalPages}` : `Page ${pageNum}`;
+    const pageLabel = totalPages > 1 ? `Page ${pageNum} of ${totalPages}` : (pageNum > 1 ? `Page ${pageNum}` : '');
     return `<div class="casepm-print-footer">
       <span>Confidential</span>
       <span class="center">${showDate ? esc(printedOn) : ''}</span>
       <span class="right">${pageLabel}</span>
+    </div>`;
+  }
+
+  /** Manual sign-off block with blank lines for ink signatures. */
+  function buildManualSigBlock(role) {
+    return `<div class="casepm-manual-sig-block">
+      <div class="casepm-manual-sig-role">${esc(role)}</div>
+      <div class="casepm-manual-field"><span class="label">Signature</span><div class="line"></div></div>
+      <div class="casepm-manual-field"><span class="label">Print Name</span><div class="line"></div></div>
+      <div class="casepm-manual-field"><span class="label">Title</span><div class="line"></div></div>
+      <div class="casepm-manual-field"><span class="label">Date</span><div class="line"></div></div>
+    </div>`;
+  }
+
+  /** Label with pre-filled value or a blank line for handwriting. */
+  function buildWritableField(label, value, options) {
+    const opts = options || {};
+    const text = normalizePrintCell(value);
+    if (!opts.blank && text && !isEmptyPrintCell(text)) {
+      return `<div class="casepm-manual-field"><span class="label">${esc(label)}</span><div class="value">${esc(text)}</div></div>`;
+    }
+    return `<div class="casepm-manual-field"><span class="label">${esc(label)}</span><div class="line"></div></div>`;
+  }
+
+  /** Box with optional prefill text and a large blank area for handwritten responses. */
+  function buildWritableBox(label, content, options) {
+    const opts = options || {};
+    const minH = opts.minHeight || 80;
+    const text = normalizePrintCell(content);
+    const showPrefill = !opts.blankOnly && text && !isEmptyPrintCell(text);
+    return `<div class="casepm-manual-box">
+      <h4>${esc(label)}</h4>
+      ${showPrefill ? `<div class="prefill">${esc(text)}</div>` : ''}
+      <div class="write-area" style="min-height:${minH}px"></div>
+    </div>`;
+  }
+
+  /**
+   * Flowing register print — document header once at top, column headers repeat per page.
+   * Avoids duplicate document headers bleeding onto the same physical page.
+   */
+  function buildFlowingRegisterHtml(meta, title, columns, rows, options) {
+    const opts = options || {};
+    const registerRows = rows || [];
+    const activeColumns = rebalanceColumnWidths(pruneEmptyColumns(columns || [], registerRows));
+    const printedOn = new Date().toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
+    const prefix = opts.classPrefix || 'casepm-print-';
+    const headerOpts = {
+      classPrefix: prefix,
+      showLocation: opts.showLocation !== false,
+    };
+    const footerOpts = { showPrintedDate: opts.showPrintedDate !== false };
+    const sheetClass = opts.sheetClass || 'casepm-flowing-register';
+    const tableHtml = buildPrintTable(activeColumns, registerRows, opts.emptyMessage);
+    const footerClass = prefix === 'submittal-print-' ? 'submittal-print-footer' : 'casepm-print-footer';
+    const showDate = footerOpts.showPrintedDate;
+    return `<div class="${sheetClass}">
+      ${buildPrintHeaderHtml(meta, title, headerOpts)}
+      ${tableHtml.replace('casepm-print-table', `${prefix.replace(/-$/, '')}-table casepm-print-table`)}
+      <div class="${footerClass}">
+        <span>Confidential</span>
+        <span class="center">${showDate ? esc(printedOn) : ''}</span>
+        <span class="right"></span>
+      </div>
     </div>`;
   }
 
@@ -885,6 +1045,15 @@
     const printOpts = opts.printOptions || {};
     const printedOn = new Date().toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
     const sections = opts.sections || [{ title: opts.title, tableHtml: opts.tableHtml }];
+
+    if (opts.flowing) {
+      return sections.map(section => buildFlowingRegisterHtml(meta, section.title, section.columns || [], section.rows || [], {
+        showLocation: printOpts.showLocation !== false,
+        showPrintedDate: printOpts.showPrintedDate !== false,
+        emptyMessage: section.emptyMessage,
+      })).join('');
+    }
+
     const pages = [];
     const headerOpts = {
       showLocation: printOpts.showLocation !== false,
@@ -1004,7 +1173,19 @@
         .casepm-co-document .co-doc-sig-line { border-bottom: 1px solid #888; height: 22px; margin-bottom: 6px; }
         .casepm-co-document .co-doc-sig-filled { font-size: 7pt; color: #222; margin-top: 4px; }
         .casepm-co-document .co-doc-history { font-size: 7.5pt; color: #444; margin-top: 10px; }
-        .casepm-co-document .co-doc-history-item { padding: 4px 0; border-bottom: 1px solid #eee; }`;
+        .casepm-co-document .co-doc-history-item { padding: 4px 0; border-bottom: 1px solid #eee; }
+        .casepm-manual-sigs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 16px; page-break-inside: avoid; }
+        .casepm-manual-sigs.three-col { grid-template-columns: repeat(3, 1fr); }
+        .casepm-manual-sig-block { border: 1px solid #ccc; border-radius: 2px; padding: 10px; font-size: 7.5pt; }
+        .casepm-manual-sig-role { font-size: 6.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #666; margin-bottom: 8px; }
+        .casepm-manual-field { margin-bottom: 6px; font-size: 7pt; }
+        .casepm-manual-field .label { display: block; font-size: 6pt; text-transform: uppercase; letter-spacing: 0.04em; color: #666; font-weight: 700; margin-bottom: 2px; }
+        .casepm-manual-field .line { border-bottom: 1px solid #888; min-height: 20px; }
+        .casepm-manual-field .value { padding: 2px 0; color: #222; }
+        .casepm-manual-box { border: 1px solid #ccc; border-radius: 2px; padding: 10px 12px; margin-bottom: 10px; }
+        .casepm-manual-box h4 { margin: 0 0 6px; font-size: 7pt; text-transform: uppercase; letter-spacing: 0.05em; color: #555; font-weight: 700; }
+        .casepm-manual-box .prefill { font-size: 8pt; color: #444; white-space: pre-wrap; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px dashed #ccc; }
+        .casepm-manual-box .write-area { border: 1px dashed #bbb; border-radius: 2px; background: #fafafa; }`;
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(docTitle || 'Print')}</title>
       <style>
         @page { size: portrait; margin: 0.45in 0.5in; }
@@ -1085,6 +1266,10 @@
     getProjectMeta,
     buildPrintHeaderHtml,
     buildPrintFooterHtml,
+    buildFlowingRegisterHtml,
+    buildManualSigBlock,
+    buildWritableField,
+    buildWritableBox,
     showFieldPicker,
     buildPrintTable,
     buildPrintDocument,
