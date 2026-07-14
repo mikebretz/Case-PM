@@ -123,13 +123,26 @@ window.SUBMITTAL_PROJECT_CTX = {
       break-after: auto;
     }
     .submittal-print-header {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 8px 16px;
-      align-items: start;
       margin-bottom: 6px;
       border-bottom: 2px solid #111;
       padding-bottom: 6px;
+    }
+    .submittal-print-header-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .submittal-print-header-table td {
+      border: none;
+      vertical-align: top;
+      padding: 0;
+    }
+    .submittal-print-header-left { padding-right: 12px; }
+    .submittal-print-header-right {
+      text-align: right;
+      width: 34%;
+      padding-left: 10px;
+      word-break: normal;
+      overflow-wrap: normal;
     }
     .submittal-print-title {
       font-size: 13pt;
@@ -141,10 +154,10 @@ window.SUBMITTAL_PROJECT_CTX = {
     .submittal-print-meta {
       text-align: right;
       font-size: 6.5pt;
-      line-height: 1.3;
+      line-height: 1.35;
       color: #222;
-      max-width: 42%;
-      word-break: break-word;
+      word-break: normal;
+      overflow-wrap: normal;
     }
     .submittal-print-meta div { margin-bottom: 1px; }
     .submittal-print-meta .label {
@@ -164,11 +177,12 @@ window.SUBMITTAL_PROJECT_CTX = {
     .submittal-print-table td {
       border: 1px solid #333;
       padding: 2px 3px;
-      vertical-align: top;
-      word-wrap: break-word;
-      overflow-wrap: anywhere;
-      max-height: 32pt;
+      vertical-align: middle;
+      word-break: normal;
+      overflow-wrap: normal;
+      white-space: nowrap;
       overflow: hidden;
+      text-overflow: ellipsis;
     }
     .submittal-print-table th {
       background: #f0f0f0;
@@ -2591,11 +2605,11 @@ async function clearSubmittalLog() {
 
 /** Fixed ALDI-style column order — always printed in this sequence. */
 const SUBMITTAL_BASE_PRINT_COLUMNS = [
-    { key: 'specSection', label: 'Spec<br>Section', width: '4.5%', mono: true },
-    { key: 'rev', label: 'Rev#', width: '2.5%', align: 'center', mono: true },
+    { key: 'specSection', label: 'Spec<br>Section', width: '4.5%', mono: true, alwaysShow: true },
+    { key: 'rev', label: 'Rev#', width: '2.5%', align: 'center', mono: true, alwaysShow: true },
     { key: 'paragraph', label: 'Paragraph', width: '4%', mono: true },
     { key: 'copiesTo', label: 'Copies<br>To', width: '3%', align: 'center' },
-    { key: 'subject', label: 'Submittal<br>Subject', width: '9%' },
+    { key: 'subject', label: 'Submittal<br>Subject', width: '9%', alwaysShow: true, logPhrase: true, logWords: 4 },
     { key: 'type', label: 'Submittal<br>Type', width: '7%' },
     { key: 'dateReceived', label: 'Date<br>Received', width: '4.5%', align: 'center' },
     { key: 'receivedFrom', label: 'Received<br>From', width: '6%' },
@@ -2612,7 +2626,7 @@ const SUBMITTAL_BASE_PRINT_COLUMNS = [
     { key: 'fieldDocument', label: 'Document', width: '3.5%', align: 'center' },
     { key: 'sectionName', label: 'Section<br>Name', width: '8%' },
     { key: 'transmittalNumber', label: 'Transmittal<br>#', width: '4%', align: 'center', mono: true },
-    { key: 'status', label: 'Status', width: '5%', align: 'center' },
+    { key: 'status', label: 'Status', width: '5%', align: 'center', alwaysShow: true },
 ];
 
 /** Optional columns — appended to the right of the standard log. */
@@ -2654,9 +2668,21 @@ function submittalPrintCellValue(item, key) {
         case 'status': return getPrintStatusLabel(item);
         case 'assignedCompanyName': return item.assignedCompanyName || item.receivedFrom || '';
         case 'requiredBy': return formatPrintDate(item.requiredBy);
-        case 'subject': return truncate(item.subject, 90);
-        case 'sectionName': return truncate(item.sectionName, 80);
-        case 'copiesTo': return truncate(item.copiesTo, 60);
+        case 'subject': {
+            const raw = item.subject ?? '';
+            if (typeof CasePMPrint !== 'undefined' && CasePMPrint.logPhrase) return CasePMPrint.logPhrase(raw, 4);
+            return truncate(raw, 90);
+        }
+        case 'sectionName': {
+            const raw = item.sectionName ?? '';
+            if (typeof CasePMPrint !== 'undefined' && CasePMPrint.logPhrase) return CasePMPrint.logPhrase(raw, 3);
+            return truncate(raw, 80);
+        }
+        case 'copiesTo': {
+            const raw = item.copiesTo ?? '';
+            if (typeof CasePMPrint !== 'undefined' && CasePMPrint.logPhrase) return CasePMPrint.logPhrase(raw, 3);
+            return truncate(raw, 60);
+        }
         default: {
             const val = item[key] ?? '';
             return typeof val === 'string' && val.length > 100 ? truncate(val, 100) : val;
@@ -2799,8 +2825,7 @@ function buildSubmittalPrintTableHead(columns) {
 }
 
 function buildSubmittalPrintSheet(selectedOptionalFields) {
-    const columns = resolveSubmittalPrintColumns(selectedOptionalFields);
-    const fields = columns.map(c => c.key);
+    let columns = resolveSubmittalPrintColumns(selectedOptionalFields);
     const meta = getSubmittalProjectMeta();
     const rows = [...submittals].sort((a, b) => {
         const sa = formatSpecSectionForPrint(a.specSection);
@@ -2811,10 +2836,18 @@ function buildSubmittalPrintSheet(selectedOptionalFields) {
         if (ra !== rb) return ra - rb;
         return String(a.subject || '').localeCompare(String(b.subject || ''));
     });
+    const registerRows = rows.map(item => {
+        const obj = {};
+        columns.forEach(col => { obj[col.key] = submittalPrintCellValue(item, col.key); });
+        return obj;
+    });
+    if (typeof CasePMPrint !== 'undefined') {
+        columns = CasePMPrint.rebalanceColumnWidths(CasePMPrint.pruneEmptyColumns(columns, registerRows));
+    }
     const printedOn = new Date().toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
     const ROWS_PER_PAGE = 28;
     const pages = [];
-    const colSpan = fields.length;
+    const colSpan = columns.length;
 
     if (!rows.length) {
         pages.push(`${buildSubmittalPrintPageHeader(meta)}
@@ -2847,15 +2880,25 @@ function buildSubmittalPrintSheet(selectedOptionalFields) {
 
 function buildSubmittalPrintPageHeader(meta) {
     const esc = escapeSubmittalHtml;
+    const loc = meta.location
+        ? `<div style="margin-top:4px;font-size:6.5pt"><span class="label" style="font-weight:700">LOCATION</span><br>${esc(meta.location)}</div>`
+        : '';
+    if (typeof CasePMPrint !== 'undefined' && CasePMPrint.buildPrintHeaderHtml) {
+        return CasePMPrint.buildPrintHeaderHtml(meta, 'SUBMITTAL LOG').replace('casepm-print-', 'submittal-print-');
+    }
     return `<div class="submittal-print-header">
-        <div>
-            <div class="submittal-print-title">SUBMITTAL LOG</div>
-            <div style="margin-top:4px;font-size:7pt"><span class="label" style="font-weight:700">LOCATION</span><br>${esc(meta.location)}</div>
-        </div>
-        <div class="submittal-print-meta">
-            <div><span class="label">PROJECT ID</span><br>${esc(meta.number)}</div>
-            <div style="margin-top:4px"><span class="label">PROJECT NAME</span><br>${esc(meta.name)}</div>
-        </div>
+        <table class="submittal-print-header-table"><tr>
+            <td class="submittal-print-header-left">
+                <div class="submittal-print-title">SUBMITTAL LOG</div>
+                ${loc}
+            </td>
+            <td class="submittal-print-header-right">
+                <div class="submittal-print-meta">
+                    <div><span class="label">PROJECT ID</span><br>${esc(meta.number)}</div>
+                    <div style="margin-top:4px"><span class="label">PROJECT NAME</span><br>${esc(meta.name)}</div>
+                </div>
+            </td>
+        </tr></table>
     </div>`;
 }
 
