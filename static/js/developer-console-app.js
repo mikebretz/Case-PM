@@ -110,10 +110,73 @@
     return `${min}m ago`;
   }
 
+  function stableSessionSort(sessions) {
+    return [...(sessions || [])].sort((a, b) => {
+      if (!!a.online !== !!b.online) return a.online ? -1 : 1;
+      const an = (a.user_name || a.user_email || '').toLowerCase();
+      const bn = (b.user_name || b.user_email || '').toLowerCase();
+      if (an !== bn) return an.localeCompare(bn);
+      return String(a.session_key || '').localeCompare(String(b.session_key || ''));
+    });
+  }
+
+  function liveSessionRowHtml(s) {
+    const online = !!s.online;
+    const active = liveWatchSessionKey === s.session_key;
+    const sub = [s.page_module, s.project_name, s.active_tab].filter(Boolean).join(' · ');
+    return `
+      <div class="dev-live-user ${active ? 'active' : ''}" data-session-key="${escapeHtml(s.session_key)}">
+        <span class="dev-live-dot ${online ? 'online' : 'offline'}"></span>
+        <div class="min-w-0 flex-1">
+          <div class="font-medium text-white truncate dev-live-name">${escapeHtml(s.user_name || s.user_email || 'User')}</div>
+          <div class="text-[10px] text-zinc-500 truncate dev-live-meta">${escapeHtml(s.user_role || '')} · ${escapeHtml(formatSeenAgo(s.last_seen_at))}</div>
+          <div class="text-[10px] text-zinc-400 truncate mt-0.5 dev-live-sub">${escapeHtml(sub || s.page_title || (online ? 'Online' : 'Recently active'))}</div>
+        </div>
+      </div>`;
+  }
+
+  function patchLiveSessionRow(el, s) {
+    if (!el) return;
+    el.classList.toggle('active', liveWatchSessionKey === s.session_key);
+    const dot = el.querySelector('.dev-live-dot');
+    if (dot) dot.className = `dev-live-dot ${s.online ? 'online' : 'offline'}`;
+    const sub = [s.page_module, s.project_name, s.active_tab].filter(Boolean).join(' · ');
+    const meta = el.querySelector('.dev-live-meta');
+    if (meta) meta.textContent = `${s.user_role || ''} · ${formatSeenAgo(s.last_seen_at)}`;
+    const subEl = el.querySelector('.dev-live-sub');
+    if (subEl) subEl.textContent = sub || s.page_title || (s.online ? 'Online' : 'Recently active');
+  }
+
+  function bindLiveUserListClicks() {
+    const host = document.getElementById('devLiveUserList');
+    if (!host || host.dataset.clickBound) return;
+    host.dataset.clickBound = '1';
+    host.addEventListener('click', (ev) => {
+      const row = ev.target.closest('.dev-live-user');
+      if (!row || !row.dataset.sessionKey) return;
+      watchLiveSession(row.dataset.sessionKey);
+    });
+  }
+
+  function bindLiveWatchPanelClicks() {
+    const panel = document.getElementById('devLiveWatchPanel');
+    if (!panel || panel.dataset.clickBound) return;
+    panel.dataset.clickBound = '1';
+    panel.addEventListener('click', (ev) => {
+      const trigger = ev.target.closest('[data-live-open-popup]');
+      if (!trigger) return;
+      const key = trigger.dataset.sessionKey
+        || trigger.closest('[data-session-key]')?.dataset.sessionKey;
+      if (key) openLiveWatchPopup(key);
+    });
+  }
+
   function renderLiveSessionList(sessions) {
     const host = document.getElementById('devLiveUserList');
     if (!host) return;
-    if (!sessions?.length) {
+    const sorted = stableSessionSort(sessions);
+    if (!sorted.length) {
+      host.dataset.sessionKeys = '';
       host.innerHTML = `
         <div class="text-zinc-500 text-center py-6 text-xs space-y-2 px-2">
           <div>No active sessions detected.</div>
@@ -121,21 +184,19 @@
         </div>`;
       return;
     }
-    host.innerHTML = sessions.map((s) => {
-      const online = !!s.online;
-      const active = liveWatchSessionKey === s.session_key;
-      const sub = [s.page_module, s.project_name, s.active_tab].filter(Boolean).join(' · ');
-      return `
-        <div class="dev-live-user ${active ? 'active' : ''}" data-session-key="${escapeHtml(s.session_key)}" onclick="CasePMDeveloperConsole.watchLiveSession(${JSON.stringify(s.session_key)})">
-          <span class="dev-live-dot ${online ? 'online' : 'offline'}"></span>
-          <div class="min-w-0 flex-1">
-            <div class="font-medium text-white truncate">${escapeHtml(s.user_name || s.user_email || 'User')}</div>
-            <div class="text-[10px] text-zinc-500 truncate">${escapeHtml(s.user_role || '')} · ${escapeHtml(formatSeenAgo(s.last_seen_at))}</div>
-            <div class="text-[10px] text-zinc-400 truncate mt-0.5">${escapeHtml(sub || s.page_title || (online ? 'Online' : 'Recently active'))}</div>
-          </div>
-        </div>
-      `;
-    }).join('');
+    const keys = sorted.map((s) => s.session_key).join('\n');
+    const prevKeys = host.dataset.sessionKeys || '';
+    if (keys === prevKeys) {
+      sorted.forEach((s) => {
+        const el = host.querySelector(`.dev-live-user[data-session-key="${CSS.escape(String(s.session_key))}"]`);
+        patchLiveSessionRow(el, s);
+      });
+      return;
+    }
+    const scrollTop = host.scrollTop;
+    host.dataset.sessionKeys = keys;
+    host.innerHTML = sorted.map(liveSessionRowHtml).join('');
+    host.scrollTop = scrollTop;
   }
 
   function renderLiveWatchPanel(session, forceFull) {
@@ -209,16 +270,16 @@
       ? vs.selected.map((s) => `<span class="inline-block px-2 py-0.5 bg-zinc-800 text-zinc-300 rounded text-xs mr-1">${escapeHtml(s)}</span>`).join('')
       : '<span class="text-zinc-600 text-xs">—</span>';
     const thumbUrl = session.has_thumbnail ? liveThumbUrl(session.session_key) : '';
-    const skJson = JSON.stringify(session.session_key);
+    const sk = escapeHtml(session.session_key);
     host.innerHTML = `
-      <div id="devLiveWatchShell" data-session-key="${escapeHtml(session.session_key)}">
+      <div id="devLiveWatchShell" data-session-key="${sk}">
       <div class="flex flex-wrap items-start justify-between gap-2 mb-3">
         <div>
           <div class="text-lg font-semibold text-white">${escapeHtml(session.user_name || '')}</div>
           <div class="text-xs text-zinc-500">${escapeHtml(session.user_email || '')} · ${escapeHtml(session.user_role || '')}</div>
         </div>
         <div class="flex flex-col items-end gap-2">
-          <button type="button" class="dev-tool-btn !w-auto !py-1.5 !px-3 text-xs" onclick="CasePMDeveloperConsole.openLiveWatchPopup(${skJson})">
+          <button type="button" class="dev-tool-btn !w-auto !py-1.5 !px-3 text-xs" data-live-open-popup data-session-key="${sk}">
             <i class="fa-solid fa-up-right-from-square text-sky-400"></i><span>Open full screen window</span>
           </button>
           <div class="text-right text-xs">
@@ -227,7 +288,7 @@
           </div>
         </div>
       </div>
-      <div class="dev-live-screen mb-4" onclick="CasePMDeveloperConsole.openLiveWatchPopup(${skJson})" title="Click to open full screen watch window">
+      <div class="dev-live-screen mb-4" data-live-open-popup data-session-key="${sk}" title="Click to open full screen watch window">
         ${thumbUrl
           ? `<img src="${thumbUrl}" alt="Live viewport" id="devLiveThumb">`
           : '<div class="text-zinc-500 text-xs p-6 text-center">Viewport snapshot loading — opens in a full screen window when you select a user. Captures refresh every ~5s from their browser.</div>'}
@@ -306,7 +367,7 @@
             const shell = document.getElementById('devLiveWatchShell');
             if (shell && !shell.querySelector('.dev-live-popup-blocked')) {
               shell.insertAdjacentHTML('afterbegin',
-                '<div class="dev-live-popup-blocked text-amber-300/90 text-xs mb-3 px-1">Popup blocked — allow popups for this site, or click “Open full screen window”.</div>');
+                '<div class="dev-live-popup-blocked text-amber-300/90 text-xs mb-3 px-1">Popup blocked — allow popups for this site, or click Open full screen window.</div>');
             }
           }
         } else {
@@ -321,6 +382,10 @@
   function loadLiveUsersPanel() {
     stopLivePolling();
     liveWatchSessionKey = null;
+    bindLiveUserListClicks();
+    bindLiveWatchPanelClicks();
+    const list = document.getElementById('devLiveUserList');
+    if (list) list.dataset.sessionKeys = '';
     const panel = document.getElementById('devLiveWatchPanel');
     if (panel) {
       panel.innerHTML = '<div class="text-zinc-500 text-sm text-center py-16">Select a session on the left to watch their screen and activity.</div>';

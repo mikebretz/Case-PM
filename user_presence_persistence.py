@@ -276,8 +276,15 @@ def list_online_presence(db, include_offline_minutes=30):
         FROM user_presence_sessions
         WHERE last_seen_epoch >= :cutoff
            OR (last_seen_epoch = 0 AND last_seen_at >= :cutoff_iso)
-        ORDER BY last_seen_epoch DESC, last_seen_at DESC
-    '''), {'cutoff': cutoff_epoch, 'cutoff_iso': cutoff_iso}).fetchall()
+        ORDER BY
+            CASE WHEN last_seen_epoch >= :online_cutoff THEN 0 ELSE 1 END,
+            COALESCE(user_name, user_email, '') COLLATE NOCASE ASC,
+            session_key ASC
+    '''), {
+        'cutoff': cutoff_epoch,
+        'cutoff_iso': cutoff_iso,
+        'online_cutoff': _now_epoch() - ONLINE_WINDOW_SECONDS,
+    }).fetchall()
 
     sessions = [_serialize_row(r) for r in rows]
     by_user = {}
