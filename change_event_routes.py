@@ -304,7 +304,9 @@ def register_change_event_routes(app, deps):
             return deps['jsonify']({'error': str(exc)}), 403
         body = deps['request'].get_json(silent=True) or {}
         portal = deps.get('user_portal_type_fn')
-        is_sub = portal(current_user) == 'sub' if portal else current_user.role in ('Company User', 'Subcontractor Accountant')
+        is_sub = portal(current_user) == 'sub' if portal else current_user.role in (
+            'Company User', 'Subcontractor', 'Subcontractor Contact', 'Subcontractor Accountant',
+        )
         if is_sub and rfq.company_id and str(getattr(current_user, 'company_id', '')) != str(rfq.company_id):
             if getattr(current_user, 'company', '') != (rfq.company_name or ''):
                 return deps['jsonify']({'error': 'This RFQ is not assigned to your company.'}), 403

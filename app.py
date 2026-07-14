@@ -6117,6 +6117,86 @@ def api_company_link_user(company_id):
     return jsonify({'ok': True, 'user_id': user.id, 'company_id': company.id})
 
 
+@app.route('/api/companies/<int:company_id>/unlink-user', methods=['POST'])
+@login_required
+@users_module_required
+def api_company_unlink_user(company_id):
+    """Remove a user's company membership and clear primary/financial contact if needed."""
+    company = Company.query.get_or_404(company_id)
+    body = request.get_json(silent=True) or {}
+    user_id = body.get('user_id')
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'user_id required'}), 400
+    user = User.query.get_or_404(user_id)
+    if user.company_id == company.id:
+        user.company_id = None
+        user.company = None
+    if company.primary_contact_user_id == user_id:
+        company.primary_contact_user_id = None
+    if company.financial_contact_user_id == user_id:
+        company.financial_contact_user_id = None
+    db.session.commit()
+    write_audit(
+        'Unlinked user from company',
+        f'{user.full_name} ← {company.name}',
+        module='companies',
+        category='update',
+        target_type='Company',
+        target_id=company.id,
+        commit=True,
+    )
+    return jsonify({
+        'ok': True,
+        'user_id': user.id,
+        'company_id': company.id,
+        'primary_contact_user_id': company.primary_contact_user_id,
+        'financial_contact_user_id': company.financial_contact_user_id,
+    })
+
+
+@app.route('/api/companies/<int:company_id>/set-contact', methods=['POST'])
+@login_required
+@users_module_required
+def api_company_set_contact(company_id):
+    """Designate primary or financial contact for a company."""
+    company = Company.query.get_or_404(company_id)
+    body = request.get_json(silent=True) or {}
+    user_id = body.get('user_id')
+    contact_type = (body.get('contact_type') or body.get('role') or '').strip().lower()
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'user_id required'}), 400
+    if contact_type not in ('primary', 'financial'):
+        return jsonify({'error': 'contact_type must be primary or financial'}), 400
+    user = User.query.get_or_404(user_id)
+    if user.company_id != company.id:
+        user.company_id = company.id
+        user.company = company.name
+    if contact_type == 'primary':
+        company.primary_contact_user_id = user_id
+        if user.email:
+            company.email = user.email
+        if user.phone:
+            company.phone = user.phone
+    else:
+        company.financial_contact_user_id = user_id
+    db.session.commit()
+    write_audit(
+        f'Set {contact_type} contact',
+        f'{user.full_name} → {company.name}',
+        module='companies',
+        category='update',
+        target_type='Company',
+        target_id=company.id,
+        commit=True,
+    )
+    from companies_persistence import serialize_company
+    return jsonify({'ok': True, 'company': serialize_company(company)})
+
+
 @app.route('/api/companies/<int:company_id>/projects', methods=['GET'])
 @login_required
 def api_company_projects(company_id):

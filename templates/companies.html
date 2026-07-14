@@ -443,6 +443,26 @@
     </div>
 </dialog>
 
+<!-- Add User to Company Modal -->
+<dialog id="addUserToCompanyModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-md w-full max-w-lg p-0 shadow-2xl backdrop:bg-black/60">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700">
+        <div>
+            <h2 class="text-lg font-semibold">Add User to Company</h2>
+            <p id="addUserModalSubtitle" class="text-xs text-zinc-500 mt-0.5"></p>
+        </div>
+        <button type="button" onclick="closeAddUserToCompanyModal()" class="text-zinc-400 hover:text-white text-2xl leading-none" aria-label="Close">&times;</button>
+    </div>
+    <div class="p-4">
+        <input type="text" id="addUserSearchInput" placeholder="Search by name or email…" autocomplete="off"
+            class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600 mb-3">
+        <div id="addUserPickList" class="max-h-72 overflow-y-auto space-y-1 border border-zinc-700 rounded-md p-2 bg-zinc-800/40 min-h-[120px]"></div>
+        <p class="text-[10px] text-zinc-500 mt-2">Click a user to link them. New users start with access off until enabled in User Management.</p>
+    </div>
+    <div class="flex justify-end gap-3 px-6 py-4 border-t border-zinc-700 bg-zinc-950 rounded-b-md">
+        <button type="button" onclick="closeAddUserToCompanyModal()" class="px-6 py-2.5 rounded border border-zinc-600 hover:bg-zinc-800 text-sm">Cancel</button>
+    </div>
+</dialog>
+
 <!-- Sage 300 Sync Modal -->
 <dialog id="sageSyncModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-md w-full max-w-5xl p-0 shadow-2xl">
     <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700">
@@ -661,31 +681,166 @@ async function renderLinkedUsersForCompany(companyName) {
                 <button type="button" class="px-2.5 py-1 text-xs bg-zinc-700 hover:bg-emerald-600 hover:text-white rounded transition-colors whitespace-nowrap designate-primary-btn" data-user-id="${user.id}">
                     Set Primary
                 </button>
+                <button type="button" class="px-2.5 py-1 text-xs bg-zinc-700 hover:bg-red-700 hover:text-white rounded transition-colors whitespace-nowrap remove-linked-user-btn" data-user-id="${user.id}" title="Remove from company">
+                    <i class="fa-solid fa-user-minus"></i>
+                </button>
             </div>`;
-        div.querySelector('.designate-financial-btn').addEventListener('click', () => designateFinancialContact(user.id, companyName));
-        div.querySelector('.designate-primary-btn').addEventListener('click', () => designatePrimaryContact(user.id, companyName));
+        const userInfo = {
+            id: user.id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            phone: user.phone,
+            jobTitle: user.jobTitle,
+        };
+        const displayName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'User';
+        div.querySelector('.designate-financial-btn').addEventListener('click', () => designateFinancialContact(user.id, companyName, userInfo));
+        div.querySelector('.designate-primary-btn').addEventListener('click', () => designatePrimaryContact(user.id, companyName, userInfo));
+        div.querySelector('.remove-linked-user-btn').addEventListener('click', () => confirmUnlinkUserFromCompany(user.id, companyName, displayName));
         container.appendChild(div);
     });
 }
 
 async function linkUserToCompanyOnServer(userId, companyServerId) {
-    if (!userId || !companyServerId) return;
+    if (!userId || !companyServerId) return false;
     try {
-        await fetch(`/api/companies/${companyServerId}/link-user`, {
+        const res = await fetch(`/api/companies/${companyServerId}/link-user`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
             body: JSON.stringify({ user_id: userId }),
         });
+        return res.ok;
     } catch (e) {
         console.warn('link user to company failed', e);
+        return false;
     }
 }
 
-async function showAddUserToCompanyModal() {
+async function setCompanyContactOnServer(companyServerId, userId, contactType) {
+    if (!userId || !companyServerId || !contactType) return null;
+    try {
+        const res = await fetch(`/api/companies/${companyServerId}/set-contact`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ user_id: userId, contact_type: contactType }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            console.warn('set contact failed', json.error || res.status);
+            return null;
+        }
+        return json.company || null;
+    } catch (e) {
+        console.warn('set contact failed', e);
+        return null;
+    }
+}
+
+async function unlinkUserFromCompanyOnServer(userId, companyServerId) {
+    if (!userId || !companyServerId) return null;
+    try {
+        const res = await fetch(`/api/companies/${companyServerId}/unlink-user`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ user_id: userId }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            console.warn('unlink user failed', json.error || res.status);
+            return null;
+        }
+        return json;
+    } catch (e) {
+        console.warn('unlink user failed', e);
+        return null;
+    }
+}
+
+function getActiveCompanyRecord() {
     const companyIdEl = document.getElementById('companyId');
     const localId = companyIdEl ? parseInt(companyIdEl.value, 10) : null;
-    const currentCompany = localId ? companies.find(c => c.id === localId) : null;
+    if (!localId) return null;
+    return companies.find(c => c.id === localId) || null;
+}
+
+function resolveUserForCompanyAction(userId, userInfo) {
+    const allUsers = JSON.parse(localStorage.getItem('users') || '[]');
+    let user = allUsers.find(u => Number(u.id) === Number(userId) || Number(u.serverId) === Number(userId));
+    if (!user && userInfo?.email) {
+        user = allUsers.find(u => (u.email || '').toLowerCase() === userInfo.email.toLowerCase());
+    }
+    if (!user && userInfo) {
+        user = {
+            id: userId,
+            firstName: userInfo.firstName || '',
+            lastName: userInfo.lastName || '',
+            email: userInfo.email || '',
+            phone: userInfo.phone || '',
+        };
+    }
+    return user;
+}
+
+let addUserModalState = { serverId: null, companyName: '', available: [] };
+
+function closeAddUserToCompanyModal() {
+    const modal = document.getElementById('addUserToCompanyModal');
+    if (modal?.open) modal.close();
+}
+
+function renderAddUserPickList(filterText) {
+    const listEl = document.getElementById('addUserPickList');
+    if (!listEl) return;
+    const q = (filterText || '').trim().toLowerCase();
+    const filtered = addUserModalState.available.filter(u => {
+        if (!q) return true;
+        const name = `${u.firstName || ''} ${u.lastName || ''}`.toLowerCase();
+        const email = (u.email || '').toLowerCase();
+        const role = (u.role || '').toLowerCase();
+        return name.includes(q) || email.includes(q) || role.includes(q);
+    });
+    if (!filtered.length) {
+        listEl.innerHTML = '<div class="text-zinc-500 text-xs px-2 py-4 text-center">No matching users.</div>';
+        return;
+    }
+    listEl.innerHTML = '';
+    filtered.forEach(user => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'w-full text-left px-3 py-2.5 rounded-md bg-zinc-900 hover:bg-emerald-900/40 border border-zinc-700 hover:border-emerald-600 transition-colors';
+        btn.innerHTML = `
+            <div class="font-medium text-white">${user.firstName || ''} ${user.lastName || ''}</div>
+            <div class="text-xs text-zinc-400">${user.email || ''}${user.role ? ' • ' + user.role : ''}</div>`;
+        btn.addEventListener('click', () => pickUserForCompany(user));
+        listEl.appendChild(btn);
+    });
+}
+
+async function pickUserForCompany(user) {
+    const { serverId, companyName } = addUserModalState;
+    if (!user?.id || !serverId) return;
+    closeAddUserToCompanyModal();
+    const ok = await linkUserToCompanyOnServer(user.id, serverId);
+    if (!ok) {
+        showAlertModal('Link Failed', 'Could not link that user. Try again or check your permissions.');
+        return;
+    }
+    const allLocal = JSON.parse(localStorage.getItem('users') || '[]');
+    const lu = allLocal.find(u => Number(u.id) === Number(user.id) || (u.email && u.email === user.email));
+    if (lu) {
+        lu.company_id = serverId;
+        lu.company = companyName;
+        localStorage.setItem('users', JSON.stringify(allLocal));
+    }
+    await renderLinkedUsersForCompany(companyName);
+    showAlertModal('User Linked', `${user.firstName} ${user.lastName} is now assigned to ${companyName}. Enable their access in User Management if needed.`);
+}
+
+async function showAddUserToCompanyModal() {
+    const currentCompany = getActiveCompanyRecord();
     const serverId = currentCompany?.server_id || currentCompany?.id;
     const companyName = document.getElementById('company_name')?.value || currentCompany?.company_name || '';
     if (!serverId) {
@@ -708,82 +863,77 @@ async function showAddUserToCompanyModal() {
         showAlertModal('No Users Available', 'All active users are already linked, or no users exist in User Management.');
         return;
     }
-    const pick = prompt('Enter user email to link to this company:\n\n' + available.map(u => `${u.firstName} ${u.lastName} <${u.email}>`).slice(0, 12).join('\n'));
-    if (!pick) return;
-    const user = available.find(u => (u.email || '').toLowerCase() === pick.trim().toLowerCase());
-    if (!user) {
-        showAlertModal('Not Found', 'No matching user. Copy the email exactly from the list.');
-        return;
+    addUserModalState = { serverId, companyName, available };
+    const subtitle = document.getElementById('addUserModalSubtitle');
+    if (subtitle) subtitle.textContent = companyName ? `Link someone to ${companyName}` : 'Select a user to link';
+    const searchInput = document.getElementById('addUserSearchInput');
+    if (searchInput) {
+        searchInput.value = '';
+        searchInput.oninput = () => renderAddUserPickList(searchInput.value);
     }
-    await linkUserToCompanyOnServer(user.id, serverId);
-    const allLocal = JSON.parse(localStorage.getItem('users') || '[]');
-    const lu = allLocal.find(u => Number(u.id) === Number(user.id) || u.email === user.email);
-    if (lu) {
-        lu.company_id = serverId;
-        lu.company = companyName;
-        localStorage.setItem('users', JSON.stringify(allLocal));
-    }
-    await renderLinkedUsersForCompany(companyName);
-    showAlertModal('User Linked', `${user.firstName} ${user.lastName} is now assigned to ${companyName}. Enable their access in User Management if needed.`);
+    renderAddUserPickList('');
+    const modal = document.getElementById('addUserToCompanyModal');
+    if (modal) modal.showModal();
+    if (searchInput) setTimeout(() => searchInput.focus(), 50);
 }
 
-function designatePrimaryContact(userId, companyName) {
-    const allUsers = JSON.parse(localStorage.getItem('users') || '[]');
-    const user = allUsers.find(u => u.id == userId);
-    if (!user) return;
-
-    const companyIdEl = document.getElementById('companyId');
-    const companyId = companyIdEl ? parseInt(companyIdEl.value) : null;
-    if (!companyId) {
-        showAlertModal("Save Company First", "Please save the new company before designating a primary contact.");
+async function designatePrimaryContact(userId, companyName, userInfo) {
+    const user = resolveUserForCompanyAction(userId, userInfo);
+    if (!user) {
+        showAlertModal('User Not Found', 'Could not resolve that user. Try refreshing the page.');
         return;
     }
 
-    const company = companies.find(c => c.id === companyId);
-    if (!company) return;
+    const company = getActiveCompanyRecord();
+    if (!company) {
+        showAlertModal('Save Company First', 'Please save the new company before designating a primary contact.');
+        return;
+    }
 
-    // Update primary fields on the company from this user
     const phone = (user.phones && user.phones.length > 0) ? user.phones[0].number : (user.phone || '');
     company.primary_phone = phone || company.primary_phone;
     company.primary_email = user.email || company.primary_email;
     company.primary_contact_user_id = userId;
 
     localStorage.setItem('casepm_companies', JSON.stringify(companies));
-    syncCompanyToServer(company);
-    const serverId = company.server_id || companyId;
-    linkUserToCompanyOnServer(userId, serverId);
+    const serverId = company.server_id || company.id;
+    const synced = await setCompanyContactOnServer(serverId, userId, 'primary');
+    if (synced) {
+        company.primary_contact_user_id = synced.primary_contact_user_id ?? userId;
+        if (synced.primary_email) company.primary_email = synced.primary_email;
+        if (synced.primary_phone) company.primary_phone = synced.primary_phone;
+        localStorage.setItem('casepm_companies', JSON.stringify(companies));
+    } else {
+        await syncCompanyToServer(company);
+    }
+    await linkUserToCompanyOnServer(userId, serverId);
 
-    logCompanyAudit('PRIMARY_CONTACT_SET', companyId, {
-        user: `${user.firstName} ${user.lastName}`, 
-        email: user.email 
+    logCompanyAudit('PRIMARY_CONTACT_SET', company.id, {
+        user: `${user.firstName} ${user.lastName}`,
+        email: user.email,
     });
 
-    // Refresh form inputs
     const phoneInput = document.getElementById('primary_phone');
     const emailInput = document.getElementById('primary_email');
     if (phoneInput) phoneInput.value = company.primary_phone || '';
     if (emailInput) emailInput.value = company.primary_email || '';
 
-    // Re-render the linked list with new Primary badge
-    renderLinkedUsersForCompany(companyName);
-
-    showAlertModal("Primary Contact Set", `${user.firstName} ${user.lastName} is now the primary (project) contact for this company.`);
+    await renderLinkedUsersForCompany(companyName);
+    showAlertModal('Primary Contact Set', `${user.firstName} ${user.lastName} is now the primary (project) contact for this company.`);
 }
 
-function designateFinancialContact(userId, companyName) {
-    const allUsers = JSON.parse(localStorage.getItem('users') || '[]');
-    const user = allUsers.find(u => u.id == userId);
-    if (!user) return;
-
-    const companyIdEl = document.getElementById('companyId');
-    const companyId = companyIdEl ? parseInt(companyIdEl.value) : null;
-    if (!companyId) {
-        showAlertModal("Save Company First", "Please save the new company before designating a financial contact.");
+async function designateFinancialContact(userId, companyName, userInfo) {
+    const user = resolveUserForCompanyAction(userId, userInfo);
+    if (!user) {
+        showAlertModal('User Not Found', 'Could not resolve that user. Try refreshing the page.');
         return;
     }
 
-    const company = companies.find(c => c.id === companyId);
-    if (!company) return;
+    const company = getActiveCompanyRecord();
+    if (!company) {
+        showAlertModal('Save Company First', 'Please save the new company before designating a financial contact.');
+        return;
+    }
 
     const phone = (user.phones && user.phones.length > 0) ? user.phones[0].number : (user.phone || '');
     company.financial_phone = phone || company.financial_phone;
@@ -791,13 +941,21 @@ function designateFinancialContact(userId, companyName) {
     company.financial_contact_user_id = userId;
 
     localStorage.setItem('casepm_companies', JSON.stringify(companies));
-    syncCompanyToServer(company);
-    const serverId = company.server_id || companyId;
-    linkUserToCompanyOnServer(userId, serverId);
+    const serverId = company.server_id || company.id;
+    const synced = await setCompanyContactOnServer(serverId, userId, 'financial');
+    if (synced) {
+        company.financial_contact_user_id = synced.financial_contact_user_id ?? userId;
+        if (synced.financial_email) company.financial_email = synced.financial_email;
+        if (synced.financial_phone) company.financial_phone = synced.financial_phone;
+        localStorage.setItem('casepm_companies', JSON.stringify(companies));
+    } else {
+        await syncCompanyToServer(company);
+    }
+    await linkUserToCompanyOnServer(userId, serverId);
 
-    logCompanyAudit('FINANCIAL_CONTACT_SET', companyId, {
+    logCompanyAudit('FINANCIAL_CONTACT_SET', company.id, {
         user: `${user.firstName} ${user.lastName}`,
-        email: user.email
+        email: user.email,
     });
 
     const fphone = document.getElementById('financial_phone');
@@ -805,9 +963,46 @@ function designateFinancialContact(userId, companyName) {
     if (fphone) fphone.value = company.financial_phone || '';
     if (femail) femail.value = company.financial_email || '';
 
-    renderLinkedUsersForCompany(companyName);
+    await renderLinkedUsersForCompany(companyName);
+    showAlertModal('Financial Contact Set', `${user.firstName} ${user.lastName} is now the financial contact (pay apps / AP) for this company.`);
+}
 
-    showAlertModal("Financial Contact Set", `${user.firstName} ${user.lastName} is now the financial contact (pay apps / AP) for this company.`);
+function confirmUnlinkUserFromCompany(userId, companyName, displayName) {
+    showConfirmModal(
+        'Remove from Company',
+        `Remove ${displayName} from ${companyName || 'this company'}? They will no longer be linked as a contact for this vendor.`,
+        () => unlinkUserFromCompany(userId, companyName, displayName),
+    );
+}
+
+async function unlinkUserFromCompany(userId, companyName, displayName) {
+    const company = getActiveCompanyRecord();
+    if (!company) return;
+    const serverId = company.server_id || company.id;
+    const result = await unlinkUserFromCompanyOnServer(userId, serverId);
+    if (!result) {
+        showAlertModal('Remove Failed', 'Could not remove that user from the company. Try again.');
+        return;
+    }
+    if (Number(company.primary_contact_user_id) === Number(userId)) {
+        company.primary_contact_user_id = result.primary_contact_user_id ?? null;
+    }
+    if (Number(company.financial_contact_user_id) === Number(userId)) {
+        company.financial_contact_user_id = result.financial_contact_user_id ?? null;
+    }
+    localStorage.setItem('casepm_companies', JSON.stringify(companies));
+
+    const allLocal = JSON.parse(localStorage.getItem('users') || '[]');
+    const lu = allLocal.find(u => Number(u.id) === Number(userId));
+    if (lu && Number(lu.company_id) === Number(serverId)) {
+        lu.company_id = null;
+        lu.company = '';
+        localStorage.setItem('users', JSON.stringify(allLocal));
+    }
+
+    logCompanyAudit('USER_UNLINKED', company.id, { user: displayName });
+    await renderLinkedUsersForCompany(companyName);
+    showAlertModal('User Removed', `${displayName} has been removed from ${companyName || 'this company'}.`);
 }
 
 function showAlertModal(title, message) {
