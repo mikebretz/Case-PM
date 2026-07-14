@@ -633,9 +633,13 @@ SUBCONTRACTOR_PAY_STATE_FIELDS = (
 
 
 def _sub_sov_line_has_activity(line):
-    """True when a line has billings or in-period work that should survive without a commitment."""
+    """True when a line has billings, commitments, or in-period work that should survive without a commitment."""
     if not isinstance(line, dict):
         return False
+    if float(line.get('original_commitment') or 0) != 0:
+        return True
+    if float(line.get('change_orders') or 0) != 0:
+        return True
     for field in ('billed_to_date', 'co_billed_to_date', 'work_this_period', 'materials_stored'):
         if float(line.get(field) or 0) != 0:
             return True

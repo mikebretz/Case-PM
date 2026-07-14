@@ -527,13 +527,19 @@ def apply_sub_sov_reconcile(state, originals, changes, display_codes):
         billing_by_norm = {}
         for line in existing_lines:
             norm = normalize_cost_code(line.get('cost_code'))
+            if not norm:
+                continue
             billing_by_norm[norm] = {
                 'billed_to_date': float(line.get('billed_to_date') or 0),
                 'co_billed_to_date': float(line.get('co_billed_to_date') or 0),
                 'work_this_period': float(line.get('work_this_period') or 0),
                 'materials_stored': float(line.get('materials_stored') or 0),
                 'id': line.get('id'),
+                'cost_code': line.get('cost_code'),
                 'description': line.get('description'),
+                'original_commitment': float(line.get('original_commitment') or 0),
+                'change_orders': float(line.get('change_orders') or 0),
+                'notes': line.get('notes') or '',
             }
 
         norms = set(originals.get(company_key, {}).keys()) | set(changes.get(company_key, {}).keys())
@@ -545,8 +551,14 @@ def apply_sub_sov_reconcile(state, originals, changes, display_codes):
             orig_amt = float(originals.get(company_key, {}).get(norm, 0))
             chg_info = changes.get(company_key, {}).get(norm, {})
             chg_amt = float(chg_info.get('amount') or 0)
+            billing = billing_by_norm.get(norm, {})
+            manual_orig = float(billing.get('original_commitment') or 0)
+            manual_chg = float(billing.get('change_orders') or 0)
+            if orig_amt == 0 and manual_orig > 0:
+                orig_amt = manual_orig
+            if chg_amt == 0 and manual_chg > 0:
+                chg_amt = manual_chg
             if orig_amt == 0 and chg_amt == 0:
-                billing = billing_by_norm.get(norm, {})
                 billed = (
                     float(billing.get('billed_to_date') or 0)
                     + float(billing.get('co_billed_to_date') or 0)
@@ -555,8 +567,7 @@ def apply_sub_sov_reconcile(state, originals, changes, display_codes):
                 )
                 if billed <= 0:
                     continue
-            code = display_codes.get(company_key, {}).get(norm) or norm
-            billing = billing_by_norm.get(norm, {})
+            code = display_codes.get(company_key, {}).get(norm) or billing.get('cost_code') or norm
             line = {
                 'id': billing.get('id') or f'recon-{company_key}-{norm}-{int(datetime.utcnow().timestamp())}',
                 'cost_code': code,
@@ -568,6 +579,7 @@ def apply_sub_sov_reconcile(state, originals, changes, display_codes):
                 'co_billed_to_date': billing.get('co_billed_to_date', 0),
                 'work_this_period': billing.get('work_this_period', 0),
                 'materials_stored': billing.get('materials_stored', 0),
+                'notes': billing.get('notes') or '',
             }
             if chg_info.get('co_numbers'):
                 line['from_change_order'] = ', '.join(chg_info['co_numbers'])
