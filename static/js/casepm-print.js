@@ -16,6 +16,25 @@
       .replace(/"/g, '&quot;');
   }
 
+  function truncatePrintText(value, maxLen) {
+    const text = value == null ? '' : String(value).replace(/\s+/g, ' ').trim();
+    const limit = maxLen || 120;
+    if (text.length <= limit) return text;
+    return `${text.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
+  }
+
+  /** Shared ALDI-style project header meta for all log prints. */
+  function getProjectMeta() {
+    const shell = document.body;
+    const nameEl = document.getElementById('currentProjectName');
+    const name = (shell.dataset.activeProjectName || (nameEl?.textContent || '').trim() || global.CASEPM_ACTIVE_PROJECT_NAME || 'Project');
+    const number = shell.dataset.activeProjectNumber
+      || shell.dataset.activeProjectId
+      || (global.CASEPM_ACTIVE_PROJECT_ID ? String(global.CASEPM_ACTIVE_PROJECT_ID) : '');
+    const location = shell.dataset.activeProjectAddress || '';
+    return { name, number, location };
+  }
+
   function ensureStyles() {
     if (document.getElementById(STYLE_ID)) return;
     const style = document.createElement('style');
@@ -134,7 +153,8 @@
         body.printing-co-log,
         body.printing-rfi-log,
         body.printing-daily-log,
-        body.printing-weekly-log {
+        body.printing-weekly-log,
+        body.printing-budget-log {
           background: #fff !important;
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
@@ -165,15 +185,31 @@
         body.printing-co-log #appSidebar,
         body.printing-co-log #appFooterBar,
         body.printing-co-log #appShell > .flex.flex-1 > div.h-10,
-        body.printing-co-log .co-page > *:not(#coPrintSheet),
+        body.printing-co-log .co-page,
+        body.printing-co-log #coDetailDrawer,
+        body.printing-co-log .fixed.bottom-0,
+        body.printing-co-log dialog,
         body.printing-co-log .no-print,
         body.printing-rfi-log #appShell > #appHeaderBar,
         body.printing-rfi-log #appSidebar,
         body.printing-rfi-log #appFooterBar,
         body.printing-rfi-log #appShell > .flex.flex-1 > div.h-10,
-        body.printing-rfi-log .rfi-page > *:not(#rfiPrintSheet),
+        body.printing-rfi-log .rfi-page,
         body.printing-rfi-log #rfiDetailDrawer,
+        body.printing-rfi-log #rfiDrawerBackdrop,
+        body.printing-rfi-log .fixed.bottom-0,
+        body.printing-rfi-log dialog,
         body.printing-rfi-log .no-print,
+        body.printing-rfi-detail #appShell > #appHeaderBar,
+        body.printing-rfi-detail #appSidebar,
+        body.printing-rfi-detail #appFooterBar,
+        body.printing-rfi-detail #appShell > .flex.flex-1 > div.h-10,
+        body.printing-rfi-detail .rfi-page,
+        body.printing-rfi-detail #rfiDetailDrawer,
+        body.printing-rfi-detail #rfiDrawerBackdrop,
+        body.printing-rfi-detail .fixed.bottom-0,
+        body.printing-rfi-detail dialog,
+        body.printing-rfi-detail .no-print,
         body.printing-daily-log #appShell > #appHeaderBar,
         body.printing-daily-log #appSidebar,
         body.printing-daily-log #appFooterBar,
@@ -213,13 +249,36 @@
         body.printing-submittal-log #submittalPrintSheet,
         body.printing-co-log #coPrintSheet,
         body.printing-rfi-log #rfiPrintSheet,
+        body.printing-rfi-detail #rfiPrintSheet,
         body.printing-daily-log #dlogPrintSheet,
-        body.printing-weekly-log #wlogPrintSheet {
+        body.printing-weekly-log #wlogPrintSheet,
+        body.printing-budget-log #budgetPrintSheet {
           display: block !important;
           background: #fff !important;
           color: #111 !important;
           font-family: Arial, Helvetica, sans-serif;
           font-size: 7pt;
+        }
+        body.printing-rfi-detail,
+        body.printing-budget-log {
+          background: #fff !important;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+        body.printing-rfi-detail #mainContent,
+        body.printing-budget-log #mainContent {
+          padding: 0 !important;
+          overflow: visible !important;
+          display: block !important;
+        }
+        body.printing-budget-log #appShell > #appHeaderBar,
+        body.printing-budget-log #appSidebar,
+        body.printing-budget-log #appFooterBar,
+        body.printing-budget-log #appShell > .flex.flex-1 > div.h-10,
+        body.printing-budget-log .budget-page,
+        body.printing-budget-log .no-print,
+        body.printing-budget-log dialog {
+          display: none !important;
         }
         .casepm-print-page, .submittal-print-page {
           page-break-after: always;
@@ -239,7 +298,7 @@
           padding-bottom: 6px;
         }
         .casepm-print-title, .submittal-print-title {
-          font-size: 16pt;
+          font-size: 13pt;
           font-weight: 700;
           letter-spacing: 0.5px;
           color: #111;
@@ -247,9 +306,11 @@
         }
         .casepm-print-meta, .submittal-print-meta {
           text-align: right;
-          font-size: 7pt;
-          line-height: 1.35;
+          font-size: 6.5pt;
+          line-height: 1.3;
           color: #222;
+          max-width: 42%;
+          word-break: break-word;
         }
         .casepm-print-meta .label, .submittal-print-meta .label {
           font-weight: 700;
@@ -271,6 +332,8 @@
           vertical-align: top;
           word-wrap: break-word;
           overflow-wrap: anywhere;
+          max-height: 32pt;
+          overflow: hidden;
         }
         .casepm-print-table th, .submittal-print-table th {
           background: #f0f0f0;
@@ -322,6 +385,59 @@
         .casepm-log-report .casepm-log-line { margin: 2px 0; }
         .casepm-log-report .casepm-log-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; font-size: 8.5pt; color: #333; }
         .casepm-log-report .casepm-log-block { margin-bottom: 8px; white-space: pre-wrap; }
+        .casepm-rfi-detail {
+          font-size: 9pt;
+          line-height: 1.45;
+          color: #111;
+        }
+        .casepm-rfi-detail .rfi-detail-number {
+          font-family: 'Courier New', Courier, monospace;
+          font-size: 11pt;
+          font-weight: 700;
+          color: #111;
+          margin-bottom: 2px;
+        }
+        .casepm-rfi-detail .rfi-detail-subject {
+          font-size: 12pt;
+          font-weight: 700;
+          margin-bottom: 10px;
+          color: #111;
+        }
+        .casepm-rfi-detail .rfi-detail-grid {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 8px 12px;
+          margin-bottom: 12px;
+          font-size: 8pt;
+        }
+        .casepm-rfi-detail .rfi-detail-grid .label {
+          display: block;
+          font-size: 6.5pt;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: #666;
+          font-weight: 700;
+          margin-bottom: 1px;
+        }
+        .casepm-rfi-detail .rfi-detail-box {
+          border: 1px solid #333;
+          padding: 8px 10px;
+          margin-bottom: 10px;
+          white-space: pre-wrap;
+          min-height: 48px;
+        }
+        .casepm-rfi-detail .rfi-detail-box h4 {
+          margin: 0 0 4px;
+          font-size: 7pt;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: #555;
+        }
+        .casepm-rfi-detail .rfi-detail-list {
+          margin: 0;
+          padding-left: 16px;
+          font-size: 8pt;
+        }
       }
     `;
     document.head.appendChild(style);
@@ -414,7 +530,9 @@
     const head = columns.map(c => `<th${c.width ? ` style="width:${c.width}"` : ''}>${c.label}</th>`).join('');
     const body = rows.map(row => {
       const cells = columns.map(c => {
-        const val = typeof c.format === 'function' ? c.format(row) : (row[c.key] ?? '');
+        let val = typeof c.format === 'function' ? c.format(row) : (row[c.key] ?? '');
+        if (c.maxLen) val = truncatePrintText(val, c.maxLen);
+        else if (c.clamp !== false && typeof val === 'string' && val.length > 140) val = truncatePrintText(val, 140);
         let cls = '';
         if (c.check) cls = ' class="check"';
         else if (c.mono) cls = ' class="mono' + (c.align === 'center' ? ' c"' : '"');
@@ -487,6 +605,34 @@
     return container;
   }
 
+  /** Portrait document print (individual RFI, etc.) in an isolated iframe. */
+  function printPortraitDocument(bodyHtml, docTitle) {
+    const printedOn = new Date().toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(docTitle || 'Print')}</title>
+      <style>
+        @page { size: portrait; margin: 0.45in 0.5in; }
+        body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #111; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .casepm-print-page { page-break-after: always; break-after: page; }
+        .casepm-print-page:last-child { page-break-after: auto; break-after: auto; }
+        .casepm-print-header { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; align-items: start; margin-bottom: 6px; border-bottom: 2px solid #111; padding-bottom: 6px; }
+        .casepm-print-title { font-size: 13pt; font-weight: 700; letter-spacing: 0.5px; color: #111; line-height: 1.1; }
+        .casepm-print-meta { text-align: right; font-size: 6.5pt; line-height: 1.3; color: #222; max-width: 42%; word-break: break-word; }
+        .casepm-print-meta .label { font-weight: 700; text-transform: uppercase; font-size: 6pt; color: #444; }
+        .casepm-print-footer { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; margin-top: 8px; padding-top: 4px; border-top: 1px solid #999; font-size: 7pt; color: #444; }
+        .casepm-print-footer .center { text-align: center; }
+        .casepm-print-footer .right { text-align: right; }
+        .casepm-rfi-detail { font-size: 9pt; line-height: 1.45; color: #111; }
+        .casepm-rfi-detail .rfi-detail-number { font-family: 'Courier New', Courier, monospace; font-size: 11pt; font-weight: 700; margin-bottom: 2px; }
+        .casepm-rfi-detail .rfi-detail-subject { font-size: 12pt; font-weight: 700; margin-bottom: 10px; }
+        .casepm-rfi-detail .rfi-detail-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 12px; margin-bottom: 12px; font-size: 8pt; }
+        .casepm-rfi-detail .rfi-detail-grid .label { display: block; font-size: 6.5pt; text-transform: uppercase; letter-spacing: 0.04em; color: #666; font-weight: 700; margin-bottom: 1px; }
+        .casepm-rfi-detail .rfi-detail-box { border: 1px solid #333; padding: 8px 10px; margin-bottom: 10px; white-space: pre-wrap; min-height: 48px; }
+        .casepm-rfi-detail .rfi-detail-box h4 { margin: 0 0 4px; font-size: 7pt; text-transform: uppercase; letter-spacing: 0.05em; color: #555; }
+        .casepm-rfi-detail .rfi-detail-list { margin: 0; padding-left: 16px; font-size: 8pt; }
+      </style></head><body>${bodyHtml.replace('__PRINTED_ON__', esc(printedOn))}</body></html>`;
+    printHtmlInIframe(html, { landscape: false, delay: 400 });
+  }
+
   /** Print self-contained HTML in a sized off-screen iframe (G702/G703, etc.). */
   function printHtmlInIframe(html, options) {
     const opts = options || {};
@@ -545,11 +691,14 @@
 
   global.CasePMPrint = {
     esc,
+    truncatePrintText,
+    getProjectMeta,
     showFieldPicker,
     buildPrintTable,
     buildPrintDocument,
     buildPageBlock,
     printHtmlInIframe,
+    printPortraitDocument,
     triggerPrintPreview,
     openPrintWindow,
   };

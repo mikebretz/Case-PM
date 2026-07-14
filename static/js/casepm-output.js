@@ -194,6 +194,10 @@
 
   function printHtml(html, options) {
     const opts = options || {};
+    if (opts.portrait && opts.bodyHtml && global.CasePMPrint && global.CasePMPrint.printPortraitDocument) {
+      global.CasePMPrint.printPortraitDocument(opts.bodyHtml, opts.docTitle || opts.title || 'Print');
+      return;
+    }
     if (opts.bodyHtml && global.CasePMPrint && global.CasePMPrint.triggerPrintPreview) {
       global.CasePMPrint.triggerPrintPreview(opts.bodyHtml, {
         containerId: opts.containerId || 'casepmPrintRoot',

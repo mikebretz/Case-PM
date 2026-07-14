@@ -132,7 +132,7 @@ window.SUBMITTAL_PROJECT_CTX = {
       padding-bottom: 6px;
     }
     .submittal-print-title {
-      font-size: 16pt;
+      font-size: 13pt;
       font-weight: 700;
       letter-spacing: 0.5px;
       color: #111;
@@ -140,9 +140,11 @@ window.SUBMITTAL_PROJECT_CTX = {
     }
     .submittal-print-meta {
       text-align: right;
-      font-size: 7pt;
-      line-height: 1.35;
+      font-size: 6.5pt;
+      line-height: 1.3;
       color: #222;
+      max-width: 42%;
+      word-break: break-word;
     }
     .submittal-print-meta div { margin-bottom: 1px; }
     .submittal-print-meta .label {
@@ -165,6 +167,8 @@ window.SUBMITTAL_PROJECT_CTX = {
       vertical-align: top;
       word-wrap: break-word;
       overflow-wrap: anywhere;
+      max-height: 32pt;
+      overflow: hidden;
     }
     .submittal-print-table th {
       background: #f0f0f0;
@@ -2629,6 +2633,13 @@ function resolveSubmittalPrintColumns(selectedOptionalKeys) {
 
 function submittalPrintCellValue(item, key) {
     const checks = getReviewCheckmarks(item);
+    const truncate = (val, max) => {
+        if (typeof CasePMPrint !== 'undefined' && CasePMPrint.truncatePrintText) {
+            return CasePMPrint.truncatePrintText(val, max);
+        }
+        const text = val == null ? '' : String(val).replace(/\s+/g, ' ').trim();
+        return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+    };
     switch (key) {
         case 'specSection': return formatSpecSectionForPrint(item.specSection);
         case 'dateReceived': case 'dateSent': case 'dateReturned':
@@ -2643,7 +2654,13 @@ function submittalPrintCellValue(item, key) {
         case 'status': return getPrintStatusLabel(item);
         case 'assignedCompanyName': return item.assignedCompanyName || item.receivedFrom || '';
         case 'requiredBy': return formatPrintDate(item.requiredBy);
-        default: return item[key] ?? '';
+        case 'subject': return truncate(item.subject, 90);
+        case 'sectionName': return truncate(item.sectionName, 80);
+        case 'copiesTo': return truncate(item.copiesTo, 60);
+        default: {
+            const val = item[key] ?? '';
+            return typeof val === 'string' && val.length > 100 ? truncate(val, 100) : val;
+        }
     }
 }
 
@@ -2801,7 +2818,7 @@ function buildSubmittalPrintSheet(selectedOptionalFields) {
 
     if (!rows.length) {
         pages.push(`${buildSubmittalPrintPageHeader(meta)}
-            ${buildSubmittalPrintTableHead(fields)}
+            ${buildSubmittalPrintTableHead(columns)}
             <tr><td colspan="${colSpan}" style="text-align:center;padding:16px;color:#666">No submittals to print.</td></tr>
             </tbody></table>
             <div class="submittal-print-footer"><span>Confidential</span><span class="center">${printedOn}</span><span class="right">Page 1</span></div>`);
@@ -2810,7 +2827,7 @@ function buildSubmittalPrintSheet(selectedOptionalFields) {
         for (let p = 0; p < totalPages; p++) {
             const chunk = rows.slice(p * ROWS_PER_PAGE, (p + 1) * ROWS_PER_PAGE);
             let html = buildSubmittalPrintPageHeader(meta);
-            html += buildSubmittalPrintTableHead(fields);
+            html += buildSubmittalPrintTableHead(columns);
             html += chunk.map(item => buildSubmittalPrintRow(item, columns)).join('');
             html += `</tbody></table>
                 <div class="submittal-print-footer">
