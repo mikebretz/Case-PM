@@ -25,6 +25,7 @@ CSRF_EXEMPT_PREFIXES = (
     '/verify-2fa',
     '/force-change-password',
     '/download/',
+    '/api/presence/heartbeat',
 )
 
 CSRF_EXEMPT_ENDPOINTS = frozenset({

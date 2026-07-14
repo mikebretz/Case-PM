@@ -21,6 +21,7 @@
 
   let livePollTimer = null;
   let liveWatchSessionKey = null;
+  const LIVE_POLL_MS = 1000;
 
   function stopLivePolling() {
     if (livePollTimer) {
@@ -40,34 +41,93 @@
     return `${min}m ago`;
   }
 
-  function renderLiveUserList(users) {
+  function renderLiveSessionList(sessions) {
     const host = document.getElementById('devLiveUserList');
     if (!host) return;
-    if (!users?.length) {
-      host.innerHTML = '<div class="text-zinc-500 text-center py-8 text-xs">No active sessions in the last few minutes.</div>';
+    if (!sessions?.length) {
+      host.innerHTML = `
+        <div class="text-zinc-500 text-center py-6 text-xs space-y-2 px-2">
+          <div>No active sessions detected.</div>
+          <div class="text-zinc-600">Other users must be logged in on a page that has been refreshed after the latest server update. Heartbeats send every ~10s.</div>
+        </div>`;
       return;
     }
-    host.innerHTML = users.map((u) => {
-      const primary = u.primary_session_key || (u.sessions && u.sessions[0] && u.sessions[0].session_key) || '';
-      const online = !!u.online;
-      const active = liveWatchSessionKey && u.sessions && u.sessions.some((s) => s.session_key === liveWatchSessionKey);
-      const sub = [u.page_module, u.project_name].filter(Boolean).join(' · ');
+    host.innerHTML = sessions.map((s) => {
+      const online = !!s.online;
+      const active = liveWatchSessionKey === s.session_key;
+      const sub = [s.page_module, s.project_name, s.active_tab].filter(Boolean).join(' · ');
       return `
-        <div class="dev-live-user ${active ? 'active' : ''}" data-session-key="${escapeHtml(primary)}" onclick="CasePMDeveloperConsole.watchLiveSession(${JSON.stringify(primary)})">
+        <div class="dev-live-user ${active ? 'active' : ''}" data-session-key="${escapeHtml(s.session_key)}" onclick="CasePMDeveloperConsole.watchLiveSession(${JSON.stringify(s.session_key)})">
           <span class="dev-live-dot ${online ? 'online' : 'offline'}"></span>
           <div class="min-w-0 flex-1">
-            <div class="font-medium text-white truncate">${escapeHtml(u.user_name || u.user_email || 'User')}</div>
-            <div class="text-[10px] text-zinc-500 truncate">${escapeHtml(u.user_role || '')}${u.session_count > 1 ? ` · ${u.session_count} tabs` : ''}</div>
-            <div class="text-[10px] text-zinc-400 truncate mt-0.5">${escapeHtml(sub || (online ? 'Online' : 'Recently active'))}</div>
+            <div class="font-medium text-white truncate">${escapeHtml(s.user_name || s.user_email || 'User')}</div>
+            <div class="text-[10px] text-zinc-500 truncate">${escapeHtml(s.user_role || '')} · ${escapeHtml(formatSeenAgo(s.last_seen_at))}</div>
+            <div class="text-[10px] text-zinc-400 truncate mt-0.5">${escapeHtml(sub || s.page_title || (online ? 'Online' : 'Recently active'))}</div>
           </div>
         </div>
       `;
     }).join('');
   }
 
-  function renderLiveWatchPanel(session) {
+  function renderLiveWatchPanel(session, forceFull) {
     const host = document.getElementById('devLiveWatchPanel');
     if (!host || !session) return;
+
+    const shell = document.getElementById('devLiveWatchShell');
+    if (!forceFull && shell && shell.dataset.sessionKey === session.session_key) {
+      const onlineEl = document.getElementById('devLiveWatchOnline');
+      const seenEl = document.getElementById('devLiveWatchSeen');
+      const activityEl = document.getElementById('devLiveWatchActivity');
+      const lastEl = document.getElementById('devLiveWatchLastAction');
+      const pageTitleEl = document.getElementById('devLiveWatchPageTitle');
+      const pagePathEl = document.getElementById('devLiveWatchPagePath');
+      const projectEl = document.getElementById('devLiveWatchProject');
+      const tabEl = document.getElementById('devLiveWatchTab');
+      const scrollEl = document.getElementById('devLiveWatchScroll');
+      const headingsEl = document.getElementById('devLiveWatchHeadings');
+      const modalsEl = document.getElementById('devLiveWatchModals');
+      const selectedEl = document.getElementById('devLiveWatchSelected');
+      const img = document.getElementById('devLiveThumb');
+      if (onlineEl) {
+        onlineEl.textContent = session.online ? '● Online' : '○ Idle';
+        onlineEl.className = session.online ? 'text-emerald-400' : 'text-zinc-500';
+      }
+      if (seenEl) seenEl.textContent = 'Seen ' + formatSeenAgo(session.last_seen_at);
+      if (activityEl) activityEl.textContent = session.activity_summary || '—';
+      if (lastEl) {
+        lastEl.innerHTML = session.last_action
+          ? `Last: ${escapeHtml(session.last_action)} <span class="text-zinc-600">(${escapeHtml(formatSeenAgo(session.last_action_at))})</span>`
+          : '';
+      }
+      if (pageTitleEl) pageTitleEl.textContent = session.page_title || '—';
+      if (pagePathEl) pagePathEl.textContent = session.page_path || (session.view_state && session.view_state.url) || '';
+      if (projectEl) projectEl.textContent = session.project_name || '—';
+      if (tabEl) tabEl.textContent = session.active_tab || '—';
+      if (scrollEl) scrollEl.textContent = session.scroll_pct != null ? session.scroll_pct + '%' : '—';
+      if (headingsEl) {
+        const headings = (session.view_state && session.view_state.headings) || [];
+        headingsEl.innerHTML = headings.length
+          ? headings.map((h) => `<li>${escapeHtml(h)}</li>`).join('')
+          : '<li class="text-zinc-600">—</li>';
+      }
+      if (modalsEl) {
+        const modals = (session.view_state && session.view_state.open_modals) || [];
+        modalsEl.innerHTML = modals.length
+          ? modals.map((m) => `<span class="inline-block px-2 py-0.5 bg-amber-950 text-amber-300 rounded text-xs mr-1">${escapeHtml(m)}</span>`).join('')
+          : '<span class="text-zinc-600 text-xs">None open</span>';
+      }
+      if (selectedEl) {
+        const selected = (session.view_state && session.view_state.selected) || [];
+        selectedEl.innerHTML = selected.length
+          ? selected.map((s) => `<span class="inline-block px-2 py-0.5 bg-zinc-800 text-zinc-300 rounded text-xs mr-1">${escapeHtml(s)}</span>`).join('')
+          : '<span class="text-zinc-600 text-xs">—</span>';
+      }
+      if (img && session.has_thumbnail) {
+        img.src = `/api/developer/presence/thumbnail/${encodeURIComponent(session.session_key)}?t=${Date.now()}`;
+      }
+      return;
+    }
+
     const vs = session.view_state || {};
     const headings = (vs.headings || []).map((h) => `<li>${escapeHtml(h)}</li>`).join('') || '<li class="text-zinc-600">—</li>';
     const modals = (vs.open_modals || []).length
@@ -80,50 +140,52 @@
       ? `/api/developer/presence/thumbnail/${encodeURIComponent(session.session_key)}?t=${Date.now()}`
       : '';
     host.innerHTML = `
+      <div id="devLiveWatchShell" data-session-key="${escapeHtml(session.session_key)}">
       <div class="flex flex-wrap items-start justify-between gap-2 mb-3">
         <div>
           <div class="text-lg font-semibold text-white">${escapeHtml(session.user_name || '')}</div>
           <div class="text-xs text-zinc-500">${escapeHtml(session.user_email || '')} · ${escapeHtml(session.user_role || '')}</div>
         </div>
         <div class="text-right text-xs">
-          <div class="${session.online ? 'text-emerald-400' : 'text-zinc-500'}">${session.online ? '● Online' : '○ Idle'}</div>
-          <div class="text-zinc-500">Seen ${escapeHtml(formatSeenAgo(session.last_seen_at))}</div>
+          <div id="devLiveWatchOnline" class="${session.online ? 'text-emerald-400' : 'text-zinc-500'}">${session.online ? '● Online' : '○ Idle'}</div>
+          <div id="devLiveWatchSeen" class="text-zinc-500">Seen ${escapeHtml(formatSeenAgo(session.last_seen_at))}</div>
         </div>
       </div>
       <div class="dev-live-screen mb-4">
         ${thumbUrl
           ? `<img src="${thumbUrl}" alt="Live viewport" id="devLiveThumb">`
-          : '<div class="text-zinc-500 text-xs p-6 text-center">Viewport snapshot not available yet — user browser will send one within ~45s.</div>'}
+          : '<div class="text-zinc-500 text-xs p-6 text-center">Viewport snapshot loading — refreshes every ~20s from the user\'s browser.</div>'}
       </div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm mb-3">
         <div class="bg-zinc-900 border border-zinc-800 rounded-md p-3">
           <div class="text-[10px] uppercase text-zinc-500 mb-1">Page</div>
-          <div class="text-white font-medium">${escapeHtml(session.page_title || '—')}</div>
-          <div class="text-xs text-zinc-500 font-mono mt-1 break-all">${escapeHtml(session.page_path || vs.url || '')}</div>
+          <div id="devLiveWatchPageTitle" class="text-white font-medium">${escapeHtml(session.page_title || '—')}</div>
+          <div id="devLiveWatchPagePath" class="text-xs text-zinc-500 font-mono mt-1 break-all">${escapeHtml(session.page_path || vs.url || '')}</div>
         </div>
         <div class="bg-zinc-900 border border-zinc-800 rounded-md p-3">
           <div class="text-[10px] uppercase text-zinc-500 mb-1">Context</div>
-          <div class="text-zinc-300"><span class="text-zinc-500">Project:</span> ${escapeHtml(session.project_name || '—')}</div>
-          <div class="text-zinc-300"><span class="text-zinc-500">Tab:</span> ${escapeHtml(session.active_tab || '—')}</div>
-          <div class="text-zinc-300"><span class="text-zinc-500">Scroll:</span> ${session.scroll_pct != null ? session.scroll_pct + '%' : '—'}</div>
+          <div class="text-zinc-300"><span class="text-zinc-500">Project:</span> <span id="devLiveWatchProject">${escapeHtml(session.project_name || '—')}</span></div>
+          <div class="text-zinc-300"><span class="text-zinc-500">Tab:</span> <span id="devLiveWatchTab">${escapeHtml(session.active_tab || '—')}</span></div>
+          <div class="text-zinc-300"><span class="text-zinc-500">Scroll:</span> <span id="devLiveWatchScroll">${session.scroll_pct != null ? session.scroll_pct + '%' : '—'}</span></div>
         </div>
       </div>
       <div class="bg-zinc-900 border border-zinc-800 rounded-md p-3 mb-3">
         <div class="text-[10px] uppercase text-zinc-500 mb-1">Activity</div>
-        <div class="text-sm text-amber-200/90">${escapeHtml(session.activity_summary || '—')}</div>
-        ${session.last_action ? `<div class="text-xs text-zinc-500 mt-1">Last: ${escapeHtml(session.last_action)} <span class="text-zinc-600">(${escapeHtml(formatSeenAgo(session.last_action_at))})</span></div>` : ''}
+        <div id="devLiveWatchActivity" class="text-sm text-amber-200/90">${escapeHtml(session.activity_summary || '—')}</div>
+        <div id="devLiveWatchLastAction" class="text-xs text-zinc-500 mt-1">${session.last_action ? `Last: ${escapeHtml(session.last_action)} <span class="text-zinc-600">(${escapeHtml(formatSeenAgo(session.last_action_at))})</span>` : ''}</div>
       </div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
         <div>
           <div class="text-[10px] uppercase text-zinc-500 mb-1">Visible headings</div>
-          <ul class="list-disc pl-4 text-zinc-400 space-y-0.5">${headings}</ul>
+          <ul id="devLiveWatchHeadings" class="list-disc pl-4 text-zinc-400 space-y-0.5">${headings}</ul>
         </div>
         <div>
           <div class="text-[10px] uppercase text-zinc-500 mb-1">Open modals</div>
-          <div class="mb-2">${modals}</div>
+          <div id="devLiveWatchModals" class="mb-2">${modals}</div>
           <div class="text-[10px] uppercase text-zinc-500 mb-1">Selections</div>
-          <div>${selected}</div>
+          <div id="devLiveWatchSelected">${selected}</div>
         </div>
+      </div>
       </div>
     `;
   }
@@ -133,12 +195,16 @@
     const countEl = document.getElementById('devLiveOnlineCount');
     try {
       const data = await api('/api/developer/presence');
-      renderLiveUserList(data.users || []);
-      if (countEl) countEl.textContent = `${data.online_count || 0} online`;
-      if (statusEl) statusEl.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+      renderLiveSessionList(data.sessions || []);
+      if (countEl) {
+        const online = data.online_count || 0;
+        const total = data.session_count || (data.sessions || []).length;
+        countEl.textContent = `${online} online · ${total} session${total === 1 ? '' : 's'}`;
+      }
+      if (statusEl) statusEl.textContent = `Live · ${new Date().toLocaleTimeString()}`;
       if (liveWatchSessionKey) {
         const detail = await api(`/api/developer/presence/session/${encodeURIComponent(liveWatchSessionKey)}`);
-        if (detail.session) renderLiveWatchPanel(detail.session);
+        if (detail.session) renderLiveWatchPanel(detail.session, false);
       }
     } catch (err) {
       if (statusEl) statusEl.textContent = err.message || 'Refresh failed';
@@ -151,14 +217,22 @@
     document.querySelectorAll('.dev-live-user').forEach((el) => {
       el.classList.toggle('active', el.dataset.sessionKey === sessionKey);
     });
-    refreshLiveUsers();
+    api(`/api/developer/presence/session/${encodeURIComponent(sessionKey)}`)
+      .then((detail) => {
+        if (detail.session) renderLiveWatchPanel(detail.session, true);
+      })
+      .catch(() => {});
   }
 
   function loadLiveUsersPanel() {
     stopLivePolling();
     liveWatchSessionKey = null;
+    const panel = document.getElementById('devLiveWatchPanel');
+    if (panel) {
+      panel.innerHTML = '<div class="text-zinc-500 text-sm text-center py-16">Select a session on the left to watch their screen and activity.</div>';
+    }
     refreshLiveUsers();
-    livePollTimer = setInterval(refreshLiveUsers, 3000);
+    livePollTimer = setInterval(refreshLiveUsers, LIVE_POLL_MS);
   }
 
   function switchDevTab(tab) {

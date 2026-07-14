@@ -6,13 +6,34 @@
   'use strict';
 
   const STORAGE_KEY = 'casepm_presence_session_key';
-  const HEARTBEAT_MS = 20000;
-  const THUMB_MS = 45000;
+  const HEARTBEAT_MS = 10000;
+  const THUMB_MS = 20000;
   let lastAction = '';
   let lastActionAt = null;
   let thumbTimer = null;
   let heartbeatTimer = null;
   let html2canvasLoading = null;
+  let started = false;
+
+  function currentUserId() {
+    if (document.body && document.body.dataset.currentUserId) {
+      return document.body.dataset.currentUserId;
+    }
+    if (document.documentElement && document.documentElement.dataset.currentUserId) {
+      return document.documentElement.dataset.currentUserId;
+    }
+    const prof = global.CASEPM_CURRENT_USER;
+    if (prof && prof.id != null && prof.id !== '') return String(prof.id);
+    return '';
+  }
+
+  function csrfToken() {
+    if (global.CasePMSecurity && typeof global.CasePMSecurity.token === 'function') {
+      return global.CasePMSecurity.token();
+    }
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') : '';
+  }
 
   function sessionKey() {
     try {
@@ -25,12 +46,12 @@
       }
       return key;
     } catch (_) {
-      return 'ps-fallback-' + (document.body && document.body.dataset.currentUserId || '0');
+      return 'ps-fallback-' + (currentUserId() || '0');
     }
   }
 
   function elData(name) {
-    return (document.documentElement.dataset[name] || document.body.dataset[name] || '').trim();
+    return (document.documentElement.dataset[name] || (document.body && document.body.dataset[name]) || '').trim();
   }
 
   function activeTabLabel() {
@@ -83,8 +104,8 @@
     const scrollHeight = scrollEl ? Math.max(scrollEl.scrollHeight - scrollEl.clientHeight, 1) : 1;
     const scrollPct = Math.min(100, Math.round((scrollTop / scrollHeight) * 100));
 
-    const projectName = elData('activeProjectName') || elData('active-project-name');
-    const projectId = elData('activeProjectId') || elData('active-project-id');
+    const projectName = elData('activeProjectName');
+    const projectId = elData('activeProjectId');
 
     const viewState = {
       url: global.location.pathname + global.location.search,
@@ -109,7 +130,7 @@
       session_key: sessionKey(),
       page_path: global.location.pathname,
       page_title: document.title || '',
-      page_module: elData('pageModule') || document.body.dataset.pageModule || '',
+      page_module: elData('pageModule') || (document.body && document.body.dataset.pageModule) || '',
       project_id: projectId ? parseInt(projectId, 10) || null : null,
       project_name: projectName,
       active_tab: tab,
@@ -152,26 +173,35 @@
   }
 
   async function sendHeartbeat(includeThumb) {
-    if (!document.body || !document.body.dataset.currentUserId) return;
+    if (!currentUserId()) return;
     const payload = collectPresenceState();
     if (includeThumb) {
       const thumb = await captureThumbnail();
       if (thumb) payload.thumbnail_b64 = thumb;
     }
+    const headers = { 'Content-Type': 'application/json' };
+    const token = csrfToken();
+    if (token) headers['X-CSRF-Token'] = token;
     try {
-      await fetch('/api/presence/heartbeat', {
+      const res = await fetch('/api/presence/heartbeat', {
         method: 'POST',
         credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
       });
-    } catch (_) { /* non-fatal */ }
+      if (!res.ok) {
+        console.warn('[CasePM Presence] heartbeat failed', res.status);
+      }
+    } catch (err) {
+      console.warn('[CasePM Presence] heartbeat error', err);
+    }
   }
 
   function noteAction(description) {
     if (!description) return;
     lastAction = String(description).slice(0, 200);
     lastActionAt = new Date().toISOString();
+    sendHeartbeat(false);
   }
 
   function onClick(ev) {
@@ -189,11 +219,13 @@
   }
 
   function start() {
-    if (!document.body || !document.body.dataset.currentUserId) return;
-    if (heartbeatTimer) return;
+    if (started) return;
+    if (!currentUserId()) return;
+    started = true;
 
     document.addEventListener('click', onClick, true);
-    sendHeartbeat(true);
+    sendHeartbeat(false);
+    setTimeout(() => sendHeartbeat(true), 1500);
     heartbeatTimer = setInterval(() => sendHeartbeat(false), HEARTBEAT_MS);
     thumbTimer = setInterval(() => sendHeartbeat(true), THUMB_MS);
 
@@ -202,11 +234,16 @@
     });
   }
 
-  global.CasePMPresence = { start, noteAction, collectPresenceState, sessionKey };
+  function tryStart() {
+    if (currentUserId()) start();
+  }
+
+  global.CasePMPresence = { start, tryStart, noteAction, collectPresenceState, sessionKey };
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', start);
+    document.addEventListener('DOMContentLoaded', tryStart);
   } else {
-    start();
+    tryStart();
   }
+  global.addEventListener('load', tryStart);
 }(window));
