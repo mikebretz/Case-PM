@@ -425,6 +425,23 @@
       const stats = json.result && typeof json.result === 'object'
         ? Object.entries(json.result).map(([k, v]) => `${k}: ${v}`).join('\n')
         : '';
+      if (json.result?.skipped) {
+        CasePMDialog?.alert(
+          `Nothing was cleared for ${moduleLabel}.\n\n${json.result.reason || 'No matching project scope.'}`,
+          'warning'
+        );
+        return;
+      }
+      const deletedTotal = json.result && typeof json.result === 'object'
+        ? Object.values(json.result).reduce((sum, v) => sum + (typeof v === 'number' ? v : 0), 0)
+        : 0;
+      if (!deletedTotal && !json.result?.skipped) {
+        CasePMDialog?.alert(
+          `${moduleLabel}: no records were found for ${scopeText}.${stats ? `\n\n${stats}` : ''}`,
+          'info'
+        );
+        return;
+      }
       CasePMDialog?.alert(
         `${moduleLabel} data cleared for ${scopeText}.${stats ? `\n\n${stats}` : ''}`,
         'success'

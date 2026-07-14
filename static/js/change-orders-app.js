@@ -1250,6 +1250,7 @@
       </div>`;
     document.getElementById('drawerBody').innerHTML = reviewBanner + bodyHtml;
     document.getElementById('drawerActions').innerHTML = `
+      <button type="button" onclick="CasePMChangeOrders.printDetail(${co.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm"><i class="fa-solid fa-print mr-1"></i> Print / Save…</button>
       ${showSubmit ? `<button type="button" onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit for Approval</button>` : ''}
       ${canApprove() ? `<button type="button" onclick="CasePMChangeOrders.${isSubCo(co) ? 'editSubCo' : 'editCo'}(${co.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
       <button type="button" onclick="CasePMChangeOrders.deleteCo(${co.id})" class="px-4 py-2 bg-red-950 hover:bg-red-900 border border-red-800 rounded-md text-sm text-red-300">Delete</button>` : ''}
@@ -1510,6 +1511,227 @@
     t.textContent = msg;
     document.body.appendChild(t);
     setTimeout(() => t.remove(), 2800);
+  }
+
+  const CO_DETAIL_PRINT_OPTIONS = [
+    { key: 'signatures', label: 'Include signature blocks', default: true },
+    { key: 'allocations', label: 'Include cost allocation table', default: true },
+    { key: 'approvalHistory', label: 'Include approval history', default: true },
+    { key: 'attachments', label: 'Include attachments list', default: true },
+    { key: 'draftWatermark', label: 'Show draft watermark', default: true },
+    { key: 'location', label: 'Show location in header', default: false },
+    { key: 'printedDate', label: 'Show printed date in footer', default: true },
+  ];
+
+  function hasCoPrintValue(value) {
+    const P = global.CasePMPrint;
+    if (P && P.isEmptyPrintCell) return !P.isEmptyPrintCell(value);
+    const text = value == null ? '' : String(value).replace(/\s+/g, ' ').trim();
+    return !!text && text !== '—' && text !== '-';
+  }
+
+  function coDocField(label, value) {
+    if (!hasCoPrintValue(value)) return '';
+    const P = global.CasePMPrint;
+    const e = P ? P.esc : esc;
+    return `<div><span class="label">${e(label)}</span>${e(value)}</div>`;
+  }
+
+  function buildCoSigBlock(role, sig) {
+    const P = global.CasePMPrint;
+    const e = P ? P.esc : esc;
+    if (sig && (sig.user_name || sig.signed_at)) {
+      return `<div class="co-doc-sig-block">
+        <div class="co-doc-sig-role">${e(role)}</div>
+        <div class="co-doc-sig-line"></div>
+        <div class="co-doc-sig-filled"><strong>${e(sig.user_name || '')}</strong>${sig.title ? `<br>${e(sig.title)}` : ''}${sig.signed_at ? `<br>${e(new Date(sig.signed_at).toLocaleDateString())}` : ''}</div>
+      </div>`;
+    }
+    return `<div class="co-doc-sig-block">
+      <div class="co-doc-sig-role">${e(role)}</div>
+      <div style="margin-bottom:10px">Signature</div><div class="co-doc-sig-line"></div>
+      <div style="margin-bottom:6px">Print Name</div><div class="co-doc-sig-line"></div>
+      <div style="margin-bottom:6px">Title</div><div class="co-doc-sig-line"></div>
+      <div>Date</div><div class="co-doc-sig-line"></div>
+    </div>`;
+  }
+
+  function buildCoDetailPrintHtml(co, printOpts) {
+    const opts = printOpts || {};
+    const meta = getCoPrintMeta();
+    const P = global.CasePMPrint;
+    const e = P ? P.esc : esc;
+    const sub = isSubCo(co);
+    const docTitle = sub ? 'SUBCONTRACT CHANGE ORDER' : 'CHANGE ORDER';
+    const company = P && P.getCompanyMeta ? P.getCompanyMeta() : { name: 'Case PM' };
+    const coDate = fmtDate(co.date) !== '—' ? fmtDate(co.date) : (co.created_at ? fmtDate(co.created_at) : '');
+    const allocs = co.allocations || [];
+    const allocTotal = allocs.reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
+    const showWatermark = opts.draftWatermark !== false && co.status === 'Draft';
+
+    const gridFields = [
+      coDocField(sub ? 'Subcontractor' : 'Contractor / Company', co.company_name),
+      coDocField('Contact', co.contact_name),
+      coDocField('Reason for Change', co.reason),
+      coDocField('Priority', co.priority),
+      coDocField('Contract Type', co.contract_type),
+      coDocField('Schedule Impact', co.schedule_impact_days ? `${co.schedule_impact_days} calendar days` : ''),
+      coDocField('Linked RFI', co.linked_rfi_id ? linkedRfiLabel(co.linked_rfi_id) : ''),
+      coDocField('Linked Commitment', co.linked_commitment_ref),
+      coDocField('Sub CO Type', sub ? co.sub_co_kind : ''),
+      coDocField('Linked Owner CO', co.linked_owner_co_id && co.linked_owner_co ? `${co.linked_owner_co.number} — ${fmt(co.linked_owner_co.amount)}` : ''),
+    ].filter(Boolean).join('');
+
+    const allocRows = allocs.map(a => `<tr>
+      <td class="mono">${e(a.cost_code || '')}</td>
+      <td>${e(a.cost_type || '')}</td>
+      <td>${e(a.description || '')}</td>
+      <td class="r mono">${e(fmt(a.amount))}</td>
+    </tr>`).join('');
+
+    const allocTable = opts.allocations !== false && allocs.length ? `
+      <div class="co-doc-section">
+        <h3>Schedule of Values / Cost Allocation</h3>
+        <table class="co-doc-table">
+          <thead><tr><th>Cost Code</th><th>Cost Type</th><th>Description</th><th class="r">Amount</th></tr></thead>
+          <tbody>${allocRows}</tbody>
+          <tfoot><tr><td colspan="3" class="r">Total this Change Order</td><td class="r mono">${e(fmt(allocTotal || co.amount))}</td></tr></tfoot>
+        </table>
+      </div>` : '';
+
+    const sumTable = `
+      <table class="co-doc-table co-doc-sum-row">
+        <tbody>
+          <tr><td class="label-col" style="width:70%">Amount of this Change Order</td><td class="r mono" style="width:30%">${e(fmt(co.amount))}</td></tr>
+          ${co.schedule_impact_days ? `<tr><td class="label-col">Schedule adjustment (calendar days)</td><td class="r">${e(co.schedule_impact_days)}</td></tr>` : ''}
+        </tbody>
+      </table>`;
+
+    const attachments = opts.attachments !== false && (co.attachments || []).length
+      ? `<div class="co-doc-section"><h3>Attachments</h3><div class="co-doc-body">${(co.attachments || []).map(a => e(a.original_name || a.filename || 'File')).join('\n')}</div></div>`
+      : '';
+
+    const sigs = co.approval_signatures || [];
+    const sigByRole = (role) => sigs.find(s => String(s.role || s.ball_in_court_role || '').toLowerCase().includes(role.toLowerCase()));
+    let sigBlocks = '';
+    if (opts.signatures !== false) {
+      if (sub) {
+        sigBlocks = `<div class="co-doc-sig-grid two-col">
+          ${buildCoSigBlock('General Contractor', sigByRole('manager') || sigByRole('contractor'))}
+          ${buildCoSigBlock('Subcontractor', sigByRole('sub') || sigByRole(co.company_name || 'subcontractor'))}
+        </div>`;
+      } else {
+        sigBlocks = `<div class="co-doc-sig-grid">
+          ${buildCoSigBlock('Contractor', sigByRole('manager') || sigByRole('contractor'))}
+          ${buildCoSigBlock('Architect / Engineer', sigByRole('architect'))}
+          ${buildCoSigBlock('Owner', sigByRole('owner'))}
+        </div>`;
+      }
+    }
+
+    const history = opts.approvalHistory !== false && (co.approval_history || []).length
+      ? `<div class="co-doc-history"><h3>Approval History</h3>${(co.approval_history || []).map(h =>
+        `<div class="co-doc-history-item">${e(h.user_name || '')} — ${e(h.action || '')}${h.at ? ` · ${e(new Date(h.at).toLocaleString())}` : ''}${h.comment ? `<br>${e(h.comment)}` : ''}</div>`
+      ).join('')}</div>`
+      : '';
+
+    const headerOpts = { showLocation: opts.location !== false };
+
+    return `<div class="casepm-print-page">
+      ${P.buildPrintHeaderHtml(meta, docTitle, headerOpts)}
+      <div class="casepm-co-document">
+        ${showWatermark ? '<div class="co-doc-watermark">Draft</div>' : ''}
+        <div class="co-doc-hero">
+          <div>
+            <div class="co-doc-number">${e(co.number)}</div>
+            <div style="font-size:10pt;font-weight:600;margin-top:4px;color:#222">${e(co.title || '')}</div>
+          </div>
+          <div class="co-doc-hero-meta">
+            ${coDate ? `<div>Date: ${e(coDate)}</div>` : ''}
+            <div style="margin-top:4px"><span class="co-doc-status">${e(co.status || 'Draft')}</span></div>
+            ${co.revision ? `<div style="margin-top:4px">Revision ${e(co.revision)}</div>` : ''}
+          </div>
+        </div>
+        ${gridFields ? `<div class="co-doc-grid">${gridFields}</div>` : ''}
+        <div class="co-doc-section">
+          <h3>Description of Change</h3>
+          <div class="co-doc-body">${e(co.description || co.title || '—')}</div>
+        </div>
+        ${co.notes && hasCoPrintValue(co.notes) ? `<div class="co-doc-section"><h3>Notes</h3><div class="co-doc-body">${e(co.notes)}</div></div>` : ''}
+        <div class="co-doc-section"><h3>Contract Sum Adjustment</h3>${sumTable}</div>
+        ${allocTable}
+        ${attachments}
+        ${sigBlocks ? `<div class="co-doc-sigs"><h3>Authorization &amp; Acceptance</h3><p style="font-size:7.5pt;color:#555;margin:0 0 10px">The undersigned accepts the terms of this Change Order${sub ? ' and authorizes adjustment to the Subcontract amount' : ''}.</p>${sigBlocks}</div>` : ''}
+        ${history}
+      </div>
+      <div class="casepm-print-footer">
+        <span>Confidential</span>
+        <span class="center">${opts.printedDate !== false ? '__PRINTED_ON__' : ''}</span>
+        <span class="right">Page 1</span>
+      </div>
+    </div>`;
+  }
+
+  async function triggerCoPrint(html, options) {
+    const opts = options || {};
+    if (global.CasePMOutput) {
+      await global.CasePMOutput.deliverHtml({
+        title: opts.title || 'Change Order',
+        html,
+        filenameBase: opts.filenameBase || `CO_${projectId() || 'project'}`,
+        sourceModule: 'change_orders',
+        systemFolderKey: 'change_orders',
+        subfolder: opts.subfolder || 'Printed',
+        printOptions: {
+          bodyHtml: html,
+          containerId: 'coPrintSheet',
+          bodyClass: opts.bodyClass || 'printing-co-detail',
+          portrait: true,
+          docTitle: opts.docTitle,
+          title: opts.title,
+        },
+      });
+      return;
+    }
+    if (opts.portrait !== false && global.CasePMPrint?.printPortraitDocument) {
+      global.CasePMPrint.printPortraitDocument(html, opts.docTitle || 'Change Order');
+      return;
+    }
+    global.CasePMPrint.triggerPrintPreview(html, {
+      containerId: 'coPrintSheet',
+      bodyClass: opts.bodyClass || 'printing-co-detail',
+    });
+  }
+
+  async function printDetail(id) {
+    if (typeof global.CasePMPrint === 'undefined') { alert('Print module not loaded'); return; }
+    let co = state.drawerRecord;
+    const targetId = id || co?.id || approvalContext?.coId;
+    if (!targetId) return;
+    if (!co || co.id !== targetId) {
+      try {
+        co = await api(`/api/change-orders/${targetId}`);
+      } catch (err) {
+        alert(err.message);
+        return;
+      }
+    }
+    const picked = await global.CasePMPrint.showFieldPicker({
+      title: `Print ${co.number}`,
+      note: 'Print a sign-off ready change order document. Available for any status, including draft.',
+      contentOptions: CO_DETAIL_PRINT_OPTIONS,
+      fields: [],
+    });
+    if (!picked) return;
+    const html = buildCoDetailPrintHtml(co, picked.contentOptions);
+    await triggerCoPrint(html, {
+      title: `Change Order ${co.number}`,
+      filenameBase: `CO_${co.number || co.id}`,
+      subfolder: 'Printed',
+      portrait: true,
+      docTitle: `${co.number} — Change Order`,
+      bodyClass: 'printing-co-detail',
+    });
   }
 
   const CO_BASE_PRINT_COLUMNS = [
@@ -1799,7 +2021,7 @@
     uploadPcoAttachment, uploadPcoDrawerAttachment,
     addAllocRow: () => { state.allocationRows.push({ cost_code: '', cost_type: '', amount: 0, description: '' }); renderAllocationRows(); },
     removeAllocRow: idx => { state.allocationRows.splice(idx, 1); renderAllocationRows(); },
-    onCompanyChange, onContactChange, onAllocCostCodeChange, updateAllocationTotal, exportExcel, printLog, openSageLog,
+    onCompanyChange, onContactChange, onAllocCostCodeChange, updateAllocationTotal, exportExcel, printLog, printDetail, openSageLog,
     newPco: () => openModal('pco', null),
     newCo: () => openModal('co', null),
     newSubCo: () => openModal('sub', { contract_type: 'Subcontract', sub_co_kind: 'Contract Add' }),

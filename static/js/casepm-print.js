@@ -306,6 +306,16 @@
         body.printing-rfi-detail .fixed.bottom-0,
         body.printing-rfi-detail dialog,
         body.printing-rfi-detail .no-print,
+        body.printing-co-detail #appShell > #appHeaderBar,
+        body.printing-co-detail #appSidebar,
+        body.printing-co-detail #appFooterBar,
+        body.printing-co-detail #appShell > .flex.flex-1 > div.h-10,
+        body.printing-co-detail .co-page,
+        body.printing-co-detail #coDetailDrawer,
+        body.printing-co-detail #coDrawerBackdrop,
+        body.printing-co-detail .fixed.bottom-0,
+        body.printing-co-detail dialog,
+        body.printing-co-detail .no-print,
         body.printing-daily-log #appShell > #appHeaderBar,
         body.printing-daily-log #appSidebar,
         body.printing-daily-log #appFooterBar,
@@ -346,6 +356,7 @@
         body.printing-co-log #coPrintSheet,
         body.printing-rfi-log #rfiPrintSheet,
         body.printing-rfi-detail #rfiPrintSheet,
+        body.printing-co-detail #coPrintSheet,
         body.printing-daily-log #dlogPrintSheet,
         body.printing-weekly-log #wlogPrintSheet,
         body.printing-budget-log #budgetPrintSheet {
@@ -356,12 +367,14 @@
           font-size: 7pt;
         }
         body.printing-rfi-detail,
+        body.printing-co-detail,
         body.printing-budget-log {
           background: #fff !important;
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
         }
         body.printing-rfi-detail #mainContent,
+        body.printing-co-detail #mainContent,
         body.printing-budget-log #mainContent {
           padding: 0 !important;
           overflow: visible !important;
@@ -829,6 +842,33 @@
     </div>`;
   }
 
+  /** Estimate rows that fit on one printed landscape page without bleeding into the next. */
+  function estimateLogRowsPerPage(options) {
+    const opts = options || {};
+    const columnCount = opts.columnCount || 12;
+    const fullHeader = opts.fullHeader !== false;
+    let rows = fullHeader ? 18 : 22;
+    if (columnCount > 10) rows -= Math.ceil((columnCount - 10) / 2);
+    if (columnCount > 18) rows -= 2;
+    return Math.max(8, Math.min(24, rows));
+  }
+
+  /** Split register rows into page chunks (smaller first page when full header is used). */
+  function paginateLogRows(rows, options) {
+    if (!rows.length) return [[]];
+    const opts = options || {};
+    const columnCount = opts.columnCount || 12;
+    const firstPageRows = opts.firstPageRows || estimateLogRowsPerPage({ columnCount, fullHeader: true });
+    const contPageRows = opts.contPageRows || estimateLogRowsPerPage({ columnCount, fullHeader: false });
+    const pages = [rows.slice(0, firstPageRows)];
+    let i = firstPageRows;
+    while (i < rows.length) {
+      pages.push(rows.slice(i, i + contPageRows));
+      i += contPageRows;
+    }
+    return pages;
+  }
+
   function buildPrintFooterHtml(printedOn, pageNum, totalPages, options) {
     const opts = options || {};
     const showDate = opts.showPrintedDate !== false;
@@ -846,7 +886,6 @@
     const printedOn = new Date().toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
     const sections = opts.sections || [{ title: opts.title, tableHtml: opts.tableHtml }];
     const pages = [];
-    const ROWS_PER_PAGE = opts.rowsPerPage || 22;
     const headerOpts = {
       showLocation: printOpts.showLocation !== false,
     };
@@ -861,12 +900,15 @@
         pages.push(buildPageBlock(meta, section.title, buildPrintTable(columns, [], section.emptyMessage), printedOn, 1, 1, false, headerOpts, footerOpts));
         return;
       }
-      const totalPages = Math.ceil(rows.length / ROWS_PER_PAGE);
-      for (let p = 0; p < totalPages; p++) {
-        const chunk = rows.slice(p * ROWS_PER_PAGE, (p + 1) * ROWS_PER_PAGE);
+      const rowPages = paginateLogRows(rows, {
+        columnCount: columns.length,
+        firstPageRows: opts.rowsPerPage ? Math.min(opts.rowsPerPage, estimateLogRowsPerPage({ columnCount: columns.length, fullHeader: true })) : undefined,
+      });
+      const totalPages = rowPages.length;
+      rowPages.forEach((chunk, p) => {
         const tableHtml = buildPrintTable(columns, chunk);
         pages.push(buildPageBlock(meta, section.title, tableHtml, printedOn, p + 1, totalPages, p > 0, headerOpts, footerOpts));
-      }
+      });
     });
 
     return pages.map((p) => `<div class="casepm-print-page">${p}</div>`).join('');
@@ -896,8 +938,8 @@
     return container;
   }
 
-  /** Portrait document print (individual RFI, etc.) in an isolated iframe. */
-  function printPortraitDocument(bodyHtml, docTitle) {
+  /** Portrait document print (individual RFI, CO, etc.) in an isolated iframe. */
+  function printPortraitDocument(bodyHtml, docTitle, extraCss) {
     const printedOn = new Date().toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
     const headerCss = `
         .casepm-print-page { page-break-after: always; break-after: page; page-break-inside: avoid; break-inside: avoid-page; }
@@ -928,12 +970,47 @@
         .casepm-rfi-detail .rfi-detail-grid .label { display: block; font-size: 6.5pt; text-transform: uppercase; letter-spacing: 0.04em; color: #666; font-weight: 700; margin-bottom: 1px; }
         .casepm-rfi-detail .rfi-detail-box { border: 1px solid #ccc; border-radius: 2px; padding: 10px 12px; margin-bottom: 10px; white-space: pre-wrap; min-height: 40px; }
         .casepm-rfi-detail .rfi-detail-box h4 { margin: 0 0 6px; font-size: 7pt; text-transform: uppercase; letter-spacing: 0.05em; color: #555; font-weight: 700; }
-        .casepm-rfi-detail .rfi-detail-list { margin: 0; padding-left: 16px; font-size: 8pt; }`;
+        .casepm-rfi-detail .rfi-detail-list { margin: 0; padding-left: 16px; font-size: 8pt; }
+        .casepm-co-document { font-size: 9pt; line-height: 1.45; color: #111; position: relative; }
+        .casepm-co-document .co-doc-watermark {
+          position: absolute; top: 42%; left: 50%; transform: translate(-50%, -50%) rotate(-32deg);
+          font-size: 52pt; font-weight: 700; color: rgba(0,0,0,0.06); letter-spacing: 0.15em; text-transform: uppercase;
+          pointer-events: none; white-space: nowrap; z-index: 0;
+        }
+        .casepm-co-document > *:not(.co-doc-watermark) { position: relative; z-index: 1; }
+        .casepm-co-document .co-doc-hero { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin: 12px 0 14px; padding-bottom: 10px; border-bottom: 2px solid #222; }
+        .casepm-co-document .co-doc-number { font-family: 'Courier New', Courier, monospace; font-size: 14pt; font-weight: 700; color: #111; }
+        .casepm-co-document .co-doc-hero-meta { text-align: right; font-size: 8pt; color: #444; line-height: 1.5; }
+        .casepm-co-document .co-doc-status { display: inline-block; font-size: 7pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 8px; border: 1px solid #999; border-radius: 3px; color: #555; }
+        .casepm-co-document .co-doc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; margin-bottom: 14px; font-size: 8pt; }
+        .casepm-co-document .co-doc-grid .label { display: block; font-size: 6.5pt; text-transform: uppercase; letter-spacing: 0.05em; color: #666; font-weight: 700; margin-bottom: 2px; }
+        .casepm-co-document .co-doc-section { margin-bottom: 12px; }
+        .casepm-co-document .co-doc-section h3 { margin: 0 0 5px; font-size: 7pt; text-transform: uppercase; letter-spacing: 0.06em; color: #555; font-weight: 700; }
+        .casepm-co-document .co-doc-body { border: 1px solid #ccc; border-radius: 2px; padding: 10px 12px; white-space: pre-wrap; min-height: 56px; background: #fafafa; }
+        .casepm-co-document .co-doc-table { width: 100%; border-collapse: collapse; font-size: 8pt; margin-bottom: 12px; }
+        .casepm-co-document .co-doc-table th, .casepm-co-document .co-doc-table td { border: 1px solid #bbb; padding: 5px 8px; vertical-align: top; }
+        .casepm-co-document .co-doc-table th { background: #f0f0f0; font-size: 6.5pt; text-transform: uppercase; letter-spacing: 0.04em; color: #555; font-weight: 700; text-align: left; }
+        .casepm-co-document .co-doc-table td.r, .casepm-co-document .co-doc-table th.r { text-align: right; }
+        .casepm-co-document .co-doc-table td.mono { font-family: 'Courier New', Courier, monospace; }
+        .casepm-co-document .co-doc-table tfoot td { font-weight: 700; background: #f7f7f7; }
+        .casepm-co-document .co-doc-sum-row td { padding: 4px 8px; }
+        .casepm-co-document .co-doc-sum-row .label-col { color: #555; }
+        .casepm-co-document .co-doc-sigs { margin-top: 16px; page-break-inside: avoid; }
+        .casepm-co-document .co-doc-sigs h3 { margin: 0 0 8px; font-size: 7pt; text-transform: uppercase; letter-spacing: 0.06em; color: #555; font-weight: 700; }
+        .casepm-co-document .co-doc-sig-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+        .casepm-co-document .co-doc-sig-grid.two-col { grid-template-columns: 1fr 1fr; }
+        .casepm-co-document .co-doc-sig-block { border: 1px solid #ccc; border-radius: 2px; padding: 10px; min-height: 88px; font-size: 7.5pt; }
+        .casepm-co-document .co-doc-sig-role { font-size: 6.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #666; margin-bottom: 8px; }
+        .casepm-co-document .co-doc-sig-line { border-bottom: 1px solid #888; height: 22px; margin-bottom: 6px; }
+        .casepm-co-document .co-doc-sig-filled { font-size: 7pt; color: #222; margin-top: 4px; }
+        .casepm-co-document .co-doc-history { font-size: 7.5pt; color: #444; margin-top: 10px; }
+        .casepm-co-document .co-doc-history-item { padding: 4px 0; border-bottom: 1px solid #eee; }`;
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(docTitle || 'Print')}</title>
       <style>
         @page { size: portrait; margin: 0.45in 0.5in; }
         body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #111; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         ${headerCss}
+        ${extraCss || ''}
       </style></head><body>${bodyHtml.replace('__PRINTED_ON__', esc(printedOn))}</body></html>`;
     printHtmlInIframe(html, { landscape: false, delay: 400 });
   }
@@ -1001,6 +1078,8 @@
     formatPrintCell,
     pruneEmptyColumns,
     rebalanceColumnWidths,
+    estimateLogRowsPerPage,
+    paginateLogRows,
     isEmptyPrintCell,
     getCompanyMeta,
     getProjectMeta,
