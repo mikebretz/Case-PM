@@ -44,5 +44,5 @@ else
 fi
 
 echo "==> Done. On every remote PC: hard-refresh (Ctrl+Shift+R)."
-echo "    Footer must show: Case PM · build $BUILD"
+echo "    Verify: http://<server>:5000/api/version — running_build must be $BUILD"
 echo "    Pay Apps / Budget pages have a green Save button in the bottom bar."

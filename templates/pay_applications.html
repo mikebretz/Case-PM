@@ -139,13 +139,6 @@
   .pay-app-toolbar-actions {
     min-width: 0;
   }
-  .casepm-floating-save {
-    position: fixed;
-    bottom: 3.5rem;
-    right: 1rem;
-    z-index: 9999;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
-  }
   .pay-app-stack {
     display: flex;
     flex-direction: column;
@@ -323,10 +316,6 @@
 
 </div>
 </div>
-
-<button type="button" id="payAppFloatingSaveBtn" onclick="savePayApplications()" class="casepm-floating-save flex items-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-semibold text-white" title="Save pay applications (Ctrl+S)">
-    <i class="fa-solid fa-save"></i><span>Save</span>
-</button>
 
 <!-- ==================== ALL MODALS (styled exactly like budget.html) ==================== -->
 
@@ -565,11 +554,6 @@
         e.preventDefault();
         savePayApplications();
     }, true);
-
-    window.casepmTriggerSave = function () {
-        if (typeof savePayApplications === 'function') return savePayApplications();
-        alert('Pay Applications is still loading. Wait a moment and try again.');
-    };
 
     const SERVER_ORIGINAL_CONTRACT_AMOUNT = {{ project_original_contract_amount|tojson if project_original_contract_amount is not none else 'null' }};
     const SERVER_CONTRACT_VALUE = {{ project_contract_value|tojson if project_contract_value is not none else 'null' }};
@@ -2704,8 +2688,6 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     async function savePayApplications() {
         const buttons = [
             document.getElementById('savePayAppBtn'),
-            document.getElementById('payAppFloatingSaveBtn'),
-            document.getElementById('footerSaveBtn'),
         ].filter(Boolean);
         buttons.forEach((btn) => {
             btn.disabled = true;
