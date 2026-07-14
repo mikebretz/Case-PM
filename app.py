@@ -3808,7 +3808,12 @@ def api_list_rfis():
 @login_required
 def api_get_rfi(rfi_id):
     from rfi_persistence import rfi_to_dict, get_linked_records
+    from financial_security import require_financial_project_access
     rfi = RFI.query.get_or_404(rfi_id)
+    try:
+        require_financial_project_access(current_user, rfi.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     linked_cos, linked_pcos = get_linked_records(rfi.id, ChangeOrder, PotentialChangeOrder)
     payload = rfi_to_dict(rfi, linked_cos, linked_pcos)
     payload['attachments'] = _enrich_rfi_attachments(rfi_id, payload.get('attachments') or [])
@@ -10602,9 +10607,15 @@ def api_commitments_cost_codes():
 @login_required
 def api_list_commitments():
     from commitment_persistence import commitment_to_dict
+    from financial_security import require_financial_project_access
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
+    try:
+        project_id = require_financial_project_access(current_user, project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    project_id = int(project_id)
     status = request.args.get('status')
     ctype = request.args.get('type')
     q = Commitment.query.filter_by(project_id=int(project_id))
@@ -10624,7 +10635,12 @@ def api_list_commitments():
 @login_required
 def api_get_commitment(commitment_id):
     from commitment_persistence import commitment_to_dict
+    from financial_security import require_financial_project_access
     c = Commitment.query.get_or_404(commitment_id)
+    try:
+        require_financial_project_access(current_user, c.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     allocs = CommitmentAllocation.query.filter_by(commitment_id=c.id).all()
     return jsonify(commitment_to_dict(c, allocs))
 
@@ -13783,9 +13799,14 @@ def global_search():
 @login_required
 def api_get_budget_state():
     from budget_persistence import get_budget_state as load_state, save_budget_state, reconcile_budget_contract_from_project
+    from financial_security import require_financial_project_access
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
+    try:
+        project_id = require_financial_project_access(current_user, project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     project_id = int(project_id)
     project = Project.query.get(project_id)
     project_amt = _project_contract_amount(project)
@@ -13912,9 +13933,15 @@ def api_accounting_reconcile():
 def api_budget_pending_change_orders():
     from accounting_reconcile import list_pending_budget_items, _collect_alloc_maps
     from budget_persistence import PENDING_CO_STATUSES
+    from financial_security import require_financial_project_access
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
+    try:
+        project_id = require_financial_project_access(current_user, project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    project_id = int(project_id)
     cos = ChangeOrder.query.filter(
         ChangeOrder.project_id == project_id,
         ChangeOrder.status.in_(list(PENDING_CO_STATUSES)),
@@ -13987,9 +14014,15 @@ def api_publish_budget():
 @login_required
 def api_get_pay_app_state():
     from pay_app_persistence import get_pay_app_state as load_state
+    from financial_security import require_financial_project_access
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
+    try:
+        project_id = require_financial_project_access(current_user, project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    project_id = int(project_id)
     record, data = load_state(PayAppProjectState, project_id)
     if not record:
         return jsonify({'project_id': project_id, 'data': None, 'version': 0})
@@ -14206,9 +14239,15 @@ def api_change_orders_cost_codes():
 @login_required
 def api_list_change_orders():
     from co_persistence import co_to_dict, is_subcontract_co, enrich_co_dict_links
+    from financial_security import require_financial_project_access
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
+    try:
+        project_id = require_financial_project_access(current_user, project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    project_id = int(project_id)
     status = request.args.get('status')
     scope = (request.args.get('scope') or '').strip().lower()
     q = ChangeOrder.query.filter_by(project_id=int(project_id))
@@ -14234,7 +14273,12 @@ def api_list_change_orders():
 @login_required
 def api_get_change_order(co_id):
     from co_persistence import co_to_dict, enrich_co_dict_links
+    from financial_security import require_financial_project_access
     co = ChangeOrder.query.get_or_404(co_id)
+    try:
+        require_financial_project_access(current_user, co.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
     revs = ChangeOrderRevision.query.filter_by(change_order_id=co.id).order_by(ChangeOrderRevision.revision.desc()).all()
     revisions = [{'revision': r.revision, 'created_at': r.created_at.isoformat() if r.created_at else None, 'notes': r.notes, 'snapshot': json.loads(r.snapshot_json) if r.snapshot_json else None} for r in revs]

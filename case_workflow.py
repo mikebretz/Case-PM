@@ -415,9 +415,18 @@ def create_approval(*, project_id, module, entity_type, entity_id, title,
 
 
 def decide_approval(approval_id, decision, comments=''):
+    from financial_security import require_financial_project_access
+
     approval = ApprovalRequest.query.get_or_404(approval_id)
     if approval.status != 'pending':
         return approval, 'already_decided'
+
+    try:
+        require_financial_project_access(current_user, approval.project_id, Project)
+    except PermissionError:
+        return None, 'forbidden'
+    except ValueError as exc:
+        return None, str(exc)
 
     if not user_can_approve(current_user, approval.module):
         return None, 'forbidden'
@@ -689,6 +698,8 @@ def register_workflow(app, _db, models):
     @app.route('/api/workflow/event', methods=['POST'])
     @login_required
     def api_workflow_event():
+        from financial_security import require_financial_project_access
+
         data = request.get_json(silent=True) or {}
         event = data.get('event')
         project_id = data.get('project_id')
@@ -700,6 +711,14 @@ def register_workflow(app, _db, models):
         company_id = data.get('company_id')
         action_url = data.get('action_url', '')
         payload = data.get('payload') or {}
+
+        if event in ('submit', 'request_approval', 'notify'):
+            if not project_id:
+                return jsonify({'error': 'project_id required'}), 400
+            try:
+                require_financial_project_access(current_user, project_id, Project)
+            except (ValueError, PermissionError) as exc:
+                return jsonify({'error': str(exc)}), 403
 
         if event in ('submit', 'request_approval'):
             approval = create_approval(
@@ -745,7 +764,8 @@ def register_workflow(app, _db, models):
                 decision = 'dismiss' if event == 'dismiss' else event
                 approval, err = decide_approval(approval_id, decision, data.get('comments', ''))
                 if err:
-                    return jsonify({'error': err}), 403 if err == 'forbidden' else 400
+                    status = 403 if err in ('forbidden',) or 'access' in str(err).lower() else 400
+                    return jsonify({'error': err}), status
                 db.session.commit()
                 return jsonify({'ok': True, 'approval': approval.to_dict()})
 
