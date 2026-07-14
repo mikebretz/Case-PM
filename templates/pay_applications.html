@@ -601,6 +601,7 @@
     let contractorSOV = JSON.parse(casepmStore.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(casepmStore.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
     let companies = JSON.parse(casepmStore.getItem('casepm_companies')) || [];
+    let projectCommitmentsCache = [];
     let budgetLines = JSON.parse(casepmStore.getItem('budgetLines')) || [];
     let payAppAuditLog = JSON.parse(casepmStore.getItem('payAppAuditLog')) || [];
 
@@ -2553,9 +2554,51 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
     }
 
     function getCompanyName(companyId) {
-        const companies = JSON.parse(casepmStore.getItem('casepm_companies') || '[]');
-        const c = companies.find(x => x.id == companyId);
-        return c ? (c.name || c.company_name || 'Unknown Company') : 'Unknown Company';
+        return resolveSubCompanyDisplayName(companyId) || 'Unknown Company';
+    }
+
+    function resolveSubCompanyDisplayName(companyId) {
+        if (companyId == null || companyId === '') return null;
+        const companiesList = JSON.parse(casepmStore.getItem('casepm_companies') || '[]');
+        const match = companiesList.find((x) =>
+            String(x.id) === String(companyId) || String(x.server_id) === String(companyId)
+        );
+        if (match) return match.name || match.company_name || null;
+
+        for (const com of projectCommitmentsCache || []) {
+            if (String(com.company_id || '') === String(companyId) && com.company_name) {
+                return com.company_name;
+            }
+        }
+
+        const status = (subSOVStatus && (subSOVStatus[companyId] || subSOVStatus[String(companyId)])) || {};
+        if (status.companyName) return status.companyName;
+
+        return null;
+    }
+
+    async function loadProjectCommitmentsCache() {
+        const pid = (typeof CasePMWorkflow !== 'undefined' && CasePMWorkflow.projectId)
+            ? CasePMWorkflow.projectId()
+            : parseInt(localStorage.getItem('casepm_current_project_id') || '0', 10);
+        if (!pid) {
+            projectCommitmentsCache = [];
+            return;
+        }
+        try {
+            const res = await fetch(`/api/commitments?project_id=${pid}`, { credentials: 'same-origin' });
+            if (!res.ok) return;
+            const json = await res.json();
+            projectCommitmentsCache = json.commitments || [];
+            for (const com of projectCommitmentsCache) {
+                if (!com.company_id || !com.company_name) continue;
+                const key = String(com.company_id);
+                if (!subSOVStatus[key]) subSOVStatus[key] = {};
+                if (!subSOVStatus[key].companyName) subSOVStatus[key].companyName = com.company_name;
+            }
+        } catch (_) {
+            projectCommitmentsCache = [];
+        }
     }
 
     function showUnsavedIndicator() {
@@ -5142,12 +5185,10 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         if (selector) {
             const subSOVData = JSON.parse(casepmStore.getItem('subcontractorSOV') || '{}');
             subCompanyIdsInSOV(subSOVData).forEach((cid) => {
-                const company = companies.find((c) => String(c.id) === String(cid));
+                const displayName = resolveSubCompanyDisplayName(cid);
                 const opt = document.createElement('option');
                 opt.value = String(cid);
-                opt.textContent = company
-                    ? (company.name || company.company_name || 'Unnamed Sub')
-                    : `Subcontractor ${cid}`;
+                opt.textContent = displayName || `Subcontractor ${cid}`;
                 if (selectedSubCompanyId != null && String(selectedSubCompanyId) === String(cid)) {
                     opt.selected = true;
                 }
@@ -5642,8 +5683,9 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             return;
         }
         const companyId = selectedSubCompanyId;
+        const resolvedName = resolveSubCompanyDisplayName(companyId);
         const company = companies.find(c => c.id == companyId);
-        const companyName = company ? (company.name || company.company_name || 'this subcontractor') : 'this subcontractor';
+        const companyName = resolvedName || (company ? (company.name || company.company_name) : null) || `Subcontractor ${companyId}`;
 
         if (!forceRemove) {
             const subSOV = JSON.parse(casepmStore.getItem('subcontractorSOV') || '{}');
@@ -9328,6 +9370,7 @@ function printSubcontractorG703(companyId) {
                 CasePMWorkflow.loadPortal().catch(() => {});
             }
             await applyProgramPayAppDefaults();
+            await loadProjectCommitmentsCache();
             seedProjectContractDefaults();
             await refreshProjectFinancialSummary();
             reloadPayAppStateFromStorage();

@@ -539,6 +539,18 @@ def sync_commitment_to_sub_sov(PayAppProjectState, db, commitment, allocations, 
 
     sub_sov[company_key] = lines
     state['subcontractorSOV'] = sub_sov
+    sub_status = state.get('subSOVStatus') or {}
+    if not isinstance(sub_status, dict):
+        sub_status = {}
+    status_entry = sub_status.get(company_key) or {}
+    if commitment.company_name:
+        status_entry['companyName'] = commitment.company_name
+    if commitment.company_id:
+        status_entry['companyId'] = str(commitment.company_id)
+    if commitment.number:
+        status_entry['commitmentNumber'] = commitment.number
+    sub_status[company_key] = status_entry
+    state['subSOVStatus'] = sub_status
     payload = json.dumps(state)
     if record:
         record.data_json = payload

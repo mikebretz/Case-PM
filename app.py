@@ -14183,6 +14183,12 @@ def api_remove_subcontractor_from_project():
     except (ValueError, PermissionError) as exc:
         return jsonify({'error': str(exc)}), 403
 
+    if not company_name and company_id:
+        for c in Commitment.query.filter_by(project_id=project_id).all():
+            if str(c.company_id or '').strip() == str(company_id).strip():
+                company_name = c.company_name or company_name
+                break
+
     _, pay_state = load_state(PayAppProjectState, project_id)
     pay_state = pay_state or {}
 
