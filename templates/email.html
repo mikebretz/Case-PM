@@ -142,6 +142,9 @@
 <script>
 document.addEventListener('DOMContentLoaded', async function() {
     window.CasePMCurrentUserId = {{ current_user.id }};
+    {% if is_sub_vendor_portal %}
+    window.CASEPM_EMAIL_INTERNAL_ONLY = true;
+    {% endif %}
     if (window.CasePMEmailSettingsUI?.ensureLoaded) {
         await CasePMEmailSettingsUI.ensureLoaded({ mode: 'user', userId: {{ current_user.id }} });
     }

@@ -1204,8 +1204,15 @@
   }
 
   function emailInternalOnly() {
+    if (global.CASEPM_EMAIL_INTERNAL_ONLY) return true;
+    if (document.body && document.body.classList.contains('portal-sub-vendor')) return true;
     const p = global.CASEPM_PORTAL || {};
-    return !!(p.emailInternalOnly || (p.permissions && p.permissions.global && p.permissions.global.email_internal_only));
+    return !!(
+      p.emailInternalOnly
+      || p.isSubVendorPayPortal
+      || (p.permissions && p.permissions.global && p.permissions.global.email_internal_only)
+      || (p.permissions && p.permissions.global && p.permissions.global.sub_vendor_portal_only)
+    );
   }
 
   function renderHeader() {
@@ -1769,6 +1776,9 @@
 
   // ─── Actions ───────────────────────────────────────────────
   function setWorkspace(ws) {
+    if (ws === 'mail' && emailInternalOnly()) {
+      ws = 'internal';
+    }
     state.workspace = ws;
     state.folder = ws === 'internal' ? 'internal-inbox' : 'inbox';
     state.category = null;
@@ -2349,6 +2359,10 @@
     if (!ctx.mailboxOwners || !ctx.mailboxOwners.length) await fetchMailboxOwners();
     if (options.currentUserId) ctx.currentUserId = options.currentUserId;
     state.viewUserId = null;
+    if (emailInternalOnly()) {
+      state.workspace = 'internal';
+      state.folder = 'internal-inbox';
+    }
     await loadAll();
     global.CasePMEmailSettings = settings;
     if (typeof CasePMWorkflow !== 'undefined') {

@@ -73,6 +73,13 @@ def user_can_access_project(user, project_id, Project=None, ProjectMembership=No
         return False
     if user_bypasses_project_scope(user):
         return True
+    try:
+        from portal_sub_access import is_sub_vendor_portal_user, get_sub_vendor_project_ids
+        if is_sub_vendor_portal_user(user):
+            allowed = get_sub_vendor_project_ids(user, Project, ProjectMembership)
+            return project_id in allowed
+    except Exception:
+        pass
     if not enforcement_enabled():
         if Project is not None:
             return Project.query.get(project_id) is not None
@@ -84,6 +91,13 @@ def user_can_access_project(user, project_id, Project=None, ProjectMembership=No
 def filter_projects_for_user(user, projects, Project=None, ProjectMembership=None):
     if user_bypasses_project_scope(user):
         return list(projects)
+    try:
+        from portal_sub_access import is_sub_vendor_portal_user, get_sub_vendor_project_ids
+        if is_sub_vendor_portal_user(user):
+            allowed = get_sub_vendor_project_ids(user, Project, ProjectMembership)
+            return [p for p in projects if int(p.id) in allowed]
+    except Exception:
+        pass
     if not enforcement_enabled():
         return list(projects)
     allowed = get_assigned_project_ids(user, Project, ProjectMembership)

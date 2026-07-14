@@ -82,6 +82,17 @@ def require_financial_project_access(user, project_id, Project=None):
             return pid
         if Project is not None and not Project.query.get(pid):
             raise ValueError('Project not found')
+        try:
+            from portal_sub_access import is_sub_vendor_portal_user, get_sub_vendor_project_ids
+            if is_sub_vendor_portal_user(user):
+                allowed = get_sub_vendor_project_ids(user, Project)
+                if pid not in allowed:
+                    raise PermissionError('You do not have access to this project.')
+                return pid
+        except PermissionError:
+            raise
+        except Exception:
+            pass
         allowed = get_assigned_project_ids(user, Project)
         if pid not in allowed:
             raise PermissionError('You do not have access to this project.')
@@ -268,18 +279,26 @@ def should_skip_owner_threshold(base_amount, cumulative_amount=0.0, threshold=OW
     return effective_threshold_amount(base_amount, cumulative_amount) < threshold
 
 
-def filter_pay_app_patch_for_sub_vendor(user, patch: dict) -> dict:
-    from portal_sub_access import is_sub_vendor_portal_user, sub_vendor_company_keys, _filter_company_dict
+def filter_pay_app_patch_for_sub_vendor(user, patch: dict, existing: dict | None = None) -> dict:
+    from portal_sub_access import (
+        is_sub_vendor_portal_user,
+        sub_vendor_company_keys,
+        _filter_company_dict,
+        resolve_sub_vendor_sov_keys,
+    )
     if not is_sub_vendor_portal_user(user) or not isinstance(patch, dict):
         return patch
     allowed = sub_vendor_company_keys(user)
+    merged = dict(existing or {})
+    merged.update(patch)
+    sov_keys = resolve_sub_vendor_sov_keys(user, merged)
     out = {}
     for field in (
         'subcontractorSOV', 'subSOVStatus', 'subPayAppHistory',
         'subPendingSubmissions', 'subPayAppNumbers',
     ):
         if field in patch:
-            out[field] = _filter_company_dict(patch.get(field), allowed)
+            out[field] = _filter_company_dict(patch.get(field), allowed, sov_keys)
     return out if out else patch
 
 

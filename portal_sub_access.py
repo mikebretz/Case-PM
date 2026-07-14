@@ -127,29 +127,101 @@ def sub_vendor_company_keys(user) -> set[str]:
         keys.add(str(cid))
     if cname:
         keys.add(cname)
+        keys.add(cname.strip())
     name = (getattr(user, 'company', None) or '').strip()
     if name:
         keys.add(name)
     return keys
 
 
-def _filter_company_dict(data: dict | None, allowed: set[str]) -> dict:
-    if not isinstance(data, dict) or not allowed:
-        return {}
-    out = {}
-    for key, val in data.items():
-        sk = str(key)
-        if sk in allowed:
-            out[sk] = val
+def _allowed_key_variants(allowed: set[str]) -> set[str]:
+    variants: set[str] = set()
+    for key in allowed:
+        sk = str(key).strip()
+        if not sk:
             continue
-        if isinstance(val, dict):
-            cid = val.get('companyId') or val.get('company_id')
-            cname = val.get('companyName') or val.get('company_name')
-            if cid is not None and str(cid) in allowed:
-                out[sk] = val
-            elif cname and cname in allowed:
-                out[sk] = val
-    return out
+        variants.add(sk)
+        variants.add(sk.lower())
+    return variants
+
+
+def resolve_sub_vendor_sov_keys(user, data: dict | None) -> set[str]:
+    """All pay-app dict keys that belong to this sub vendor (id vs name tolerant)."""
+    if not data:
+        return set()
+    cid, cname, _ = resolve_sub_vendor_company(user)
+    allowed = sub_vendor_company_keys(user)
+    allowed_variants = _allowed_key_variants(allowed)
+    name_lower = (cname or (getattr(user, 'company', None) or '')).strip().lower()
+    keys: set[str] = set()
+
+    sub_sov = data.get('subcontractorSOV') or {}
+    sub_status = data.get('subSOVStatus') or {}
+
+    try:
+        from pay_app_persistence import _find_sub_sov_keys_for_company
+        for key in _find_sub_sov_keys_for_company(sub_sov, cid, cname):
+            keys.add(str(key))
+    except Exception:
+        pass
+
+    for map_data in (sub_sov, sub_status):
+        if not isinstance(map_data, dict):
+            continue
+        for key, val in map_data.items():
+            sk = str(key).strip()
+            if not sk:
+                continue
+            sk_lower = sk.lower()
+            if sk in allowed or sk_lower in allowed_variants:
+                keys.add(str(key))
+                continue
+            if name_lower and sk_lower == name_lower:
+                keys.add(str(key))
+                continue
+            if isinstance(val, dict):
+                st_cid = val.get('companyId') or val.get('company_id')
+                st_name = (val.get('companyName') or val.get('company_name') or '').strip()
+                st_name_lower = st_name.lower()
+                if st_cid is not None and (
+                    str(st_cid) in allowed or str(st_cid).lower() in allowed_variants
+                ):
+                    keys.add(str(key))
+                elif st_name and (
+                    st_name in allowed or st_name_lower in allowed_variants
+                    or (name_lower and st_name_lower == name_lower)
+                ):
+                    keys.add(str(key))
+    return keys
+
+
+def _filter_company_dict(data: dict | None, allowed: set[str], sov_keys: set[str] | None = None) -> dict:
+    if not isinstance(data, dict):
+        return {}
+    match_keys = set(sov_keys or ())
+    if not match_keys:
+        if not allowed:
+            return {}
+        allowed_variants = _allowed_key_variants(allowed)
+        for key, val in data.items():
+            sk = str(key).strip()
+            if sk in allowed or sk.lower() in allowed_variants:
+                match_keys.add(str(key))
+                continue
+            if isinstance(val, dict):
+                cid = val.get('companyId') or val.get('company_id')
+                cname = (val.get('companyName') or val.get('company_name') or '').strip()
+                if cid is not None and (
+                    str(cid) in allowed or str(cid).lower() in allowed_variants
+                ):
+                    match_keys.add(str(key))
+                elif cname and (
+                    cname in allowed or cname.lower() in allowed_variants
+                ):
+                    match_keys.add(str(key))
+    if not match_keys:
+        return {}
+    return {k: data[k] for k in match_keys if k in data}
 
 
 def filter_pay_app_state_for_sub_vendor(user, data: dict | None) -> dict | None:
@@ -160,17 +232,75 @@ def filter_pay_app_state_for_sub_vendor(user, data: dict | None) -> dict | None:
     if not data:
         return data
     out = dict(data)
+    sov_keys = resolve_sub_vendor_sov_keys(user, out)
     for field in (
         'subcontractorSOV', 'subSOVStatus', 'subPayAppHistory',
         'subPendingSubmissions', 'subPayAppNumbers',
     ):
         if field in out:
-            out[field] = _filter_company_dict(out.get(field), allowed)
+            out[field] = _filter_company_dict(out.get(field), allowed, sov_keys)
     out.pop('contractorSOV', None)
     out.pop('currentPayAppPeriod', None)
     out.pop('payAppHistory', None)
     out.pop('previousPayApps', None)
     return out
+
+
+def get_sub_vendor_pay_app_project_ids(user, PayAppProjectState=None) -> set[int]:
+    """Projects where this vendor appears in subcontractor SOV / status maps."""
+    if not is_sub_vendor_portal_user(user):
+        return set()
+    if PayAppProjectState is None:
+        try:
+            from app import PayAppProjectState as PayAppModel
+            PayAppProjectState = PayAppModel
+        except Exception:
+            return set()
+    ids: set[int] = set()
+    try:
+        from pay_app_persistence import _parse_state
+        for record in PayAppProjectState.query.all():
+            payload = _parse_state(record)
+            if resolve_sub_vendor_sov_keys(user, payload):
+                pid = getattr(record, 'project_id', None)
+                if pid is not None:
+                    ids.add(int(pid))
+    except Exception:
+        pass
+    return ids
+
+
+def get_sub_vendor_project_ids(user, Project=None, ProjectMembership=None, Commitment=None, PayAppProjectState=None) -> set[int]:
+    """All projects a sub/vendor portal user may access."""
+    if not is_sub_vendor_portal_user(user):
+        return set()
+    try:
+        from project_access import get_assigned_project_ids
+        ids = get_assigned_project_ids(user, Project, ProjectMembership)
+    except Exception:
+        ids = set()
+    if Commitment is None:
+        try:
+            from app import Commitment as CommitmentModel
+            Commitment = CommitmentModel
+        except Exception:
+            Commitment = None
+    ids |= get_commitment_project_ids(user, Commitment)
+    ids |= get_sub_vendor_pay_app_project_ids(user, PayAppProjectState)
+    return ids
+
+
+def portal_home_endpoint_for_user(user) -> str:
+    """Default landing page after login or when a module is blocked."""
+    if is_sub_vendor_portal_user(user):
+        return 'pay_applications_page'
+    return 'dashboard'
+
+
+def portal_home_redirect(user):
+    """Flask redirect to the appropriate home for this user."""
+    from flask import redirect, url_for
+    return redirect(url_for(portal_home_endpoint_for_user(user)))
 
 
 def get_commitment_project_ids(user, Commitment=None) -> set[int]:
