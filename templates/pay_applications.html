@@ -601,6 +601,7 @@
     let contractorSOV = JSON.parse(casepmStore.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(casepmStore.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
     let companies = JSON.parse(casepmStore.getItem('casepm_companies')) || [];
+    let projectCommitmentsCache = [];
     let budgetLines = JSON.parse(casepmStore.getItem('budgetLines')) || [];
     let payAppAuditLog = JSON.parse(casepmStore.getItem('payAppAuditLog')) || [];
 
@@ -2553,9 +2554,51 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
     }
 
     function getCompanyName(companyId) {
-        const companies = JSON.parse(casepmStore.getItem('casepm_companies') || '[]');
-        const c = companies.find(x => x.id == companyId);
-        return c ? (c.name || c.company_name || 'Unknown Company') : 'Unknown Company';
+        return resolveSubCompanyDisplayName(companyId) || 'Unknown Company';
+    }
+
+    function resolveSubCompanyDisplayName(companyId) {
+        if (companyId == null || companyId === '') return null;
+        const companiesList = JSON.parse(casepmStore.getItem('casepm_companies') || '[]');
+        const match = companiesList.find((x) =>
+            String(x.id) === String(companyId) || String(x.server_id) === String(companyId)
+        );
+        if (match) return match.name || match.company_name || null;
+
+        for (const com of projectCommitmentsCache || []) {
+            if (String(com.company_id || '') === String(companyId) && com.company_name) {
+                return com.company_name;
+            }
+        }
+
+        const status = (subSOVStatus && (subSOVStatus[companyId] || subSOVStatus[String(companyId)])) || {};
+        if (status.companyName) return status.companyName;
+
+        return null;
+    }
+
+    async function loadProjectCommitmentsCache() {
+        const pid = (typeof CasePMWorkflow !== 'undefined' && CasePMWorkflow.projectId)
+            ? CasePMWorkflow.projectId()
+            : parseInt(localStorage.getItem('casepm_current_project_id') || '0', 10);
+        if (!pid) {
+            projectCommitmentsCache = [];
+            return;
+        }
+        try {
+            const res = await fetch(`/api/commitments?project_id=${pid}`, { credentials: 'same-origin' });
+            if (!res.ok) return;
+            const json = await res.json();
+            projectCommitmentsCache = json.commitments || [];
+            for (const com of projectCommitmentsCache) {
+                if (!com.company_id || !com.company_name) continue;
+                const key = String(com.company_id);
+                if (!subSOVStatus[key]) subSOVStatus[key] = {};
+                if (!subSOVStatus[key].companyName) subSOVStatus[key].companyName = com.company_name;
+            }
+        } catch (_) {
+            projectCommitmentsCache = [];
+        }
     }
 
     function showUnsavedIndicator() {
@@ -5142,12 +5185,10 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         if (selector) {
             const subSOVData = JSON.parse(casepmStore.getItem('subcontractorSOV') || '{}');
             subCompanyIdsInSOV(subSOVData).forEach((cid) => {
-                const company = companies.find((c) => String(c.id) === String(cid));
+                const displayName = resolveSubCompanyDisplayName(cid);
                 const opt = document.createElement('option');
                 opt.value = String(cid);
-                opt.textContent = company
-                    ? (company.name || company.company_name || 'Unnamed Sub')
-                    : `Subcontractor ${cid}`;
+                opt.textContent = displayName || `Subcontractor ${cid}`;
                 if (selectedSubCompanyId != null && String(selectedSubCompanyId) === String(cid)) {
                     opt.selected = true;
                 }
@@ -5636,89 +5677,96 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         renderPayAppContent();
     }
 
-    function removeSelectedSubcontractor() {
+    async function removeSelectedSubcontractor(forceRemove) {
         if (!selectedSubCompanyId) {
             showCenteredAlert("Please select a subcontractor first from the dropdown.", "warning");
             return;
         }
         const companyId = selectedSubCompanyId;
+        const resolvedName = resolveSubCompanyDisplayName(companyId);
         const company = companies.find(c => c.id == companyId);
-        const companyName = company ? (company.name || company.company_name || 'this subcontractor') : 'this subcontractor';
+        const companyName = resolvedName || (company ? (company.name || company.company_name) : null) || `Subcontractor ${companyId}`;
 
-        // Load latest data
-        const subSOV = JSON.parse(casepmStore.getItem('subcontractorSOV') || '{}');
-        const payAppHist = JSON.parse(casepmStore.getItem('subPayAppHistory') || '{}');
-        const pendingSubs = JSON.parse(casepmStore.getItem('subPendingSubmissions') || '{}');
-        const payAppNums = JSON.parse(casepmStore.getItem('subPayAppNumbers') || '{}');
-
-        const histForSub = getSubCompanyMapEntry(payAppHist, companyId) || {};
-        const hasPushedHistory = Object.keys(histForSub).some(p => {
-            const entry = histForSub[p];
-            return entry && entry.archived === true;
-        });
-
-        const hasActiveInTracker = Object.keys(histForSub).some(p => {
-            const entry = histForSub[p];
-            return entry && (entry.status === 'Approved' || entry.status === 'Pending Approval') && entry.archived !== true;
-        }) || !!getSubCompanyMapEntry(pendingSubs, companyId);
-
-        if (hasPushedHistory) {
-            showCenteredAlert(
-                `Cannot remove ${companyName}.\n\n` +
-                `This subcontractor has had one or more pay applications pushed to "Previous Sub Pay Apps".\n` +
-                `Historical payment records exist to preserve the audit trail and G703 snapshots.\n\n` +
-                `Subcontractors with pushed pay app history cannot be removed.`,
-                "error"
-            );
-            return;
-        }
-
-        if (hasActiveInTracker) {
-            showCenteredAlert(
-                `${companyName} has a pay application currently in the Sub Pay App Tracker (pending approval or approved but not yet pushed).\n\n` +
-                `To remove this subcontractor, you must first clear the pending pay app:\n` +
-                `• Go to the Sub Pay App Tracker tab\n` +
-                `• Either click "Push to Previous Sub Pay Apps" on the row (archives it safely), OR\n` +
-                `• Click "Request Revision" to bring the paper back to the Subcontractor Schedule of Values tab for changes, then re-submit/approve/push as needed.\n\n` +
-                `Once the Tracker is clear of this subcontractor's pay app, you can return here and remove the subcontractor.`,
-                "warning"
-            );
-            return;
-        }
-
-        // Safe to remove — no pushed history and no active/pending pay app
-        const lienWaivers = JSON.parse(casepmStore.getItem('subLienWaivers') || '{}');
-        const sovStatus = JSON.parse(casepmStore.getItem('subSOVStatus') || '{}');
-
-        deleteSubCompanyMapKeys(subSOV, companyId);
-        deleteSubCompanyMapKeys(payAppHist, companyId);
-        deleteSubCompanyMapKeys(pendingSubs, companyId);
-        deleteSubCompanyMapKeys(payAppNums, companyId);
-        deleteSubCompanyMapKeys(lienWaivers, companyId);
-        deleteSubCompanyMapKeys(sovStatus, companyId);
-
-        casepmStore.setItem('subcontractorSOV', JSON.stringify(subSOV));
-        casepmStore.setItem('subPayAppHistory', JSON.stringify(payAppHist));
-        casepmStore.setItem('subPendingSubmissions', JSON.stringify(pendingSubs));
-        casepmStore.setItem('subPayAppNumbers', JSON.stringify(payAppNums));
-        casepmStore.setItem('subLienWaivers', JSON.stringify(lienWaivers));
-        casepmStore.setItem('subSOVStatus', JSON.stringify(sovStatus));
-
-        selectedSubCompanyId = null;
-        casepmStore.removeItem('lastSelectedSubSOV');
-        reloadPayAppStateFromStorage();
-
-        const selector = document.getElementById('subSelector');
-        if (selector) {
-            const removeValues = new Set(subCompanyKeyVariants(companyId).map((k) => String(k)));
-            Array.from(selector.options).forEach((opt) => {
-                if (removeValues.has(opt.value)) opt.remove();
+        if (!forceRemove) {
+            const subSOV = JSON.parse(casepmStore.getItem('subcontractorSOV') || '{}');
+            const payAppHist = JSON.parse(casepmStore.getItem('subPayAppHistory') || '{}');
+            const pendingSubs = JSON.parse(casepmStore.getItem('subPendingSubmissions') || '{}');
+            const histForSub = getSubCompanyMapEntry(payAppHist, companyId) || {};
+            const hasPushedHistory = Object.keys(histForSub).some(p => {
+                const entry = histForSub[p];
+                return entry && entry.archived === true;
             });
-            selector.value = '';
+            const hasActiveInTracker = Object.keys(histForSub).some(p => {
+                const entry = histForSub[p];
+                return entry && (entry.status === 'Approved' || entry.status === 'Pending Approval') && entry.archived !== true;
+            }) || !!getSubCompanyMapEntry(pendingSubs, companyId);
+
+            if (hasPushedHistory || hasActiveInTracker) {
+                if (!await payAppConfirm(
+                    `${companyName} has pay application history in the tracker or Previous Sub Pay Apps.\n\nForce remove will purge their SOV and void related commitments. Continue?`,
+                    { title: 'Force Remove Subcontractor', danger: true }
+                )) return;
+                forceRemove = true;
+            }
         }
 
-        renderPayAppContent();
-        logPayAppAudit('SUB_REMOVED_FROM_SOV', { companyId, companyName });
+        const pid = (typeof CasePMWorkflow !== 'undefined' && CasePMWorkflow.projectId) ? CasePMWorkflow.projectId() : parseInt(localStorage.getItem('casepm_current_project_id') || '0', 10);
+        try {
+            const res = await fetch('/api/pay-applications/remove-subcontractor', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    project_id: pid,
+                    company_id: companyId,
+                    company_name: companyName,
+                    force: !!forceRemove,
+                }),
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                if (json.can_force && !forceRemove) {
+                    const msg = json.error || 'Could not remove subcontractor';
+                    if (await payAppConfirm(
+                        `${msg}\n\nThis usually means an approved Commitment keeps re-adding them to the Schedule of Values.\n\nForce remove will void the commitment(s) and permanently purge ${companyName} from this project. Continue?`,
+                        { title: 'Force Remove Subcontractor', danger: true }
+                    )) {
+                        return removeSelectedSubcontractor(true);
+                    }
+                    return;
+                }
+                showCenteredAlert(json.error || 'Could not remove subcontractor', 'error');
+                return;
+            }
+
+            if (typeof CasePMPayAppSync !== 'undefined') {
+                await CasePMPayAppSync.refreshFromServer();
+            }
+            reloadPayAppStateFromStorage();
+            selectedSubCompanyId = null;
+            casepmStore.removeItem('lastSelectedSubSOV');
+            hideUnsavedIndicator();
+
+            const selector = document.getElementById('subSelector');
+            if (selector) {
+                const removeValues = new Set(subCompanyKeyVariants(companyId).map((k) => String(k)));
+                Array.from(selector.options).forEach((opt) => {
+                    if (removeValues.has(opt.value)) opt.remove();
+                });
+                selector.value = '';
+            }
+
+            renderPayAppContent();
+            logPayAppAudit('SUB_REMOVED_FROM_SOV', {
+                companyId,
+                companyName,
+                voided_commitments: json.voided_commitments || [],
+                force: !!forceRemove,
+            });
+            showCenteredAlert(`${companyName} removed from this project.`, 'success');
+        } catch (err) {
+            showCenteredAlert(err.message || 'Remove failed', 'error');
+        }
     }
 
     async function clearAllSubcontractorsForFreshJob() {
@@ -6229,7 +6277,9 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         });
         if (changed) {
             casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+            showUnsavedIndicator();
             renderPayAppContent();
+            persistPayAppStateNow({ silent: true });
         }
     }
 
@@ -9320,6 +9370,7 @@ function printSubcontractorG703(companyId) {
                 CasePMWorkflow.loadPortal().catch(() => {});
             }
             await applyProgramPayAppDefaults();
+            await loadProjectCommitmentsCache();
             seedProjectContractDefaults();
             await refreshProjectFinancialSummary();
             reloadPayAppStateFromStorage();
