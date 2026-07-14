@@ -776,7 +776,7 @@ def register_workflow(app, _db, models):
     def api_workflow_respond(module, entity_id):
         from financial_security import require_financial_project_access
 
-        module_key = (module or '').lower().replace('-', '_')
+        module_key = (module or '').lower().replace('-', '_').replace(' ', '_')
         Project = models.get('Project')
         try:
             if module_key in ('rfi', 'rfis'):
