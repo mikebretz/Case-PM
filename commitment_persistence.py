@@ -346,6 +346,12 @@ def commitment_workflow_action(commitment, action, user, body=None, CommitmentAl
         commitment.status = 'Submitted'
         commitment.approval_stage = 0
         set_ball_in_court(commitment)
+        queue_commitment_sage_event(
+            commitment,
+            'CommitmentSubmitted',
+            message=f'{commitment.number} submitted — ball with {commitment.ball_in_court_role}',
+            user_id=getattr(user, 'id', None),
+        )
         return commitment.status, False
 
     if action == 'reject':
@@ -353,6 +359,7 @@ def commitment_workflow_action(commitment, action, user, body=None, CommitmentAl
         workflow_reject_authorized(user, commitment.ball_in_court_role, user_can_act_fn=user_can_act_on_ball_in_court)
         commitment.status = 'Rejected'
         commitment.ball_in_court_role = None
+        queue_commitment_sage_event(commitment, 'CommitmentRejected', user_id=getattr(user, 'id', None))
         return commitment.status, False
 
     if action == 'approve':
@@ -368,7 +375,19 @@ def commitment_workflow_action(commitment, action, user, body=None, CommitmentAl
         set_ball_in_court(commitment)
         if next_status == 'Approved':
             commitment.ball_in_court_role = None
+            queue_commitment_sage_event(
+                commitment,
+                'CommitmentApproved',
+                message=f'Commitment {commitment.number} approved',
+                user_id=getattr(user, 'id', None),
+            )
             return commitment.status, True
+        queue_commitment_sage_event(
+            commitment,
+            'CommitmentApprovalStep',
+            message=f'{commitment.number} advanced to {next_status}',
+            user_id=getattr(user, 'id', None),
+        )
         return commitment.status, False
 
     if action == 'sign_internal':
@@ -394,6 +413,7 @@ def commitment_workflow_action(commitment, action, user, body=None, CommitmentAl
             raise ValueError('Commitment is already void')
         commitment.status = 'Void'
         commitment.ball_in_court_role = None
+        queue_commitment_sage_event(commitment, 'CommitmentVoided', user_id=getattr(user, 'id', None))
         return commitment.status, False
 
     raise ValueError('action must be submit, approve, reject, sign_internal, send_docusign, or void')
@@ -585,6 +605,32 @@ def build_commitment_sage_payload(commitment, allocations=None, extra=None):
         },
         **{k: v for k, v in extra.items() if k != 'sage_vendor_code'},
     }
+
+
+def queue_commitment_sage_event(commitment, event_type, message='', extra=None, user_id=None, allocations=None):
+    """Queue Sage sync for commitment workflow (API routes, simulations, scripts)."""
+    try:
+        import importlib
+        app_mod = importlib.import_module('app')
+    except ImportError:
+        return None
+    from sage_service import create_and_process_sage_event
+
+    CommitmentAllocation = app_mod.CommitmentAllocation
+    if allocations is None:
+        allocations = CommitmentAllocation.query.filter_by(commitment_id=commitment.id).all()
+    payload = build_commitment_sage_payload(commitment, allocations, extra)
+    return create_and_process_sage_event(
+        app_mod.SageSyncEvent,
+        app_mod.Project,
+        app_mod.db,
+        commitment.project_id,
+        event_type,
+        message=message or f'{commitment.number} — {event_type}',
+        payload=payload,
+        user_id=user_id,
+        Commitment=app_mod.Commitment,
+    )
 
 
 def validate_budget_headroom(BudgetProjectState, project_id, allocations):
