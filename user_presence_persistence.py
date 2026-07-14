@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import uuid
 from datetime import datetime, timedelta
 
 from sqlalchemy import text
 
-ONLINE_WINDOW_SECONDS = 90
+ONLINE_WINDOW_SECONDS = 120
 THUMBNAIL_DIR = os.path.join('instance', 'presence_thumbs')
 
 _schema_ready = False
@@ -39,12 +40,23 @@ def ensure_user_presence_schema(db):
             scroll_pct INTEGER DEFAULT 0,
             has_thumbnail INTEGER DEFAULT 0,
             last_seen_at TEXT NOT NULL,
+            last_seen_epoch INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL
         )
     '''))
     db.session.execute(text(
-        'CREATE INDEX IF NOT EXISTS idx_presence_user_last_seen ON user_presence_sessions (user_id, last_seen_at)'
+        'CREATE INDEX IF NOT EXISTS idx_presence_user_last_seen ON user_presence_sessions (user_id, last_seen_epoch)'
     ))
+    try:
+        existing = {
+            row[1] for row in db.session.execute(text('PRAGMA table_info(user_presence_sessions)')).fetchall()
+        }
+        if 'last_seen_epoch' not in existing:
+            db.session.execute(text(
+                'ALTER TABLE user_presence_sessions ADD COLUMN last_seen_epoch INTEGER NOT NULL DEFAULT 0'
+            ))
+    except Exception:
+        db.session.rollback()
     db.session.commit()
     os.makedirs(THUMBNAIL_DIR, exist_ok=True)
     _schema_ready = True
@@ -52,6 +64,10 @@ def ensure_user_presence_schema(db):
 
 def _now_iso():
     return datetime.utcnow().isoformat() + 'Z'
+
+
+def _now_epoch():
+    return int(time.time())
 
 
 def _parse_iso(value):
@@ -64,11 +80,16 @@ def _parse_iso(value):
         return None
 
 
-def _is_online(last_seen_at):
+def _is_online(last_seen_epoch=None, last_seen_at=None):
+    now = _now_epoch()
+    if last_seen_epoch:
+        try:
+            return (now - int(last_seen_epoch)) <= ONLINE_WINDOW_SECONDS
+        except (TypeError, ValueError):
+            pass
     dt = _parse_iso(last_seen_at)
     if not dt:
         return False
-    # Treat naive UTC timestamps as UTC.
     if dt.tzinfo:
         dt = dt.replace(tzinfo=None)
     return datetime.utcnow() - dt <= timedelta(seconds=ONLINE_WINDOW_SECONDS)
@@ -120,6 +141,7 @@ def upsert_presence_heartbeat(db, user, payload):
         view_state_json = json.dumps(view_state) if view_state else None
 
     now = _now_iso()
+    now_epoch = _now_epoch()
     row = db.session.execute(
         text('SELECT id, has_thumbnail FROM user_presence_sessions WHERE session_key = :sk'),
         {'sk': session_key},
@@ -143,6 +165,7 @@ def upsert_presence_heartbeat(db, user, payload):
         'lact_at': payload.get('last_action_at') or now,
         'scroll': int(payload.get('scroll_pct') or 0),
         'seen': now,
+        'seen_epoch': now_epoch,
         'created': now,
         'thumb': has_thumb or (row[1] if row else 0),
     }
@@ -156,7 +179,7 @@ def upsert_presence_heartbeat(db, user, payload):
                 activity_summary = :asum, view_state_json = :vjson,
                 last_action = :lact, last_action_at = :lact_at, scroll_pct = :scroll,
                 has_thumbnail = CASE WHEN :thumb = 1 THEN 1 ELSE has_thumbnail END,
-                last_seen_at = :seen
+                last_seen_at = :seen, last_seen_epoch = :seen_epoch
             WHERE session_key = :sk
         '''), fields)
     else:
@@ -165,12 +188,12 @@ def upsert_presence_heartbeat(db, user, payload):
                 session_key, user_id, user_name, user_email, user_role,
                 page_path, page_title, page_module, project_id, project_name, active_tab,
                 activity_summary, view_state_json, last_action, last_action_at, scroll_pct,
-                has_thumbnail, last_seen_at, created_at
+                has_thumbnail, last_seen_at, last_seen_epoch, created_at
             ) VALUES (
                 :sk, :uid, :uname, :uemail, :urole,
                 :ppath, :ptitle, :pmod, :pid, :pname, :atab,
                 :asum, :vjson, :lact, :lact_at, :scroll,
-                :thumb, :seen, :created
+                :thumb, :seen, :seen_epoch, :created
             )
         '''), fields)
 
@@ -180,10 +203,10 @@ def upsert_presence_heartbeat(db, user, payload):
 
 
 def prune_stale_sessions(db, older_than_hours=24):
-    cutoff = (datetime.utcnow() - timedelta(hours=older_than_hours)).isoformat() + 'Z'
+    cutoff_epoch = _now_epoch() - (older_than_hours * 3600)
     rows = db.session.execute(
-        text('SELECT session_key FROM user_presence_sessions WHERE last_seen_at < :cutoff'),
-        {'cutoff': cutoff},
+        text('SELECT session_key FROM user_presence_sessions WHERE last_seen_epoch < :cutoff'),
+        {'cutoff': cutoff_epoch},
     ).fetchall()
     for row in rows:
         path = _thumb_path(row[0])
@@ -193,8 +216,8 @@ def prune_stale_sessions(db, older_than_hours=24):
             except OSError:
                 pass
     db.session.execute(
-        text('DELETE FROM user_presence_sessions WHERE last_seen_at < :cutoff'),
-        {'cutoff': cutoff},
+        text('DELETE FROM user_presence_sessions WHERE last_seen_epoch < :cutoff'),
+        {'cutoff': cutoff_epoch},
     )
     db.session.commit()
 
@@ -203,7 +226,7 @@ def _serialize_row(row):
     if not row:
         return None
     data = dict(row._mapping) if hasattr(row, '_mapping') else dict(row)
-    data['online'] = _is_online(data.get('last_seen_at'))
+    data['online'] = _is_online(data.get('last_seen_epoch'), data.get('last_seen_at'))
     view_state = {}
     raw = data.pop('view_state_json', None)
     if raw:
@@ -216,20 +239,20 @@ def _serialize_row(row):
     return data
 
 
-def list_online_presence(db, include_offline_minutes=5):
+def list_online_presence(db, include_offline_minutes=30):
     ensure_user_presence_schema(db)
-    cutoff = (datetime.utcnow() - timedelta(minutes=include_offline_minutes)).isoformat() + 'Z'
+    cutoff_epoch = _now_epoch() - int(include_offline_minutes * 60)
     rows = db.session.execute(text('''
         SELECT session_key, user_id, user_name, user_email, user_role,
                page_path, page_title, page_module, project_id, project_name, active_tab,
-               activity_summary, last_action, last_action_at, scroll_pct, has_thumbnail, last_seen_at
+               activity_summary, last_action, last_action_at, scroll_pct, has_thumbnail,
+               last_seen_at, last_seen_epoch
         FROM user_presence_sessions
-        WHERE last_seen_at >= :cutoff
-        ORDER BY last_seen_at DESC
-    '''), {'cutoff': cutoff}).fetchall()
+        WHERE last_seen_epoch >= :cutoff
+        ORDER BY last_seen_epoch DESC
+    '''), {'cutoff': cutoff_epoch}).fetchall()
 
     sessions = [_serialize_row(r) for r in rows]
-    # Group by user — show most recent session per user in summary, keep all sessions
     by_user = {}
     for s in sessions:
         uid = s['user_id']
@@ -262,7 +285,12 @@ def list_online_presence(db, include_offline_minutes=5):
             entry['activity_summary'] = s.get('activity_summary')
             entry['last_seen_at'] = s.get('last_seen_at')
     users = sorted(by_user.values(), key=lambda u: (not u['online'], u.get('user_name') or ''))
-    return {'users': users, 'online_count': sum(1 for u in users if u['online'])}
+    return {
+        'users': users,
+        'sessions': sessions,
+        'online_count': sum(1 for s in sessions if s.get('online')),
+        'session_count': len(sessions),
+    }
 
 
 def get_presence_session(db, session_key):
