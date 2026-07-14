@@ -305,7 +305,9 @@ def user_portal_type(user):
 
 
 def is_sub_user(user):
-    return user_portal_type(user) == 'sub' or user.role == 'Company User'
+    return user_portal_type(user) == 'sub' or user.role in (
+        'Company User', 'Subcontractor', 'Subcontractor Contact', 'Subcontractor Accountant',
+    )
 
 
 def is_architect_user(user):

@@ -168,6 +168,9 @@
         <option value="Architect">Architect</option>
         <option value="Owner">Owner</option>
         <option value="Contractor Accounting">Contractor Accounting</option>
+        <option value="Subcontractor">Subcontractor</option>
+        <option value="Subcontractor Contact">Subcontractor Contact</option>
+        <option value="Subcontractor Accountant">Subcontractor Accountant</option>
         <option value="Company User">Company User</option>
         <option value="Viewer">Viewer</option>
     </select>
@@ -388,8 +391,10 @@
                                 <option value="Architect">Architect</option>
                                 <option value="Owner">Owner</option>
                                 <option value="Contractor Accounting">Contractor Accounting</option>
+                                <option value="Subcontractor">Subcontractor</option>
+                                <option value="Subcontractor Contact">Subcontractor Contact</option>
                                 <option value="Subcontractor Accountant">Subcontractor Accountant</option>
-                                <option value="Company User" selected>Company User</option>
+                                <option value="Company User">Company User (legacy)</option>
                                 <option value="Viewer">Viewer</option>
                                 {% if can_assign_developer_role %}
                                 <option value="Developer">Developer</option>
@@ -1654,7 +1659,7 @@
 
         // Default Role for new user
         const roleSelect = document.getElementById('role');
-        if (roleSelect) roleSelect.value = 'Company User';
+        if (roleSelect) roleSelect.value = 'Subcontractor';
 
         setCertificationsToUI([]);
         selectedProjectIds = [];
@@ -1735,7 +1740,7 @@
 
         // Set Role
         const roleSelect = document.getElementById('role');
-        if (roleSelect) roleSelect.value = user.role || 'Company User';
+        if (roleSelect) roleSelect.value = user.role || 'Subcontractor';
 
         const twoFA = document.getElementById('twoFactorEnabled');
         if (twoFA) twoFA.checked = user.twoFactorEnabled || false;
@@ -2366,7 +2371,9 @@
         if (totalEl) totalEl.textContent = users.length;
         if (adminEl) adminEl.textContent = users.filter(u => u.role === 'Admin').length;
         if (activeEl) activeEl.textContent = users.filter(u => u.status === 'Active').length;
-        if (companyEl) companyEl.textContent = users.filter(u => u.role === 'Company User' || u.company).length;
+        if (companyEl) companyEl.textContent = users.filter(u =>
+            ['Company User', 'Subcontractor', 'Subcontractor Contact', 'Subcontractor Accountant'].includes(u.role) || u.company
+        ).length;
     }
 
     function filterUsers() {
