@@ -84,6 +84,7 @@ API_AUTH_ONLY_PREFIXES = (
     '/api/current-project',
     '/api/notifications',
     '/api/stats',
+    '/api/presence/',
 )
 
 METHOD_MIN_ACCESS = {

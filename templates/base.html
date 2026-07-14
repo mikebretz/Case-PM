@@ -272,6 +272,9 @@
     <script src="{{ static_v('js/developer-unlock.js') }}"></script>
     <script src="{{ static_v('js/developer-actions.js') }}"></script>
     {% endif %}
+    {% if current_user.is_authenticated %}
+    <script src="{{ static_v('js/presence-client.js') }}"></script>
+    {% endif %}
 </head>
 <body class="bg-zinc-950 text-zinc-200 h-screen overflow-hidden {% if is_sub_portal %}portal-sub{% elif is_architect_portal %}portal-architect{% else %}portal-staff{% endif %}"
       data-page-module="{{ page_module|default('app') }}"
