@@ -500,6 +500,26 @@
           border-radius: 2px;
           background: #fafafa;
         }
+        .casepm-rfi-signoff-onepage { page-break-inside: avoid; break-inside: avoid-page; }
+        .casepm-rfi-signoff-onepage .casepm-print-header { margin-bottom: 5px; padding-bottom: 5px; }
+        .casepm-rfi-signoff-onepage .casepm-rfi-detail { font-size: 7.5pt; line-height: 1.3; }
+        .casepm-rfi-signoff-onepage .rfi-detail-number { font-size: 10pt; }
+        .casepm-rfi-signoff-onepage .rfi-detail-subject { font-size: 9.5pt; margin-bottom: 5px; line-height: 1.2; }
+        .casepm-rfi-signoff-onepage .rfi-detail-grid { grid-template-columns: repeat(4, 1fr); gap: 3px 8px; margin-bottom: 5px; font-size: 7pt; }
+        .casepm-rfi-signoff-onepage .casepm-manual-field { margin-bottom: 1px; font-size: 6pt; }
+        .casepm-rfi-signoff-onepage .casepm-manual-field .label { font-size: 5.5pt; margin-bottom: 0; }
+        .casepm-rfi-signoff-onepage .casepm-manual-field .line { min-height: 11px; }
+        .casepm-rfi-signoff-onepage .casepm-manual-box { padding: 5px 7px; margin-bottom: 4px; }
+        .casepm-rfi-signoff-onepage .casepm-manual-box h4 { margin-bottom: 2px; font-size: 5.5pt; }
+        .casepm-rfi-signoff-onepage .casepm-manual-box .prefill { font-size: 7pt; margin-bottom: 4px; padding-bottom: 3px; }
+        .casepm-rfi-signoff-onepage .casepm-manual-box .write-area { min-height: 36px !important; }
+        .casepm-rfi-signoff-onepage .casepm-manual-sig-block { padding: 5px 6px; }
+        .casepm-rfi-signoff-onepage .casepm-manual-sigs { gap: 6px; margin-top: 5px; }
+        .casepm-rfi-signoff-onepage .co-doc-sigs { margin-top: 5px; page-break-inside: avoid; }
+        .casepm-rfi-signoff-onepage .co-doc-sigs h3 { margin: 0 0 2px; font-size: 5.5pt; }
+        .casepm-rfi-signoff-onepage .co-doc-sigs p { font-size: 6pt !important; margin: 0 0 4px !important; }
+        .casepm-rfi-signoff-onepage .rfi-signoff-inline { font-size: 6.5pt; color: #555; margin-bottom: 3px; line-height: 1.25; }
+        .casepm-rfi-signoff-onepage .casepm-print-footer { margin-top: 4px; padding-top: 3px; }
         .casepm-print-header, .submittal-print-header {
           margin-bottom: 8px;
           border-bottom: 1.5px solid #222;
@@ -757,6 +777,26 @@
           padding-left: 16px;
           font-size: 8pt;
         }
+        .casepm-rfi-signoff-onepage { page-break-inside: avoid; break-inside: avoid-page; }
+        .casepm-rfi-signoff-onepage .casepm-print-header { margin-bottom: 5px; padding-bottom: 5px; }
+        .casepm-rfi-signoff-onepage .casepm-rfi-detail { font-size: 7.5pt; line-height: 1.3; }
+        .casepm-rfi-signoff-onepage .rfi-detail-number { font-size: 10pt; }
+        .casepm-rfi-signoff-onepage .rfi-detail-subject { font-size: 9.5pt; margin-bottom: 5px; line-height: 1.2; }
+        .casepm-rfi-signoff-onepage .rfi-detail-grid { grid-template-columns: repeat(4, 1fr); gap: 3px 8px; margin-bottom: 5px; font-size: 7pt; }
+        .casepm-rfi-signoff-onepage .casepm-manual-field { margin-bottom: 1px; font-size: 6pt; }
+        .casepm-rfi-signoff-onepage .casepm-manual-field .label { font-size: 5.5pt; margin-bottom: 0; }
+        .casepm-rfi-signoff-onepage .casepm-manual-field .line { min-height: 11px; }
+        .casepm-rfi-signoff-onepage .casepm-manual-box { padding: 5px 7px; margin-bottom: 4px; }
+        .casepm-rfi-signoff-onepage .casepm-manual-box h4 { margin-bottom: 2px; font-size: 5.5pt; }
+        .casepm-rfi-signoff-onepage .casepm-manual-box .prefill { font-size: 7pt; margin-bottom: 4px; padding-bottom: 3px; }
+        .casepm-rfi-signoff-onepage .casepm-manual-box .write-area { min-height: 36px !important; }
+        .casepm-rfi-signoff-onepage .casepm-manual-sig-block { padding: 5px 6px; }
+        .casepm-rfi-signoff-onepage .casepm-manual-sigs { gap: 6px; margin-top: 5px; }
+        .casepm-rfi-signoff-onepage .co-doc-sigs { margin-top: 5px; page-break-inside: avoid; }
+        .casepm-rfi-signoff-onepage .co-doc-sigs h3 { margin: 0 0 2px; font-size: 5.5pt; }
+        .casepm-rfi-signoff-onepage .co-doc-sigs p { font-size: 6pt !important; margin: 0 0 4px !important; }
+        .casepm-rfi-signoff-onepage .rfi-signoff-inline { font-size: 6.5pt; color: #555; margin-bottom: 3px; line-height: 1.25; }
+        .casepm-rfi-signoff-onepage .casepm-print-footer { margin-top: 4px; padding-top: 3px; }
       }
     `;
     document.head.appendChild(style);
@@ -977,13 +1017,19 @@
   }
 
   /** Manual sign-off block with blank lines for ink signatures. */
-  function buildManualSigBlock(role) {
-    return `<div class="casepm-manual-sig-block">
+  function buildManualSigBlock(role, options) {
+    const opts = options || {};
+    const compact = !!opts.compact;
+    const fields = compact
+      ? ['Signature', 'Print Name', 'Date']
+      : ['Signature', 'Print Name', 'Title', 'Date'];
+    const fieldHtml = fields.map(label =>
+      `<div class="casepm-manual-field"><span class="label">${esc(label)}</span><div class="line"></div></div>`
+    ).join('');
+    const compactCls = compact ? ' casepm-manual-sig-compact' : '';
+    return `<div class="casepm-manual-sig-block${compactCls}">
       <div class="casepm-manual-sig-role">${esc(role)}</div>
-      <div class="casepm-manual-field"><span class="label">Signature</span><div class="line"></div></div>
-      <div class="casepm-manual-field"><span class="label">Print Name</span><div class="line"></div></div>
-      <div class="casepm-manual-field"><span class="label">Title</span><div class="line"></div></div>
-      <div class="casepm-manual-field"><span class="label">Date</span><div class="line"></div></div>
+      ${fieldHtml}
     </div>`;
   }
 
@@ -1185,7 +1231,27 @@
         .casepm-manual-box { border: 1px solid #ccc; border-radius: 2px; padding: 10px 12px; margin-bottom: 10px; }
         .casepm-manual-box h4 { margin: 0 0 6px; font-size: 7pt; text-transform: uppercase; letter-spacing: 0.05em; color: #555; font-weight: 700; }
         .casepm-manual-box .prefill { font-size: 8pt; color: #444; white-space: pre-wrap; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px dashed #ccc; }
-        .casepm-manual-box .write-area { border: 1px dashed #bbb; border-radius: 2px; background: #fafafa; }`;
+        .casepm-manual-box .write-area { border: 1px dashed #bbb; border-radius: 2px; background: #fafafa; }
+        .casepm-rfi-signoff-onepage { page-break-inside: avoid; break-inside: avoid-page; }
+        .casepm-rfi-signoff-onepage .casepm-print-header { margin-bottom: 5px; padding-bottom: 5px; }
+        .casepm-rfi-signoff-onepage .casepm-rfi-detail { font-size: 7.5pt; line-height: 1.3; }
+        .casepm-rfi-signoff-onepage .rfi-detail-number { font-size: 10pt; }
+        .casepm-rfi-signoff-onepage .rfi-detail-subject { font-size: 9.5pt; margin-bottom: 5px; line-height: 1.2; }
+        .casepm-rfi-signoff-onepage .rfi-detail-grid { grid-template-columns: repeat(4, 1fr); gap: 3px 8px; margin-bottom: 5px; font-size: 7pt; }
+        .casepm-rfi-signoff-onepage .casepm-manual-field { margin-bottom: 1px; font-size: 6pt; }
+        .casepm-rfi-signoff-onepage .casepm-manual-field .label { font-size: 5.5pt; margin-bottom: 0; }
+        .casepm-rfi-signoff-onepage .casepm-manual-field .line { min-height: 11px; }
+        .casepm-rfi-signoff-onepage .casepm-manual-box { padding: 5px 7px; margin-bottom: 4px; }
+        .casepm-rfi-signoff-onepage .casepm-manual-box h4 { margin-bottom: 2px; font-size: 5.5pt; }
+        .casepm-rfi-signoff-onepage .casepm-manual-box .prefill { font-size: 7pt; margin-bottom: 4px; padding-bottom: 3px; }
+        .casepm-rfi-signoff-onepage .casepm-manual-box .write-area { min-height: 36px !important; }
+        .casepm-rfi-signoff-onepage .casepm-manual-sig-block { padding: 5px 6px; }
+        .casepm-rfi-signoff-onepage .casepm-manual-sigs { gap: 6px; margin-top: 5px; }
+        .casepm-rfi-signoff-onepage .co-doc-sigs { margin-top: 5px; page-break-inside: avoid; }
+        .casepm-rfi-signoff-onepage .co-doc-sigs h3 { margin: 0 0 2px; font-size: 5.5pt; }
+        .casepm-rfi-signoff-onepage .co-doc-sigs p { font-size: 6pt !important; margin: 0 0 4px !important; }
+        .casepm-rfi-signoff-onepage .rfi-signoff-inline { font-size: 6.5pt; color: #555; margin-bottom: 3px; line-height: 1.25; }
+        .casepm-rfi-signoff-onepage .casepm-print-footer { margin-top: 4px; padding-top: 3px; }`;
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(docTitle || 'Print')}</title>
       <style>
         @page { size: portrait; margin: 0.45in 0.5in; }

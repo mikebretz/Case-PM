@@ -1173,32 +1173,21 @@
     };
 
     const metaFields = [];
-    if (hasPrintValue(r.priority) || P?.buildWritableField) metaFields.push(writableField('Priority', r.priority));
-    if (opts.dates !== false) {
-      metaFields.push(writableField('Due Date', fmtDate(r.due_date)));
-      metaFields.push(writableField('Initiated', fmtDate(r.date)));
-    }
-    metaFields.push(writableField('Ball in Court', r.ball_in_court_role));
-    if (opts.drawing !== false) metaFields.push(writableField('Drawing', r.drawing_reference));
-    if (opts.spec !== false) metaFields.push(writableField('Spec', r.spec_reference));
-    if (opts.discipline !== false) metaFields.push(writableField('Discipline', r.discipline));
-    if (hasPrintValue(r.rfi_manager_name) || P?.buildWritableField) metaFields.push(writableField('RFI Manager', r.rfi_manager_name));
-    const fromVal = r.received_from_company || r.from_party;
-    metaFields.push(writableField('From', fromVal));
-    const toVal = (r.assignees || []).join(', ') || r.to_party;
-    metaFields.push(writableField('To / Assignee', toVal));
-    if (opts.impacts !== false) {
-      metaFields.push(writableField('Cost Impact', r.cost_impact_amount ? '$' + Number(r.cost_impact_amount).toLocaleString() : ''));
-      metaFields.push(writableField('Schedule Impact', r.schedule_impact_days ? `${r.schedule_impact_days} days` : ''));
-    }
+    metaFields.push(writableField('Due Date', fmtDate(r.due_date)));
+    metaFields.push(writableField('Initiated', fmtDate(r.date)));
+    metaFields.push(writableField('Drawing', r.drawing_reference));
+    metaFields.push(writableField('Spec', r.spec_reference));
+    metaFields.push(writableField('Discipline', r.discipline));
+    metaFields.push(writableField('From', r.received_from_company || r.from_party));
+    metaFields.push(writableField('To / Assignee', (r.assignees || []).join(', ') || r.to_party));
+    metaFields.push(writableField('Cost Impact', r.cost_impact_amount ? '$' + Number(r.cost_impact_amount).toLocaleString() : ''));
+    metaFields.push(writableField('Schedule Impact', r.schedule_impact_days ? `${r.schedule_impact_days} days` : ''));
 
-    const attachments = opts.attachments !== false
-      ? (r.attachments || []).map(att => `<li>${e(att.original_name || att.filename || 'File')}</li>`).join('')
-      : '';
-    const linked = opts.linked !== false ? [
-      ...(r.linked_change_orders || []).map(c => `CO ${e(c.number)} — ${e(c.title)}`),
-      ...(r.linked_pcos || []).map(p => `PCO ${e(p.number)} — ${e(p.title)}`),
-    ].join('; ') : '';
+    const attachmentNames = (r.attachments || []).map(att => att.original_name || att.filename || 'File');
+    const linkedItems = [
+      ...(r.linked_change_orders || []).map(c => `CO ${c.number}`),
+      ...(r.linked_pcos || []).map(p => `PCO ${p.number}`),
+    ];
 
     const headerOpts = { showLocation: opts.location !== false };
     const statusBadge = hasPrintValue(r.status)
@@ -1206,20 +1195,25 @@
       : '';
 
     const questionBlock = P && P.buildWritableBox
-      ? P.buildWritableBox('Question', r.question || '', { minHeight: 100 })
+      ? P.buildWritableBox('Question', r.question || '', { minHeight: 36 })
       : `<div class="rfi-detail-box"><h4>Question</h4>${e(r.question || '—')}</div>`;
     const answerBlock = P && P.buildWritableBox
-      ? P.buildWritableBox('Official Answer / Response', r.official_answer || '', { minHeight: 120 })
-      : (r.official_answer ? `<div class="rfi-detail-box"><h4>Official Answer</h4>${e(r.official_answer)}</div>` : `<div class="rfi-detail-box"><h4>Official Answer / Response</h4><div class="write-area" style="min-height:120px;border:1px dashed #bbb;background:#fafafa"></div></div>`);
+      ? P.buildWritableBox('Official Answer / Response', r.official_answer || '', { minHeight: 36 })
+      : `<div class="rfi-detail-box"><h4>Official Answer / Response</h4><div class="write-area" style="min-height:36px;border:1px dashed #bbb;background:#fafafa"></div></div>`;
 
     const sigBlocks = P && P.buildManualSigBlock
       ? `<div class="casepm-manual-sigs">
-          ${P.buildManualSigBlock('Requested By')}
-          ${P.buildManualSigBlock('Responded By (Architect / Engineer)')}
+          ${P.buildManualSigBlock('Requested By', { compact: true })}
+          ${P.buildManualSigBlock('Responded By (Architect / Engineer)', { compact: true })}
         </div>`
       : '';
 
-    return `<div class="casepm-print-page">
+    const inlineExtras = [
+      attachmentNames.length ? `<div class="rfi-signoff-inline"><strong>Attachments:</strong> ${e(attachmentNames.join(', '))}</div>` : '',
+      linkedItems.length ? `<div class="rfi-signoff-inline"><strong>Linked:</strong> ${e(linkedItems.join(', '))}</div>` : '',
+    ].filter(Boolean).join('');
+
+    return `<div class="casepm-print-page casepm-rfi-signoff-onepage">
       ${global.CasePMPrint.buildPrintHeaderHtml(meta, 'REQUEST FOR INFORMATION', headerOpts)}
       <div class="casepm-rfi-detail">
         <div class="rfi-detail-identifier">
@@ -1227,12 +1221,11 @@
           ${statusBadge}
         </div>
         <div class="rfi-detail-subject">${e(r.subject || '')}</div>
-        ${metaFields.filter(Boolean).length ? `<div class="rfi-detail-grid">${metaFields.filter(Boolean).join('')}</div>` : ''}
+        <div class="rfi-detail-grid">${metaFields.filter(Boolean).join('')}</div>
         ${questionBlock}
         ${answerBlock}
-        ${attachments ? `<div class="rfi-detail-box"><h4>Attachments</h4><ul class="rfi-detail-list">${attachments}</ul></div>` : ''}
-        ${linked ? `<div class="rfi-detail-box"><h4>Linked Change Orders / PCOs</h4>${linked}</div>` : ''}
-        ${sigBlocks ? `<div class="co-doc-sigs"><h3>Authorization &amp; Sign-off</h3><p style="font-size:7.5pt;color:#555;margin:0 0 10px">Print, complete by hand, and return signed.</p>${sigBlocks}</div>` : ''}
+        ${inlineExtras}
+        ${sigBlocks ? `<div class="co-doc-sigs"><h3>Authorization &amp; Sign-off</h3><p>Print, complete by hand, and return signed.</p>${sigBlocks}</div>` : ''}
       </div>
       <div class="casepm-print-footer">
         <span>Confidential</span>
