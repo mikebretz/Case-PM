@@ -745,10 +745,12 @@ def inject_project_context():
         }
     except Exception:
         portal = {'portal_type': 'staff', 'is_sub_portal': False, 'is_architect_portal': False}
+    company_info = {}
     company_logo_url = ''
     try:
         from program_settings_persistence import load_company_info
-        company_logo_url = (load_company_info().get('logo_data_url') or '').strip()
+        company_info = load_company_info() or {}
+        company_logo_url = (company_info.get('logo_data_url') or '').strip()
     except Exception:
         pass
     profile = {}
@@ -786,6 +788,7 @@ def inject_project_context():
         'project_name': active.name if active else 'Select Project',
         'all_projects': all_projects,
         'company_logo_url': company_logo_url,
+        'company_info': company_info,
         'current_user_profile': profile,
         'csrf_token': csrf_token,
         **portal,

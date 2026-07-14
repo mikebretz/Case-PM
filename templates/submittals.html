@@ -117,15 +117,35 @@ window.SUBMITTAL_PROJECT_CTX = {
     .submittal-print-page {
       page-break-after: always;
       break-after: page;
+      page-break-inside: avoid;
+      break-inside: avoid-page;
     }
     .submittal-print-page:last-child {
       page-break-after: auto;
       break-after: auto;
     }
     .submittal-print-header {
+      margin-bottom: 8px;
+      border-bottom: 1.5px solid #222;
+      padding-bottom: 8px;
+    }
+    .submittal-print-header-continued {
       margin-bottom: 6px;
-      border-bottom: 2px solid #111;
-      padding-bottom: 6px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #bbb;
+    }
+    .submittal-print-continued-title {
+      font-size: 8pt;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      color: #333;
+      text-transform: uppercase;
+    }
+    .submittal-print-continued-label {
+      font-weight: 500;
+      color: #666;
+      text-transform: none;
+      font-size: 7.5pt;
     }
     .submittal-print-header-table {
       width: 100%;
@@ -133,38 +153,76 @@ window.SUBMITTAL_PROJECT_CTX = {
     }
     .submittal-print-header-table td {
       border: none;
-      vertical-align: top;
+      vertical-align: middle;
       padding: 0;
     }
-    .submittal-print-header-left { padding-right: 12px; }
-    .submittal-print-header-right {
-      text-align: right;
-      width: 34%;
-      padding-left: 10px;
-      word-break: normal;
-      overflow-wrap: normal;
+    .submittal-print-header-brand {
+      width: 52px;
+      padding-right: 10px;
+      vertical-align: top;
+    }
+    .submittal-print-logo {
+      display: block;
+      max-width: 48px;
+      max-height: 36px;
+      object-fit: contain;
+    }
+    .submittal-print-logo-placeholder {
+      width: 36px;
+      height: 36px;
+      border-radius: 4px;
+      background: #1a1a1a;
+      color: #fff;
+      font-size: 14pt;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .submittal-print-header-center { padding-right: 14px; vertical-align: top; }
+    .submittal-print-company-name {
+      font-size: 7pt;
+      font-weight: 600;
+      color: #444;
+      margin-bottom: 2px;
     }
     .submittal-print-title {
-      font-size: 13pt;
+      font-size: 11pt;
       font-weight: 700;
       letter-spacing: 0.5px;
       color: #111;
-      line-height: 1.1;
+      line-height: 1.15;
+      text-transform: uppercase;
+    }
+    .submittal-print-location {
+      margin-top: 3px;
+      font-size: 6pt;
+      color: #555;
+    }
+    .submittal-print-location .label {
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 5.5pt;
+      color: #777;
+    }
+    .submittal-print-header-right {
+      text-align: right;
+      width: 32%;
+      padding-left: 10px;
+      vertical-align: top;
     }
     .submittal-print-meta {
       text-align: right;
       font-size: 6.5pt;
-      line-height: 1.35;
+      line-height: 1.4;
       color: #222;
-      word-break: normal;
-      overflow-wrap: normal;
     }
-    .submittal-print-meta div { margin-bottom: 1px; }
+    .submittal-print-meta div { margin-bottom: 3px; }
     .submittal-print-meta .label {
       font-weight: 700;
       text-transform: uppercase;
-      font-size: 6pt;
-      color: #444;
+      font-size: 5.5pt;
+      color: #666;
     }
     .submittal-print-table {
       width: 100%;
@@ -209,11 +267,11 @@ window.SUBMITTAL_PROJECT_CTX = {
       display: grid;
       grid-template-columns: 1fr auto 1fr;
       align-items: center;
-      margin-top: 8px;
-      padding-top: 4px;
-      border-top: 1px solid #999;
-      font-size: 7pt;
-      color: #444;
+      margin-top: 10px;
+      padding-top: 5px;
+      border-top: 1px solid #ccc;
+      font-size: 6.5pt;
+      color: #666;
     }
     .submittal-print-footer .center { text-align: center; }
     .submittal-print-footer .right { text-align: right; }
@@ -2638,11 +2696,24 @@ const SUBMITTAL_OPTIONAL_PRINT_FIELDS = [
     { key: 'scheduleDays', label: 'Schedule Impact (Days)', default: false },
 ];
 
-function resolveSubmittalPrintColumns(selectedOptionalKeys) {
+const SUBMITTAL_DATE_COLUMN_KEYS = ['dateReceived', 'dateSent', 'dateReturned'];
+
+const SUBMITTAL_CONTENT_OPTIONS = [
+    { key: 'dates', label: 'Include date columns', default: true },
+    { key: 'location', label: 'Show location in header', default: true },
+    { key: 'printedDate', label: 'Show printed date in footer', default: true },
+];
+
+function resolveSubmittalPrintColumns(selectedOptionalKeys, contentOptions) {
+    const opts = contentOptions || {};
+    let base = SUBMITTAL_BASE_PRINT_COLUMNS;
+    if (opts.dates === false) {
+        base = base.filter(c => !SUBMITTAL_DATE_COLUMN_KEYS.includes(c.key));
+    }
     const optional = SUBMITTAL_OPTIONAL_PRINT_FIELDS
         .filter(f => (selectedOptionalKeys || []).includes(f.key))
         .map(f => ({ key: f.key, label: f.label.replace(/ /g, '<br>'), width: '5%' }));
-    return [...SUBMITTAL_BASE_PRINT_COLUMNS, ...optional];
+    return [...base, ...optional];
 }
 
 function submittalPrintCellValue(item, key) {
@@ -2697,15 +2768,16 @@ async function showPrintSubmittalLogPicker() {
     }
     const picked = await CasePMPrint.showFieldPicker({
         title: 'Print Submittal Log',
-        note: 'Standard log columns (spec section through status) are always included in ALDI register order. Choose any extra columns to append on the right.',
+        note: 'Standard log columns (spec section through status) are always included. Choose extra columns to append on the right.',
+        contentOptions: SUBMITTAL_CONTENT_OPTIONS,
         fields: SUBMITTAL_OPTIONAL_PRINT_FIELDS,
     });
     if (!picked) return;
-    printSubmittalLog(picked.fields);
+    printSubmittalLog(picked.fields, picked.contentOptions);
 }
 
-async function printSubmittalLog(selectedOptionalFields) {
-    const html = buildSubmittalPrintSheet(selectedOptionalFields);
+async function printSubmittalLog(selectedOptionalFields, contentOptions) {
+    const html = buildSubmittalPrintSheet(selectedOptionalFields, contentOptions);
     if (typeof CasePMOutput !== 'undefined') {
         await CasePMOutput.deliverHtml({
             title: 'Submittal Log',
@@ -2737,12 +2809,15 @@ async function printSubmittalLog(selectedOptionalFields) {
 }
 
 function getSubmittalProjectMeta() {
+    if (typeof CasePMPrint !== 'undefined' && CasePMPrint.getProjectMeta) {
+        return CasePMPrint.getProjectMeta();
+    }
     const ctx = window.SUBMITTAL_PROJECT_CTX || {};
     const nameEl = document.getElementById('currentProjectName');
     return {
-        name: (nameEl?.textContent || '').trim() || ctx.name || 'ALDI Lakeland',
-        number: ctx.number || '370 / 664',
-        location: ctx.address || '6600 N SOCRUM LOOP LAKELAND, FL 33809'
+        name: (nameEl?.textContent || '').trim() || ctx.name || 'Project',
+        number: ctx.number || '',
+        location: ctx.address || '',
     };
 }
 
@@ -2824,8 +2899,9 @@ function buildSubmittalPrintTableHead(columns) {
     return `<table class="submittal-print-table"><thead><tr>${head}</tr></thead><tbody>`;
 }
 
-function buildSubmittalPrintSheet(selectedOptionalFields) {
-    let columns = resolveSubmittalPrintColumns(selectedOptionalFields);
+function buildSubmittalPrintSheet(selectedOptionalFields, contentOptions) {
+    const printOpts = contentOptions || {};
+    let columns = resolveSubmittalPrintColumns(selectedOptionalFields, printOpts);
     const meta = getSubmittalProjectMeta();
     const rows = [...submittals].sort((a, b) => {
         const sa = formatSpecSectionForPrint(a.specSection);
@@ -2845,29 +2921,38 @@ function buildSubmittalPrintSheet(selectedOptionalFields) {
         columns = CasePMPrint.rebalanceColumnWidths(CasePMPrint.pruneEmptyColumns(columns, registerRows));
     }
     const printedOn = new Date().toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
-    const ROWS_PER_PAGE = 28;
+    const ROWS_PER_PAGE = 22;
     const pages = [];
     const colSpan = columns.length;
+    const headerOpts = {
+        classPrefix: 'submittal-print-',
+        showLocation: printOpts.location !== false,
+    };
+    const showPrintedDate = printOpts.printedDate !== false;
+
+    function submittalFooter(pageNum, totalPages) {
+        const pageLabel = totalPages > 1 ? `Page ${pageNum} of ${totalPages}` : `Page ${pageNum}`;
+        return `<div class="submittal-print-footer">
+            <span>Confidential</span>
+            <span class="center">${showPrintedDate ? printedOn : ''}</span>
+            <span class="right">${pageLabel}</span>
+        </div>`;
+    }
 
     if (!rows.length) {
-        pages.push(`${buildSubmittalPrintPageHeader(meta)}
+        pages.push(`${buildSubmittalPrintPageHeader(meta, false, headerOpts)}
             ${buildSubmittalPrintTableHead(columns)}
             <tr><td colspan="${colSpan}" style="text-align:center;padding:16px;color:#666">No submittals to print.</td></tr>
             </tbody></table>
-            <div class="submittal-print-footer"><span>Confidential</span><span class="center">${printedOn}</span><span class="right">Page 1</span></div>`);
+            ${submittalFooter(1, 1)}`);
     } else {
         const totalPages = Math.ceil(rows.length / ROWS_PER_PAGE);
         for (let p = 0; p < totalPages; p++) {
             const chunk = rows.slice(p * ROWS_PER_PAGE, (p + 1) * ROWS_PER_PAGE);
-            let html = buildSubmittalPrintPageHeader(meta);
+            let html = buildSubmittalPrintPageHeader(meta, p > 0, headerOpts);
             html += buildSubmittalPrintTableHead(columns);
             html += chunk.map(item => buildSubmittalPrintRow(item, columns)).join('');
-            html += `</tbody></table>
-                <div class="submittal-print-footer">
-                    <span>Confidential</span>
-                    <span class="center">${printedOn}</span>
-                    <span class="right">Page ${p + 1}</span>
-                </div>`;
+            html += `</tbody></table>${submittalFooter(p + 1, totalPages)}`;
             pages.push(html);
         }
     }
@@ -2878,24 +2963,26 @@ function buildSubmittalPrintSheet(selectedOptionalFields) {
     return body;
 }
 
-function buildSubmittalPrintPageHeader(meta) {
-    const esc = escapeSubmittalHtml;
-    const loc = meta.location
-        ? `<div style="margin-top:4px;font-size:6.5pt"><span class="label" style="font-weight:700">LOCATION</span><br>${esc(meta.location)}</div>`
-        : '';
+function buildSubmittalPrintPageHeader(meta, continued, headerOpts) {
     if (typeof CasePMPrint !== 'undefined' && CasePMPrint.buildPrintHeaderHtml) {
-        return CasePMPrint.buildPrintHeaderHtml(meta, 'SUBMITTAL LOG').replace('casepm-print-', 'submittal-print-');
+        const opts = { ...(headerOpts || {}), classPrefix: 'submittal-print-', continued: !!continued };
+        return CasePMPrint.buildPrintHeaderHtml(meta, 'SUBMITTAL LOG', opts);
+    }
+    const esc = escapeSubmittalHtml;
+    if (continued) {
+        return `<div class="submittal-print-header submittal-print-header-continued">
+            <span class="submittal-print-continued-title">SUBMITTAL LOG <span class="submittal-print-continued-label">(continued)</span></span>
+        </div>`;
     }
     return `<div class="submittal-print-header">
         <table class="submittal-print-header-table"><tr>
-            <td class="submittal-print-header-left">
+            <td class="submittal-print-header-center">
                 <div class="submittal-print-title">SUBMITTAL LOG</div>
-                ${loc}
             </td>
             <td class="submittal-print-header-right">
                 <div class="submittal-print-meta">
-                    <div><span class="label">PROJECT ID</span><br>${esc(meta.number)}</div>
-                    <div style="margin-top:4px"><span class="label">PROJECT NAME</span><br>${esc(meta.name)}</div>
+                    ${meta.number ? `<div><span class="label">Project No.</span><br>${esc(meta.number)}</div>` : ''}
+                    ${meta.name ? `<div><span class="label">Project</span><br>${esc(meta.name)}</div>` : ''}
                 </div>
             </td>
         </tr></table>
