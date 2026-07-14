@@ -61,6 +61,7 @@ def serialize_profile(user):
         'address': getattr(user, 'address', None) or '',
         'role': user.role,
         'company': user.company or '',
+        'company_id': getattr(user, 'company_id', None),
         'require_2fa': bool(getattr(user, 'require_2fa', False)),
         'profile_image_url': profile_image_url(user),
         'signature': sig,
