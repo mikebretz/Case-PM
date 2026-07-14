@@ -1515,9 +1515,9 @@
   const CO_BASE_PRINT_COLUMNS = [
     { key: 'number', label: 'CO #', width: '6%', mono: true },
     { key: 'date', label: 'Date', width: '6%', align: 'center' },
-    { key: 'title', label: 'Title / Description', width: '16%' },
-    { key: 'company_name', label: 'Company', width: '10%' },
-    { key: 'contact_name', label: 'Contact', width: '8%' },
+    { key: 'title', label: 'Title / Description', width: '16%', maxLen: 90 },
+    { key: 'company_name', label: 'Company', width: '10%', maxLen: 80 },
+    { key: 'contact_name', label: 'Contact', width: '8%', maxLen: 70 },
     { key: 'cost_code', label: 'Cost<br>Code', width: '7%', mono: true },
     { key: 'amount', label: 'Amount', width: '8%', align: 'right' },
     { key: 'status', label: 'Status', width: '8%', align: 'center' },
@@ -1538,9 +1538,9 @@
   const PCO_BASE_PRINT_COLUMNS = [
     { key: 'number', label: 'PCO #', width: '6%', mono: true },
     { key: 'date', label: 'Date', width: '6%', align: 'center' },
-    { key: 'title', label: 'Title / Description', width: '18%' },
-    { key: 'company_name', label: 'Company', width: '10%' },
-    { key: 'contact_name', label: 'Contact', width: '8%' },
+    { key: 'title', label: 'Title / Description', width: '18%', maxLen: 90 },
+    { key: 'company_name', label: 'Company', width: '10%', maxLen: 80 },
+    { key: 'contact_name', label: 'Contact', width: '8%', maxLen: 70 },
     { key: 'estimated_amount', label: 'ROM', width: '8%', align: 'right' },
     { key: 'status', label: 'Status', width: '8%', align: 'center' },
     { key: 'ball_in_court_role', label: 'Ball<br>in Court', width: '8%', align: 'center' },
@@ -1570,6 +1570,9 @@
   }
 
   function getCoPrintMeta() {
+    if (global.CasePMPrint && global.CasePMPrint.getProjectMeta) {
+      return global.CasePMPrint.getProjectMeta();
+    }
     const nameEl = document.getElementById('currentProjectName');
     return {
       name: (nameEl?.textContent || '').trim() || 'Project',
@@ -1599,6 +1602,7 @@
         width: c.width,
         align: c.align,
         mono: c.mono,
+        maxLen: c.maxLen,
       })),
       rows: data,
       emptyMessage: `No ${title.toLowerCase()} records.`,

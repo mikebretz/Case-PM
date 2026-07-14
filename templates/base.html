@@ -285,7 +285,9 @@
       data-is-admin="{{ '1' if is_admin_user else '0' }}"
       data-is-developer="{{ '1' if is_developer else '0' }}"
       data-active-project-id="{{ active_project.id if active_project else '' }}"
-      data-active-project-name="{{ active_project.name if active_project else '' }}">
+      data-active-project-name="{{ active_project.name if active_project else '' }}"
+      data-active-project-number="{{ active_project.number if active_project and active_project.number else (active_project.accounting_project_number if active_project and active_project.accounting_project_number else '') }}"
+      data-active-project-address="{{ active_project.address if active_project and active_project.address else '' }}">
 
     {% if current_user.is_authenticated %}
 

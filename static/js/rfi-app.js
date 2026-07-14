@@ -919,6 +919,7 @@
         <div class="space-y-1">${linked}</div>
       </div>
       <div class="flex flex-wrap gap-2 pt-3 border-t border-zinc-700">
+        <button type="button" onclick="CasePMRfis.printDetail()" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md border border-zinc-700"><i class="fa-solid fa-print mr-1"></i>Print RFI</button>
         <button onclick="CasePMRfis.openResponder(${r.id})" class="px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md font-semibold"><i class="fa-solid fa-reply mr-1"></i>Review &amp; Respond</button>
         ${isStaffPortal() ? `
         <button onclick="CasePMRfis.workflow(${r.id}, 'submit')" class="px-3 py-1.5 text-xs bg-sky-800 hover:bg-sky-700 rounded-md">Send for Review</button>
@@ -1019,17 +1020,17 @@
 
   const RFI_BASE_PRINT_COLUMNS = [
     { key: 'number', label: 'RFI #', width: '5%', mono: true },
-    { key: 'subject', label: 'Subject', width: '12%' },
-    { key: 'question', label: 'Question', width: '14%' },
+    { key: 'subject', label: 'Subject', width: '12%', maxLen: 80 },
+    { key: 'question', label: 'Question', width: '14%', maxLen: 110 },
     { key: 'drawing_reference', label: 'Drawing', width: '6%', mono: true },
     { key: 'spec_reference', label: 'Spec', width: '6%', mono: true },
-    { key: 'received_from_company', label: 'From<br>Company', width: '8%' },
-    { key: 'to_party', label: 'To', width: '6%' },
+    { key: 'received_from_company', label: 'From<br>Company', width: '8%', maxLen: 70 },
+    { key: 'to_party', label: 'To', width: '6%', maxLen: 60 },
     { key: 'priority', label: 'Priority', width: '5%', align: 'center' },
     { key: 'status', label: 'Status', width: '7%', align: 'center' },
     { key: 'ball_in_court_role', label: 'Ball<br>in Court', width: '7%', align: 'center' },
     { key: 'due_date', label: 'Due<br>Date', width: '6%', align: 'center' },
-    { key: 'official_answer', label: 'Official<br>Answer', width: '12%' },
+    { key: 'official_answer', label: 'Official<br>Answer', width: '12%', maxLen: 110 },
     { key: 'date', label: 'Date<br>Initiated', width: '6%', align: 'center' },
   ];
 
@@ -1050,6 +1051,117 @@
     return r[key] ?? '';
   }
 
+  function getRfiPrintMeta() {
+    if (global.CasePMPrint && global.CasePMPrint.getProjectMeta) {
+      return global.CasePMPrint.getProjectMeta();
+    }
+    const nameEl = document.getElementById('currentProjectName');
+    return {
+      name: (nameEl?.textContent || '').trim() || 'Project',
+      number: projectId() || '',
+      location: '',
+    };
+  }
+
+  async function triggerRfiPrint(html, options) {
+    const opts = options || {};
+    if (global.CasePMOutput) {
+      await global.CasePMOutput.deliverHtml({
+        title: opts.title || 'RFI',
+        html,
+        filenameBase: opts.filenameBase || `RFI_${projectId() || 'project'}`,
+        sourceModule: 'rfis',
+        systemFolderKey: 'rfis',
+        subfolder: opts.subfolder || 'Exports',
+        printOptions: {
+          bodyHtml: html,
+          containerId: 'rfiPrintSheet',
+          bodyClass: opts.bodyClass || 'printing-rfi-log',
+          portrait: !!opts.portrait,
+          docTitle: opts.docTitle,
+          title: opts.title,
+        },
+      });
+      return;
+    }
+    if (opts.portrait && global.CasePMPrint.printPortraitDocument) {
+      global.CasePMPrint.printPortraitDocument(html, opts.docTitle || 'RFI');
+      return;
+    }
+    global.CasePMPrint.triggerPrintPreview(html, {
+      containerId: 'rfiPrintSheet',
+      bodyClass: opts.bodyClass || 'printing-rfi-log',
+    });
+  }
+
+  function buildRfiDetailPrintHtml(r) {
+    const meta = getRfiPrintMeta();
+    const P = global.CasePMPrint;
+    const e = P ? P.esc : esc;
+    const loc = meta.location ? `<div style="margin-top:4px;font-size:7pt"><span class="label">LOCATION</span><br>${e(meta.location)}</div>` : '';
+    const field = (label, value) => `<div><span class="label">${e(label)}</span>${e(value || '—')}</div>`;
+    const attachments = (r.attachments || []).map(att => `<li>${e(att.original_name || att.filename || 'File')}</li>`).join('');
+    const responses = (r.responses || []).map(resp => `<li>${e(resp.user_name)} — ${fmtDate(resp.created_at)}${resp.is_official ? ' (Official)' : ''}: ${e(resp.body)}</li>`).join('');
+    const linked = [
+      ...(r.linked_change_orders || []).map(c => `CO ${e(c.number)} — ${e(c.title)}`),
+      ...(r.linked_pcos || []).map(p => `PCO ${e(p.number)} — ${e(p.title)}`),
+    ].join('; ');
+    return `<div class="casepm-print-page">
+      <div class="casepm-print-header">
+        <div>
+          <div class="casepm-print-title">REQUEST FOR INFORMATION</div>
+          ${loc}
+        </div>
+        <div class="casepm-print-meta">
+          ${meta.number ? `<div><span class="label">PROJECT ID</span><br>${e(meta.number)}</div>` : ''}
+          ${meta.name ? `<div style="margin-top:4px"><span class="label">PROJECT NAME</span><br>${e(meta.name)}</div>` : ''}
+        </div>
+      </div>
+      <div class="casepm-rfi-detail">
+        <div class="rfi-detail-number">${e(r.number)}</div>
+        <div class="rfi-detail-subject">${e(r.subject)}</div>
+        <div class="rfi-detail-grid">
+          ${field('Status', r.status)}
+          ${field('Priority', r.priority)}
+          ${field('Due Date', fmtDate(r.due_date))}
+          ${field('Ball in Court', r.ball_in_court_role)}
+          ${field('Drawing', r.drawing_reference)}
+          ${field('Spec', r.spec_reference)}
+          ${field('Discipline', r.discipline)}
+          ${field('RFI Manager', r.rfi_manager_name)}
+          ${field('From', r.received_from_company || r.from_party)}
+          ${field('To / Assignee', (r.assignees || []).join(', ') || r.to_party)}
+          ${field('Cost Impact', r.cost_impact_amount ? '$' + Number(r.cost_impact_amount).toLocaleString() : '—')}
+          ${field('Schedule Impact', r.schedule_impact_days ? `${r.schedule_impact_days} days` : '—')}
+        </div>
+        <div class="rfi-detail-box"><h4>Question</h4>${e(r.question || '—')}</div>
+        ${r.official_answer ? `<div class="rfi-detail-box"><h4>Official Answer</h4>${e(r.official_answer)}</div>` : ''}
+        ${responses ? `<div class="rfi-detail-box"><h4>Responses</h4><ul class="rfi-detail-list">${responses}</ul></div>` : ''}
+        ${attachments ? `<div class="rfi-detail-box"><h4>Attachments</h4><ul class="rfi-detail-list">${attachments}</ul></div>` : ''}
+        ${linked ? `<div class="rfi-detail-box"><h4>Linked Change Orders / PCOs</h4>${linked}</div>` : ''}
+      </div>
+      <div class="casepm-print-footer">
+        <span>Confidential</span>
+        <span class="center">__PRINTED_ON__</span>
+        <span class="right">Page 1</span>
+      </div>
+    </div>`;
+  }
+
+  async function printDetail() {
+    const r = state.drawerRecord;
+    if (!r) return;
+    if (typeof global.CasePMPrint === 'undefined') { alert('Print module not loaded'); return; }
+    const html = buildRfiDetailPrintHtml(r);
+    await triggerRfiPrint(html, {
+      title: `RFI ${r.number}`,
+      filenameBase: `RFI_${r.number || r.id}`,
+      subfolder: 'Printed',
+      portrait: true,
+      docTitle: `RFI ${r.number}`,
+    });
+  }
+
   async function printLog() {
     if (typeof global.CasePMPrint === 'undefined') { alert('Print module not loaded'); return; }
     const picked = await global.CasePMPrint.showFieldPicker({
@@ -1059,33 +1171,23 @@
     });
     if (!picked) return;
     const optional = RFI_OPTIONAL_PRINT_FIELDS.filter(f => picked.fields.includes(f.key))
-      .map(f => ({ key: f.key, label: f.label.replace(/ /g, '<br>'), width: '6%' }));
+      .map(f => ({ key: f.key, label: f.label.replace(/ /g, '<br>'), width: '6%', maxLen: 80 }));
     const columns = [...RFI_BASE_PRINT_COLUMNS, ...optional];
     const rows = filteredRfis().map(r => {
       const obj = {};
       columns.forEach(c => { obj[c.key] = printValue(r, c.key); });
       return obj;
     });
-    const nameEl = document.getElementById('currentProjectName');
-    const meta = { name: (nameEl?.textContent || '').trim() || 'Project', number: projectId() || '', location: '' };
+    const meta = getRfiPrintMeta();
     const html = global.CasePMPrint.buildPrintDocument({
       meta,
       sections: [{ title: 'RFI LOG', columns, rows, emptyMessage: 'No RFIs to print.' }],
       rowsPerPage: 24,
     });
-    if (global.CasePMOutput) {
-      await global.CasePMOutput.deliverHtml({
-        title: 'RFI Log',
-        html,
-        filenameBase: `RFI_Log_${projectId() || 'project'}`,
-        sourceModule: 'rfis',
-        systemFolderKey: 'rfis',
-        subfolder: 'Exports',
-        printOptions: { bodyHtml: html, containerId: 'rfiPrintSheet', bodyClass: 'printing-rfi-log' },
-      });
-      return;
-    }
-    global.CasePMPrint.triggerPrintPreview(html, { containerId: 'rfiPrintSheet', bodyClass: 'printing-rfi-log' });
+    await triggerRfiPrint(html, {
+      title: 'RFI Log',
+      filenameBase: `RFI_Log_${projectId() || 'project'}`,
+    });
   }
 
   function toast(msg) {
@@ -1141,6 +1243,7 @@
     closeDrawer,
     exportExcel,
     printLog,
+    printDetail,
     focusAttachments,
   };
 

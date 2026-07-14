@@ -52,6 +52,8 @@
   thead .budget-sticky-1 { z-index: 22; }
 </style>
 
+<div id="budgetPrintSheet" class="casepm-print-root" aria-hidden="true"></div>
+
 <div class="budget-page">
 <div class="budget-stack">
 
@@ -1508,16 +1510,26 @@
         input.click();
     }
 
-    // ==================== PRINT (with % Complete) ====================
-    function printBudget() {
-        if (!budgetLines || budgetLines.length === 0) {
-            showCenteredAlert("You must have at least one budget line item to print.");
-            return;
-        }
-        const sorted = [...budgetLines].sort((a, b) => a.cost_code.localeCompare(b.cost_code, undefined, { numeric: true }));
-        let currentDivision = null;
+    // ==================== PRINT (ALDI-style register) ====================
+    const BUDGET_PRINT_COLUMNS = [
+        { key: 'cost_code', label: 'Cost<br>Code', width: '7%', mono: true },
+        { key: 'description', label: 'Description', width: '16%', maxLen: 80 },
+        { key: 'cost_type', label: 'Cost<br>Type', width: '7%' },
+        { key: 'original_budget', label: 'Original', width: '8%', align: 'right' },
+        { key: 'approved_changes', label: 'Approved<br>COs', width: '8%', align: 'right' },
+        { key: 'pending', label: 'Pending', width: '7%', align: 'right' },
+        { key: 'committed', label: 'Committed', width: '8%', align: 'right' },
+        { key: 'revised', label: 'Revised', width: '8%', align: 'right' },
+        { key: 'actual', label: 'Actual', width: '8%', align: 'right' },
+        { key: 'variance', label: 'Variance', width: '8%', align: 'right' },
+        { key: 'percent_complete', label: '%<br>Complete', width: '6%', align: 'right' },
+    ];
+
+    function buildBudgetPrintRows() {
         const divisionNames = { '01': 'General Requirements', '03': 'Concrete', '04': 'Masonry', '05': 'Metals', '06': 'Wood, Plastics, and Composites', '07': 'Thermal and Moisture Protection', '08': 'Openings', '09': 'Finishes', '22': 'Plumbing', '23': 'HVAC', '26': 'Electrical', '31': 'Earthwork' };
-        let tableRows = '';
+        const sorted = [...budgetLines].sort((a, b) => a.cost_code.localeCompare(b.cost_code, undefined, { numeric: true }));
+        const rows = [];
+        let currentDivision = null;
         sorted.forEach(line => {
             const division = line.cost_code.substring(0, 2);
             const pending = line.pending || 0;
@@ -1527,73 +1539,96 @@
             const variance = budgetVariance(line);
             if (division !== currentDivision) {
                 currentDivision = division;
-                tableRows += `<tr style="background:#f3f4f6; font-weight:600;"><td colspan="11" style="padding:8px; border:1px solid #ccc;">Division ${division} — ${divisionNames[division] || 'Other'}</td></tr>`;
+                rows.push({
+                    __division: true,
+                    label: `Division ${division} — ${divisionNames[division] || 'Other'}`,
+                });
             }
-            tableRows += `<tr>
-                <td style="border:1px solid #ccc; padding:6px; font-family:monospace;">${line.cost_code}</td>
-                <td style="border:1px solid #ccc; padding:6px;">${line.description}</td>
-                <td style="border:1px solid #ccc; padding:6px;">${line.cost_type}</td>
-                <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(line.original_budget)}</td>
-                <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(line.approved_changes)}</td>
-                <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(pending)}</td>
-                <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(committed)}</td>
-                <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(revised)}</td>
-                <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(actual)}</td>
-                <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(variance)}</td>
-                <td style="border:1px solid #ccc; padding:6px; text-align:right;">${line.percent_complete || 0}%</td>
-            </tr>`;
+            rows.push({
+                cost_code: line.cost_code,
+                description: line.description,
+                cost_type: line.cost_type,
+                original_budget: formatCurrency(line.original_budget),
+                approved_changes: formatCurrency(line.approved_changes),
+                pending: formatCurrency(pending),
+                committed: formatCurrency(committed),
+                revised: formatCurrency(revised),
+                actual: formatCurrency(actual),
+                variance: formatCurrency(variance),
+                percent_complete: `${line.percent_complete || 0}%`,
+            });
         });
-        const printContent = `
-            <html><head><title>Budget Report - ALDI Lakeland (Rev ${currentRevision})</title>
-            <style>body{font-family:Arial,sans-serif;padding:20px}table{width:100%;border-collapse:collapse;font-size:11px}th,td{border:1px solid #ccc;padding:6px;text-align:left}th{background:#f3f4f6}</style>
-            </head><body>
-                <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-                    <div style="width:40px;height:40px;background:#10b981;border-radius:10px;display:flex;align-items:center;justify-content:center;">
-                        <i class="fa-solid fa-building text-white text-2xl"></i>
-                    </div>
-                    <div>
-                        <h2 style="margin:0;font-size:20px;">Budget Report — ALDI Lakeland</h2>
-                        <div style="font-size:12px;color:#666;">Revision ${currentRevision} • Case PM</div>
-                    </div>
-                </div>
-                <table>
-                    <thead><tr>
-                        <th>Cost Code</th><th>Description</th><th>Cost Type</th>
-                        <th style="text-align:right">Original</th><th style="text-align:right">Approved COs</th>
-                        <th style="text-align:right">Pending</th><th style="text-align:right">Committed</th><th style="text-align:right">Revised</th>
-                        <th style="text-align:right">Actual</th><th style="text-align:right">Variance</th>
-                        <th style="text-align:right">% Complete</th>
-                    </tr></thead>
-                    <tbody>${tableRows}</tbody>
-                </table>
-            </body></html>
-        `;
+        return rows;
+    }
+
+    function buildBudgetPrintTable(rows) {
+        const esc = (s) => (typeof CasePMPrint !== 'undefined' && CasePMPrint.esc) ? CasePMPrint.esc(s) : String(s ?? '');
+        const truncate = (val, max) => (typeof CasePMPrint !== 'undefined' && CasePMPrint.truncatePrintText)
+            ? CasePMPrint.truncatePrintText(val, max)
+            : String(val || '');
+        const head = BUDGET_PRINT_COLUMNS.map(c => `<th${c.width ? ` style="width:${c.width}"` : ''}>${c.label}</th>`).join('');
+        const body = rows.map(row => {
+            if (row.__division) {
+                return `<tr><td colspan="${BUDGET_PRINT_COLUMNS.length}" style="background:#f0f0f0;font-weight:700;padding:4px 6px;">${esc(row.label)}</td></tr>`;
+            }
+            const cells = BUDGET_PRINT_COLUMNS.map(c => {
+                let val = row[c.key] ?? '';
+                if (c.maxLen) val = truncate(val, c.maxLen);
+                let cls = '';
+                if (c.mono) cls = ' class="mono' + (c.align === 'right' ? ' r"' : '"');
+                else if (c.align === 'right') cls = ' class="r"';
+                else if (c.align === 'center') cls = ' class="c"';
+                return `<td${cls}>${esc(val)}</td>`;
+            }).join('');
+            return `<tr>${cells}</tr>`;
+        }).join('');
+        return `<table class="casepm-print-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+    }
+
+    function buildBudgetPrintDocument() {
+        const meta = (typeof CasePMPrint !== 'undefined' && CasePMPrint.getProjectMeta)
+            ? CasePMPrint.getProjectMeta()
+            : { name: 'Project', number: '', location: '' };
+        const rows = buildBudgetPrintRows();
+        const printedOn = new Date().toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
+        const ROWS_PER_PAGE = 26;
+        const pages = [];
+        const title = `BUDGET REPORT — REV ${String(currentRevision).padStart(2, '0')}`;
+        if (!rows.length) {
+            pages.push(CasePMPrint.buildPageBlock(meta, title, buildBudgetPrintTable([]), printedOn, 1, 1));
+        } else {
+            const totalPages = Math.ceil(rows.length / ROWS_PER_PAGE);
+            for (let p = 0; p < totalPages; p++) {
+                const chunk = rows.slice(p * ROWS_PER_PAGE, (p + 1) * ROWS_PER_PAGE);
+                pages.push(CasePMPrint.buildPageBlock(meta, title, buildBudgetPrintTable(chunk), printedOn, p + 1, totalPages, p > 0));
+            }
+        }
+        return pages.map((html) => `<div class="casepm-print-page">${html}</div>`).join('');
+    }
+
+    function printBudget() {
+        if (!budgetLines || budgetLines.length === 0) {
+            showCenteredAlert("You must have at least one budget line item to print.");
+            return;
+        }
+        if (typeof CasePMPrint === 'undefined') {
+            showCenteredAlert('Print module not loaded.');
+            return;
+        }
+        const html = buildBudgetPrintDocument();
         if (typeof CasePMOutput !== 'undefined') {
             CasePMOutput.deliverHtml({
                 title: 'Budget Report',
-                html: printContent,
+                html,
                 filenameBase: `Budget_Rev${String(currentRevision).padStart(2, '0')}`,
                 sourceModule: 'budget',
                 systemFolderKey: 'printed-output',
+                subfolder: 'Exports',
+                printOptions: { bodyHtml: html, containerId: 'budgetPrintSheet', bodyClass: 'printing-budget-log' },
             }).then(() => logBudgetAudit("BUDGET_PRINTED", { revision: currentRevision }));
             return;
         }
-        const iframe = document.createElement('iframe');
-        iframe.style.position = 'fixed';
-        iframe.style.width = '0';
-        iframe.style.height = '0';
-        iframe.style.border = 'none';
-        document.body.appendChild(iframe);
-        const doc = iframe.contentWindow.document;
-        doc.open();
-        doc.write(printContent);
-        doc.close();
-        setTimeout(() => {
-            iframe.contentWindow.focus();
-            iframe.contentWindow.print();
-            setTimeout(() => document.body.removeChild(iframe), 1000);
-        }, 600);
-
+        CasePMPrint.triggerPrintPreview(html, { containerId: 'budgetPrintSheet', bodyClass: 'printing-budget-log' });
         logBudgetAudit("BUDGET_PRINTED", { revision: currentRevision });
     }
 
