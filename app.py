@@ -14264,6 +14264,31 @@ def api_retry_sage_sync_event(event_id):
     return jsonify({'ok': True, 'event': sage_event_to_dict(event)})
 
 
+@app.route('/api/sage/pull', methods=['POST'])
+@login_required
+def api_sage_pull_project():
+    """Pull sub payments, owner billings, and actuals from Sage for the current project."""
+    from sage_service import apply_sage_pull_to_project
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    result = apply_sage_pull_to_project(
+        int(project_id),
+        Project=Project,
+        Commitment=Commitment,
+        BudgetProjectState=BudgetProjectState,
+        PayAppProjectState=PayAppProjectState,
+        db=db,
+        user_id=current_user.id,
+        SageSyncEvent=SageSyncEvent,
+        ChangeOrder=ChangeOrder,
+        ChangeOrderAllocation=ChangeOrderAllocation,
+        CommitmentAllocation=CommitmentAllocation,
+    )
+    return jsonify(result)
+
+
 # ==================== CHANGE ORDER & PCO API ====================
 
 @app.route('/api/change-orders/dashboard', methods=['GET'])
