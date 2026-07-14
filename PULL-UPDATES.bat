@@ -47,7 +47,14 @@ echo   Done! Latest code downloaded.
 echo ================================================
 git log -1 --oneline
 echo.
-echo Next: close run.bat if open, then double-click run.bat
-echo       Press Ctrl+F5 in your browser.
+echo IMPORTANT for REMOTE users ^(other computers on the network^):
+echo   Pulling code is not enough — you must RESTART the server.
+echo.
+echo   On the PC that runs RUN-AS-SERVER.bat, use:
+echo     PULL-AND-RESTART-SERVER.bat
+echo.
+echo   For this PC only ^(local testing^):
+echo     Close run.bat if open, then double-click run.bat
+echo     Press Ctrl+F5 in your browser.
 echo.
 pause

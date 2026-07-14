@@ -62,8 +62,8 @@ from db_sqlite import commit_with_retry, register_sqlite_pragmas
 register_sqlite_pragmas()
 
 
-def _asset_version():
-    """Cache-bust static assets after deploy (git SHA or env override)."""
+def _disk_build():
+    """Git SHA (or env) on disk — changes after git pull even before restart."""
     env = os.environ.get('CASEPM_ASSET_VERSION', '').strip()
     if env:
         return env
@@ -79,9 +79,44 @@ def _asset_version():
         return datetime.utcnow().strftime('%Y%m%d%H%M')
 
 
+app.config['CASEPM_STARTUP_BUILD'] = _disk_build()
+
+
+def _asset_version():
+    """Build id for this running server process (set at startup)."""
+    return app.config.get('CASEPM_STARTUP_BUILD') or _disk_build()
+
+
+def _restart_required():
+    """True when git pull updated files but the server was not restarted."""
+    running = _asset_version()
+    disk = _disk_build()
+    return bool(running and disk and running != disk)
+
+
 @app.context_processor
 def inject_asset_version():
-    return {'asset_v': _asset_version()}
+    return {
+        'asset_v': _asset_version(),
+        'disk_build': _disk_build(),
+        'restart_required': _restart_required(),
+    }
+
+
+@app.route('/api/version')
+def api_version():
+    """Public build info — use to verify remote PCs see the restarted server."""
+    from version import CASEPM_VERSION
+    running = _asset_version()
+    disk = _disk_build()
+    return jsonify({
+        'ok': True,
+        'version': CASEPM_VERSION,
+        'running_build': running,
+        'disk_build': disk,
+        'restart_required': running != disk,
+        'remote_mode': os.environ.get('CASEPM_REMOTE', '').lower() in ('1', 'true', 'yes'),
+    })
 
 
 @app.template_global()
@@ -12981,6 +13016,11 @@ def api_developer_updates_status():
     status = get_status()
     status['history'] = get_history(20)
     status['snapshots'] = list_snapshots()
+    status['running_build'] = app.config.get('CASEPM_STARTUP_BUILD')
+    git_commit = (status.get('git') or {}).get('commit') or ''
+    status['restart_required'] = bool(
+        status['running_build'] and git_commit and status['running_build'] != git_commit
+    )
     return jsonify({'ok': True, **status})
 
 

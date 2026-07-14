@@ -657,7 +657,7 @@
                         <div class="w-2 h-2 bg-emerald-500 rounded-full status-dot"></div>
                         <span>Connected</span>
                     </div>
-                    <span>Case PM · build {{ asset_v }}</span>
+                    <span{% if restart_required %} class="text-amber-400 font-medium" title="New code on disk — restart RUN-AS-SERVER.bat on the server PC"{% endif %}>Case PM · build {{ asset_v }}{% if restart_required %} · restart server{% endif %}</span>
                 </div>
             </div>
         </div>
