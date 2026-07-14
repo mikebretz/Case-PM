@@ -13170,6 +13170,50 @@ def _maintenance_models_dict():
     })
 
 
+@app.route('/api/presence/heartbeat', methods=['POST'])
+@login_required
+def api_presence_heartbeat():
+    from user_presence_persistence import upsert_presence_heartbeat
+    body = request.get_json(silent=True) or {}
+    try:
+        session_key = upsert_presence_heartbeat(db, current_user, body)
+        return jsonify({'ok': True, 'session_key': session_key})
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/developer/presence', methods=['GET'])
+@login_required
+@developer_required
+def api_developer_presence_list():
+    from user_presence_persistence import list_online_presence
+    data = list_online_presence(db)
+    return jsonify({'ok': True, **data})
+
+
+@app.route('/api/developer/presence/session/<session_key>', methods=['GET'])
+@login_required
+@developer_required
+def api_developer_presence_session(session_key):
+    from user_presence_persistence import get_presence_session
+    row = get_presence_session(db, session_key)
+    if not row:
+        return jsonify({'error': 'Session not found'}), 404
+    return jsonify({'ok': True, 'session': row})
+
+
+@app.route('/api/developer/presence/thumbnail/<session_key>', methods=['GET'])
+@login_required
+@developer_required
+def api_developer_presence_thumbnail(session_key):
+    from flask import send_file
+    from user_presence_persistence import _thumb_path, thumbnail_exists
+    if not thumbnail_exists(session_key):
+        return jsonify({'error': 'No thumbnail'}), 404
+    return send_file(_thumb_path(session_key), mimetype='image/jpeg', max_age=0)
+
+
 @app.route('/api/developer/maintenance/catalog', methods=['GET'])
 @login_required
 @developer_required
