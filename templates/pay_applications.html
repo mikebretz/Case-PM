@@ -5576,18 +5576,22 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             }
 
             workflowHTML = `
-                <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
-                    <span class="text-emerald-400 font-medium">${statusMessage}</span>
-                    ${buttonsHTML}
-                    
+                <div class="workflow-bar text-sm">
+                    <div class="px-4 py-3 flex items-center gap-3 flex-wrap">
+                        <span class="text-emerald-400 font-medium">${statusMessage}</span>
+                        ${buttonsHTML}
+                        <button onclick="viewSubSOVAudit()" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5 ml-auto">
+                            <i class="fa-solid fa-history"></i> <span>Approval History</span>
+                        </button>
+                    </div>
                     ${isPayAppAdminOrAbove() ? `
-                    <button onclick="rejectApprovedSubSOVToDraft(${jsArg(selectedSubCompanyId)})" class="ml-auto px-4 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
-                        <i class="fa-solid fa-undo"></i> <span>Pushback to Draft (Admin)</span>
-                    </button>
+                    <div class="px-4 py-2 flex items-center gap-3 border-t border-zinc-700 bg-yellow-950/20">
+                        <span class="text-xs text-yellow-400/90 font-medium">Admin — Schedule of Values</span>
+                        <button onclick="rejectApprovedSubSOVToDraft(${jsArg(selectedSubCompanyId)})" class="px-4 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                            <i class="fa-solid fa-undo"></i> <span>Pushback SOV to Draft</span>
+                        </button>
+                    </div>
                     ` : ''}
-                    <button onclick="viewSubSOVAudit()" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5${isPayAppAdminOrAbove() ? '' : ' ml-auto'}">
-                        <i class="fa-solid fa-history"></i> <span>Approval History</span>
-                    </button>
                 </div>
             `;
         }
@@ -9823,8 +9827,19 @@ function printSubcontractorG703(companyId) {
             </div>
         `;
 
-        // Workflow bar (production — maintenance tools are in Developer Console)
-        workflowBar.innerHTML = `<div class="workflow-bar px-4 py-3 flex items-center justify-end gap-3 text-sm"></div>`;
+        // Workflow bar — admin SOV pushback when a sub is selected
+        if (selectedTrackerSubId && isPayAppAdminOrAbove() && getSubSOVStatus(selectedTrackerSubId) === 'Approved') {
+            workflowBar.innerHTML = `
+                <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
+                    <span class="text-xs text-yellow-400/90 font-medium">Admin — Schedule of Values</span>
+                    <button onclick="rejectApprovedSubSOVToDraft(${jsArg(selectedTrackerSubId)})" class="ml-auto px-4 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-undo"></i> <span>Pushback SOV to Draft</span>
+                    </button>
+                </div>
+            `;
+        } else {
+            workflowBar.innerHTML = `<div class="workflow-bar px-4 py-3 flex items-center justify-end gap-3 text-sm"></div>`;
+        }
 
         // Clear old table completely for this tab
         thead.innerHTML = '';
@@ -10080,10 +10095,16 @@ function printSubcontractorG703(companyId) {
             </div>
 
             <div class="flex flex-wrap gap-2 pt-2 border-t border-zinc-700">
+                ${isPayAppAdminOrAbove() && getSubSOVStatus(companyId) === 'Approved' ? `
+                    <button onclick="rejectApprovedSubSOVToDraft(${jsArg(companyId)});" 
+                            class="px-4 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white text-xs rounded font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-undo"></i> <span>Pushback SOV to Draft (Admin)</span>
+                    </button>
+                ` : ''}
                 ${canRequestRevision ? `
                     <button onclick="requestRevisionSubPayApp(${jsArg(companyId)}${revisionArg});" 
                             class="px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded font-medium flex items-center gap-1.5">
-                        <i class="fa-solid fa-redo"></i> <span>Request Revision (Push back to Sub SOV)</span>
+                        <i class="fa-solid fa-redo"></i> <span>Request Revision (Pay App)</span>
                     </button>
                 ` : ''}
                 <button onclick="sendSubPayAppNotification(${jsArg(companyId)});" 
