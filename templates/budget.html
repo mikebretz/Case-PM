@@ -1512,24 +1512,39 @@
 
     // ==================== PRINT (ALDI-style register) ====================
     const BUDGET_PRINT_COLUMNS = [
-        { key: 'cost_code', label: 'Cost<br>Code', width: '8%', mono: true, alwaysShow: true },
-        { key: 'description', label: 'Description', width: '18%', logPhrase: true, logWords: 4 },
-        { key: 'cost_type', label: 'Cost<br>Type', width: '8%' },
-        { key: 'original_budget', label: 'Original', width: '9%', align: 'right' },
-        { key: 'approved_changes', label: 'Approved<br>COs', width: '9%', align: 'right' },
-        { key: 'pending', label: 'Pending', width: '8%', align: 'right' },
-        { key: 'committed', label: 'Committed', width: '9%', align: 'right' },
-        { key: 'revised', label: 'Revised', width: '9%', align: 'right' },
-        { key: 'actual', label: 'Actual', width: '9%', align: 'right' },
-        { key: 'variance', label: 'Variance', width: '9%', align: 'right' },
-        { key: 'percent_complete', label: '%<br>Done', width: '7%', align: 'right' },
+        { key: 'row_num', label: '#', width: '3%', align: 'center', alwaysShow: true },
+        { key: 'cost_code', label: 'Cost<br>Code', width: '7%', mono: true, alwaysShow: true },
+        { key: 'description', label: 'Description', width: '14%', logPhrase: true, logWords: 4, alwaysShow: true },
+        { key: 'cost_type', label: 'Cost<br>Type', width: '7%', alwaysShow: true },
+        { key: 'original_budget', label: 'Original', width: '7%', align: 'right', alwaysShow: true },
+        { key: 'approved_changes', label: 'Approved<br>COs', width: '7%', align: 'right', alwaysShow: true },
+        { key: 'pending', label: 'Pending', width: '7%', align: 'right', alwaysShow: true },
+        { key: 'committed', label: 'Committed', width: '7%', align: 'right', alwaysShow: true },
+        { key: 'revised', label: 'Revised', width: '7%', align: 'right', alwaysShow: true },
+        { key: 'actual', label: 'Actual', width: '7%', align: 'right', alwaysShow: true },
+        { key: 'variance', label: 'Variance', width: '7%', align: 'right', alwaysShow: true },
+        { key: 'percent_complete', label: '%<br>Done', width: '5%', align: 'right', alwaysShow: true },
+        { key: 'sync_status', label: 'Sync', width: '6%', align: 'center', alwaysShow: true },
+        { key: 'health', label: 'Health', width: '6%', align: 'center', alwaysShow: true },
+        { key: 'notes', label: 'Notes', width: '10%', logPhrase: true, logWords: 3, alwaysShow: true },
     ];
+
+    function budgetHealthLabel(line) {
+        const pending = line.pending || 0;
+        const revised = budgetRevised(line);
+        const actual = line.actual || 0;
+        const variance = budgetVariance(line);
+        if (variance < 0 || actual > revised) return 'Over';
+        if (pending > 10000) return 'High Pending';
+        return 'OK';
+    }
 
     function buildBudgetPrintRows() {
         const divisionNames = { '01': 'General Requirements', '03': 'Concrete', '04': 'Masonry', '05': 'Metals', '06': 'Wood, Plastics, and Composites', '07': 'Thermal and Moisture Protection', '08': 'Openings', '09': 'Finishes', '22': 'Plumbing', '23': 'HVAC', '26': 'Electrical', '31': 'Earthwork' };
         const sorted = [...budgetLines].sort((a, b) => a.cost_code.localeCompare(b.cost_code, undefined, { numeric: true }));
         const rows = [];
         let currentDivision = null;
+        let rowNum = 0;
         sorted.forEach(line => {
             const division = line.cost_code.substring(0, 2);
             const pending = line.pending || 0;
@@ -1544,7 +1559,9 @@
                     label: `Division ${division} — ${divisionNames[division] || 'Other'}`,
                 });
             }
+            rowNum += 1;
             rows.push({
+                row_num: String(rowNum),
                 cost_code: line.cost_code,
                 description: (typeof CasePMPrint !== 'undefined' && CasePMPrint.logPhrase)
                     ? CasePMPrint.logPhrase(line.description, 4)
@@ -1558,6 +1575,11 @@
                 actual: formatCurrency(actual),
                 variance: formatCurrency(variance),
                 percent_complete: `${line.percent_complete || 0}%`,
+                sync_status: line.syncStatus || 'Not Synced',
+                health: budgetHealthLabel(line),
+                notes: (typeof CasePMPrint !== 'undefined' && CasePMPrint.logPhrase)
+                    ? CasePMPrint.logPhrase(line.notes || '', 3)
+                    : (line.notes || ''),
             });
         });
         return rows;
@@ -1565,9 +1587,8 @@
 
     function buildBudgetPrintTable(rows) {
         const esc = (s) => (typeof CasePMPrint !== 'undefined' && CasePMPrint.esc) ? CasePMPrint.esc(s) : String(s ?? '');
-        const dataRows = rows.filter(r => !r.__division);
         const activeColumns = (typeof CasePMPrint !== 'undefined')
-            ? CasePMPrint.rebalanceColumnWidths(CasePMPrint.pruneEmptyColumns(BUDGET_PRINT_COLUMNS, dataRows))
+            ? CasePMPrint.rebalanceColumnWidths(BUDGET_PRINT_COLUMNS)
             : BUDGET_PRINT_COLUMNS;
         const head = activeColumns.map(c => `<th${c.width ? ` style="width:${c.width}"` : ''}>${c.label}</th>`).join('');
         const body = rows.map(row => {
@@ -1596,19 +1617,16 @@
             : { name: 'Project', number: '', location: '' };
         const rows = buildBudgetPrintRows();
         const printedOn = new Date().toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
-        const ROWS_PER_PAGE = 26;
-        const pages = [];
         const title = `BUDGET REPORT — REV ${String(currentRevision).padStart(2, '0')}`;
-        if (!rows.length) {
-            pages.push(CasePMPrint.buildPageBlock(meta, title, buildBudgetPrintTable([]), printedOn, 1, 1));
-        } else {
-            const totalPages = Math.ceil(rows.length / ROWS_PER_PAGE);
-            for (let p = 0; p < totalPages; p++) {
-                const chunk = rows.slice(p * ROWS_PER_PAGE, (p + 1) * ROWS_PER_PAGE);
-                pages.push(CasePMPrint.buildPageBlock(meta, title, buildBudgetPrintTable(chunk), printedOn, p + 1, totalPages, p > 0));
-            }
-        }
-        return pages.map((html) => `<div class="casepm-print-page">${html}</div>`).join('');
+        const headerHtml = (typeof CasePMPrint !== 'undefined' && CasePMPrint.buildPrintHeaderHtml)
+            ? CasePMPrint.buildPrintHeaderHtml(meta, title, {})
+            : `<div class="casepm-print-header"><div class="casepm-print-title">${title}</div></div>`;
+        const footerHtml = `<div class="casepm-print-footer">
+            <span>Confidential</span>
+            <span class="center">${printedOn}</span>
+            <span class="right"></span>
+        </div>`;
+        return `<div class="casepm-flowing-register">${headerHtml}${buildBudgetPrintTable(rows)}${footerHtml}</div>`;
     }
 
     function printBudget() {
