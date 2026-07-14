@@ -10,9 +10,14 @@
     co: 'co',
     change_order: 'co',
     change_orders: 'co',
+    'change orders': 'co',
     pay_applications: 'pay_applications',
     pay_app: 'pay_applications',
+    payapp: 'pay_applications',
     g702: 'pay_applications',
+    'pay applications': 'pay_applications',
+    submittals: 'submittals',
+    commitments: 'commitments',
   };
 
   let ctx = null;
@@ -58,7 +63,10 @@
   }
 
   function modulePath(module) {
-    return MODULE_PATH[(module || '').toLowerCase()] || module;
+    const raw = (module || '').trim();
+    const key = raw.toLowerCase();
+    const underscored = key.replace(/[\s-]+/g, '_');
+    return MODULE_PATH[key] || MODULE_PATH[underscored] || raw;
   }
 
   function isStaffPortal() {

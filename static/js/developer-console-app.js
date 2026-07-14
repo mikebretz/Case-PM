@@ -369,11 +369,22 @@
             ${m.scope === 'global' ? '<div class="text-[10px] uppercase tracking-wide text-amber-500/90 mt-1">Program-wide</div>' : ''}
           </div>
         </div>
-        <button type="button" class="dev-tool-btn danger !w-full text-xs mt-1"
-                onclick="CasePMDeveloperConsole.clearModuleData(${JSON.stringify(m.key)}, ${JSON.stringify(m.label)}, ${!!m.danger})">
+        <button type="button" class="dev-maint-clear-btn dev-tool-btn danger !w-full text-xs mt-1"
+                data-module-key="${escapeHtml(m.key)}"
+                data-module-label="${escapeHtml(m.label)}"
+                data-module-danger="${m.danger ? '1' : '0'}">
           <i class="fa-solid fa-eraser"></i><span>Clear ${escapeHtml(m.label)}</span>
         </button>
       </div>`).join('');
+    host.querySelectorAll('.dev-maint-clear-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        clearModuleData(
+          btn.dataset.moduleKey,
+          btn.dataset.moduleLabel,
+          btn.dataset.moduleDanger === '1'
+        );
+      });
+    });
   }
 
   async function loadMaintenancePanel() {
@@ -391,24 +402,28 @@
   }
 
   async function clearModuleData(moduleKey, moduleLabel, isDanger) {
+    if (!global.CasePMDialog) {
+      alert('Dialog module not loaded — refresh the page and try again.');
+      return;
+    }
     const allProjects = maintScopeAll();
     const projectIds = allProjects ? [] : selectedMaintProjectIds();
     if (!allProjects && !projectIds.length) {
-      CasePMDialog?.alert('Select at least one project, or choose All Projects.', 'info');
+      CasePMDialog.alert('Select at least one project, or choose All Projects.', 'info');
       return;
     }
     const scopeText = allProjects ? 'ALL projects' : `${projectIds.length} selected project(s)`;
-    const ok = await CasePMDialog?.confirm(
+    const ok = await CasePMDialog.confirm(
       `Clear ${moduleLabel} data for ${scopeText}?\n\nThis permanently deletes database records and uploaded files for this module. This cannot be undone.`,
       { title: `Clear ${moduleLabel}`, confirmLabel: 'Continue', danger: true }
     );
     if (!ok) return;
-    const typed = await CasePMDialog?.prompt(
+    const typed = await CasePMDialog.prompt(
       'Type CLEAR to confirm.',
       { title: 'Confirm clear', defaultValue: '', submitLabel: 'Clear data', label: 'Confirmation text' }
     );
     if ((typed || '').trim().toUpperCase() !== 'CLEAR') {
-      CasePMDialog?.alert('Clear cancelled — confirmation text did not match.', 'info');
+      CasePMDialog.alert('Clear cancelled — confirmation text did not match.', 'info');
       return;
     }
     try {
@@ -426,7 +441,7 @@
         ? Object.entries(json.result).map(([k, v]) => `${k}: ${v}`).join('\n')
         : '';
       if (json.result?.skipped) {
-        CasePMDialog?.alert(
+        CasePMDialog.alert(
           `Nothing was cleared for ${moduleLabel}.\n\n${json.result.reason || 'No matching project scope.'}`,
           'warning'
         );
@@ -436,19 +451,19 @@
         ? Object.values(json.result).reduce((sum, v) => sum + (typeof v === 'number' ? v : 0), 0)
         : 0;
       if (!deletedTotal && !json.result?.skipped) {
-        CasePMDialog?.alert(
+        CasePMDialog.alert(
           `${moduleLabel}: no records were found for ${scopeText}.${stats ? `\n\n${stats}` : ''}`,
           'info'
         );
         return;
       }
-      CasePMDialog?.alert(
+      CasePMDialog.alert(
         `${moduleLabel} data cleared for ${scopeText}.${stats ? `\n\n${stats}` : ''}`,
         'success'
       );
-      if (moduleKey === 'projects') await loadMaintenancePanel();
+      if (moduleKey === 'projects' || moduleKey === 'change_orders') await loadMaintenancePanel();
     } catch (err) {
-      CasePMDialog?.alert(err.message || 'Clear failed.', 'error');
+      CasePMDialog.alert(err.message || 'Clear failed.', 'error');
     }
   }
 
