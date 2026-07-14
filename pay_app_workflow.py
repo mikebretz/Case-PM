@@ -190,6 +190,17 @@ def _sub_sov_status(state, company_key):
     return ''
 
 
+def _is_sub_sov_approved_status(status):
+    if not status or not isinstance(status, str):
+        return False
+    s = status.strip()
+    return s == 'Approved' or s.startswith('Approved')
+
+
+def _is_sub_sov_approved(state, company_key):
+    return _is_sub_sov_approved_status(_sub_sov_status(state, company_key))
+
+
 def _sub_pay_app_entry_for_period(state, company_key, period_num):
     history = state.get('subPayAppHistory') or {}
     key = str(company_key)
@@ -272,7 +283,7 @@ def validate_g702_submit_gates(state):
     missing_waivers = []
 
     for company_key in sub_sov.keys():
-        if _sub_sov_status(state, company_key) != 'Approved':
+        if not _is_sub_sov_approved(state, company_key):
             continue
         if gate_scope == 'billed_this_period' and not _sub_has_period_billing(state, company_key, period_num):
             continue
@@ -389,7 +400,7 @@ def sub_sov_reject_approved_to_draft(state, company_key, user, comments=''):
 
     sub_sov_status, key, entry = _resolve_sub_sov_status(state, company_key)
     status = entry.get('status') or 'Draft'
-    if status != 'Approved':
+    if not _is_sub_sov_approved_status(status):
         raise ValueError('Only an approved sub SOV can be rejected to draft')
 
     sub_sov = state.get('subcontractorSOV') or {}

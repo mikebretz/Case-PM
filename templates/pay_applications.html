@@ -986,7 +986,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         let total = 0;
         Object.keys(subcontractorSOV || {}).forEach(cid => {
             // Only count from subs whose Schedule of Values has been Approved (per user requirement)
-            if (getSubSOVStatus(cid) === 'Approved') {
+            if (isSubSOVApproved(cid)) {
                 (subcontractorSOV[cid] || []).forEach(line => {
                     if (normalizeCostCode(line.cost_code) === norm) {
                         // FIX: Subcontractor SOV lines store the original amount under "original_commitment", not "original"
@@ -1003,7 +1003,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     function getTotalSubcontractedCost() {
         let total = 0;
         Object.keys(subcontractorSOV || {}).forEach(cid => {
-            if (getSubSOVStatus(cid) === 'Approved') {
+            if (isSubSOVApproved(cid)) {
                 (subcontractorSOV[cid] || []).forEach(line => {
                     // FIX: Subcontractor SOV lines use original_commitment
                     const originalAmt = parseFloat(line.original_commitment || line.original || 0);
@@ -2149,7 +2149,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             if (seen.has(cid)) return;
             const lines = subcontractorSOV[cid] || subcontractorSOV[companyId];
             if (!lines || !lines.length) return;
-            if (getSubSOVStatus(cid) !== 'Approved') return;
+            if (!isSubSOVApproved(cid)) return;
             seen.add(cid);
             const fromList = (companies || []).find(c => String(c.id) === cid);
             result.push(fromList || { id: cid, name: getCompanyName(cid) });
@@ -2168,7 +2168,9 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     function getSubSOVStatus(companyId) {
         if (!companyId) return 'Draft';
         const statusData = subSOVStatus[companyId] || subSOVStatus[String(companyId)] || {};
-        return statusData.status || 'Draft';
+        const raw = statusData.status;
+        if (typeof raw === 'string') return raw;
+        return 'Draft';
     }
 
     function getSubSOVStatusEntry(companyId) {
@@ -2176,9 +2178,64 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         return subSOVStatus[companyId] || subSOVStatus[String(companyId)] || {};
     }
 
+    /** True for Approved and legacy variants (e.g. "Approved — Lien Waiver Received"). */
+    function isSubSOVApprovedStatus(status) {
+        if (!status || typeof status !== 'string') return false;
+        return status === 'Approved' || status.startsWith('Approved');
+    }
+
+    function isSubSOVApproved(companyId) {
+        return isSubSOVApprovedStatus(getSubSOVStatus(companyId));
+    }
+
     function isPayAppAdminOrAbove() {
         const el = document.documentElement;
-        return el.dataset.isAdmin === '1' || el.dataset.isDeveloper === '1';
+        if (el.dataset.isAdmin === '1' || el.dataset.isDeveloper === '1') return true;
+        const role = (el.dataset.currentUserRole || '').trim();
+        if (role === 'Admin' || role === 'Developer') return true;
+        const prof = window.CASEPM_CURRENT_USER;
+        if (prof && (prof.role === 'Admin' || prof.role === 'Developer')) return true;
+        return false;
+    }
+
+    function renderSubSOVAdminActions(companyId) {
+        const host = document.getElementById('subSovAdminActionsHost');
+        if (!host) return;
+        if (!companyId || !isPayAppAdminOrAbove()) {
+            host.innerHTML = '';
+            host.classList.add('hidden');
+            return;
+        }
+        host.classList.remove('hidden');
+        const status = getSubSOVStatus(companyId);
+        if (isSubSOVApproved(companyId)) {
+            host.innerHTML = `
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-[10px] uppercase tracking-wide text-yellow-400/90 font-semibold">Developer / Admin</span>
+                    <button type="button" onclick="rejectApprovedSubSOVToDraft(${jsArg(companyId)})"
+                            class="px-3 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded text-xs font-medium inline-flex items-center gap-1.5">
+                        <i class="fa-solid fa-undo"></i> <span>Pushback SOV to Draft</span>
+                    </button>
+                </div>
+            `;
+        } else if (status === 'Pending Approval') {
+            host.innerHTML = `
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-[10px] uppercase tracking-wide text-yellow-400/90 font-semibold">Developer / Admin</span>
+                    <button type="button" onclick="rejectSubSOVSetup()"
+                            class="px-3 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded text-xs font-medium inline-flex items-center gap-1.5">
+                        <i class="fa-solid fa-undo"></i> <span>Pushback SOV to Sub (Draft)</span>
+                    </button>
+                </div>
+            `;
+        } else {
+            host.innerHTML = `
+                <div class="text-xs text-zinc-500">
+                    SOV status: <span class="text-zinc-300">${status}</span> —
+                    Pushback to Draft is available once the SOV setup is approved.
+                </div>
+            `;
+        }
     }
 
     function isSubSOVRevisionDraft(companyId) {
@@ -4052,7 +4109,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         // === NEW: Require All Subs with Approved SOVs to have submitted Pay Apps (Controlled by Settings) ===
         const currentPeriodNumForCheck = currentPayAppPeriod.periodNumber;
         if (requireAllSubPayAppsBeforeG702Submit) {
-            const subsWithApprovedSOV = Object.keys(subcontractorSOV || {}).filter(cid => getSubSOVStatus(cid) === 'Approved');
+            const subsWithApprovedSOV = Object.keys(subcontractorSOV || {}).filter(cid => isSubSOVApproved(cid));
             
             let missingSubs = [];
             subsWithApprovedSOV.forEach(cid => {
@@ -4076,7 +4133,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         // This is a standard requirement before the GC can certify and submit to the owner/architect.
         let subsMissingWaiver = [];
         Object.keys(subcontractorSOV || {}).forEach(cid => {
-            if (getSubSOVStatus(cid) !== 'Approved') return;
+            if (!isSubSOVApproved(cid)) return;
             const paper = findActiveSubPayAppForG702Period(cid, currentPeriodNumForCheck);
             if (!paper) return;
             const entry = paper.entry;
@@ -5241,6 +5298,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                         </button>
                     </div>
                     <div id="subStatusBadgeContainer" class="mt-2 flex items-center gap-2 min-h-[22px]"></div>
+                    <div id="subSovAdminActionsHost" class="hidden mt-2 pt-2 border-t border-zinc-700"></div>
                 </div>
 
                 <!-- Center + Right: RESTRUCTURED SUMMARY (Top row + Bottom row) -->
@@ -5303,6 +5361,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
         // If no subcontractor is selected yet, show a clear instruction so user knows they must pick one before they can submit anything
         if (!selectedSubCompanyId) {
+            renderSubSOVAdminActions(null);
             const workflowBarEl = document.getElementById('payAppWorkflowBar');
             if (workflowBarEl) {
                 workflowBarEl.innerHTML = `
@@ -5324,7 +5383,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             let displayStatus = realSOVStatus;
             if (hasActiveSubPayAppForCurrentG702Period(selectedSubCompanyId)) {
                 displayStatus = 'Draft';
-            } else if (currentNum > 1 && realSOVStatus === 'Approved') {
+            } else if (currentNum > 1 && isSubSOVApprovedStatus(realSOVStatus)) {
                 const hist = subPayAppHistory[selectedSubCompanyId] || {};
                 const hasPreviousActive = Object.keys(hist).some(p => {
                     const e = hist[p];
@@ -5350,7 +5409,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 : '';
             // Robust label: show Pay App #N (Current) once initial SOV is Approved OR we have started pay app numbering (even while prior paper is still in Tracker).
             // The small badge may say "Draft" as a reminder to push the previous paper; the main label always reflects the next/current pay app number.
-            const hasActivePayAppCycle = (realSOVStatus === 'Approved') || currentNum > 1 || (subPayAppHistory[selectedSubCompanyId] && Object.keys(subPayAppHistory[selectedSubCompanyId] || {}).length > 0);
+            const hasActivePayAppCycle = isSubSOVApprovedStatus(realSOVStatus) || currentNum > 1 || (subPayAppHistory[selectedSubCompanyId] && Object.keys(subPayAppHistory[selectedSubCompanyId] || {}).length > 0);
             const payAppLabel = hasActivePayAppCycle 
                 ? `Pay App #${currentNum} (Current)<br><span style="font-size:11px; font-weight:400; opacity:0.9;">${periodStr}</span>` 
                 : `Schedule of Values Creation`;
@@ -5369,6 +5428,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 badgeContainer.innerHTML = '';
                 badgeContainer.appendChild(infoDiv);
             }
+            renderSubSOVAdminActions(selectedSubCompanyId);
 
             // Populate the RESTRUCTURED summary totals for the selected sub (new layout)
             const subLines = getSubCompanyMapEntry(subcontractorSOV, selectedSubCompanyId) || [];
@@ -5442,7 +5502,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                     </button>
                 </div>
             `;
-        } else if (currentStatus === 'Approved') {
+        } else if (isSubSOVApprovedStatus(currentStatus)) {
             // === CLEAN MONTHLY BILLING FLOW (stays on this tab) ===
             const cid = String(selectedSubCompanyId);
             const subPayAppNum = subPayAppNumbers[cid] || subPayAppNumbers[selectedSubCompanyId] || 1;
@@ -5649,7 +5709,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         const isPrimaryContact = company && isUserPrimaryContactForCompany(company);
         const subStatus = getSubSOVStatus(selectedSubCompanyId);
         const revisionDraft = isSubSOVRevisionDraft(selectedSubCompanyId);
-        const isSubApprovedLocked = (subStatus === 'Approved') && !revisionDraft;
+        const isSubApprovedLocked = isSubSOVApprovedStatus(subStatus) && !revisionDraft;
 
         // Header
         thead.innerHTML = `
@@ -5957,7 +6017,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         // Robust Primary Contact check
         const isPrimary = company && isUserPrimaryContactForCompany(company);
         const statusData = getSubSOVStatusEntry(companyId);
-        const isApproved = statusData.status === 'Approved';
+        const isApproved = isSubSOVApprovedStatus(statusData.status);
         const revisionDraft = isSubSOVRevisionDraft(companyId);
         const isRevisionLockedExisting = revisionDraft && lineId && isRevisionLockedLine(companyId, lineId);
         const canEditStructure = devUnlockActive() || (
@@ -6511,7 +6571,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             showCenteredAlert('Only Admin or Developer can push an approved SOV back to draft.', 'warning');
             return;
         }
-        if (getSubSOVStatus(companyId) !== 'Approved') {
+        if (!isSubSOVApproved(companyId)) {
             showCenteredAlert('Only an approved subcontractor SOV can be pushed back to draft.', 'warning');
             return;
         }
@@ -6847,7 +6907,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             return;
         }
         const currentStatus = getSubSOVStatus(selectedSubCompanyId);
-        if (currentStatus === 'Approved') {
+        if (isSubSOVApprovedStatus(currentStatus)) {
             showCenteredAlert("This SOV is already approved. No need to submit again.");
             return;
         }
@@ -9220,7 +9280,7 @@ function printSubcontractorG703(companyId) {
         const isZeroRequired = requireZeroDollarLienWaiver;
 
         // If the SOV is not yet Approved, compliance is not yet required.
-        if (status !== 'Approved' && status !== 'Approved — Waiting on Lien Waiver') {
+        if (!isSubSOVApprovedStatus(status)) {
             return { compliant: true, reason: 'SOV not yet in Approved state.' };
         }
 
@@ -9828,7 +9888,7 @@ function printSubcontractorG703(companyId) {
         `;
 
         // Workflow bar — admin SOV pushback when a sub is selected
-        if (selectedTrackerSubId && isPayAppAdminOrAbove() && getSubSOVStatus(selectedTrackerSubId) === 'Approved') {
+        if (selectedTrackerSubId && isPayAppAdminOrAbove() && isSubSOVApproved(selectedTrackerSubId)) {
             workflowBar.innerHTML = `
                 <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
                     <span class="text-xs text-yellow-400/90 font-medium">Admin — Schedule of Values</span>
@@ -10095,7 +10155,7 @@ function printSubcontractorG703(companyId) {
             </div>
 
             <div class="flex flex-wrap gap-2 pt-2 border-t border-zinc-700">
-                ${isPayAppAdminOrAbove() && getSubSOVStatus(companyId) === 'Approved' ? `
+                ${isPayAppAdminOrAbove() && isSubSOVApproved(companyId) ? `
                     <button onclick="rejectApprovedSubSOVToDraft(${jsArg(companyId)});" 
                             class="px-4 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white text-xs rounded font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-undo"></i> <span>Pushback SOV to Draft (Admin)</span>
