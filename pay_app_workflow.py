@@ -402,10 +402,14 @@ def sub_sov_reject_approved_to_draft(state, company_key, user, comments=''):
         line_id = line.get('id')
         if line_id is None:
             continue
+        billed = float(line.get('billed_to_date') or 0)
+        co_billed = float(line.get('co_billed_to_date') or 0)
+        if billed <= 0 and co_billed <= 0:
+            continue
         locked_line_ids.append(line_id)
         locked_billed[str(line_id)] = {
-            'billed_to_date': float(line.get('billed_to_date') or 0),
-            'co_billed_to_date': float(line.get('co_billed_to_date') or 0),
+            'billed_to_date': billed,
+            'co_billed_to_date': co_billed,
         }
 
     entry = _clear_sub_sov_revision_fields(entry)

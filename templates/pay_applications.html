@@ -2194,10 +2194,20 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         return entry.revisionLockedBilled || entry.revision_locked_billed || {};
     }
 
+    function subSovLineHasSpentBilled(line) {
+        if (!line) return false;
+        return Number(line.billed_to_date || 0) > 0 || Number(line.co_billed_to_date || 0) > 0;
+    }
+
     function isRevisionLockedLine(companyId, lineId) {
         if (!companyId || lineId == null) return false;
-        const ids = revisionLockedLineIdsFor(getSubSOVStatusEntry(companyId));
-        return ids.some((id) => String(id) === String(lineId));
+        const entry = getSubSOVStatusEntry(companyId);
+        const ids = revisionLockedLineIdsFor(entry);
+        if (ids.some((id) => String(id) === String(lineId))) return true;
+        if (!isSubSOVRevisionDraft(companyId)) return false;
+        const lines = getSubCompanyMapEntry(subcontractorSOV, companyId) || [];
+        const line = lines.find((l) => String(l.id) === String(lineId));
+        return subSovLineHasSpentBilled(line);
     }
 
     function getRevisionLockedBilledSnapshot(companyId, lineId) {
@@ -5398,7 +5408,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         if (currentStatus === 'Draft' || currentStatus === 'Rejected') {
             const revisionDraft = isSubSOVRevisionDraft(selectedSubCompanyId);
             const setupMessage = revisionDraft
-                ? '<span class="text-amber-300">Revision mode — existing lines and billed-to-date amounts are locked. Add new lines or edit commitments on existing lines, then resubmit for approval.</span>'
+                ? '<span class="text-amber-300">Pushback revision — lines with billed-to-date cannot be changed or deleted. Add new lines or edit lines with no billing, then resubmit for approval.</span>'
                 : '<span class="text-zinc-400">Setup Mode — Build the original Schedule of Values. When ready, submit for approval.</span>';
             workflowHTML = `
                 <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
@@ -5572,7 +5582,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                     
                     ${isPayAppAdminOrAbove() ? `
                     <button onclick="rejectApprovedSubSOVToDraft(${jsArg(selectedSubCompanyId)})" class="ml-auto px-4 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
-                        <i class="fa-solid fa-undo"></i> <span>Reject to Draft (Admin)</span>
+                        <i class="fa-solid fa-undo"></i> <span>Pushback to Draft (Admin)</span>
                     </button>
                     ` : ''}
                     <button onclick="viewSubSOVAudit()" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5${isPayAppAdminOrAbove() ? '' : ' ml-auto'}">
@@ -5725,6 +5735,9 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             row.className = 'sov-line-row hover:bg-zinc-800/60 cursor-pointer';
             if (isSubApprovedLocked) {
                 row.ondblclick = () => editSubSOVBillingLine(selectedSubCompanyId, line.id);
+            } else if (revisionDraft && isRevisionLockedLine(selectedSubCompanyId, line.id)) {
+                row.ondblclick = () => showCenteredAlert('This line has billed-to-date amounts and cannot be modified. Add a new line instead.', 'warning');
+                row.classList.add('opacity-80');
             } else {
                 row.ondblclick = () => editSubSOVLine(selectedSubCompanyId, line.id);
             }
@@ -5943,7 +5956,9 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         const isApproved = statusData.status === 'Approved';
         const revisionDraft = isSubSOVRevisionDraft(companyId);
         const isRevisionLockedExisting = revisionDraft && lineId && isRevisionLockedLine(companyId, lineId);
-        const canEditStructure = devUnlockActive() || !lineId || !isApproved || isRevisionLockedExisting;
+        const canEditStructure = devUnlockActive() || (
+            !lineId || (!isApproved && !isRevisionLockedExisting)
+        );
 
         let line = null;
         if (lineId && subcontractorSOV[companyId]) {
@@ -5954,8 +5969,8 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             <div class="mb-4">
                 <div class="text-sm text-zinc-400">For: <span class="font-medium text-white">${company ? (company.name || company.company_name) : 'Subcontractor'}</span></div>
                 ${isPrimary ? '<div class="text-xs text-emerald-400 mt-1">Primary Contact Mode — Original Commitment locked</div>' : ''}
-                ${isApproved && !canEditStructure ? '<div class="text-xs text-amber-400 mt-1">SOV is Approved & Locked. Use "Reject to Draft" (Admin only) to request structural revisions.</div>' : ''}
-                ${isRevisionLockedExisting ? '<div class="text-xs text-amber-400 mt-1">Revision mode — billed-to-date on this line cannot change. Commitment fields may be edited.</div>' : ''}
+                ${isApproved && !canEditStructure ? '<div class="text-xs text-amber-400 mt-1">SOV is Approved & Locked. Use "Pushback to Draft" (Admin only) to allow revisions.</div>' : ''}
+                ${isRevisionLockedExisting ? '<div class="text-xs text-amber-400 mt-1">This line has billed-to-date amounts — it cannot be modified or deleted during pushback revision.</div>' : ''}
             </div>
 
             <div class="space-y-4">
@@ -5999,7 +6014,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
                 <div>
                     <label class="block text-sm mb-1.5 text-zinc-300">Notes</label>
-                    <input type="text" id="subNotes" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? (line.notes || '') : ''}">
+                    <input type="text" id="subNotes" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? (line.notes || '') : ''}" ${!canEditStructure ? 'readonly' : ''}>
                 </div>
             </div>
 
@@ -6101,6 +6116,10 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     }
 
     function editSubSOVLine(companyId, lineId) {
+        if (isSubSOVRevisionDraft(companyId) && isRevisionLockedLine(companyId, lineId)) {
+            showCenteredAlert('This line has billed-to-date amounts and cannot be modified. Add a new line instead.', 'warning');
+            return;
+        }
         showAddEditSubSOVLine(companyId, lineId);
     }
 
@@ -6357,6 +6376,10 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         }
 
         if (lineId) {
+            if (isSubSOVRevisionDraft(companyId) && isRevisionLockedLine(companyId, lineId)) {
+                showCenteredAlert('This line has billed-to-date amounts and cannot be modified.', 'warning');
+                return;
+            }
             const line = subcontractorSOV[companyId].find(l => l.id === lineId);
             if (line) {
                 const prevBilled = line.billed_to_date || 0;
@@ -6397,7 +6420,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
     async function deleteSubSOVLine(companyId, lineId) {
         if (isSubSOVRevisionDraft(companyId) && isRevisionLockedLine(companyId, lineId)) {
-            showCenteredAlert('Existing SOV lines cannot be deleted during revision. Add new lines only.', 'warning');
+            showCenteredAlert('Lines with billed-to-date amounts cannot be deleted during pushback revision.', 'warning');
             return;
         }
         if (!await payAppConfirm("Delete this line from the subcontractor's SOV?", { title: 'Delete Line', danger: true })) return;
@@ -6481,11 +6504,11 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
     function rejectApprovedSubSOVToDraft(companyId) {
         if (!isPayAppAdminOrAbove()) {
-            showCenteredAlert('Only Admin or Developer can reject an approved SOV to draft.', 'warning');
+            showCenteredAlert('Only Admin or Developer can push an approved SOV back to draft.', 'warning');
             return;
         }
         if (getSubSOVStatus(companyId) !== 'Approved') {
-            showCenteredAlert('Only an approved subcontractor SOV can be rejected to draft.', 'warning');
+            showCenteredAlert('Only an approved subcontractor SOV can be pushed back to draft.', 'warning');
             return;
         }
 
@@ -6498,15 +6521,15 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 <div class="flex items-start gap-3 mb-4">
                     <i class="fa-solid fa-undo text-yellow-400 text-xl mt-0.5"></i>
                     <div>
-                        <h3 class="text-lg font-semibold">Reject Approved SOV to Draft?</h3>
-                        <p class="text-sm text-zinc-400 mt-1">Returns this subcontractor SOV to Draft for revision. Existing lines and billed-to-date amounts stay locked. New lines may be added. The sub must resubmit and the SOV must be approved again.</p>
+                        <h3 class="text-lg font-semibold">Pushback to Draft?</h3>
+                        <p class="text-sm text-zinc-400 mt-1">Returns this subcontractor SOV to Draft for revision. Lines with billed-to-date amounts cannot be changed or deleted. Lines with no billing may still be edited. New lines may be added. Resubmit and approve when ready.</p>
                     </div>
                 </div>
                 <label class="block text-sm text-zinc-300 mb-1.5">Revision notes (required)</label>
                 <textarea id="subSovRejectNotes" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm" placeholder="Explain what needs to change"></textarea>
                 <div class="flex justify-end gap-3 mt-6">
                     <button id="cancelRejectDraftBtn" class="px-6 py-2.5 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm">Cancel</button>
-                    <button id="confirmRejectDraftBtn" class="px-8 py-2.5 rounded-md bg-yellow-600 hover:bg-yellow-500 text-sm font-semibold">Reject to Draft</button>
+                    <button id="confirmRejectDraftBtn" class="px-8 py-2.5 rounded-md bg-yellow-600 hover:bg-yellow-500 text-sm font-semibold">Pushback to Draft</button>
                 </div>
             </div>
         `;
