@@ -202,7 +202,16 @@
 <div class="pay-app-page">
 <div class="pay-app-stack">
 
-<!-- PAGE TOOLBAR (project + user profile live in base.html) -->
+{% if is_sub_vendor_portal and not sub_vendor_company_linked %}
+<div class="flex-1 flex items-center justify-center p-8">
+    <div class="max-w-lg text-center bg-zinc-900 border border-amber-600/50 rounded-lg p-8">
+        <i class="fa-solid fa-building-circle-exclamation text-amber-400 text-4xl mb-4"></i>
+        <h2 class="text-xl font-semibold text-white mb-2">No Company Linked</h2>
+        <p class="text-sm text-zinc-400 mb-4">Your account is not linked to a subcontractor company yet. Pay applications are only available after a general contractor administrator assigns you to a vendor in <strong class="text-zinc-300">Companies → Who to Contact</strong> and sets you as primary or financial contact.</p>
+        <p class="text-xs text-zinc-500">If you believe this is an error, ask your GC admin to open the company record, use <strong class="text-zinc-400">Add user</strong>, and set you as financial or primary contact.</p>
+    </div>
+</div>
+{% else %}
 <div class="pay-app-toolbar flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
     <div class="flex items-center gap-3 min-w-0 flex-wrap">
         <div class="text-2xl font-semibold text-white whitespace-nowrap">Pay Applications</div>
@@ -314,6 +323,7 @@
     </div>
 </div>
 
+{% endif %}
 </div>
 </div>
 
@@ -504,6 +514,8 @@
 </dialog>
 
 <script>
+    const SUB_VENDOR_COMPANY_LINKED = {{ sub_vendor_company_linked|default(true)|tojson }};
+
     function parseStoreJson(key, fallback) {
         try {
             const raw = casepmStore.getItem(key);
@@ -2725,11 +2737,19 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     }
 
     function isSubVendorPayPortalUser() {
+        if (!SUB_VENDOR_COMPANY_LINKED) return false;
         if (document.body && document.body.classList.contains('portal-sub-vendor')) return true;
         const p = window.CASEPM_PORTAL || {};
         if (p.isSubVendorPayPortal) return true;
         if (p.permissions && p.permissions.global && p.permissions.global.sub_vendor_portal_only) return true;
         return false;
+    }
+
+    function subVendorCompanyIsLinked() {
+        if (!document.body || !document.body.classList.contains('portal-sub-vendor')) return true;
+        const p = window.CASEPM_PORTAL || {};
+        if (p.vendorCompanyLinked === false) return false;
+        return SUB_VENDOR_COMPANY_LINKED !== false && !!getSubVendorCompanyId();
     }
 
     function getSubVendorCompanyId() {
@@ -2745,20 +2765,64 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     function getSubVendorCompanyName() {
         const p = window.CASEPM_PORTAL || {};
         if (p.companyName) return p.companyName;
-        const cid = getSubVendorCompanyId();
-        if (cid) return getCompanyName(cid) || null;
         const prof = window.CASEPM_CURRENT_USER || {};
-        return (prof.company || '').trim() || null;
+        if ((prof.company || '').trim()) return prof.company.trim();
+        const bodyCompany = document.body && document.body.getAttribute('data-current-user-company');
+        if (bodyCompany) return bodyCompany;
+        const cid = getSubVendorCompanyId();
+        if (cid) return resolveSubCompanyDisplayName(cid) || null;
+        return null;
+    }
+
+    /** Find the subcontractorSOV dict key for this vendor (id vs name mismatch). */
+    function resolveSubCompanyBucketKey(preferredId) {
+        const map = subcontractorSOV || {};
+        const statusMap = subSOVStatus || {};
+        const portalId = preferredId != null ? preferredId : getSubVendorCompanyId();
+        const portalName = (getSubVendorCompanyName() || '').trim().toLowerCase();
+
+        if (portalId != null) {
+            for (const k of subCompanyKeyVariants(portalId)) {
+                if (map[k] != null) return canonicalSubCompanyId(k);
+            }
+        }
+
+        if (portalName) {
+            for (const key of Object.keys(map)) {
+                const st = statusMap[key] || {};
+                const stName = (st.companyName || '').trim().toLowerCase();
+                if (stName === portalName) return canonicalSubCompanyId(key);
+                if (String(key).trim().toLowerCase() === portalName) return canonicalSubCompanyId(key);
+            }
+        }
+
+        for (const com of projectCommitmentsCache || []) {
+            const comName = (com.company_name || '').trim().toLowerCase();
+            const comId = com.company_id != null ? String(com.company_id) : '';
+            if (portalId && comId && comId === String(portalId)) {
+                for (const key of Object.keys(map)) {
+                    if (String(key) === comId) return canonicalSubCompanyId(key);
+                }
+            }
+            if (portalName && comName === portalName) {
+                for (const key of Object.keys(map)) {
+                    if (String(key) === comId || String(key).trim().toLowerCase() === portalName) {
+                        return canonicalSubCompanyId(key);
+                    }
+                }
+            }
+        }
+
+        return portalId ? canonicalSubCompanyId(portalId) : null;
     }
 
     function ensureSubVendorCompanyContext() {
         if (!isSubVendorPayPortalUser()) return;
-        const myId = getSubVendorCompanyId();
-        if (!myId) return;
-        const cid = canonicalSubCompanyId(myId);
-        selectedSubCompanyId = cid;
-        selectedTrackerSubId = cid;
-        casepmStore.setItem('lastSelectedSubSOV', cid);
+        const bucketKey = resolveSubCompanyBucketKey(getSubVendorCompanyId());
+        if (!bucketKey) return;
+        selectedSubCompanyId = bucketKey;
+        selectedTrackerSubId = bucketKey;
+        casepmStore.setItem('lastSelectedSubSOV', bucketKey);
     }
 
     function getPreviousSubFilterCompanyId() {
@@ -2821,11 +2885,23 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     }
 
     function getCompanyName(companyId) {
-        return resolveSubCompanyDisplayName(companyId) || 'Unknown Company';
+        if (isSubVendorPayPortalUser()) {
+            const mine = getSubVendorCompanyName();
+            const myId = getSubVendorCompanyId();
+            if (mine && (!companyId || String(companyId) === String(myId) || String(companyId) === String(selectedSubCompanyId))) {
+                return mine;
+            }
+        }
+        return resolveSubCompanyDisplayName(companyId) || getSubVendorCompanyName() || 'Unknown Company';
     }
 
     function resolveSubCompanyDisplayName(companyId) {
         if (companyId == null || companyId === '') return null;
+        const portalName = getSubVendorCompanyName();
+        const portalId = getSubVendorCompanyId();
+        if (portalName && portalId && String(companyId) === String(portalId)) return portalName;
+        if (portalName && String(companyId).trim().toLowerCase() === portalName.toLowerCase()) return portalName;
+
         const companiesList = JSON.parse(casepmStore.getItem('casepm_companies') || '[]');
         const match = companiesList.find((x) =>
             String(x.id) === String(companyId) || String(x.server_id) === String(companyId)
@@ -2841,7 +2917,16 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         const status = (subSOVStatus && (subSOVStatus[companyId] || subSOVStatus[String(companyId)])) || {};
         if (status.companyName) return status.companyName;
 
-        return null;
+        if (portalName) {
+            for (const key of Object.keys(subSOVStatus || {})) {
+                if (String(key) === String(companyId)) {
+                    const st = subSOVStatus[key];
+                    if (st && st.companyName) return st.companyName;
+                }
+            }
+        }
+
+        return portalName || null;
     }
 
     async function loadProjectCommitmentsCache() {
@@ -3970,6 +4055,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     }
 
     async function clearPreviousSubPayAppsData() {
+        if (isSubVendorPayPortalUser()) return;
         if (!await payAppConfirm(
             "This will DELETE all archived Previous Sub Pay Apps (chronological summary and history). Active Tracker and Sub SOV data will be kept. Continue?",
             { title: 'Clear Previous Sub Pay Apps', danger: true }
@@ -7725,7 +7811,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             printSubcontractorG703(selectedSubCompanyId);
         } else if (currentPayAppTab === 'previous-sub-payapps') {
             // For Previous Sub Pay Apps tab, use the historical combined print if data available
-            const subId = document.getElementById('prevSubSelect') ? document.getElementById('prevSubSelect').value : null;
+            const subId = getPreviousSubFilterCompanyId();
             const periodIdx = document.getElementById('prevSubPeriodSelect') ? document.getElementById('prevSubPeriodSelect').value : null;
             if (subId && periodIdx) {
                 printCombinedG703AndLienWaiver(subId, periodIdx);
@@ -9830,6 +9916,7 @@ function printSubcontractorG703(companyId) {
     }
 
     function initializePayApplications() {
+        if (!SUB_VENDOR_COMPANY_LINKED) return;
         const boot = async () => {
             if (typeof CasePMAccountingReconcile !== 'undefined') {
                 await CasePMAccountingReconcile.initAndReconcile();

@@ -495,8 +495,19 @@ def register_workflow(app, _db, models):
     @login_required
     def api_portal_context():
         perms = get_role_permissions(current_user)
-        company = Company.query.get(current_user.company_id) if getattr(current_user, 'company_id', None) else None
-        from portal_sub_access import is_sub_vendor_portal_user
+        from portal_sub_access import is_sub_vendor_portal_user, resolve_sub_vendor_company
+        company_id, company_name, company = resolve_sub_vendor_company(
+            current_user, Company, db, persist_link=True,
+        )
+        if company is None and getattr(current_user, 'company_id', None):
+            company = Company.query.get(current_user.company_id)
+            if company:
+                company_id = company.id
+                company_name = company.name
+        from portal_sub_access import is_sub_vendor_portal_user as _is_sub_vendor
+        linked = True
+        if _is_sub_vendor(current_user):
+            linked = company_id is not None
         return jsonify({
             'userId': current_user.id,
             'userName': current_user.full_name,
@@ -504,9 +515,10 @@ def register_workflow(app, _db, models):
             'role': current_user.role,
             'isAdmin': current_user.role == 'Admin',
             'portal': user_portal_type(current_user),
-            'companyId': getattr(current_user, 'company_id', None),
-            'companyName': company.name if company else (current_user.company or ''),
+            'companyId': company_id,
+            'companyName': company_name or (current_user.company or ''),
             'companyType': company.type if company else '',
+            'vendorCompanyLinked': linked,
             'canApprove': {m: user_can_approve(current_user, m) for m in
                            ['Pay Applications', 'Change Orders', 'Submittals', 'RFIs', 'Budget']},
             'permissions': perms,

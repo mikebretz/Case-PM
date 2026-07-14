@@ -860,6 +860,14 @@ def inject_project_context():
         Project.query.order_by(Project.name).all(),
         Project,
     )
+    sub_vendor_company_linked = True
+    try:
+        from portal_sub_access import is_sub_vendor_portal_user, resolve_sub_vendor_company
+        if is_sub_vendor_portal_user(current_user):
+            cid, _, _ = resolve_sub_vendor_company(current_user, Company, db, persist_link=True)
+            sub_vendor_company_linked = cid is not None
+    except Exception:
+        sub_vendor_company_linked = True
     csrf_token = ''
     try:
         from security_platform import ensure_csrf_token
@@ -874,6 +882,7 @@ def inject_project_context():
         'company_info': company_info,
         'current_user_profile': profile,
         'csrf_token': csrf_token,
+        'sub_vendor_company_linked': sub_vendor_company_linked,
         **portal,
     }
 
@@ -12561,6 +12570,14 @@ def api_meeting_minutes_push_to_schedule():
 def pay_applications_page():
     active = get_active_project()
     fin = _project_financial_context(active)
+    sub_vendor_company_linked = True
+    try:
+        from portal_sub_access import is_sub_vendor_portal_user, resolve_sub_vendor_company
+        if is_sub_vendor_portal_user(current_user):
+            cid, _, _ = resolve_sub_vendor_company(current_user, Company, db, persist_link=True)
+            sub_vendor_company_linked = cid is not None
+    except Exception:
+        pass
     return render_template(
         'pay_applications.html',
         project_original_contract_amount=fin['original_contract_amount'],
@@ -12571,6 +12588,7 @@ def pay_applications_page():
         project_current_contract_value=fin['current_contract_value'],
         project_default_retainage_percent=fin['default_retainage_percent'],
         project_sage_job=fin['sage_job'],
+        sub_vendor_company_linked=sub_vendor_company_linked,
     )
 
 
@@ -14347,9 +14365,27 @@ def api_publish_budget():
 
 # ==================== PAY APPLICATION API ====================
 
+def _require_linked_sub_vendor_company():
+    """Block sub/vendor portal users with no resolved company."""
+    try:
+        from portal_sub_access import is_sub_vendor_portal_user, user_has_linked_vendor_company
+        if is_sub_vendor_portal_user(current_user) and not user_has_linked_vendor_company(
+            current_user, Company, db, persist_link=True,
+        ):
+            return jsonify({
+                'error': 'No subcontractor company is linked to your account. Ask your GC administrator to assign you in Companies → Who to Contact.',
+            }), 403
+    except Exception:
+        pass
+    return None
+
+
 @app.route('/api/pay-applications/state', methods=['GET'])
 @login_required
 def api_get_pay_app_state():
+    blocked = _require_linked_sub_vendor_company()
+    if blocked:
+        return blocked
     from pay_app_persistence import get_pay_app_state as load_state
     from financial_security import require_financial_project_access
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
@@ -14376,6 +14412,9 @@ def api_get_pay_app_state():
 @app.route('/api/pay-applications/state', methods=['PUT'])
 @login_required
 def api_save_pay_app_state():
+    blocked = _require_linked_sub_vendor_company()
+    if blocked:
+        return blocked
     from pay_app_persistence import get_pay_app_state as load_state, save_pay_app_state as persist_state
     from financial_security import require_financial_project_access, sanitize_pay_app_state, filter_pay_app_patch_for_sub_vendor
     body = request.get_json(silent=True) or {}
