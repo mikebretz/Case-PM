@@ -308,7 +308,7 @@ def create_user(db, User, Company, body: dict, *, actor_id: int | None = None, a
         except Exception:
             role = 'Company User'
     _validate_role_change(actor, role)
-    access_enabled = body.get('accessEnabled', True)
+    access_enabled = body.get('accessEnabled', False)
     status = body.get('status') or ('Active' if access_enabled else 'Inactive')
     if not access_enabled:
         status = 'Inactive'

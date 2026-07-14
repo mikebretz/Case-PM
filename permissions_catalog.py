@@ -400,12 +400,19 @@ ROLE_TEMPLATES = {
     },
     'Subcontractor Accountant': {
         'portal': 'sub',
-        'description': 'Sub financial — enter sub pay apps and upload lien waivers only',
+        'description': 'Sub/vendor — RFQ portal, bid portal, and own pay applications only',
+        'global': {
+            'client_portal_only': True,
+            'sub_vendor_portal_only': True,
+            'email_internal_only': True,
+        },
         'modules': _set_modules(default_module_perms('none', 'none'), **{
             'pay_applications': ('entry', 'submit'),
             'pay_applications_sub': ('entry', 'submit'),
             'pay_applications_lien_waivers': ('entry', 'none'),
             'pay_applications_gc': ('none', 'none'),
+            'change_orders_rfq': ('entry', 'submit'),
+            'estimating': ('view', 'none'),
             'documents': ('view', 'none'),
             'email': ('view', 'none'),
         }),

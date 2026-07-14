@@ -2659,34 +2659,59 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         return requireLienWaiverOnSubPayApp;
     }
 
+    function isSubVendorPayPortalUser() {
+        const p = window.CASEPM_PORTAL || {};
+        return !!(p.isSubVendorPayPortal || (p.permissions && p.permissions.global && p.permissions.global.sub_vendor_portal_only));
+    }
+
+    function getSubVendorCompanyId() {
+        const p = window.CASEPM_PORTAL || {};
+        if (p.companyId != null && p.companyId !== '') return String(p.companyId);
+        const prof = window.CASEPM_CURRENT_USER || {};
+        if (prof.company_id != null) return String(prof.company_id);
+        return null;
+    }
+
+    function currentPortalUser() {
+        if (window.CASEPM_CURRENT_USER && window.CASEPM_CURRENT_USER.id) return window.CASEPM_CURRENT_USER;
+        const p = window.CASEPM_PORTAL || {};
+        if (p.userId) return { id: p.userId, email: p.userEmail, full_name: p.userName };
+        return null;
+    }
+
+    function applySubVendorPayAppChrome() {
+        if (!isSubVendorPayPortalUser()) return;
+        const settingsBtn = document.querySelector('[onclick="showSettingsModal()"]');
+        if (settingsBtn) settingsBtn.classList.add('hidden');
+        const myId = getSubVendorCompanyId();
+        if (myId) {
+            selectedSubCompanyId = canonicalSubCompanyId(myId);
+            casepmStore.setItem('lastSelectedSubSOV', selectedSubCompanyId);
+        }
+        if (!canAccessPayTab(currentPayAppTab)) {
+            const first = ['sub-sov', 'sub-pay-app-tracker', 'previous-sub-payapps'].find(t => canAccessPayTab(t));
+            if (first) switchPayAppTab(first);
+        }
+    }
+
     function isUserFinancialContactForCompany(company) {
-        if (!company?.financial_contact_user_id) return false;
-        const allUsers = JSON.parse(casepmStore.getItem('users') || '[]');
-        const currentUserEmail = "michael@casepm.com";
-        const fu = allUsers.find(u => u.id == company.financial_contact_user_id);
-        if (!fu) return false;
-        const fullName = ((fu.firstName || '') + ' ' + (fu.lastName || '')).trim().toLowerCase();
-        return fullName.includes('michael') || (fu.email || '').toLowerCase() === currentUserEmail;
+        const u = currentPortalUser();
+        if (!company || !u) return false;
+        if (company.financial_contact_user_id && Number(company.financial_contact_user_id) === Number(u.id)) return true;
+        const email = (u.email || '').toLowerCase();
+        return email && (company.financial_email || company.financial_contact_email || '').toLowerCase() === email;
     }
 
     // Robust Primary Contact check (matches Companies page + User Management)
     function isUserPrimaryContactForCompany(company) {
         if (!company) return false;
         if (isUserFinancialContactForCompany(company)) return true;
-        const allUsers = JSON.parse(casepmStore.getItem('users') || '[]');
-        const currentUserEmail = "michael@casepm.com";
-
-        if (company.primary_contact_user_id) {
-            const pu = allUsers.find(u => u.id == company.primary_contact_user_id);
-            if (pu) {
-                const fullName = ((pu.firstName || '') + ' ' + (pu.lastName || '')).trim().toLowerCase();
-                if (fullName.includes('michael') || (pu.email || '').toLowerCase() === currentUserEmail) return true;
-            }
-        }
-        if (company.primary_contact_name && company.primary_contact_name.toLowerCase().includes('michael')) return true;
-        if ((company.primary_contact_email || '').toLowerCase() === currentUserEmail) return true;
-        // Fallback for demo "ABC Plumbing / Robert Rodriguez"
-        if (company.name && company.name.toLowerCase().includes('abc plumbing') && company.primary_contact_name === 'Robert Rodriguez') return true;
+        const u = currentPortalUser();
+        if (!u) return false;
+        if (company.primary_contact_user_id && Number(company.primary_contact_user_id) === Number(u.id)) return true;
+        const email = (u.email || '').toLowerCase();
+        if (email && (company.primary_contact_email || company.primary_email || '').toLowerCase() === email) return true;
+        if (company.primary_contact_name && u.full_name && company.primary_contact_name.toLowerCase() === u.full_name.toLowerCase()) return true;
         return false;
     }
 
@@ -5305,13 +5330,24 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     function renderSubcontractorSOVTab(cardsContainer, thead, tbody, workflowBar) {
         companies = JSON.parse(casepmStore.getItem('casepm_companies')) || [];
         let currentStatus = 'Draft'; // Declare early to avoid TDZ errors in template literals
+        const subVendorMode = isSubVendorPayPortalUser();
+        const myCompanyId = getSubVendorCompanyId();
+        const myCompanyName = (window.CASEPM_PORTAL && window.CASEPM_PORTAL.companyName) || getCompanyName(myCompanyId) || 'Your company';
+        if (subVendorMode && myCompanyId) {
+            selectedSubCompanyId = canonicalSubCompanyId(myCompanyId);
+        }
 
         // Summary cards - RESTRUCTURED EXACTLY AS REQUESTED
         // Top row: Original Contract Amount | Current Contract Amount | Change Orders to Date
         // Bottom row: Build to Date (Current Amount) | Change Order Amount Billed to Date | Total Amount Billed to Date
-        cardsContainer.innerHTML = `
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <!-- Left: Subcontractor Selector -->
+        const subSelectorHtml = subVendorMode ? `
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
+                    <div class="text-xs text-zinc-400">Subcontractor</div>
+                    <div class="text-lg font-semibold text-white mt-2">${myCompanyName}</div>
+                    <div class="text-[10px] text-zinc-500 mt-1">Your company — contact an administrator to change assignment.</div>
+                    <div id="subStatusBadgeContainer" class="mt-2 flex items-center gap-2 min-h-[22px]"></div>
+                    <div id="subSovAdminActionsHost" class="hidden mt-2 pt-2 border-t border-zinc-700"></div>
+                </div>` : `
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
                     <div class="text-xs text-zinc-400">Select Subcontractor</div>
                     <div class="flex items-center gap-2 mt-2">
@@ -5327,7 +5363,11 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                     </div>
                     <div id="subStatusBadgeContainer" class="mt-2 flex items-center gap-2 min-h-[22px]"></div>
                     <div id="subSovAdminActionsHost" class="hidden mt-2 pt-2 border-t border-zinc-700"></div>
-                </div>
+                </div>`;
+
+        cardsContainer.innerHTML = `
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                ${subSelectorHtml}
 
                 <!-- Center + Right: RESTRUCTURED SUMMARY (Top row + Bottom row) -->
                 <div class="md:col-span-2 bg-zinc-800 border border-zinc-700 rounded-md p-5">
@@ -9636,6 +9676,7 @@ function printSubcontractorG703(companyId) {
 
             applyPayTabPermissions();
             applyPayAppToolbarPermissions();
+            applySubVendorPayAppChrome();
             renderPayAppContent();
             renderSageSyncStatus();
             bindPayAppNavigationGuards();

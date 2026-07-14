@@ -1203,6 +1203,11 @@
       </div>`;
   }
 
+  function emailInternalOnly() {
+    const p = global.CASEPM_PORTAL || {};
+    return !!(p.emailInternalOnly || (p.permissions && p.permissions.global && p.permissions.global.email_internal_only));
+  }
+
   function renderHeader() {
     const el = document.getElementById('emailWorkspaceHeader');
     if (!el) return;
@@ -1212,11 +1217,12 @@
     const showMailboxPicker = owners.length > 1;
     const viewed = viewedMailboxOwner();
     const viewingOther = isViewingOtherMailbox();
+    const internalOnly = emailInternalOnly();
     el.innerHTML = `
       <div class="email-workspace-tabs flex px-4 items-center gap-3 flex-wrap">
-        <button type="button" class="px-5 py-2.5 text-sm font-medium border-b-2 ${state.workspace === 'mail' ? 'border-emerald-500 text-white' : 'border-transparent text-zinc-400'}" onclick="CasePMEmail.setWorkspace('mail')">
+        ${internalOnly ? '' : `<button type="button" class="px-5 py-2.5 text-sm font-medium border-b-2 ${state.workspace === 'mail' ? 'border-emerald-500 text-white' : 'border-transparent text-zinc-400'}" onclick="CasePMEmail.setWorkspace('mail')">
           <i class="fa-solid fa-envelope mr-2"></i>Mail ${mailUnread ? `<span class="ml-1 text-xs bg-emerald-600 text-white px-1.5 py-0.5 rounded-full">${mailUnread}</span>` : ''}
-        </button>
+        </button>`}
         <button type="button" class="px-5 py-2.5 text-sm font-medium border-b-2 ${state.workspace === 'internal' ? 'border-emerald-500 text-white' : 'border-transparent text-zinc-400'}" onclick="CasePMEmail.setWorkspace('internal')">
           <i class="fa-solid fa-bell mr-2"></i>Internal ${internalUnread ? `<span class="ml-1 text-xs bg-amber-600 text-white px-1.5 py-0.5 rounded-full">${internalUnread}</span>` : ''}
         </button>
@@ -2347,6 +2353,10 @@
     global.CasePMEmailSettings = settings;
     if (typeof CasePMWorkflow !== 'undefined') {
       await CasePMWorkflow.loadPortal();
+    }
+    if (emailInternalOnly()) {
+      state.workspace = 'internal';
+      state.folder = 'internal-inbox';
     }
     render();
     document.getElementById('emailSearchInput')?.addEventListener('input', e => setSearch(e.target.value));

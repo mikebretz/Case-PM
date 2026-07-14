@@ -494,6 +494,7 @@ def register_workflow(app, _db, models):
     def api_portal_context():
         perms = get_role_permissions(current_user)
         company = Company.query.get(current_user.company_id) if getattr(current_user, 'company_id', None) else None
+        from portal_sub_access import is_sub_vendor_portal_user
         return jsonify({
             'userId': current_user.id,
             'userName': current_user.full_name,
@@ -509,6 +510,8 @@ def register_workflow(app, _db, models):
             'permissions': perms,
             'isSub': is_sub_user(current_user),
             'isArchitect': is_architect_user(current_user),
+            'isSubVendorPayPortal': is_sub_vendor_portal_user(current_user),
+            'emailInternalOnly': bool((perms.get('global') or {}).get('email_internal_only')),
         })
 
     @app.route('/api/internal-messages')

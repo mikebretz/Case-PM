@@ -268,6 +268,26 @@ def should_skip_owner_threshold(base_amount, cumulative_amount=0.0, threshold=OW
     return effective_threshold_amount(base_amount, cumulative_amount) < threshold
 
 
+def filter_pay_app_patch_for_sub_vendor(user, patch: dict) -> dict:
+    from portal_sub_access import is_sub_vendor_portal_user, sub_vendor_company_keys, _filter_company_dict
+    if not is_sub_vendor_portal_user(user) or not isinstance(patch, dict):
+        return patch
+    allowed = sub_vendor_company_keys(user)
+    out = {}
+    for field in (
+        'subcontractorSOV', 'subSOVStatus', 'subPayAppHistory',
+        'subPendingSubmissions', 'subPayAppNumbers',
+    ):
+        if field in patch:
+            out[field] = _filter_company_dict(patch.get(field), allowed)
+    return out if out else patch
+
+
+def filter_pay_app_state_for_sub_vendor(user, data):
+    from portal_sub_access import filter_pay_app_state_for_sub_vendor as _filter
+    return _filter(user, data)
+
+
 def sanitize_pay_app_state(existing: dict, patch: dict) -> dict:
     """Strip workflow-controlled pay app fields from client patches."""
     from pay_app_persistence import merge_state_patch

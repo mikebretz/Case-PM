@@ -269,9 +269,14 @@
 
                 <!-- Contacts -->
                 <div class="mb-6">
-                    <h3 class="font-semibold text-emerald-400 mb-2">Who to Contact</h3>
+                    <div class="flex items-center justify-between gap-2 mb-2">
+                        <h3 class="font-semibold text-emerald-400">Who to Contact</h3>
+                        <button type="button" onclick="showAddUserToCompanyModal()" class="text-xs px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 rounded-md font-medium">
+                            <i class="fa-solid fa-user-plus mr-1"></i> Add user
+                        </button>
+                    </div>
                     <div id="linkedUsersContainer" class="bg-zinc-800 border border-zinc-700 rounded-md p-3 min-h-[70px] text-sm space-y-2"></div>
-                    <p class="text-[10px] text-zinc-500 mt-1.5"><strong class="text-zinc-400">Primary</strong> = project questions. <strong class="text-zinc-400">Financial</strong> = pay apps &amp; billing. Same person can be both.</p>
+                    <p class="text-[10px] text-zinc-500 mt-1.5"><strong class="text-zinc-400">Primary</strong> = project questions. <strong class="text-zinc-400">Financial</strong> = pay apps &amp; billing. Assign users here — not in User Management. New users start with <strong class="text-zinc-400">no access</strong> until an administrator enables it.</p>
                 </div>
 
                 <!-- Optional: Insurance & License -->
@@ -604,68 +609,122 @@ function getContactUserName(company, role) {
     return `${pu.firstName || ''} ${pu.lastName || ''}`.trim() || '—';
 }
 
-// Render linked users from User Management in the company modal (replaces old contacts section)
-function renderLinkedUsersForCompany(companyName) {
+// Render linked users from server (company_id) in the company modal
+async function renderLinkedUsersForCompany(companyName) {
     const container = document.getElementById('linkedUsersContainer');
     if (!container) return;
+    container.innerHTML = '<div class="text-zinc-500 text-xs px-2">Loading users…</div>';
+
+    const companyIdEl = document.getElementById('companyId');
+    const localId = companyIdEl ? parseInt(companyIdEl.value, 10) : null;
+    const currentCompany = localId ? companies.find(c => c.id === localId) : null;
+    const serverId = currentCompany?.server_id || currentCompany?.id;
+
+    if (!serverId) {
+        container.innerHTML = '<div class="text-zinc-500 text-xs px-2">Save this company first, then use Add user to link people from User Management.</div>';
+        return;
+    }
+
+    let linked = [];
+    try {
+        const res = await fetch(`/api/companies/${serverId}/users`, { credentials: 'same-origin' });
+        const json = await res.json().catch(() => ({}));
+        if (res.ok) linked = json.users || [];
+    } catch (_) {}
+
+    if (!linked.length) {
+        container.innerHTML = '<div class="text-zinc-500 text-xs px-2">No users linked yet. Click <strong class="text-zinc-300">Add user</strong> to assign someone from User Management.</div>';
+        return;
+    }
+
     container.innerHTML = '';
-
-    const nameToMatch = (companyName || '').toLowerCase().trim();
-    if (!nameToMatch) {
-        container.innerHTML = '<div class="text-zinc-500 text-xs px-2">Save this company first, then assign users to it in User Management to see them linked here.</div>';
-        return;
-    }
-
-    const currentCompanyId = document.getElementById('companyId') ? parseInt(document.getElementById('companyId').value) : null;
-
-    const allUsers = JSON.parse(localStorage.getItem('users') || '[]');
-    const linked = allUsers.filter(u => {
-        if (u.status !== 'Active') return false;
-        const userCompany = (u.company || u.companyName || '').toLowerCase().trim();
-        if (userCompany === nameToMatch) return true;
-        // Also support matching by company_id if set in User Management
-        if (u.company_id && currentCompanyId && u.company_id === currentCompanyId) return true;
-        return false;
-    });
-
-    if (linked.length === 0) {
-        container.innerHTML = '<div class="text-zinc-500 text-xs px-2">No active users currently assigned to this company in User Management.</div>';
-        return;
-    }
-
-    const currentCompany = currentCompanyId ? companies.find(c => c.id === currentCompanyId) : null;
-
     linked.forEach(user => {
-        const phone = (user.phones && user.phones.length > 0) ? user.phones[0].number : (user.phone || '—');
-        const isPrimary = currentCompany && currentCompany.primary_contact_user_id === user.id;
-        const isFinancial = currentCompany && currentCompany.financial_contact_user_id === user.id;
+        const isPrimary = currentCompany && Number(currentCompany.primary_contact_user_id) === Number(user.id);
+        const isFinancial = currentCompany && Number(currentCompany.financial_contact_user_id) === Number(user.id);
         const rowClass = isPrimary && isFinancial ? 'bg-emerald-900/40 border border-emerald-500' :
             isPrimary ? 'bg-emerald-900/30 border border-emerald-600' :
             isFinancial ? 'bg-sky-900/30 border border-sky-600' :
             'bg-zinc-900 border border-zinc-700';
-
         const div = document.createElement('div');
         div.className = `flex items-center justify-between px-3 py-2 rounded ${rowClass}`;
         div.innerHTML = `
             <div class="min-w-0">
                 <div class="font-medium text-white">${user.firstName || ''} ${user.lastName || ''}</div>
-                <div class="text-xs text-zinc-400">${user.jobTitle || '—'} • ${phone} • ${user.email || ''}</div>
+                <div class="text-xs text-zinc-400">${user.jobTitle || '—'} • ${user.phone || '—'} • ${user.email || ''}</div>
             </div>
             <div class="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
                 ${isFinancial ? '<span class="px-2 py-0.5 text-[10px] rounded-full bg-sky-600 text-white font-medium">Financial</span>' : ''}
                 ${isPrimary ? '<span class="px-2 py-0.5 text-[10px] rounded-full bg-emerald-600 text-white font-medium">Primary</span>' : ''}
-                <button type="button" onclick="designateFinancialContact(${user.id}, '${(companyName || '').replace(/'/g, "\\'")}')" 
-                        class="px-2.5 py-1 text-xs bg-zinc-700 hover:bg-sky-600 hover:text-white rounded transition-colors whitespace-nowrap">
+                <button type="button" class="px-2.5 py-1 text-xs bg-zinc-700 hover:bg-sky-600 hover:text-white rounded transition-colors whitespace-nowrap designate-financial-btn" data-user-id="${user.id}">
                     Set Financial
                 </button>
-                <button type="button" onclick="designatePrimaryContact(${user.id}, '${(companyName || '').replace(/'/g, "\\'")}')" 
-                        class="px-2.5 py-1 text-xs bg-zinc-700 hover:bg-emerald-600 hover:text-white rounded transition-colors whitespace-nowrap">
+                <button type="button" class="px-2.5 py-1 text-xs bg-zinc-700 hover:bg-emerald-600 hover:text-white rounded transition-colors whitespace-nowrap designate-primary-btn" data-user-id="${user.id}">
                     Set Primary
                 </button>
-            </div>
-        `;
+            </div>`;
+        div.querySelector('.designate-financial-btn').addEventListener('click', () => designateFinancialContact(user.id, companyName));
+        div.querySelector('.designate-primary-btn').addEventListener('click', () => designatePrimaryContact(user.id, companyName));
         container.appendChild(div);
     });
+}
+
+async function linkUserToCompanyOnServer(userId, companyServerId) {
+    if (!userId || !companyServerId) return;
+    try {
+        await fetch(`/api/companies/${companyServerId}/link-user`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ user_id: userId }),
+        });
+    } catch (e) {
+        console.warn('link user to company failed', e);
+    }
+}
+
+async function showAddUserToCompanyModal() {
+    const companyIdEl = document.getElementById('companyId');
+    const localId = companyIdEl ? parseInt(companyIdEl.value, 10) : null;
+    const currentCompany = localId ? companies.find(c => c.id === localId) : null;
+    const serverId = currentCompany?.server_id || currentCompany?.id;
+    const companyName = document.getElementById('company_name')?.value || currentCompany?.company_name || '';
+    if (!serverId) {
+        showAlertModal('Save Company First', 'Please save the company before adding users.');
+        return;
+    }
+    let allUsers = [];
+    try {
+        const res = await fetch('/api/users', { credentials: 'same-origin' });
+        const json = await res.json().catch(() => ({}));
+        if (res.ok) allUsers = json.users || [];
+    } catch (_) {
+        allUsers = JSON.parse(localStorage.getItem('users') || '[]');
+    }
+    const linkedRes = await fetch(`/api/companies/${serverId}/users`, { credentials: 'same-origin' });
+    const linkedJson = await linkedRes.json().catch(() => ({}));
+    const linkedIds = new Set((linkedJson.users || []).map(u => Number(u.id)));
+    const available = allUsers.filter(u => u.status === 'Active' && !linkedIds.has(Number(u.id)));
+    if (!available.length) {
+        showAlertModal('No Users Available', 'All active users are already linked, or no users exist in User Management.');
+        return;
+    }
+    const pick = prompt('Enter user email to link to this company:\n\n' + available.map(u => `${u.firstName} ${u.lastName} <${u.email}>`).slice(0, 12).join('\n'));
+    if (!pick) return;
+    const user = available.find(u => (u.email || '').toLowerCase() === pick.trim().toLowerCase());
+    if (!user) {
+        showAlertModal('Not Found', 'No matching user. Copy the email exactly from the list.');
+        return;
+    }
+    await linkUserToCompanyOnServer(user.id, serverId);
+    const allLocal = JSON.parse(localStorage.getItem('users') || '[]');
+    const lu = allLocal.find(u => Number(u.id) === Number(user.id) || u.email === user.email);
+    if (lu) {
+        lu.company_id = serverId;
+        lu.company = companyName;
+        localStorage.setItem('users', JSON.stringify(allLocal));
+    }
+    await renderLinkedUsersForCompany(companyName);
+    showAlertModal('User Linked', `${user.firstName} ${user.lastName} is now assigned to ${companyName}. Enable their access in User Management if needed.`);
 }
 
 function designatePrimaryContact(userId, companyName) {
@@ -691,8 +750,10 @@ function designatePrimaryContact(userId, companyName) {
 
     localStorage.setItem('casepm_companies', JSON.stringify(companies));
     syncCompanyToServer(company);
+    const serverId = company.server_id || companyId;
+    linkUserToCompanyOnServer(userId, serverId);
 
-    logCompanyAudit('PRIMARY_CONTACT_SET', companyId, { 
+    logCompanyAudit('PRIMARY_CONTACT_SET', companyId, {
         user: `${user.firstName} ${user.lastName}`, 
         email: user.email 
     });
@@ -731,6 +792,8 @@ function designateFinancialContact(userId, companyName) {
 
     localStorage.setItem('casepm_companies', JSON.stringify(companies));
     syncCompanyToServer(company);
+    const serverId = company.server_id || companyId;
+    linkUserToCompanyOnServer(userId, serverId);
 
     logCompanyAudit('FINANCIAL_CONTACT_SET', companyId, {
         user: `${user.firstName} ${user.lastName}`,
