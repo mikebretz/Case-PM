@@ -547,7 +547,12 @@ def apply_sub_sov_reconcile(state, originals, changes, display_codes):
             chg_amt = float(chg_info.get('amount') or 0)
             if orig_amt == 0 and chg_amt == 0:
                 billing = billing_by_norm.get(norm, {})
-                billed = float(billing.get('billed_to_date') or 0) + float(billing.get('co_billed_to_date') or 0)
+                billed = (
+                    float(billing.get('billed_to_date') or 0)
+                    + float(billing.get('co_billed_to_date') or 0)
+                    + float(billing.get('work_this_period') or 0)
+                    + float(billing.get('materials_stored') or 0)
+                )
                 if billed <= 0:
                     continue
             code = display_codes.get(company_key, {}).get(norm) or norm
@@ -719,6 +724,8 @@ def reconcile_project_accounting(
         pay_state.get('subcontractorSOV') or {}, Commitment,
     )
     pay_state = apply_sub_sov_reconcile(pay_state, originals, changes, display_codes)
+    from pay_app_persistence import prune_orphan_subcontractor_sov
+    prune_orphan_subcontractor_sov(pay_state, commitments)
     save_pay_app_state(PayAppProjectState, db, project_id, pay_state, user_id)
 
     commitment_updates = reconcile_commitment_approved_changes(cos, commitments, co_alloc_map)

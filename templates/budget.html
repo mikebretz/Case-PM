@@ -277,6 +277,9 @@
             <div class="flex items-center justify-between mb-3">
                 <div class="font-medium">Cost Code Lists</div>
                 <div class="flex gap-2">
+                    <button onclick="addNewCostCodeModal()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md flex items-center gap-2">
+                        <i class="fa-solid fa-plus"></i> Add Code
+                    </button>
                     <button onclick="addNewCostCodeList()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md flex items-center gap-2">
                         <i class="fa-solid fa-plus"></i> New List
                     </button>
@@ -312,12 +315,16 @@
             <div id="costTypesList" class="bg-zinc-800 rounded-md p-2 text-sm max-h-32 overflow-auto text-white"></div>
         </div>
 
-        <div class="pt-4 border-t border-zinc-700">
-            <button onclick="syncWithSage300()" class="w-full flex items-center justify-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">
+        <div class="pt-4 border-t border-zinc-700 space-y-3">
+            <button onclick="saveBudgetSettings()" class="w-full flex items-center justify-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">
+                <i class="fa-solid fa-floppy-disk"></i>
+                <span>Save Settings to Server</span>
+            </button>
+            <button onclick="syncWithSage300()" class="w-full flex items-center justify-center gap-2 px-5 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-semibold">
                 <i class="fa-solid fa-sync"></i>
                 <span>Sync All Budget Settings with Sage 300</span>
             </button>
-            <p class="text-[10px] text-center text-zinc-500 mt-2">Posts cost codes and types to Sage via BudgetSageSync events.</p>
+            <p class="text-[10px] text-center text-zinc-500">Cost codes, types, and active list are saved to the project on the server.</p>
         </div>
     </div>
 </dialog>
@@ -342,6 +349,31 @@
         <div class="flex justify-end gap-3">
             <button onclick="document.getElementById('newCostTypeModal').close()" class="px-5 py-2 rounded-md bg-zinc-700">Cancel</button>
             <button onclick="confirmAddNewCostType()" class="px-6 py-2 rounded-md bg-emerald-600">Add Cost Type</button>
+        </div>
+    </div>
+</dialog>
+
+<!-- New Cost Code Modal -->
+<dialog id="newCostCodeModal" class="modal rounded-md w-full max-w-md p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
+    <div class="p-6">
+        <h3 class="text-lg font-semibold mb-4">Add Cost Code to Active List</h3>
+        <div class="space-y-4 mb-6">
+            <div>
+                <label class="block text-sm mb-1.5 text-zinc-300">Cost Code</label>
+                <input type="text" id="newCostCodeInput" placeholder="e.g. 26-1000" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white">
+            </div>
+            <div>
+                <label class="block text-sm mb-1.5 text-zinc-300">Description</label>
+                <input type="text" id="newCostCodeDescInput" placeholder="e.g. Electrical - Rough In" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white">
+            </div>
+            <div>
+                <label class="block text-sm mb-1.5 text-zinc-300">Cost Type</label>
+                <select id="newCostCodeTypeInput" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white"></select>
+            </div>
+        </div>
+        <div class="flex justify-end gap-3">
+            <button onclick="document.getElementById('newCostCodeModal').close()" class="px-5 py-2 rounded-md bg-zinc-700">Cancel</button>
+            <button onclick="confirmAddNewCostCode()" class="px-6 py-2 rounded-md bg-emerald-600">Add Cost Code</button>
         </div>
     </div>
 </dialog>
@@ -480,6 +512,27 @@
         casepmStore.setItem('activeCostCodeList', activeCostCodeList);
         casepmStore.setItem('budgetContractAmount', String(contractAmount));
         casepmStore.setItem('budgetPublished', budgetPublished ? 'true' : 'false');
+    }
+
+    async function persistBudgetSettingsNow(options) {
+        persistBudgetSettings();
+        const silent = options && options.silent;
+        if (typeof CasePMBudgetSync === 'undefined') return null;
+        const saver = CasePMBudgetSync.flushSave || (() => CasePMBudgetSync.saveToServer(null, true));
+        return saver();
+    }
+
+    async function saveBudgetSettings() {
+        try {
+            const result = await persistBudgetSettingsNow({ silent: true });
+            if (result && result.ok !== false) {
+                showCenteredAlert('Budget settings saved to the server.', 'success');
+            } else {
+                showCenteredAlert('Could not save settings to the server. Check your connection and try again.', 'error');
+            }
+        } catch (err) {
+            showCenteredAlert(err.message || 'Save failed', 'error');
+        }
     }
 
     function logSageSync(eventType, details) {
@@ -2103,6 +2156,51 @@
         if (input) input.value = '';
         document.getElementById('newCostTypeModal').showModal(); 
     }
+    function addNewCostCodeModal() {
+        const codeInput = document.getElementById('newCostCodeInput');
+        const descInput = document.getElementById('newCostCodeDescInput');
+        const typeSelect = document.getElementById('newCostCodeTypeInput');
+        if (codeInput) codeInput.value = '';
+        if (descInput) descInput.value = '';
+        if (typeSelect) {
+            typeSelect.innerHTML = '';
+            costTypes.forEach((type) => {
+                const opt = document.createElement('option');
+                opt.value = type;
+                opt.textContent = type;
+                typeSelect.appendChild(opt);
+            });
+        }
+        document.getElementById('newCostCodeModal').showModal();
+    }
+    async function confirmAddNewCostCode() {
+        const code = (document.getElementById('newCostCodeInput').value || '').trim();
+        const desc = (document.getElementById('newCostCodeDescInput').value || '').trim();
+        const type = (document.getElementById('newCostCodeTypeInput').value || 'Subcontract').trim();
+        if (!code || !desc) {
+            showCenteredAlert('Cost code and description are required.');
+            return;
+        }
+
+        if (activeCostCodeList === 'csi') {
+            activeCostCodeList = 'custom';
+            const selector = document.getElementById('costCodeListSelector');
+            if (selector) selector.value = 'custom';
+        }
+
+        const exists = customCostCodes.some(c => c.code === code);
+        if (!exists) {
+            customCostCodes.push({ code, description: desc, cost_type: type });
+        } else {
+            showCenteredAlert(`Cost code ${code} is already in the list.`);
+            return;
+        }
+
+        document.getElementById('newCostCodeModal').close();
+        populateCostCodeDatalist();
+        await persistBudgetSettingsNow({ silent: true });
+        showCenteredAlert(`Added ${code} to the active cost code list.`, 'success');
+    }
     function confirmAddNewCostType() {
         const input = document.getElementById('newCostTypeInput');
         const val = input.value.trim();
@@ -2110,6 +2208,7 @@
         document.getElementById('newCostTypeModal').close();
         renderCostTypesList();
         persistBudgetSettings();
+        persistBudgetSettingsNow({ silent: true });
         input.value = '';
     }
     function removeCostType(index) {
@@ -2198,6 +2297,7 @@
                     showCenteredAlert(`Successfully imported ${added} cost codes into Custom list.`);
                     populateCostCodeDatalist();
                     persistBudgetSettings();
+                    persistBudgetSettingsNow({ silent: true });
                 } catch (err) {
                     console.error(err);
                     showCenteredAlert("Failed to read file. Make sure it has Code + Description columns (combined or separate).");
@@ -2259,6 +2359,8 @@
                     });
 
                     renderCostTypesList();
+                    persistBudgetSettings();
+                    persistBudgetSettingsNow({ silent: true });
                     showCenteredAlert(`Successfully imported ${added} new cost type(s).`);
                 } catch (err) {
                     console.error(err);
@@ -2540,6 +2642,7 @@
 
         populateCostCodeDatalist();
         persistBudgetSettings();
+        persistBudgetSettingsNow({ silent: true });
 
         queueSageSync('BudgetSageSync', {
             codesImported: sageSeed.length,
@@ -2552,6 +2655,7 @@
     function changeActiveCostCodeList() {
         activeCostCodeList = document.getElementById('costCodeListSelector').value;
         persistBudgetSettings();
+        persistBudgetSettingsNow({ silent: true });
     }
 
     // ==================== RICH INVALID LINES MODAL FOR PUBLISH (restored) ====================

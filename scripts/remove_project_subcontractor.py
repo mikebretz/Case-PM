@@ -87,6 +87,8 @@ def main() -> int:
             Commitment=Commitment, db=db, allow_approved=args.force or True,
         )
         purge = purge_subcontractor_from_pay_state(state, company_id, company_name)
+        from pay_app_persistence import prune_orphan_subcontractor_sov
+        prune = prune_orphan_subcontractor_sov(state, commitments)
         save_pay_app_state(PayAppProjectState, db, project.id, state, user_id=None)
 
         from accounting_reconcile import reconcile_project_accounting
@@ -105,7 +107,7 @@ def main() -> int:
             db=db,
         )
 
-        print(f'Voided {len(voided)} commitment(s). Purge: {purge}')
+        print(f'Voided {len(voided)} commitment(s). Purge: {purge}. Prune: {prune}')
         print('Done.')
         return 0
 

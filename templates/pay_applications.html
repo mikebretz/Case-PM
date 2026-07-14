@@ -667,6 +667,8 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         const seen = new Set();
         const ids = [];
         Object.keys(subSOVData || {}).forEach((key) => {
+            const lines = subSOVData[key];
+            if (!Array.isArray(lines) || lines.length === 0) return;
             const cid = canonicalSubCompanyId(key);
             if (cid == null || seen.has(String(cid))) return;
             seen.add(String(cid));
@@ -5771,29 +5773,49 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
     async function clearAllSubcontractorsForFreshJob() {
         if (!await payAppConfirm(
-            '⚠️ CLEAR ALL SUBCONTRACTORS\n\nThis will permanently delete:\n• All subcontractor SOV line items\n• All pay app history & G703 snapshots\n• All lien waivers\n• Pending submissions & counters\n\nContinue?',
+            '⚠️ CLEAR ALL SUBCONTRACTORS\n\nThis will permanently delete:\n• All subcontractor SOV line items\n• All pay app history & G703 snapshots\n• All lien waivers\n• Pending submissions & counters\n\nApproved subcontract commitments will be voided so they cannot re-seed the SOV.\n\nContinue?',
             { title: 'Clear All Subcontractors', danger: true }
         )) {
             return;
         }
-        // Clear all sub-related data (keep contractorSOV, main pay periods, companies list, etc.)
-        casepmStore.removeItem('subcontractorSOV');
-        casepmStore.removeItem('subPayAppNumbers');
-        casepmStore.removeItem('subPayAppHistory');
-        casepmStore.removeItem('subPendingSubmissions');
-        casepmStore.removeItem('subLienWaivers');
-        selectedSubCompanyId = null;
-        casepmStore.removeItem('lastSelectedSubSOV');
 
-        // Explicitly empty the dropdown immediately (guarantees fresh job state)
-        const sel = document.getElementById('subSelector');
-        if (sel) {
-            sel.innerHTML = '<option value="">-- Select a Subcontractor --</option>';
+        const pid = (typeof CasePMWorkflow !== 'undefined' && CasePMWorkflow.projectId)
+            ? CasePMWorkflow.projectId()
+            : parseInt(localStorage.getItem('casepm_current_project_id') || '0', 10);
+
+        try {
+            const res = await fetch('/api/pay-applications/clear-all-subcontractors', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project_id: pid, force: true }),
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                showCenteredAlert(json.error || 'Could not clear subcontractors', 'error');
+                return;
+            }
+
+            if (typeof CasePMPayAppSync !== 'undefined') {
+                await CasePMPayAppSync.refreshFromServer();
+            }
+            reloadPayAppStateFromStorage();
+            selectedSubCompanyId = null;
+            casepmStore.removeItem('lastSelectedSubSOV');
+            hideUnsavedIndicator();
+
+            const sel = document.getElementById('subSelector');
+            if (sel) {
+                sel.innerHTML = '<option value="">-- Select a Subcontractor --</option>';
+            }
+
+            renderPayAppContent();
+            logPayAppAudit('SUBS_CLEARED_FOR_FRESH_JOB', {
+                voided_commitments: (json.voided_commitments || []).length,
+            });
+        } catch (err) {
+            showCenteredAlert(err.message || 'Clear failed', 'error');
         }
-
-        // Re-render so UI is ready for new job (dropdown stays empty until Add New is used)
-        renderPayAppContent();
-        // No non-essential success popup — empty dropdown + cleared tables are the confirmation
     }
 
     function addLineToSelectedSub() {
