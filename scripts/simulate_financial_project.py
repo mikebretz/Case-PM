@@ -273,6 +273,7 @@ def _run_extended_modules(result: SimResult, project, users, app_models, commitm
     PCOAllocation = app_models['PCOAllocation']
     SageSyncEvent = app_models['SageSyncEvent']
     Commitment = app_models['Commitment']
+    CommitmentAllocation = app_models['CommitmentAllocation']
     PayAppProjectState = app_models['PayAppProjectState']
     BudgetProjectState = app_models['BudgetProjectState']
     ChangeOrder = app_models['ChangeOrder']
@@ -502,7 +503,7 @@ def _run_extended_modules(result: SimResult, project, users, app_models, commitm
 
     # --- Pay app period 2 (partial) ---
     from pay_app_persistence import get_pay_app_state, save_pay_app_state
-    from pay_app_workflow import process_pay_app_workflow, sub_pay_app_workflow_action
+    from pay_app_workflow import process_pay_app_workflow
 
     _, pay_state = get_pay_app_state(PayAppProjectState, project.id)
     period = pay_state.get('currentPayAppPeriod') or {}
@@ -529,8 +530,26 @@ def _run_extended_modules(result: SimResult, project, users, app_models, commitm
             entry = {'status': 'Draft', 'periodNumber': 2, 'totalBilledThisPeriod': period_amt}
             sub_hist.setdefault(company_key, {})['2'] = entry
             sub_lien.setdefault(company_key, {})['2'] = {'filename': f'lien-p2-{company_key}.pdf'}
-            sub_pay_app_workflow_action(pay_state, company_key, 'submit', users['sub'], {'pending_entry': entry})
-            sub_pay_app_workflow_action(pay_state, company_key, 'approve', users['pm'], {'pending_entry': entry})
+            pay_state['subLienWaivers'] = sub_lien
+            pay_state['subPayAppHistory'] = sub_hist
+            save_pay_app_state(PayAppProjectState, db, project.id, pay_state, user_id=None)
+            p2_submit = process_pay_app_workflow(
+                project.id, 'sub_pay_app', company_key, 'submit', users['sub'], User,
+                {'pending_entry': entry}, pay_state,
+                PayAppProjectState=PayAppProjectState, db=db,
+                ChangeOrder=ChangeOrder, ChangeOrderAllocation=ChangeOrderAllocation,
+                BudgetProjectState=BudgetProjectState, Commitment=Commitment,
+                CommitmentAllocation=CommitmentAllocation, Project=Project, SageSyncEvent=SageSyncEvent,
+            )
+            pay_state = p2_submit['state']
+            process_pay_app_workflow(
+                project.id, 'sub_pay_app', company_key, 'approve', users['pm'], User,
+                {'pending_entry': entry}, pay_state,
+                PayAppProjectState=PayAppProjectState, db=db,
+                ChangeOrder=ChangeOrder, ChangeOrderAllocation=ChangeOrderAllocation,
+                BudgetProjectState=BudgetProjectState, Commitment=Commitment,
+                CommitmentAllocation=CommitmentAllocation, Project=Project, SageSyncEvent=SageSyncEvent,
+            )
             billed_p2 += period_amt
         save_pay_app_state(PayAppProjectState, db, project.id, pay_state, user_id=None)
         result.metrics['period2_sub_billed'] = billed_p2
@@ -753,9 +772,28 @@ def run_simulation(name: str, trade_mix: list, app_models, *, contract_value: fl
             'uploadedDate': '2026-01-15',
         }
         pay_state['subLienWaivers'] = sub_lien
-        sub_pay_app_workflow_action(pay_state, company_key, 'submit', users['sub'], {'pending_entry': entry})
-        sub_pay_app_workflow_action(pay_state, company_key, 'approve', users['pm'], {'pending_entry': entry})
-        sub_hist[company_key]['1']['status'] = 'Approved'
+        pay_state['subPayAppHistory'] = sub_hist
+        save_pay_app_state(PayAppProjectState, db, project.id, pay_state, user_id=None)
+        submit_result = process_pay_app_workflow(
+            project.id, 'sub_pay_app', company_key, 'submit', users['sub'], User,
+            {'pending_entry': entry}, pay_state,
+            PayAppProjectState=PayAppProjectState, db=db,
+            ChangeOrder=ChangeOrder, ChangeOrderAllocation=ChangeOrderAllocation,
+            BudgetProjectState=BudgetProjectState, Commitment=Commitment,
+            CommitmentAllocation=CommitmentAllocation, Project=Project, SageSyncEvent=SageSyncEvent,
+        )
+        pay_state = submit_result['state']
+        approve_result = process_pay_app_workflow(
+            project.id, 'sub_pay_app', company_key, 'approve', users['pm'], User,
+            {'pending_entry': entry}, pay_state,
+            PayAppProjectState=PayAppProjectState, db=db,
+            ChangeOrder=ChangeOrder, ChangeOrderAllocation=ChangeOrderAllocation,
+            BudgetProjectState=BudgetProjectState, Commitment=Commitment,
+            CommitmentAllocation=CommitmentAllocation, Project=Project, SageSyncEvent=SageSyncEvent,
+        )
+        pay_state = approve_result['state']
+        sub_hist = pay_state.get('subPayAppHistory') or sub_hist
+        sub_hist.setdefault(company_key, {})['1'] = {**(sub_hist.get(company_key, {}).get('1') or entry), 'status': 'Approved'}
         total_sub_billed += period_amt
     pay_state['subPayAppHistory'] = sub_hist
     pay_state['subLienWaivers'] = sub_lien

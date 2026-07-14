@@ -10598,17 +10598,9 @@ def _parse_commitment_date(value):
 
 
 def _sage_commitment_event(commitment, event_type, message='', extra=None, user_id=None):
-    from commitment_persistence import build_commitment_sage_payload
-    from sage_service import create_and_process_sage_event
-    allocs = CommitmentAllocation.query.filter_by(commitment_id=commitment.id).all()
-    payload = build_commitment_sage_payload(commitment, allocs, extra)
-    return create_and_process_sage_event(
-        SageSyncEvent, Project, db, commitment.project_id,
-        event_type,
-        message=message or f'{commitment.number} — {event_type}',
-        payload=payload,
-        user_id=user_id,
-        Commitment=Commitment,
+    from commitment_persistence import queue_commitment_sage_event
+    return queue_commitment_sage_event(
+        commitment, event_type, message=message, extra=extra, user_id=user_id,
     )
 
 
