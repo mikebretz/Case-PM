@@ -45,8 +45,9 @@
 .dev-live-dot { width: 0.5rem; height: 0.5rem; border-radius: 999px; flex-shrink: 0; }
 .dev-live-dot.online { background: #34d399; box-shadow: 0 0 6px #34d399; }
 .dev-live-dot.offline { background: #71717a; }
-.dev-live-screen { background: #09090b; border: 1px solid #27272a; border-radius: 0.5rem; min-height: 240px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
-.dev-live-screen img { max-width: 100%; max-height: 480px; object-fit: contain; }
+.dev-live-screen { background: #09090b; border: 1px solid #27272a; border-radius: 0.5rem; min-height: 280px; overflow: hidden; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.dev-live-screen:hover { border-color: #52525b; }
+.dev-live-screen img { max-width: 100%; max-height: min(70vh, 640px); object-fit: contain; }
 </style>
 
 <div class="dev-page"><div class="dev-stack">
@@ -129,7 +130,7 @@
         <div class="dev-card border-sky-900/40">
             <h2 class="font-semibold text-lg text-sky-300 mb-1"><i class="fa-solid fa-eye mr-2"></i>Live Users</h2>
             <p class="text-sm text-zinc-400 mb-4">
-                See who is online and what page they are on. Select a session to watch a live viewport snapshot and activity (refreshes every second).
+                See who is online and what page they are on. Select a session to open a <strong class="text-zinc-300">full screen watch window</strong> with a live viewport snapshot (refreshes every second; new captures every ~5s from the user's browser).
             </p>
             <div class="flex items-center gap-3 text-xs text-zinc-500 mb-3">
                 <span id="devLiveOnlineCount">— online</span>

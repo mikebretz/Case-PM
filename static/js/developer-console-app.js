@@ -30,6 +30,8 @@
 
   let livePollTimer = null;
   let liveWatchSessionKey = null;
+  let liveWatchPopup = null;
+  let liveWatchPopupKey = null;
   const LIVE_POLL_MS = 1000;
 
   function stopLivePolling() {
@@ -62,6 +64,39 @@
       <div class="text-red-300/90 text-sm text-center py-16 px-4 space-y-2">
         <div>${escapeHtml(message || 'Could not load session.')}</div>
       </div>`;
+  }
+
+  function liveWatchPopupUrl(sessionKey) {
+    return `/developer/live-watch?session=${encodeURIComponent(sessionKey)}`;
+  }
+
+  function openLiveWatchPopup(sessionKey) {
+    if (!sessionKey) return false;
+    const url = liveWatchPopupUrl(sessionKey);
+    const winName = 'casepm-live-watch';
+    try {
+      if (liveWatchPopup && !liveWatchPopup.closed) {
+        if (liveWatchPopupKey !== sessionKey) {
+          liveWatchPopup.location.href = url;
+        }
+        liveWatchPopup.focus();
+      } else {
+        liveWatchPopup = window.open(
+          url,
+          winName,
+          'popup=yes,width=1440,height=900,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes,resizable=yes'
+        );
+        if (liveWatchPopup) liveWatchPopup.focus();
+      }
+      liveWatchPopupKey = sessionKey;
+      return !!(liveWatchPopup && !liveWatchPopup.closed);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function liveThumbUrl(sessionKey) {
+    return `/api/developer/presence/thumbnail/${encodeURIComponent(sessionKey)}?t=${Date.now()}`;
   }
 
   function formatSeenAgo(iso) {
@@ -157,7 +192,10 @@
           : '<span class="text-zinc-600 text-xs">—</span>';
       }
       if (img && session.has_thumbnail) {
-        img.src = `/api/developer/presence/thumbnail/${encodeURIComponent(session.session_key)}?t=${Date.now()}`;
+        img.src = liveThumbUrl(session.session_key);
+      } else if (session.has_thumbnail && !img) {
+        renderLiveWatchPanel(session, true);
+        return;
       }
       return;
     }
@@ -170,9 +208,8 @@
     const selected = (vs.selected || []).length
       ? vs.selected.map((s) => `<span class="inline-block px-2 py-0.5 bg-zinc-800 text-zinc-300 rounded text-xs mr-1">${escapeHtml(s)}</span>`).join('')
       : '<span class="text-zinc-600 text-xs">—</span>';
-    const thumbUrl = session.has_thumbnail
-      ? `/api/developer/presence/thumbnail/${encodeURIComponent(session.session_key)}?t=${Date.now()}`
-      : '';
+    const thumbUrl = session.has_thumbnail ? liveThumbUrl(session.session_key) : '';
+    const skJson = JSON.stringify(session.session_key);
     host.innerHTML = `
       <div id="devLiveWatchShell" data-session-key="${escapeHtml(session.session_key)}">
       <div class="flex flex-wrap items-start justify-between gap-2 mb-3">
@@ -180,15 +217,20 @@
           <div class="text-lg font-semibold text-white">${escapeHtml(session.user_name || '')}</div>
           <div class="text-xs text-zinc-500">${escapeHtml(session.user_email || '')} · ${escapeHtml(session.user_role || '')}</div>
         </div>
-        <div class="text-right text-xs">
-          <div id="devLiveWatchOnline" class="${session.online ? 'text-emerald-400' : 'text-zinc-500'}">${session.online ? '● Online' : '○ Idle'}</div>
-          <div id="devLiveWatchSeen" class="text-zinc-500">Seen ${escapeHtml(formatSeenAgo(session.last_seen_at))}</div>
+        <div class="flex flex-col items-end gap-2">
+          <button type="button" class="dev-tool-btn !w-auto !py-1.5 !px-3 text-xs" onclick="CasePMDeveloperConsole.openLiveWatchPopup(${skJson})">
+            <i class="fa-solid fa-up-right-from-square text-sky-400"></i><span>Open full screen window</span>
+          </button>
+          <div class="text-right text-xs">
+            <div id="devLiveWatchOnline" class="${session.online ? 'text-emerald-400' : 'text-zinc-500'}">${session.online ? '● Online' : '○ Idle'}</div>
+            <div id="devLiveWatchSeen" class="text-zinc-500">Seen ${escapeHtml(formatSeenAgo(session.last_seen_at))}</div>
+          </div>
         </div>
       </div>
-      <div class="dev-live-screen mb-4">
+      <div class="dev-live-screen mb-4" onclick="CasePMDeveloperConsole.openLiveWatchPopup(${skJson})" title="Click to open full screen watch window">
         ${thumbUrl
           ? `<img src="${thumbUrl}" alt="Live viewport" id="devLiveThumb">`
-          : '<div class="text-zinc-500 text-xs p-6 text-center">Viewport snapshot loading — refreshes every ~20s from the user\'s browser.</div>'}
+          : '<div class="text-zinc-500 text-xs p-6 text-center">Viewport snapshot loading — opens in a full screen window when you select a user. Captures refresh every ~5s from their browser.</div>'}
       </div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm mb-3">
         <div class="bg-zinc-900 border border-zinc-800 rounded-md p-3">
@@ -255,10 +297,21 @@
     if (panel) {
       panel.innerHTML = '<div class="text-zinc-500 text-sm text-center py-16">Loading session…</div>';
     }
+    const popupOk = openLiveWatchPopup(sessionKey);
     api(`/api/developer/presence/session/${encodeURIComponent(sessionKey)}`)
       .then((detail) => {
-        if (detail.session) renderLiveWatchPanel(detail.session, true);
-        else showLiveWatchError('Session not found.');
+        if (detail.session) {
+          renderLiveWatchPanel(detail.session, true);
+          if (!popupOk) {
+            const shell = document.getElementById('devLiveWatchShell');
+            if (shell && !shell.querySelector('.dev-live-popup-blocked')) {
+              shell.insertAdjacentHTML('afterbegin',
+                '<div class="dev-live-popup-blocked text-amber-300/90 text-xs mb-3 px-1">Popup blocked — allow popups for this site, or click “Open full screen window”.</div>');
+            }
+          }
+        } else {
+          showLiveWatchError('Session not found.');
+        }
       })
       .catch((err) => {
         showLiveWatchError(err.message || 'Could not load session.');
@@ -760,6 +813,7 @@
     loadMaintenancePanel,
     loadLiveUsersPanel,
     watchLiveSession,
+    openLiveWatchPopup,
     refreshLiveUsers,
     onMaintScopeChange,
     updateMaintScopeSummary,

@@ -7,7 +7,7 @@
 
   const STORAGE_KEY = 'casepm_presence_session_key';
   const HEARTBEAT_MS = 10000;
-  const THUMB_MS = 20000;
+  const THUMB_MS = 5000;
   let lastAction = '';
   let lastActionAt = null;
   let thumbTimer = null;
@@ -157,19 +157,32 @@
 
   async function captureThumbnail() {
     if (document.hidden) return null;
-    try {
-      const shell = document.getElementById('appShell') || document.body;
-      const h2c = await loadHtml2Canvas();
-      const canvas = await h2c(shell, {
-        scale: 0.3,
-        logging: false,
-        useCORS: true,
-        ignoreElements: (node) => node.id === 'devUnlockBanner',
-      });
-      return canvas.toDataURL('image/jpeg', 0.55);
-    } catch (_) {
-      return null;
+    const targets = [
+      document.getElementById('appShell'),
+      document.querySelector('main'),
+      document.getElementById('mainContent'),
+      document.body,
+    ].filter(Boolean);
+    const seen = new Set();
+    const h2c = await loadHtml2Canvas();
+    for (const shell of targets) {
+      if (seen.has(shell)) continue;
+      seen.add(shell);
+      try {
+        const canvas = await h2c(shell, {
+          scale: 0.5,
+          logging: false,
+          useCORS: true,
+          allowTaint: true,
+          ignoreElements: (node) => node.id === 'devUnlockBanner',
+        });
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.65);
+        if (dataUrl && dataUrl.length > 1000) return dataUrl;
+      } catch (err) {
+        console.warn('[CasePM Presence] thumbnail capture failed', shell.id || shell.tagName, err);
+      }
     }
+    return null;
   }
 
   async function sendHeartbeat(includeThumb) {

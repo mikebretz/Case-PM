@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Watch — Case PM</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { height: 100%; }
+        body {
+            background: #09090b;
+            color: #e4e4e7;
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        header {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 0.65rem 1rem;
+            border-bottom: 1px solid #27272a;
+            background: #18181b;
+        }
+        header h1 { font-size: 0.95rem; font-weight: 600; }
+        header .meta { font-size: 0.75rem; color: #71717a; margin-top: 0.15rem; }
+        header .status { font-size: 0.75rem; color: #a1a1aa; text-align: right; }
+        header .online { color: #34d399; }
+        .screen-wrap {
+            flex: 1;
+            min-height: 0;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.35rem;
+        }
+        .screen-wrap img {
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+            display: block;
+        }
+        .placeholder {
+            color: #71717a;
+            text-align: center;
+            max-width: 28rem;
+            padding: 2rem;
+            font-size: 0.875rem;
+            line-height: 1.5;
+        }
+        .placeholder strong { color: #a1a1aa; }
+        .error { color: #fca5a5; }
+    </style>
+</head>
+<body>
+    <header>
+        <div>
+            <h1 id="lwUser">Live watch</h1>
+            <div class="meta" id="lwMeta">—</div>
+        </div>
+        <div class="status" id="lwStatus">Connecting…</div>
+    </header>
+    <div class="screen-wrap" id="lwScreen">
+        <div class="placeholder" id="lwPlaceholder">
+            <strong>Waiting for viewport snapshot</strong><br>
+            The user's browser sends a screen capture every few seconds. Make sure they have refreshed after the latest server update.
+        </div>
+        <img id="lwImg" alt="User viewport" hidden>
+    </div>
+    <script>
+    (function () {
+        'use strict';
+        const SESSION_KEY = {{ session_key | tojson }};
+        const POLL_MS = 1000;
+        const userEl = document.getElementById('lwUser');
+        const metaEl = document.getElementById('lwMeta');
+        const statusEl = document.getElementById('lwStatus');
+        const imgEl = document.getElementById('lwImg');
+        const placeholderEl = document.getElementById('lwPlaceholder');
+
+        if (!SESSION_KEY) {
+            userEl.textContent = 'No session';
+            statusEl.innerHTML = '<span class="error">Missing session key</span>';
+            placeholderEl.innerHTML = '<span class="error">Close this window and select a user again from Developer Console → Live Users.</span>';
+            return;
+        }
+
+        function thumbUrl() {
+            return '/api/developer/presence/thumbnail/' + encodeURIComponent(SESSION_KEY) + '?t=' + Date.now();
+        }
+
+        function formatSeen(iso) {
+            if (!iso) return '—';
+            const sec = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
+            if (sec < 10) return 'just now';
+            if (sec < 60) return sec + 's ago';
+            return Math.floor(sec / 60) + 'm ago';
+        }
+
+        function showThumb() {
+            placeholderEl.hidden = true;
+            imgEl.hidden = false;
+            imgEl.src = thumbUrl();
+        }
+
+        imgEl.addEventListener('error', function () {
+            imgEl.hidden = true;
+            placeholderEl.hidden = false;
+            placeholderEl.innerHTML = '<strong>Snapshot not ready yet</strong><br>Screen captures upload every ~5s from the user\'s browser. This window refreshes every second.';
+        });
+
+        async function refresh() {
+            try {
+                const res = await fetch('/api/developer/presence/session/' + encodeURIComponent(SESSION_KEY), {
+                    credentials: 'same-origin',
+                });
+                const data = await res.json().catch(function () { return {}; });
+                if (!res.ok) throw new Error(data.error || res.statusText || 'Load failed');
+
+                const s = data.session;
+                if (!s) throw new Error('Session not found');
+
+                userEl.textContent = s.user_name || s.user_email || 'User';
+                const parts = [s.user_role, s.page_title, s.project_name].filter(Boolean);
+                metaEl.textContent = parts.join(' · ') || (s.page_path || '');
+
+                const online = s.online ? '<span class="online">● Online</span>' : '○ Idle';
+                statusEl.innerHTML = online + ' · Seen ' + formatSeen(s.last_seen_at) + ' · ' + new Date().toLocaleTimeString();
+
+                if (s.has_thumbnail) {
+                    if (imgEl.hidden || !imgEl.src) showThumb();
+                    else imgEl.src = thumbUrl();
+                }
+            } catch (err) {
+                statusEl.innerHTML = '<span class="error">' + (err.message || 'Refresh failed') + '</span>';
+            }
+        }
+
+        refresh();
+        setInterval(refresh, POLL_MS);
+    })();
+    </script>
+</body>
+</html>
