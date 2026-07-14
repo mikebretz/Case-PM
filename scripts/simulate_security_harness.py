@@ -480,6 +480,285 @@ def phase_permissions(result: SecResult, client, app, models, p_a, p_b) -> None:
         result.fail('client_portal_rfi_allowed', 'permissions', f'HTTP {rv_rfi2.status_code}', severity='warning')
 
 
+def phase_read_idor(result: SecResult, client, app, models, p_a, p_b, iso) -> None:
+    """Isolated user must not read foreign project financial/entity data."""
+    from pay_app_persistence import save_pay_app_state
+
+    token = _login_client(client, iso, app)
+    pm = models['users']['pm']
+    PayAppProjectState = models['PayAppProjectState']
+
+    co_b = models['ChangeOrder'](
+        project_id=p_b.id, number=f'RD-{uuid.uuid4().hex[:6]}',
+        title='read idor', description='d', status='Draft', ball_in_court_role='Creator',
+    )
+    com_b = models['Commitment'](
+        project_id=p_b.id, number=f'RD-C-{uuid.uuid4().hex[:6]}',
+        commitment_type='Subcontract', company_name='Other', company_id='999',
+        title='t', description='d', status='Draft', original_amount=1000, current_amount=1000,
+        ball_in_court_role='Creator',
+    )
+    rfi_b = models['RFI'](
+        project_id=p_b.id, number=f'RD-R-{uuid.uuid4().hex[:6]}',
+        subject='read idor', status='Open', created_by_id=pm.id,
+    )
+    models['db'].session.add_all([co_b, com_b, rfi_b])
+    models['db'].session.flush()
+    save_pay_app_state(PayAppProjectState, models['db'], p_b.id, {
+        'contractorSOV': [{'id': 1, 'original': 500_000}],
+        'currentPayAppPeriod': {'periodNumber': 1, 'status': 'Draft'},
+    }, user_id=None)
+    models['db'].session.commit()
+
+    read_cases = [
+        ('read_idor_budget_state', f'/api/budget/state?project_id={p_b.id}'),
+        ('read_idor_pay_app_state', f'/api/pay-applications/state?project_id={p_b.id}'),
+        ('read_idor_co_by_id', f'/api/change-orders/{co_b.id}'),
+        ('read_idor_commitment_by_id', f'/api/commitments/{com_b.id}'),
+        ('read_idor_rfi_by_id', f'/api/rfis/{rfi_b.id}'),
+        ('read_idor_commitments_list', f'/api/commitments?project_id={p_b.id}'),
+        ('read_idor_co_list', f'/api/change-orders?project_id={p_b.id}'),
+        ('read_idor_budget_pending', f'/api/budget/pending-change-orders?project_id={p_b.id}'),
+    ]
+    for name, path in read_cases:
+        rv = client.get(path, headers=_csrf_headers(token))
+        if rv.status_code == 403:
+            result.ok(name, 'read_idor')
+        else:
+            result.fail(name, 'read_idor', f'HTTP {rv.status_code}')
+
+
+def phase_workflow_event_abuse(result: SecResult, client, app, models, p_a, p_b, iso) -> None:
+    """Cross-project workflow events and approval decisions must be blocked."""
+    from case_workflow import ApprovalRequest
+
+    pm = models['users']['pm']
+    pm_token = _login_client(client, pm, app)
+    iso_token = _login_client(client, iso, app)
+
+    for name, body in (
+        ('workflow_event_submit_blocked', {
+            'event': 'submit', 'project_id': p_b.id, 'module': 'Change Orders',
+            'entity_type': 'ChangeOrder', 'entity_id': '1', 'title': 'abuse test',
+        }),
+        ('workflow_event_notify_blocked', {
+            'event': 'notify', 'project_id': p_b.id, 'module': 'RFIs',
+            'title': 'spam', 'description': 'cross-project notify',
+            'user_ids': [pm.id],
+        }),
+    ):
+        rv = client.post('/api/workflow/event', json=body, headers=_csrf_headers(iso_token))
+        if rv.status_code == 403:
+            result.ok(name, 'workflow_event')
+        else:
+            result.fail(name, 'workflow_event', f'HTTP {rv.status_code}')
+
+    approval = ApprovalRequest(
+        project_id=p_b.id, module='Change Orders', entity_type='ChangeOrder',
+        entity_id='999', title='cross-project approval', status='pending',
+        requested_by_id=pm.id, assignee_role='Project Manager',
+    )
+    models['db'].session.add(approval)
+    models['db'].session.commit()
+
+    rv3 = client.post(
+        '/api/workflow/event',
+        json={'event': 'approve', 'approval_id': approval.id},
+        headers=_csrf_headers(iso_token),
+    )
+    models['db'].session.refresh(approval)
+    if rv3.status_code == 403 and approval.status == 'pending':
+        result.ok('workflow_event_approve_cross_project_blocked', 'workflow_event')
+    elif approval.status != 'pending':
+        result.fail('workflow_event_approve_cross_project_blocked', 'workflow_event', f'status={approval.status}')
+    else:
+        result.fail('workflow_event_approve_cross_project_blocked', 'workflow_event', f'HTTP {rv3.status_code}')
+
+    # PM on both projects may create on B
+    pm_token = _login_client(client, pm, app)
+    rv4 = client.post(
+        '/api/workflow/event',
+        json={
+            'event': 'request_approval', 'project_id': p_b.id, 'module': 'Pay Applications',
+            'entity_type': 'G702', 'entity_id': '1', 'title': 'valid pm request',
+        },
+        headers=_csrf_headers(pm_token),
+    )
+    if rv4.status_code == 200:
+        result.ok('workflow_event_pm_cross_project_allowed', 'workflow_event')
+    else:
+        result.fail('workflow_event_pm_cross_project_allowed', 'workflow_event', f'HTTP {rv4.status_code}', severity='warning')
+
+
+def _ensure_role_matrix_memberships(models, p_a) -> None:
+    from project_access import save_memberships_for_user
+
+    db = models['db']
+    for key in ('owner', 'arch', 'sub', 'acct'):
+        save_memberships_for_user(
+            models['users'][key].id, [p_a.id], db,
+            ProjectMembership=models['ProjectMembership'],
+        )
+    db.session.commit()
+
+
+def phase_role_matrix(result: SecResult, client, app, models, p_a) -> None:
+    """Same-project actions outside ball-in-court / role must fail."""
+    from pay_app_persistence import save_pay_app_state
+
+    _ensure_role_matrix_memberships(models, p_a)
+    pm = models['users']['pm']
+    arch = models['users']['arch']
+    sub = models['users']['sub']
+
+    co = models['ChangeOrder'](
+        project_id=p_a.id, number=f'RM-{uuid.uuid4().hex[:6]}',
+        title='role matrix', description='d', status='Submitted',
+        ball_in_court_role='Owner',
+    )
+    rfi = models['RFI'](
+        project_id=p_a.id, number=f'RM-R-{uuid.uuid4().hex[:6]}',
+        subject='role matrix', status='Open', ball_in_court_role='Assignee',
+        created_by_id=pm.id,
+    )
+    models['db'].session.add_all([co, rfi])
+    models['db'].session.flush()
+    save_pay_app_state(models['PayAppProjectState'], models['db'], p_a.id, {
+        'contractorSOV': [{'id': 1, 'original': 2_000_000}],
+        'currentPayAppPeriod': {
+            'periodNumber': 1, 'status': 'Submitted', 'ball_in_court_role': 'Owner',
+        },
+        'payAppBillingLines': {'1': {'workThisPeriod': 50_000, 'materialsStored': 0}},
+    }, user_id=None)
+    models['db'].session.commit()
+
+    arch_token = _login_client(client, arch, app)
+    rv = client.post(
+        f'/api/change-orders/{co.id}/workflow',
+        json={'action': 'approve'},
+        headers=_csrf_headers(arch_token),
+    )
+    models['db'].session.refresh(co)
+    if rv.status_code in (400, 403) and co.status == 'Submitted':
+        result.ok('role_matrix_arch_cannot_approve_owner_co', 'role_matrix')
+    elif co.status != 'Submitted':
+        result.fail('role_matrix_arch_cannot_approve_owner_co', 'role_matrix', f'CO -> {co.status}')
+    else:
+        result.fail('role_matrix_arch_cannot_approve_owner_co', 'role_matrix', f'HTTP {rv.status_code}')
+
+    pm_token = _login_client(client, pm, app)
+    rv2 = client.post(
+        '/api/pay-applications/workflow',
+        json={'project_id': p_a.id, 'action': 'approve', 'period_number': 1},
+        headers=_csrf_headers(pm_token),
+    )
+    _, pay_state = __import__('pay_app_persistence', fromlist=['get_pay_app_state']).get_pay_app_state(
+        models['PayAppProjectState'], p_a.id,
+    )
+    period_status = (pay_state or {}).get('currentPayAppPeriod', {}).get('status')
+    if rv2.status_code in (400, 403) and period_status == 'Submitted':
+        result.ok('role_matrix_pm_cannot_approve_owner_g702', 'role_matrix')
+    elif period_status not in ('Submitted', None):
+        result.fail('role_matrix_pm_cannot_approve_owner_g702', 'role_matrix', f'period -> {period_status}')
+    else:
+        result.fail('role_matrix_pm_cannot_approve_owner_g702', 'role_matrix', f'HTTP {rv2.status_code}')
+
+    sub_token = _login_client(client, sub, app)
+    rv3 = client.post(
+        f'/api/rfis/{rfi.id}/workflow',
+        json={'action': 'close'},
+        headers=_csrf_headers(sub_token),
+    )
+    models['db'].session.refresh(rfi)
+    if rv3.status_code in (400, 403) and rfi.status == 'Open':
+        result.ok('role_matrix_sub_cannot_close_rfi', 'role_matrix')
+    elif rfi.status != 'Open':
+        result.fail('role_matrix_sub_cannot_close_rfi', 'role_matrix', f'RFI -> {rfi.status}')
+    else:
+        result.fail('role_matrix_sub_cannot_close_rfi', 'role_matrix', f'HTTP {rv3.status_code}')
+
+    co_pm = models['ChangeOrder'](
+        project_id=p_a.id, number=f'RM-P-{uuid.uuid4().hex[:6]}',
+        title='pm control', description='d', status='Submitted',
+        ball_in_court_role='Project Manager',
+    )
+    models['db'].session.add(co_pm)
+    models['db'].session.commit()
+
+    pm_token = _login_client(client, pm, app)
+    rv4 = client.post(
+        f'/api/change-orders/{co_pm.id}/workflow',
+        json={'action': 'approve'},
+        headers=_csrf_headers(pm_token),
+    )
+    models['db'].session.refresh(co_pm)
+    if rv4.status_code == 403:
+        result.fail('role_matrix_pm_can_advance_pm_ball_co', 'role_matrix', 'PM forbidden on own ball')
+    elif co_pm.status != 'Submitted':
+        result.ok('role_matrix_pm_can_advance_pm_ball_co', 'role_matrix', f'-> {co_pm.status}')
+    elif rv4.status_code == 400:
+        result.ok('role_matrix_pm_can_advance_pm_ball_co', 'role_matrix', 'validation 400 (not forbidden)')
+    else:
+        result.fail('role_matrix_pm_can_advance_pm_ball_co', 'role_matrix', f'HTTP {rv4.status_code}')
+
+
+def phase_csrf_sweep(result: SecResult, client, app, models, p_a) -> None:
+    """State-changing routes reject requests without CSRF token."""
+    pm = models['users']['pm']
+    token = _login_client(client, pm, app)
+
+    rfi = models['RFI'](
+        project_id=p_a.id, number=f'CS-{uuid.uuid4().hex[:6]}',
+        subject='csrf sweep', status='Draft', ball_in_court_role='RFI Manager',
+        created_by_id=pm.id,
+    )
+    co = models['ChangeOrder'](
+        project_id=p_a.id, number=f'CS-{uuid.uuid4().hex[:6]}',
+        title='csrf', description='d', status='Draft', ball_in_court_role='Creator',
+    )
+    com = models['Commitment'](
+        project_id=p_a.id, number=f'CS-C-{uuid.uuid4().hex[:6]}',
+        commitment_type='Purchase Order', company_name='Co', company_id='1',
+        title='t', description='d', status='Draft', original_amount=500, current_amount=500,
+        ball_in_court_role='Creator',
+    )
+    models['db'].session.add_all([rfi, co, com])
+    models['db'].session.commit()
+
+    sweep = [
+        ('csrf_sweep_rfi_workflow', 'POST', f'/api/rfis/{rfi.id}/workflow', {'action': 'submit'}),
+        ('csrf_sweep_co_workflow', 'POST', f'/api/change-orders/{co.id}/workflow', {'action': 'submit'}),
+        ('csrf_sweep_commitment_workflow', 'POST', f'/api/commitments/{com.id}/workflow', {'action': 'submit'}),
+        ('csrf_sweep_pay_app_workflow', 'POST', '/api/pay-applications/workflow', {
+            'project_id': p_a.id, 'action': 'submit', 'period_number': 1,
+        }),
+        ('csrf_sweep_workflow_event', 'POST', '/api/workflow/event', {
+            'event': 'notify', 'project_id': p_a.id, 'title': 't', 'description': 'd',
+        }),
+        ('csrf_sweep_budget_put', 'PUT', '/api/budget/state', {'project_id': p_a.id, 'data': {}}),
+    ]
+    for name, method, path, body in sweep:
+        if method == 'PUT':
+            rv = client.put(path, json=body)
+        else:
+            rv = client.post(path, json=body)
+        if rv.status_code == 403:
+            result.ok(name, 'csrf_sweep')
+        else:
+            result.fail(name, 'csrf_sweep', f'HTTP {rv.status_code}', severity='warning')
+
+    # With token, at least one path should succeed (sanity)
+    rv_ok = client.post(
+        f'/api/rfis/{rfi.id}/workflow',
+        json={'action': 'submit'},
+        headers=_csrf_headers(token),
+    )
+    if rv_ok.status_code == 200:
+        result.ok('csrf_sweep_token_still_works', 'csrf_sweep')
+    else:
+        result.fail('csrf_sweep_token_still_works', 'csrf_sweep', f'HTTP {rv_ok.status_code}', severity='warning')
+
+
 def phase_legacy_routes(result: SecResult, client, app, models, p_a) -> None:
     pm = models['users']['pm']
     token = _login_client(client, pm, app)
@@ -612,14 +891,15 @@ def main() -> int:
     parser.add_argument(
         '--phase',
         default='all',
-        help='Comma-separated: persistence,auth,csrf,idor,respond_idor,pay_app_idor,permissions,legacy,workflow,financial,recovery,all',
+        help='Comma-separated: persistence,auth,csrf,csrf_sweep,idor,read_idor,respond_idor,pay_app_idor,permissions,workflow_event,role_matrix,legacy,workflow,financial,recovery,all',
     )
     args = parser.parse_args()
     phases = {p.strip() for p in args.phase.split(',')}
     if 'all' in phases:
         phases = {
-            'persistence', 'auth', 'csrf', 'idor', 'respond_idor', 'pay_app_idor',
-            'permissions', 'legacy', 'workflow', 'financial', 'recovery',
+            'persistence', 'auth', 'csrf', 'csrf_sweep', 'idor', 'read_idor',
+            'respond_idor', 'pay_app_idor', 'permissions', 'workflow_event',
+            'role_matrix', 'legacy', 'workflow', 'financial', 'recovery',
         }
 
     import app as app_module
@@ -651,7 +931,10 @@ def main() -> int:
             models['users'] = _ensure_sim_users(models['db'], models['User'])
             client = app_module.app.test_client()
             p_a = p_b = iso = None
-            if phases & {'csrf', 'idor', 'respond_idor', 'pay_app_idor', 'permissions', 'legacy', 'recovery'}:
+            if phases & {
+                'csrf', 'csrf_sweep', 'idor', 'read_idor', 'respond_idor', 'pay_app_idor',
+                'permissions', 'workflow_event', 'role_matrix', 'legacy', 'recovery',
+            }:
                 p_a, p_b, iso = _setup_projects_and_users(models)
 
             if 'persistence' in phases:
@@ -664,14 +947,22 @@ def main() -> int:
                 phase_financial_spoof(result, models)
             if 'csrf' in phases:
                 phase_csrf(result, client, app_module.app, models, p_a)
+            if 'csrf_sweep' in phases:
+                phase_csrf_sweep(result, client, app_module.app, models, p_a)
             if 'idor' in phases:
                 phase_idor(result, client, app_module.app, models, p_a, p_b, iso)
+            if 'read_idor' in phases:
+                phase_read_idor(result, client, app_module.app, models, p_a, p_b, iso)
             if 'respond_idor' in phases:
                 phase_respond_idor(result, client, app_module.app, models, p_a, p_b, iso)
             if 'pay_app_idor' in phases:
                 phase_pay_app_idor(result, client, app_module.app, models, p_a, p_b, iso)
             if 'permissions' in phases:
                 phase_permissions(result, client, app_module.app, models, p_a, p_b)
+            if 'workflow_event' in phases:
+                phase_workflow_event_abuse(result, client, app_module.app, models, p_a, p_b, iso)
+            if 'role_matrix' in phases:
+                phase_role_matrix(result, client, app_module.app, models, p_a)
             if 'legacy' in phases:
                 phase_legacy_routes(result, client, app_module.app, models, p_a)
             if 'recovery' in phases:
