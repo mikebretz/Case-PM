@@ -654,10 +654,40 @@ def _run_pay_period(rt: ProjectRuntime, models: dict, period_num: int, global_mo
             'uploadedDate': datetime.utcnow().date().isoformat(),
         }
         pay_state['subLienWaivers'] = sub_lien
+        pay_state['subPayAppHistory'] = sub_hist
+        save_pay_app_state(PayAppProjectState, db, rt.project.id, pay_state, user_id=None)
         try:
-            sub_pay_app_workflow_action(pay_state, company_key, 'submit', users['sub'], {'pending_entry': entry})
-            sub_pay_app_workflow_action(pay_state, company_key, 'approve', users['pm'], {'pending_entry': entry})
-            sub_hist[company_key][str(period_num)]['status'] = 'Approved'
+            submit_result = process_pay_app_workflow(
+                rt.project.id, 'sub_pay_app', company_key, 'submit', users['sub'], User,
+                {'pending_entry': entry}, pay_state,
+                PayAppProjectState=PayAppProjectState, db=db,
+                ChangeOrder=models['ChangeOrder'],
+                ChangeOrderAllocation=models['ChangeOrderAllocation'],
+                BudgetProjectState=models['BudgetProjectState'],
+                Commitment=models['Commitment'],
+                CommitmentAllocation=models['CommitmentAllocation'],
+                Project=models['Project'],
+                SageSyncEvent=models['SageSyncEvent'],
+            )
+            pay_state = submit_result['state']
+            approve_result = process_pay_app_workflow(
+                rt.project.id, 'sub_pay_app', company_key, 'approve', users['pm'], User,
+                {'pending_entry': entry}, pay_state,
+                PayAppProjectState=PayAppProjectState, db=db,
+                ChangeOrder=models['ChangeOrder'],
+                ChangeOrderAllocation=models['ChangeOrderAllocation'],
+                BudgetProjectState=models['BudgetProjectState'],
+                Commitment=models['Commitment'],
+                CommitmentAllocation=models['CommitmentAllocation'],
+                Project=models['Project'],
+                SageSyncEvent=models['SageSyncEvent'],
+            )
+            pay_state = approve_result['state']
+            sub_hist = pay_state.get('subPayAppHistory') or sub_hist
+            sub_hist.setdefault(company_key, {})[str(period_num)] = {
+                **(sub_hist.get(company_key, {}).get(str(period_num)) or entry),
+                'status': 'Approved',
+            }
         except ValueError as exc:
             rt.result.add('warning', 'pay_app', f'sub pay app {company_key} p{period_num}: {exc}')
 

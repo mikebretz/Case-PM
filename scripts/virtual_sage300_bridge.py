@@ -2,22 +2,29 @@
 """
 Virtual Sage 300 CRE bridge for Case PM integration testing.
 
-Implements the HTTP contract expected by sage_service.py and sage_companies_service.py:
+Outbound (Case PM → Sage):
   POST /api/v1/transactions
+
+Inbound (Sage → Case PM):
+  GET  /api/v1/jobs/<job>/sub-payments
+  GET  /api/v1/jobs/<job>/owner-billings
+  GET  /api/v1/jobs/<job>/actuals
+  GET  /api/v1/jobs/<job>/ledger
+  GET  /api/v1/vendors
   GET  /api/v1/vendors/<code>
   GET  /api/v1/customers/<code>
-  GET  /api/v1/health
-  GET  /api/v1/summary          (test helper — transaction ledger stats)
-  POST /api/v1/reset            (test helper — clear ledger)
 
-Run: python3 scripts/virtual_sage300_bridge.py
-Env: VIRTUAL_SAGE_PORT (default 8765), VIRTUAL_SAGE_API_KEY (default virtual-sage-test-key)
+Test helpers:
+  GET  /api/v1/health
+  GET  /api/v1/summary
+  POST /api/v1/reset
 """
 from __future__ import annotations
 
 import json
 import os
 import sys
+from collections import defaultdict
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -69,6 +76,33 @@ def _seed_directory() -> None:
             STORE['vendors'][code] = entry
 
 
+def _job_rec(job: str) -> dict:
+    return STORE['jobs'].setdefault(job, {
+        'job_number': job,
+        'project_name': '',
+        'budget_lines': [],
+        'commitments': [],
+        'change_orders': [],
+        'pay_apps': [],
+        'sub_payments': [],
+        'owner_billings': [],
+        'actuals_by_cost_code': defaultdict(float),
+        'vendor_paid_totals': defaultdict(float),
+        'modules_seen': set(),
+    })
+
+
+def _float_val(*candidates) -> float:
+    for val in candidates:
+        if val is None:
+            continue
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            continue
+    return 0.0
+
+
 def _apply_transaction(payload: dict) -> dict:
     """Update virtual job ledger from a Case PM Sage payload."""
     project = payload.get('project') or {}
@@ -76,38 +110,107 @@ def _apply_transaction(payload: dict) -> dict:
     if not job:
         return {}
 
-    job_rec = STORE['jobs'].setdefault(job, {
-        'job_number': job,
-        'project_name': project.get('project_name', ''),
-        'budget_lines': [],
-        'commitments': [],
-        'change_orders': [],
-        'pay_apps': [],
-        'modules_seen': set(),
-    })
+    rec = _job_rec(job)
+    if project.get('project_name'):
+        rec['project_name'] = project.get('project_name')
+
     module = payload.get('sage_module') or ''
     action = payload.get('sage_action') or ''
     event_type = payload.get('event_type') or ''
     data = payload.get('data') or {}
-    job_rec['modules_seen'].add(module)
+    rec['modules_seen'].add(module)
 
     entry = {
         'event_type': event_type,
         'module': module,
         'action': action,
-        'amount': data.get('amount') or data.get('total_amount') or data.get('current_amount'),
+        'amount': _float_val(
+            data.get('amount'), data.get('total_amount'), data.get('current_amount'), data.get('total'),
+        ),
         'number': data.get('number') or data.get('commitment_number') or data.get('co_number'),
+        'timestamp': datetime.utcnow().isoformat() + 'Z',
     }
 
     if module == 'JobCost':
-        job_rec['budget_lines'].append(entry)
+        rec['budget_lines'].append(entry)
+        if event_type == 'AccountingReconciled':
+            applied = _float_val(data.get('actual_cost_applied'), data.get('sync', {}).get('actual_cost_applied'))
+            if applied:
+                rec['actuals_by_cost_code']['__job_total__'] += applied
     elif module in ('AP', 'Subcontracts'):
-        job_rec['commitments'].append(entry)
+        rec['commitments'].append(entry)
     elif module == 'PCO':
-        job_rec['change_orders'].append(entry)
+        rec['change_orders'].append(entry)
     elif module in ('ProgressBilling', 'SubcontractorBilling'):
-        job_rec['pay_apps'].append(entry)
-    return {'job': job, 'module': module, 'action': action}
+        rec['pay_apps'].append(entry)
+
+    if event_type == 'SubPayAppApproved':
+        company_id = str(data.get('companyId') or data.get('company_id') or '')
+        period = data.get('periodNumber') or data.get('period_number')
+        amount = _float_val(data.get('total'), data.get('totalBilledThisPeriod'))
+        pay = {
+            'company_id': company_id,
+            'period_number': period,
+            'amount': amount,
+            'event_type': event_type,
+            'posted_at': entry['timestamp'],
+        }
+        rec['sub_payments'].append(pay)
+        if company_id:
+            rec['vendor_paid_totals'][company_id] += amount
+        for alloc in data.get('allocations') or []:
+            code = alloc.get('cost_code') or alloc.get('costCode')
+            if code:
+                rec['actuals_by_cost_code'][code] += _float_val(alloc.get('amount'))
+
+    if event_type == 'SubPayAppSubmitted':
+        amount = _float_val(data.get('total'), data.get('totalBilledThisPeriod'))
+        if amount and not rec['sub_payments']:
+            pass
+
+    if event_type == 'G702Approved':
+        amount = _float_val(data.get('amount_due'), data.get('total'), data.get('billing_total'))
+        rec['owner_billings'].append({
+            'period_number': data.get('periodNumber') or data.get('period_number'),
+            'amount': amount,
+            'event_type': event_type,
+            'posted_at': entry['timestamp'],
+        })
+
+    if event_type == 'CommitmentApproved':
+        for alloc in data.get('allocations') or []:
+            code = alloc.get('cost_code')
+            if code:
+                rec['actuals_by_cost_code'].setdefault(code, 0.0)
+
+    return {'job': job, 'module': module, 'action': action, 'event_type': event_type}
+
+
+def _job_ledger_response(job: str) -> dict:
+    rec = STORE['jobs'].get(job)
+    if not rec:
+        return {'job_number': job, 'found': False}
+    actuals = dict(rec.get('actuals_by_cost_code') or {})
+    if isinstance(actuals, defaultdict):
+        actuals = dict(actuals)
+    return {
+        'job_number': job,
+        'found': True,
+        'project_name': rec.get('project_name', ''),
+        'modules_seen': sorted(rec.get('modules_seen') or []),
+        'sub_payments': list(rec.get('sub_payments') or []),
+        'owner_billings': list(rec.get('owner_billings') or []),
+        'actuals_by_cost_code': actuals,
+        'vendor_paid_totals': dict(rec.get('vendor_paid_totals') or {}),
+        'commitment_posts': len(rec.get('commitments') or []),
+        'change_order_posts': len(rec.get('change_orders') or []),
+        'pay_app_posts': len(rec.get('pay_apps') or []),
+        'budget_posts': len(rec.get('budget_lines') or []),
+        'transaction_count': sum(
+            1 for t in STORE['transactions']
+            if ((t.get('payload') or {}).get('project') or {}).get('sage_job_number') == job
+        ),
+    }
 
 
 @app.route('/api/v1/health')
@@ -132,7 +235,6 @@ def reset():
 
 @app.route('/api/v1/summary')
 def summary():
-    """Test helper — ledger breakdown for integration validation."""
     by_module: dict[str, int] = {}
     by_event: dict[str, int] = {}
     by_job: dict[str, int] = {}
@@ -154,6 +256,8 @@ def summary():
             'commitment_posts': len(rec.get('commitments') or []),
             'change_order_posts': len(rec.get('change_orders') or []),
             'pay_app_posts': len(rec.get('pay_apps') or []),
+            'sub_payments': len(rec.get('sub_payments') or []),
+            'owner_billings': len(rec.get('owner_billings') or []),
         }
 
     return jsonify({
@@ -163,6 +267,65 @@ def summary():
         'by_job': by_job,
         'jobs': jobs_summary,
     })
+
+
+@app.route('/api/v1/jobs/<job>/ledger')
+def job_ledger(job):
+    if not _auth_ok():
+        return jsonify({'error': 'unauthorized'}), 401
+    return jsonify(_job_ledger_response(job))
+
+
+@app.route('/api/v1/jobs/<job>/sub-payments')
+def job_sub_payments(job):
+    if not _auth_ok():
+        return jsonify({'error': 'unauthorized'}), 401
+    ledger = _job_ledger_response(job)
+    if not ledger.get('found'):
+        return jsonify({'job_number': job, 'payments': [], 'vendor_totals': {}}), 404
+    return jsonify({
+        'job_number': job,
+        'payments': ledger.get('sub_payments') or [],
+        'vendor_totals': ledger.get('vendor_paid_totals') or {},
+        'total_paid': sum((ledger.get('vendor_paid_totals') or {}).values()),
+    })
+
+
+@app.route('/api/v1/jobs/<job>/owner-billings')
+def job_owner_billings(job):
+    if not _auth_ok():
+        return jsonify({'error': 'unauthorized'}), 401
+    ledger = _job_ledger_response(job)
+    if not ledger.get('found'):
+        return jsonify({'job_number': job, 'billings': []}), 404
+    billings = ledger.get('owner_billings') or []
+    return jsonify({
+        'job_number': job,
+        'billings': billings,
+        'total_billed': sum(_float_val(b.get('amount')) for b in billings),
+    })
+
+
+@app.route('/api/v1/jobs/<job>/actuals')
+def job_actuals(job):
+    if not _auth_ok():
+        return jsonify({'error': 'unauthorized'}), 401
+    ledger = _job_ledger_response(job)
+    if not ledger.get('found'):
+        return jsonify({'job_number': job, 'actuals_by_cost_code': {}}), 404
+    actuals = ledger.get('actuals_by_cost_code') or {}
+    return jsonify({
+        'job_number': job,
+        'actuals_by_cost_code': actuals,
+        'total_actual': sum(_float_val(v) for v in actuals.values()),
+    })
+
+
+@app.route('/api/v1/vendors')
+def list_vendors():
+    if not _auth_ok():
+        return jsonify({'error': 'unauthorized'}), 401
+    return jsonify({'vendors': list(STORE['vendors'].values())})
 
 
 @app.route('/api/v1/transactions', methods=['POST'])
@@ -219,8 +382,10 @@ def get_customer(code):
 def main():
     _seed_directory()
     print(f'Virtual Sage 300 CRE bridge listening on http://127.0.0.1:{PORT}')
-    print(f'  POST /api/v1/transactions')
-    print(f'  GET  /api/v1/summary')
+    print('  POST /api/v1/transactions')
+    print('  GET  /api/v1/jobs/<job>/sub-payments')
+    print('  GET  /api/v1/jobs/<job>/actuals')
+    print('  GET  /api/v1/summary')
     app.run(host='127.0.0.1', port=PORT, threaded=True, use_reloader=False)
 
 

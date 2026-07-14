@@ -402,3 +402,209 @@ def project_sage_sync_status(project, latest_event=None):
         'class': 'text-zinc-400',
         'detail': event_type,
     }
+
+
+def _sage_http_get(path: str) -> dict | None:
+    """GET from Sage bridge API. Returns None when not configured or on failure."""
+    api_url = os.environ.get('SAGE_API_URL', '').strip()
+    api_key = os.environ.get('SAGE_API_KEY', '').strip()
+    if not api_url:
+        return None
+    try:
+        import urllib.parse
+        import urllib.request
+        url = api_url.rstrip('/') + path
+        req = urllib.request.Request(
+            url,
+            headers={
+                'Accept': 'application/json',
+                'Authorization': f'Bearer {api_key}' if api_key else '',
+            },
+            method='GET',
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = resp.read().decode('utf-8')
+            return json.loads(body) if body else {}
+    except Exception:
+        return None
+
+
+def pull_sage_job_ledger(sage_job_number: str) -> dict:
+    """Pull full job ledger from Sage (sub payments, owner billings, actuals)."""
+    import urllib.parse
+
+    job = (sage_job_number or '').strip()
+    if not job:
+        return {'found': False, 'error': 'sage_job_number required'}
+    quoted = urllib.parse.quote(job)
+    ledger = _sage_http_get(f'/api/v1/jobs/{quoted}/ledger')
+    if ledger and ledger.get('found'):
+        return ledger
+    sub = _sage_http_get(f'/api/v1/jobs/{quoted}/sub-payments') or {}
+    owner = _sage_http_get(f'/api/v1/jobs/{quoted}/owner-billings') or {}
+    actuals = _sage_http_get(f'/api/v1/jobs/{quoted}/actuals') or {}
+    if not any([sub.get('payments'), owner.get('billings'), actuals.get('actuals_by_cost_code')]):
+        return {'found': False, 'job_number': job, 'mode': 'unavailable'}
+    return {
+        'found': True,
+        'job_number': job,
+        'sub_payments': sub.get('payments') or [],
+        'vendor_paid_totals': sub.get('vendor_totals') or {},
+        'owner_billings': owner.get('billings') or [],
+        'actuals_by_cost_code': actuals.get('actuals_by_cost_code') or {},
+    }
+
+
+def apply_sage_pull_to_project(
+    project_id,
+    *,
+    Project,
+    Commitment,
+    BudgetProjectState,
+    PayAppProjectState,
+    db,
+    user_id=None,
+    SageSyncEvent=None,
+    ChangeOrder=None,
+    ChangeOrderAllocation=None,
+    CommitmentAllocation=None,
+):
+    """
+    Pull sub payments and actuals from Sage and reconcile Case PM state.
+    Returns a report with matched/mismatched vendor payments and budget actuals.
+    """
+    project = Project.query.get(project_id)
+    if not project:
+        return {'ok': False, 'error': 'project not found'}
+
+    job = (project.sage_job_number or project.accounting_project_number or '').strip()
+    if not job:
+        return {'ok': False, 'error': 'sage_job_number not configured'}
+
+    ledger = pull_sage_job_ledger(job)
+    if not ledger.get('found'):
+        return {
+            'ok': True,
+            'mode': 'simulated',
+            'job_number': job,
+            'note': 'SAGE_API_URL not set or Sage has no ledger for this job',
+        }
+
+    from accounting_reconcile import reconcile_project_accounting
+
+    from pay_app_persistence import get_pay_app_state
+
+    commitments = Commitment.query.filter_by(project_id=project_id).all()
+    _, pay_state = get_pay_app_state(PayAppProjectState, project_id)
+    vendor_totals = ledger.get('vendor_paid_totals') or {}
+
+    sage_invoiced_updates = []
+    for com in commitments:
+        if com.commitment_type != 'Subcontract':
+            continue
+        cid = str(com.company_id or '').strip()
+        sage_paid = float(vendor_totals.get(cid) or 0)
+        if sage_paid <= 0:
+            continue
+        case_invoiced = float(getattr(com, 'invoiced_amount', 0) or 0)
+        sage_invoiced_updates.append({
+            'commitment_id': com.id,
+            'number': com.number,
+            'company_id': cid,
+            'case_invoiced': case_invoiced,
+            'sage_paid': sage_paid,
+            'delta': round(sage_paid - case_invoiced, 2),
+            'matched': abs(sage_paid - case_invoiced) < 500,
+        })
+
+    recon = reconcile_project_accounting(
+        project_id, user_id,
+        ChangeOrder=ChangeOrder,
+        ChangeOrderAllocation=ChangeOrderAllocation,
+        Commitment=Commitment,
+        CommitmentAllocation=CommitmentAllocation,
+        BudgetProjectState=BudgetProjectState,
+        PayAppProjectState=PayAppProjectState,
+        db=db,
+    )
+
+    sub_payments = ledger.get('sub_payments') or []
+    total_sage_sub_paid = sum(float(p.get('amount') or 0) for p in sub_payments)
+    sub_hist = pay_state.get('subPayAppHistory') or {}
+    case_billed_by_vendor: dict[str, float] = {}
+    for company_key, company_hist in sub_hist.items():
+        vendor_total = 0.0
+        for period_entry in (company_hist or {}).values():
+            if isinstance(period_entry, dict) and period_entry.get('status') == 'Approved':
+                vendor_total += float(period_entry.get('totalBilledThisPeriod') or 0)
+        if vendor_total > 0:
+            case_billed_by_vendor[str(company_key)] = vendor_total
+    total_case_sub_billed = sum(case_billed_by_vendor.values())
+
+    vendor_payment_checks = []
+    for company_id, sage_paid in vendor_totals.items():
+        sage_paid = float(sage_paid or 0)
+        if sage_paid <= 0:
+            continue
+        case_billed = float(case_billed_by_vendor.get(str(company_id)) or 0)
+        vendor_payment_checks.append({
+            'company_id': str(company_id),
+            'case_billed': case_billed,
+            'sage_paid': sage_paid,
+            'delta': round(sage_paid - case_billed, 2),
+            'matched': abs(sage_paid - case_billed) < max(500, case_billed * 0.02),
+        })
+
+    # Fall back to commitment invoiced totals when pay-app history is sparse
+    if not vendor_payment_checks and sage_invoiced_updates:
+        vendor_payment_checks = [
+            {
+                'company_id': v['company_id'],
+                'case_billed': v['case_invoiced'],
+                'sage_paid': v['sage_paid'],
+                'delta': v['delta'],
+                'matched': v['matched'],
+            }
+            for v in sage_invoiced_updates
+            if v.get('sage_paid', 0) > 0
+        ]
+
+    pull_ok = total_sage_sub_paid > 0 and (total_case_sub_billed > 0 or bool(vendor_payment_checks))
+    payment_match = pull_ok and (
+        not vendor_payment_checks
+        or all(v.get('matched') for v in vendor_payment_checks)
+    )
+
+    if SageSyncEvent is not None:
+        create_and_process_sage_event(
+            SageSyncEvent, Project, db, project_id,
+            'ManualSync',
+            message=f'Sage pull — {len(sub_payments)} sub payments, ${total_sage_sub_paid:,.0f} paid',
+            payload={
+                'direction': 'inbound',
+                'sub_payments_count': len(sub_payments),
+                'total_sage_sub_paid': total_sage_sub_paid,
+                'total_case_sub_billed': total_case_sub_billed,
+                'vendor_totals': vendor_totals,
+                'owner_billings_count': len(ledger.get('owner_billings') or []),
+            },
+            user_id=user_id,
+        )
+
+    return {
+        'ok': True,
+        'mode': 'live',
+        'job_number': job,
+        'sub_payments_count': len(sub_payments),
+        'total_sage_sub_paid': total_sage_sub_paid,
+        'total_case_sub_billed': total_case_sub_billed,
+        'payment_match': payment_match,
+        'vendor_payment_checks': vendor_payment_checks,
+        'vendor_invoiced_checks': sage_invoiced_updates,
+        'owner_billings_count': len(ledger.get('owner_billings') or []),
+        'actuals_by_cost_code': ledger.get('actuals_by_cost_code') or {},
+        'reconcile': {
+            'actual_cost_applied': recon.get('actual_cost_applied'),
+            'invoiced_updates': recon.get('invoiced_updates'),
+        },
+    }

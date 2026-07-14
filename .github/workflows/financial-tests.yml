@@ -27,5 +27,7 @@ jobs:
         run: python3 scripts/simulate_stress_suite.py --phase all
       - name: Virtual Sage 300 integration paces ($100M)
         run: python3 scripts/run_sage300_paces.py
+      - name: Virtual Sage 300 portfolio paces ($100M + $50M + $10M)
+        run: python3 scripts/run_sage300_portfolio_paces.py --quick
       - name: Heavy security harness
         run: python3 scripts/simulate_security_harness.py

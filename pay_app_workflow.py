@@ -518,7 +518,14 @@ def run_pay_app_accounting_sync(
             from sage_service import create_and_process_sage_event
             pl = dict(payload or {})
             pl['sync'] = result.get('reconcile_result')
-            pl['idempotency_key'] = pl.get('idempotency_key') or f'{event_type}:{project_id}:{pl.get("periodNumber") or pl.get("companyId")}:{datetime.utcnow().strftime("%Y%m")}'
+            if not pl.get('idempotency_key'):
+                company_id = pl.get('companyId') or pl.get('company_id') or ''
+                period_num = pl.get('periodNumber') or pl.get('period_number') or ''
+                month_key = datetime.utcnow().strftime('%Y%m')
+                if event_type in ('SubPayAppSubmitted', 'SubPayAppApproved') and company_id:
+                    pl['idempotency_key'] = f'{event_type}:{project_id}:{company_id}:{period_num}:{month_key}'
+                else:
+                    pl['idempotency_key'] = f'{event_type}:{project_id}:{period_num or company_id}:{month_key}'
             ev = create_and_process_sage_event(
                 SageSyncEvent,
                 Project,
