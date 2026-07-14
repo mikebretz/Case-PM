@@ -28,5 +28,6 @@ if ! pgrep -f "python.*app.py" >/dev/null 2>&1; then
   echo $! > /tmp/casepm.pid
 fi
 
-echo "==> Done. Remote users: hard-refresh the browser (Ctrl+Shift+R)."
-echo "    Footer should show: Case PM · build $BUILD"
+echo "==> Done. On every remote PC: hard-refresh (Ctrl+Shift+R)."
+echo "    Footer must show: Case PM · build $BUILD"
+echo "    Pay Apps / Budget pages have a green Save button in the bottom bar."
