@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta name="casepm-build" content="{{ asset_v }}">
     <title>Case PM • {{ project_name }}</title>
     {% if current_user.is_authenticated and csrf_token %}
     <meta name="csrf-token" content="{{ csrf_token }}">
@@ -248,26 +251,26 @@
             document.documentElement.classList.add('sidebar-collapsed-init');
         }
     </script>
-    <script src="{{ url_for('static', filename='js/casepm-money.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/casepm-project-storage.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/casepm-dialog.js') }}"></script>
+    <script src="{{ static_v('js/casepm-money.js') }}"></script>
+    <script src="{{ static_v('js/casepm-project-storage.js') }}"></script>
+    <script src="{{ static_v('js/casepm-dialog.js') }}"></script>
     {% if current_user.is_authenticated %}
-    <script src="{{ url_for('static', filename='js/casepm-security.js') }}"></script>
+    <script src="{{ static_v('js/casepm-security.js') }}"></script>
     {% endif %}
-    <script src="{{ url_for('static', filename='js/doc-picker.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/casepm-print.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/casepm-output.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/casepm-workflow.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/casepm-approval-responder.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/casepm-esign.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/casepm-user-profile.js') }}"></script>
+    <script src="{{ static_v('js/doc-picker.js') }}"></script>
+    <script src="{{ static_v('js/casepm-print.js') }}"></script>
+    <script src="{{ static_v('js/casepm-output.js') }}"></script>
+    <script src="{{ static_v('js/casepm-workflow.js') }}"></script>
+    <script src="{{ static_v('js/casepm-approval-responder.js') }}"></script>
+    <script src="{{ static_v('js/casepm-esign.js') }}"></script>
+    <script src="{{ static_v('js/casepm-user-profile.js') }}"></script>
     {% if current_user.is_authenticated and is_developer %}
     <script>
         window.CASEPM_IS_DEVELOPER = true;
         window.CASEPM_DEVELOPER_UNLOCK = {{ 'true' if developer_unlock_mode else 'false' }};
     </script>
-    <script src="{{ url_for('static', filename='js/developer-unlock.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/developer-actions.js') }}"></script>
+    <script src="{{ static_v('js/developer-unlock.js') }}"></script>
+    <script src="{{ static_v('js/developer-actions.js') }}"></script>
     {% endif %}
 </head>
 <body class="bg-zinc-950 text-zinc-200 h-screen overflow-hidden {% if is_sub_portal %}portal-sub{% elif is_architect_portal %}portal-architect{% else %}portal-staff{% endif %}"
@@ -645,7 +648,7 @@
                         <div class="w-2 h-2 bg-emerald-500 rounded-full status-dot"></div>
                         <span>Connected</span>
                     </div>
-                    <span>Case PM v57.0</span>
+                    <span>Case PM · build {{ asset_v }}</span>
                 </div>
             </div>
         </div>
@@ -924,7 +927,7 @@
         </div>
     </dialog>
 
-    <script src="{{ url_for('static', filename='js/activity-log.js') }}"></script>
+    <script src="{{ static_v('js/activity-log.js') }}"></script>
     {% if current_user.is_authenticated %}
     <script>
     (function () {

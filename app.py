@@ -62,6 +62,43 @@ from db_sqlite import commit_with_retry, register_sqlite_pragmas
 register_sqlite_pragmas()
 
 
+def _asset_version():
+    """Cache-bust static assets after deploy (git SHA or env override)."""
+    env = os.environ.get('CASEPM_ASSET_VERSION', '').strip()
+    if env:
+        return env
+    try:
+        import subprocess
+        root = os.path.dirname(os.path.abspath(__file__))
+        return subprocess.check_output(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            cwd=root,
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+    except Exception:
+        return datetime.utcnow().strftime('%Y%m%d%H%M')
+
+
+@app.context_processor
+def inject_asset_version():
+    return {'asset_v': _asset_version()}
+
+
+@app.template_global()
+def static_v(filename):
+    return url_for('static', filename=filename) + '?v=' + _asset_version()
+
+
+@app.after_request
+def _html_no_cache(response):
+    """HTML pages must not be cached — remote browsers otherwise keep old toolbars/modals."""
+    ctype = (response.content_type or '')
+    if 'text/html' in ctype:
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+    return response
+
+
 def _acting_user_id(explicit_user_id=None):
     """Resolve user id for background jobs (no Flask request / current_user)."""
     if explicit_user_id is not None:
