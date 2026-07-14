@@ -2174,7 +2174,7 @@ def login():
         password = request.form.get('password')
         remember = True if request.form.get('remember') else False
 
-        from access_control import check_login_allowed, record_login_failure, record_login_success
+        from access_control import check_login_allowed, record_login_failure, record_login_success, reset_session_activity
         allowed, retry_seconds = check_login_allowed(email)
         if not allowed:
             flash(f'Too many failed login attempts. Try again in {retry_seconds // 60 + 1} minute(s).', 'error')
@@ -2188,6 +2188,7 @@ def login():
             db.session.commit()
             record_login_success(email)
             mark_2fa_verified(True)
+            reset_session_activity()
             ensure_csrf_token()
             write_audit('RECOVERY_LOGIN', 'Recovery access via normal login', module='recovery', commit=True)
             flash('Recovery access granted.', 'warning')
@@ -2216,6 +2217,7 @@ def login():
         user.last_login = datetime.utcnow()
         db.session.commit()
         record_login_success(email)
+        reset_session_activity()
 
         from totp_auth import user_needs_2fa
         if user_needs_2fa(user):
@@ -2258,10 +2260,14 @@ def download_casepm_connector_vbs():
 
 
 def _complete_recovery_login(user, *, via='recovery'):
+    from access_control import reset_session_activity
     remember = True
     login_user(user, remember=remember)
     user.last_login = datetime.utcnow()
     db.session.commit()
+    mark_2fa_verified(True)
+    reset_session_activity()
+    ensure_csrf_token()
     write_audit('RECOVERY_LOGIN', f'Break-glass access ({via})', module='recovery', commit=True)
     flash('Recovery access granted — Developer Console.', 'warning')
     return redirect(url_for('developer_console'))
@@ -2287,6 +2293,7 @@ def recovery_login():
     )
 
     if request.method == 'POST':
+        from access_control import reset_session_activity
         if not recovery_access_configured():
             flash('Recovery access is not configured. Run SETUP-RECOVERY-ACCESS.bat on this PC.', 'error')
             return redirect(url_for('recovery_login'))
@@ -2304,6 +2311,9 @@ def recovery_login():
         login_user(user, remember=remember)
         user.last_login = datetime.utcnow()
         db.session.commit()
+        mark_2fa_verified(True)
+        reset_session_activity()
+        ensure_csrf_token()
         write_audit('RECOVERY_LOGIN', 'Break-glass access (recovery page)', module='recovery', commit=True)
         flash('Recovery access granted — Developer Console.', 'warning')
         return redirect(url_for('developer_console'))
@@ -2336,7 +2346,10 @@ def recovery_enter():
 @app.route('/logout')
 @login_required
 def logout():
+    from access_control import clear_session_activity
     session.pop('_flashes', None)
+    clear_session_activity()
+    mark_2fa_verified(False)
     logout_user()
     flash('You have been logged out successfully.', 'info')
     nxt = (request.args.get('next') or '').strip()
@@ -2417,6 +2430,7 @@ def verify_2fa():
             else:
                 session.pop('pending_totp_secret', None)
                 mark_2fa_verified(True)
+                reset_session_activity()
                 ensure_csrf_token()
                 db.session.commit()
                 write_audit('2FA_ENABLED', current_user.email, module='security', category='settings', commit=True)
@@ -2425,6 +2439,8 @@ def verify_2fa():
         else:
             if verify_code(current_user, code):
                 mark_2fa_verified(True)
+                from access_control import reset_session_activity
+                reset_session_activity()
                 ensure_csrf_token()
                 write_audit('2FA_LOGIN_OK', current_user.email, module='security', category='login', commit=True)
                 flash('Verification successful.', 'success')
