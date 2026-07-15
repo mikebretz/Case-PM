@@ -6,19 +6,20 @@ echo ================================================
 echo   Case PM - Share Over the Internet
 echo ================================================
 echo.
-echo REQUIREMENTS:
-echo   1. Case PM must already be running (RUN-AS-SERVER.bat)
-echo   2. Internet connection on this PC
+echo REQUIREMENTS (both must be true):
+echo   1. Case PM is running via RUN-AS-SERVER.bat (NOT run.bat)
+echo   2. This PC has internet access
 echo.
-echo This creates a temporary public link (like a free tunnel) so anyone
-echo can open Case PM in their browser and log in — even off your Wi-Fi.
+echo This creates a temporary public https link so anyone can log in
+echo from home, a job site, or any network — not just your office Wi-Fi.
 echo.
-echo SECURITY: use strong passwords. Stop the tunnel when you are done.
+echo SECURITY: use strong passwords. Close this window when finished.
 echo.
 
 set "TUNNEL_DIR=%~dp0tools"
 set "CLOUDFLARED=%TUNNEL_DIR%\cloudflared.exe"
 set "PORT=5000"
+set "LOG_FILE=%TUNNEL_DIR%\tunnel.log"
 
 if not exist "%TUNNEL_DIR%" mkdir "%TUNNEL_DIR%"
 
@@ -44,28 +45,45 @@ powershell -NoProfile -Command ^
 if errorlevel 1 (
     color 0E
     echo.
-    echo Case PM does not appear to be running on port %PORT%.
-    echo Start RUN-AS-SERVER.bat first, then run this script again.
+    echo *** Case PM is NOT running on port %PORT% ***
+    echo.
+    echo Fix:
+    echo   1. Open a FIRST window and run:  RUN-AS-SERVER.bat
+    echo   2. Wait until you see "CASE PM SERVER" and addresses listed
+    echo   3. Then run THIS script again in a SECOND window
+    echo.
+    echo Do NOT use run.bat — it only works on this PC, not over the internet.
     echo.
     pause
     exit /b 1
 )
 
+echo Server detected on port %PORT%. Starting tunnel...
 echo.
 echo ================================================
 echo   TUNNEL STARTING
 echo ================================================
 echo.
-echo Look for a line like:
+echo In a few seconds, look for a line like:
 echo   https://something-random.trycloudflare.com
 echo.
-echo Send THAT link to anyone who needs to log in.
-echo Keep this window open — closing it stops remote access.
+echo Share THAT https link with remote users (not 127.0.0.1, not 192.168.x.x).
+echo Keep BOTH windows open:
+echo   - RUN-AS-SERVER.bat  (the app)
+echo   - this window          (the tunnel)
+echo.
+echo Log file: %LOG_FILE%
+echo.
+echo If the link never appears or remote users get errors:
+echo   - Some networks block tunnels — try phone hotspot on the server PC
+echo   - Press Ctrl+C here, then run:  START-INTERNET-TUNNEL-HTTP2.bat
+echo   - Check Program Settings - Security: clear "Allowed hosts" or add
+echo     your trycloudflare.com hostname
 echo.
 echo ================================================
 echo.
 
-"%CLOUDFLARED%" tunnel --url http://127.0.0.1:%PORT%
+"%CLOUDFLARED%" tunnel --url http://127.0.0.1:%PORT% --logfile "%LOG_FILE%" --loglevel info
 
 echo.
 echo Tunnel stopped.

@@ -77,7 +77,10 @@ def print_startup_banner(host: str, port: int, remote: bool) -> None:
     if remote:
         print()
         print('  Internet (outside your building):')
-        print('    Run START-INTERNET-TUNNEL.bat in a second window for a shareable link.')
+        print('    1. Keep this window open (RUN-AS-SERVER.bat)')
+        print('    2. Open a SECOND window → START-INTERNET-TUNNEL.bat')
+        print('    3. Share the https://....trycloudflare.com link (not 192.168.x.x)')
+        print('    4. If tunnel fails, try START-INTERNET-TUNNEL-HTTP2.bat')
         print(f'    Or forward TCP port {port} on your router to this PC.')
     print()
     print('  Default login: admin@casepm.local / admin123')

@@ -86,6 +86,7 @@ API_AUTH_ONLY_PREFIXES = (
     '/api/stats',
     '/api/presence/',
     '/api/portal/',
+    '/api/health',
 )
 
 METHOD_MIN_ACCESS = {
