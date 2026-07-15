@@ -1,90 +1,135 @@
 @echo off
+setlocal EnableExtensions
 title Case PM - Internet Tunnel
-cd /d "%~dp0"
 
-echo ================================================
-echo   Case PM - Share Over the Internet
-echo ================================================
-echo.
-echo REQUIREMENTS (both must be true):
-echo   1. Case PM is running via RUN-AS-SERVER.bat (NOT run.bat)
-echo   2. This PC has internet access
-echo.
-echo This creates a temporary public https link so anyone can log in
-echo from home, a job site, or any network — not just your office Wi-Fi.
-echo.
-echo SECURITY: use strong passwords. Close this window when finished.
-echo.
+:: When double-clicked, Windows runs "cmd /c this.bat" and closes when done.
+:: Open a NEW window that stays open (cmd /k).
+if /i not "%~1"=="KEEPOPEN" (
+    start "Case PM Internet Tunnel" cmd.exe /k call "%~f0" KEEPOPEN
+    exit /b 0
+)
+
+cd /d "%~dp0"
+if errorlevel 1 (
+    echo ERROR: Could not open folder: %~dp0
+    goto :done
+)
 
 set "TUNNEL_DIR=%~dp0tools"
 set "CLOUDFLARED=%TUNNEL_DIR%\cloudflared.exe"
 set "PORT=5000"
 set "LOG_FILE=%TUNNEL_DIR%\tunnel.log"
+set "DIAG_FILE=%TUNNEL_DIR%\tunnel-startup.log"
 
-if not exist "%TUNNEL_DIR%" mkdir "%TUNNEL_DIR%"
+if not exist "%TUNNEL_DIR%" mkdir "%TUNNEL_DIR%" 2>nul
+
+echo [%date% %time%] START-INTERNET-TUNNEL.bat KEEPOPEN>> "%DIAG_FILE%"
+echo Folder: %~dp0>> "%DIAG_FILE%"
+
+echo.
+echo ================================================
+echo   Case PM - Internet Tunnel
+echo ================================================
+echo.
+echo STEP 1: Case PM must be running in another window.
+echo         Use RUN-AS-SERVER.bat  ^(NOT run.bat^)
+echo.
+echo STEP 2: This window must stay open while others connect.
+echo.
+echo Do NOT close this window until remote users are done.
+echo.
 
 if not exist "%CLOUDFLARED%" (
-    echo Downloading Cloudflare Tunnel tool (one-time, ~20 MB)...
+    echo Downloading tunnel tool ^(one-time, ~20 MB^)...
+    echo Please wait 1-2 minutes...
     echo.
-    powershell -NoProfile -Command ^
-      "$ProgressPreference='SilentlyContinue';" ^
-      "Invoke-WebRequest -Uri 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe' -OutFile '%CLOUDFLARED%'"
-    if errorlevel 1 (
-        color 0C
-        echo Download failed. Check internet connection and try again.
-        pause
-        exit /b 1
-    )
+    call :download_cloudflared
+    if errorlevel 1 goto :done
     echo Download complete.
     echo.
 )
 
-echo Checking that Case PM is running on port %PORT%...
-powershell -NoProfile -Command ^
-  "if (-not (Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue)) { exit 1 }"
+if not exist "%CLOUDFLARED%" (
+    echo ERROR: cloudflared.exe missing after download.
+    echo See: %DIAG_FILE%
+    goto :done
+)
+
+echo Verifying cloudflared...
+"%CLOUDFLARED%" version
 if errorlevel 1 (
+    color 0C
+    echo.
+    echo ERROR: cloudflared.exe blocked or will not run.
+    echo Allow this file in antivirus: %CLOUDFLARED%
+    goto :done
+)
+
+echo.
+echo Checking port %PORT%...
+set "SERVER_OK=0"
+netstat -an | findstr ":%PORT%" | findstr "LISTENING" >nul 2>&1
+if not errorlevel 1 set "SERVER_OK=1"
+
+if "%SERVER_OK%"=="0" (
     color 0E
     echo.
     echo *** Case PM is NOT running on port %PORT% ***
     echo.
-    echo Fix:
-    echo   1. Open a FIRST window and run:  RUN-AS-SERVER.bat
-    echo   2. Wait until you see "CASE PM SERVER" and addresses listed
-    echo   3. Then run THIS script again in a SECOND window
+    echo 1. Open another window
+    echo 2. Double-click RUN-AS-SERVER.bat
+    echo 3. Wait for "CASE PM SERVER" text
+    echo 4. Run this tunnel again
     echo.
-    echo Do NOT use run.bat — it only works on this PC, not over the internet.
-    echo.
-    pause
-    exit /b 1
+    goto :done
 )
 
-echo Server detected on port %PORT%. Starting tunnel...
+echo OK - Case PM is running.
 echo.
 echo ================================================
-echo   TUNNEL STARTING
+echo   STARTING TUNNEL - WAIT FOR YOUR LINK
 echo ================================================
 echo.
-echo In a few seconds, look for a line like:
-echo   https://something-random.trycloudflare.com
+echo Look below for a line like:
+echo   https://random-words.trycloudflare.com
 echo.
-echo Share THAT https link with remote users (not 127.0.0.1, not 192.168.x.x).
-echo Keep BOTH windows open:
-echo   - RUN-AS-SERVER.bat  (the app)
-echo   - this window          (the tunnel)
-echo.
-echo Log file: %LOG_FILE%
-echo.
-echo If the link never appears or remote users get errors:
-echo   - Some networks block tunnels — try phone hotspot on the server PC
-echo   - Press Ctrl+C here, then run:  START-INTERNET-TUNNEL-HTTP2.bat
-echo   - Check Program Settings - Security: clear "Allowed hosts" or add
-echo     your trycloudflare.com hostname
-echo.
-echo ================================================
+echo Send THAT https link to remote users.
 echo.
 
 "%CLOUDFLARED%" tunnel --url http://127.0.0.1:%PORT% --logfile "%LOG_FILE%" --loglevel info
+set "TUNNEL_EXIT=%ERRORLEVEL%"
 
 echo.
-echo Tunnel stopped.
-pause
+if not "%TUNNEL_EXIT%"=="0" (
+    color 0C
+    echo Tunnel stopped with error %TUNNEL_EXIT%.
+    echo Log: %LOG_FILE%
+    echo Try: START-INTERNET-TUNNEL-HTTP2.bat
+) else (
+    echo Tunnel stopped.
+)
+
+:done
+echo.
+echo ================================================
+echo Press any key to close this window...
+echo ================================================
+pause >nul
+endlocal
+exit /b 0
+
+
+:download_cloudflared
+echo download>> "%DIAG_FILE%"
+where curl >nul 2>&1
+if not errorlevel 1 (
+    curl -fsSL -o "%CLOUDFLARED%" "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
+    if not errorlevel 1 if exist "%CLOUDFLARED%" exit /b 0
+)
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe' -OutFile '%CLOUDFLARED%' -UseBasicParsing; exit 0 } catch { Write-Host $_.Exception.Message; exit 1 }"
+if errorlevel 1 (
+    echo Download failed - check internet connection.
+    exit /b 1
+)
+exit /b 0
