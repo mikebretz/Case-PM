@@ -73,7 +73,11 @@ def load_deployment_settings():
         mode = 'on_prem'
     behind_proxy = sec.get('behind_reverse_proxy')
     if behind_proxy is None:
-        behind_proxy = mode == 'cloud' or os.environ.get('CASEPM_BEHIND_PROXY', '').lower() in ('1', 'true', 'yes')
+        behind_proxy = (
+            mode == 'cloud'
+            or os.environ.get('CASEPM_BEHIND_PROXY', '').lower() in ('1', 'true', 'yes')
+            or os.environ.get('CASEPM_REMOTE', '').lower() in ('1', 'true', 'yes')
+        )
     force_https = sec.get('force_https')
     if force_https is None:
         force_https = os.environ.get('CASEPM_HTTPS', '').lower() in ('1', 'true', 'yes')
@@ -179,9 +183,12 @@ def guard_csrf(endpoint: str | None = None):
 def guard_host_header(deploy=None):
     deploy = deploy or load_deployment_settings()
     hosts = deploy.get('allowed_hosts') or []
+    host = (request.host or '').split(':')[0].lower()
+    # Cloudflare quick-tunnel hostnames (START-INTERNET-TUNNEL.bat)
+    if host.endswith('.trycloudflare.com'):
+        return None
     if not hosts:
         return None
-    host = (request.host or '').split(':')[0].lower()
     if host in hosts or 'localhost' in hosts and host in ('localhost', '127.0.0.1'):
         return None
     if host in ('localhost', '127.0.0.1') and not hosts:

@@ -15680,6 +15680,10 @@ def api_stats():
     return jsonify(stats)
 
 
+@app.route('/api/health')
+def api_health():
+    """Public ping for tunnel / load-balancer checks."""
+    return jsonify({'ok': True, 'service': 'casepm'})
 
 
 with app.app_context():
