@@ -249,6 +249,22 @@ def resolve_sub_vendor_sov_keys(user, data: dict | None) -> set[str]:
             {'subcontractorSOV': sub_sov, 'subSOVStatus': sub_status},
             cid, cname, user,
         )
+    if cid is not None:
+        cid_s = str(cid)
+        for block in (sub_sov, sub_status):
+            if not isinstance(block, dict):
+                continue
+            for key, val in block.items():
+                sk = str(key).strip()
+                if not sk:
+                    continue
+                if sk == cid_s:
+                    keys.add(sk)
+                    continue
+                if isinstance(val, dict):
+                    st_cid = str(val.get('companyId') or val.get('company_id') or '').strip()
+                    if st_cid and st_cid == cid_s:
+                        keys.add(sk)
     return keys
 
 
