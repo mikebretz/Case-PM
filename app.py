@@ -14526,6 +14526,8 @@ def api_save_pay_app_state():
             )
         else:
             alloc_errors = validate_sub_sov_cost_code_allocations(merged)
+            from pay_app_persistence import prune_unregistered_sub_sov
+            merged = prune_unregistered_sub_sov(merged, commitments)
             commitment_errors = validate_sub_sov_requires_commitments(merged, commitments)
     except Exception:
         pass

@@ -509,7 +509,7 @@ def sync_commitment_to_budget(BudgetProjectState, db, commitment, allocations, u
 
 
 def sync_commitment_to_sub_sov(PayAppProjectState, db, commitment, allocations, user_id=None):
-    """Seed subcontractor SOV from approved subcontract commitment."""
+    """Seed subcontractor SOV lines for vendors already registered on the sub SOV list."""
     if commitment.commitment_type != 'Subcontract':
         return {'skipped': True, 'reason': 'not_subcontract'}
     company_key = str(commitment.company_id) if commitment.company_id else str(commitment.company_name or '')
@@ -521,6 +521,13 @@ def sync_commitment_to_sub_sov(PayAppProjectState, db, commitment, allocations, 
     sub_sov = state.get('subcontractorSOV') or {}
     if not isinstance(sub_sov, dict):
         sub_sov = {}
+    sub_status = state.get('subSOVStatus') or {}
+    if not isinstance(sub_status, dict):
+        sub_status = {}
+
+    status_entry = sub_status.get(company_key) or {}
+    if not isinstance(status_entry, dict) or not status_entry.get('status'):
+        return {'skipped': True, 'reason': 'not_registered_on_sub_sov'}
 
     lines = sub_sov.get(company_key) or []
     existing_codes = {normalize_cost_code(l.get('cost_code')) for l in lines}
@@ -547,10 +554,6 @@ def sync_commitment_to_sub_sov(PayAppProjectState, db, commitment, allocations, 
 
     sub_sov[company_key] = lines
     state['subcontractorSOV'] = sub_sov
-    sub_status = state.get('subSOVStatus') or {}
-    if not isinstance(sub_status, dict):
-        sub_status = {}
-    status_entry = sub_status.get(company_key) or {}
     if commitment.company_name:
         status_entry['companyName'] = commitment.company_name
     if commitment.company_id:

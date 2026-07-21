@@ -207,15 +207,22 @@ def validate_sub_sov_cost_code_allocations(state_data, tolerance=0.01):
 
 
 def _sov_keys_for_vendor(state_data, company_id=None, company_name=None):
-    """Dict keys in pay-app state that belong to a subcontractor vendor."""
+    """Dict keys in pay-app state that belong to a registered subcontractor vendor."""
     keys: set[str] = set()
     sub_sov = state_data.get('subcontractorSOV') or {}
     sub_status = state_data.get('subSOVStatus') or {}
+    if not isinstance(sub_status, dict):
+        sub_status = {}
     for block in (sub_sov, sub_status):
         if not isinstance(block, dict):
             continue
         for key in _find_sub_sov_keys_for_company(block, company_id, company_name):
-            keys.add(str(key))
+            sk = str(key).strip()
+            if not sk:
+                continue
+            entry = sub_status.get(key) or sub_status.get(sk) or {}
+            if isinstance(entry, dict) and entry.get('status'):
+                keys.add(sk)
     return keys
 
 
@@ -310,6 +317,8 @@ def validate_sub_sov_requires_commitments(state_data, commitments, tolerance=0.0
         if not sk:
             continue
         status_entry = sub_status.get(key) or sub_status.get(sk) or {}
+        if not isinstance(status_entry, dict) or not status_entry.get('status'):
+            continue
         company_name = ''
         company_id = None
         if isinstance(status_entry, dict):
@@ -326,6 +335,46 @@ def validate_sub_sov_requires_commitments(state_data, commitments, tolerance=0.0
                 'commitment on this project. Create the commitment first.'
             )
     return errors
+
+
+def prune_unregistered_sub_sov(state_data, commitments=None):
+    """Drop SOV buckets that were never GC-registered or lack a subcontract commitment."""
+    if not isinstance(state_data, dict):
+        return state_data
+    sub_sov = state_data.get('subcontractorSOV') or {}
+    sub_status = state_data.get('subSOVStatus') or {}
+    if not isinstance(sub_sov, dict):
+        sub_sov = {}
+    if not isinstance(sub_status, dict):
+        sub_status = {}
+    all_keys = set(sub_sov.keys()) | set(sub_status.keys())
+    remove = set()
+    for key in all_keys:
+        sk = str(key).strip()
+        if not sk:
+            remove.add(key)
+            continue
+        entry = sub_status.get(key) or sub_status.get(sk) or {}
+        if not isinstance(entry, dict) or not entry.get('status'):
+            remove.add(key)
+            continue
+        company_name = (entry.get('companyName') or entry.get('company_name') or '').strip()
+        raw_cid = entry.get('companyId') or entry.get('company_id') or sk
+        company_id = str(raw_cid).strip() if raw_cid is not None else sk
+        if commitments is not None and get_vendor_commitment_cap(commitments, company_id, company_name or sk) is None:
+            remove.add(key)
+    if not remove:
+        return state_data
+    out = dict(state_data)
+    for field in (
+        'subcontractorSOV', 'subSOVStatus', 'subPayAppHistory',
+        'subPendingSubmissions', 'subPayAppNumbers', 'subLienWaivers', 'subLienWaiverArchive',
+    ):
+        block = out.get(field)
+        if not isinstance(block, dict):
+            continue
+        out[field] = {k: v for k, v in block.items() if k not in remove}
+    return out
 
 
 def validate_sub_vendor_pay_app_save(
