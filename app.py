@@ -10868,6 +10868,8 @@ def _sage_commitment_event(commitment, event_type, message='', extra=None, user_
     from commitment_persistence import queue_commitment_sage_event
     return queue_commitment_sage_event(
         commitment, event_type, message=message, extra=extra, user_id=user_id,
+        db=db, SageSyncEvent=SageSyncEvent, Project=Project,
+        Commitment=Commitment, CommitmentAllocation=CommitmentAllocation,
     )
 
 
@@ -11075,9 +11077,17 @@ def api_commitment_workflow(commitment_id):
         return jsonify({'error': str(exc)}), 403
     body = request.get_json(silent=True) or {}
     action = body.get('action')
+    sage_ctx = {
+        'db': db,
+        'SageSyncEvent': SageSyncEvent,
+        'Project': Project,
+        'Commitment': Commitment,
+        'CommitmentAllocation': CommitmentAllocation,
+    }
     try:
         new_status, final_approved = commitment_workflow_action(
             c, action, current_user, body=body, CommitmentAllocation=CommitmentAllocation,
+            sage_ctx=sage_ctx,
         )
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
