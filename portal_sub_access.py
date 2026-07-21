@@ -357,7 +357,7 @@ def get_company_job_project_ids(company, Commitment=None, PayAppProjectState=Non
     return ids
 
 
-def resolve_company_from_sov_key(key, Company=None):
+def resolve_company_from_sov_key(key, Company=None, state=None):
     """Resolve a subcontractorSOV dict key to a Company row (id or name)."""
     if Company is None:
         try:
@@ -368,6 +368,29 @@ def resolve_company_from_sov_key(key, Company=None):
     sk = str(key or '').strip()
     if not sk:
         return None
+
+    if isinstance(state, dict):
+        status_map = state.get('subSOVStatus') or {}
+        entry = status_map.get(sk) or status_map.get(key)
+        if isinstance(entry, dict):
+            st_cid = entry.get('companyId') or entry.get('company_id')
+            st_name = (entry.get('companyName') or entry.get('company_name') or '').strip()
+            if st_cid is not None:
+                try:
+                    company = Company.query.get(int(st_cid))
+                    if company:
+                        return company
+                except (TypeError, ValueError):
+                    pass
+            if st_name:
+                try:
+                    from sqlalchemy import func
+                    company = Company.query.filter(func.lower(Company.name) == st_name.lower()).first()
+                    if company:
+                        return company
+                except Exception:
+                    pass
+
     try:
         company = Company.query.get(int(sk))
         if company:
@@ -432,6 +455,21 @@ def iter_sub_vendor_users_for_company(company, User=None):
     for user in candidates:
         if is_sub_vendor_portal_user(user):
             yield user
+    # Role-based fallback: sub accountants linked by company name only
+    cname = (getattr(company, 'name', None) or '').strip().lower()
+    if cname:
+        try:
+            roles = ('Subcontractor Accountant', 'Subcontractor Contact', 'Subcontractor')
+            for user in User.query.filter(User.role.in_(roles)).all():
+                if user.id in seen:
+                    continue
+                uname = (getattr(user, 'company', None) or '').strip().lower()
+                if uname and (uname == cname or cname in uname or uname in cname):
+                    if is_sub_vendor_portal_user(user):
+                        yield user
+                        seen.add(int(user.id))
+        except Exception:
+            pass
 
 
 def grant_project_membership(project_id, user, db, ProjectMembership=None, role='Subcontractor') -> bool:
@@ -503,7 +541,7 @@ def sync_sub_vendor_memberships_from_pay_app_state(
     company_ids: set[int] = set()
     companies = []
     for key in keys:
-        company = resolve_company_from_sov_key(key, Company)
+        company = resolve_company_from_sov_key(key, Company, state)
         if company and company.id not in company_ids:
             company_ids.add(int(company.id))
             companies.append(company)
