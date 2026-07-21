@@ -33,10 +33,10 @@
   const DELETABLE_STATUSES = ['Draft', 'Rejected', 'Void'];
 
   const ROLE_MAP = {
-    'Project Manager': ['Project Manager', 'Admin'],
-    'Contractor Accounting': ['Contractor Accounting', 'Admin'],
-    'Owner': ['Owner', 'Admin'],
-    'Creator': ['Project Manager', 'Admin', 'Company User'],
+    'Project Manager': ['Project Manager', 'Admin', 'Developer'],
+    'Contractor Accounting': ['Contractor Accounting', 'Admin', 'Developer'],
+    'Owner': ['Owner', 'Admin', 'Developer'],
+    'Creator': ['Project Manager', 'Admin', 'Developer', 'Company User'],
   };
 
   let state = {
