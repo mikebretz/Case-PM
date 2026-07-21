@@ -164,6 +164,9 @@ def _discover_sov_keys_from_data(data: dict | None, company_id=None, company_nam
     keys: set[str] = set()
     if not isinstance(data, dict):
         return keys
+    sub_status = data.get('subSOVStatus') or {}
+    if not isinstance(sub_status, dict):
+        sub_status = {}
     names: set[str] = set()
     for raw in (company_name, getattr(user, 'company', None) if user else None):
         name = (raw or '').strip().lower()
@@ -177,6 +180,9 @@ def _discover_sov_keys_from_data(data: dict | None, company_id=None, company_nam
         for key, val in block.items():
             sk = str(key).strip()
             if not sk:
+                continue
+            st_entry = sub_status.get(key) or sub_status.get(sk) or {}
+            if not (isinstance(st_entry, dict) and st_entry.get('status')):
                 continue
             sk_lower = sk.lower()
             if cid_s and sk == cid_s:
@@ -224,6 +230,10 @@ def resolve_sub_vendor_sov_keys(user, data: dict | None) -> set[str]:
             sk = str(key).strip()
             if not sk:
                 continue
+            if isinstance(sub_status, dict):
+                st_entry = sub_status.get(key) or sub_status.get(sk) or {}
+                if not (isinstance(st_entry, dict) and st_entry.get('status')):
+                    continue
             sk_lower = sk.lower()
             if sk in allowed or sk_lower in allowed_variants:
                 keys.add(str(key))
@@ -258,6 +268,9 @@ def resolve_sub_vendor_sov_keys(user, data: dict | None) -> set[str]:
                 sk = str(key).strip()
                 if not sk:
                     continue
+                st_entry = sub_status.get(key) or sub_status.get(sk) or {}
+                if not (isinstance(st_entry, dict) and st_entry.get('status')):
+                    continue
                 if sk == cid_s:
                     keys.add(sk)
                     continue
@@ -265,6 +278,13 @@ def resolve_sub_vendor_sov_keys(user, data: dict | None) -> set[str]:
                     st_cid = str(val.get('companyId') or val.get('company_id') or '').strip()
                     if st_cid and st_cid == cid_s:
                         keys.add(sk)
+    if not keys and isinstance(sub_status, dict):
+        registered = [
+            str(k).strip() for k, entry in sub_status.items()
+            if str(k).strip() and isinstance(entry, dict) and entry.get('status')
+        ]
+        if len(registered) == 1:
+            keys.add(registered[0])
     return keys
 
 
@@ -650,6 +670,9 @@ def pay_app_state_includes_user(user, payload) -> bool:
         for key, val in block.items():
             sk = str(key).strip()
             if not sk:
+                continue
+            st_entry = sub_status.get(key) or sub_status.get(sk) or {}
+            if not (isinstance(st_entry, dict) and st_entry.get('status')):
                 continue
             sk_lower = sk.lower()
             st_name = ''

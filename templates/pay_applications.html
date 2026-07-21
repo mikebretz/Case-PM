@@ -717,12 +717,68 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             ...Object.keys(statusData || {}),
         ]);
         allKeys.forEach((key) => {
+            const st = statusData[key] || {};
+            if (!st || !st.status) return;
             const cid = canonicalSubCompanyId(key);
             if (cid == null || seen.has(String(cid))) return;
             seen.add(String(cid));
             ids.push(cid);
         });
         return ids;
+    }
+
+    function soleSubVendorServerKey(...maps) {
+        const keys = new Set();
+        maps.forEach((map) => {
+            Object.keys(map || {}).forEach((k) => {
+                const sk = String(k).trim();
+                if (sk) keys.add(sk);
+            });
+        });
+        return keys.size === 1 ? [...keys][0] : null;
+    }
+
+    function pruneSubcontractorSOVToProjectCommitments() {
+        if (isSubVendorPayPortalUser()) return;
+        const statusData = subSOVStatus || {};
+        const allKeys = new Set([
+            ...Object.keys(subcontractorSOV || {}),
+            ...Object.keys(statusData),
+            ...Object.keys(subPayAppHistory || {}),
+            ...Object.keys(subPayAppNumbers || {}),
+            ...Object.keys(subPendingSubmissions || {}),
+            ...Object.keys(subLienWaivers || {}),
+            ...Object.keys(subLienWaiverArchive || {}),
+        ]);
+        const removeKeys = [];
+        allKeys.forEach((key) => {
+            const st = statusData[key] || {};
+            if (!st.status) {
+                removeKeys.push(key);
+                return;
+            }
+            const companyId = st.companyId || st.company_id || key;
+            const companyName = st.companyName || st.company_name || '';
+            const fakeCompany = { id: companyId, server_id: companyId, name: companyName, company_name: companyName };
+            if (!companyHasSubcontractCommitmentOnProject(fakeCompany)) {
+                removeKeys.push(key);
+            }
+        });
+        if (!removeKeys.length) return;
+        const maps = [
+            subcontractorSOV, subSOVStatus, subPayAppHistory, subPayAppNumbers,
+            subPendingSubmissions, subLienWaivers, subLienWaiverArchive,
+        ];
+        removeKeys.forEach((key) => {
+            maps.forEach((map) => { if (map) deleteSubCompanyMapKeys(map, key); });
+        });
+        casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+        casepmStore.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
+        casepmStore.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+        casepmStore.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+        casepmStore.setItem('subPendingSubmissions', JSON.stringify(subPendingSubmissions));
+        casepmStore.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+        casepmStore.setItem('subLienWaiverArchive', JSON.stringify(subLienWaiverArchive));
     }
     function contractorSovIsLocked() {
         return casepmStore.getItem('contractorSOVLocked') === 'true' && !devUnlockActive();
@@ -2809,6 +2865,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             const sk = String(key).trim();
             if (!sk) return;
             const st = statusMap[key] || statusMap[sk] || {};
+            if (!st.status) return;
             const stName = (st.companyName || st.company_name || '').trim().toLowerCase();
             const stCid = st.companyId != null ? String(st.companyId) : (st.company_id != null ? String(st.company_id) : '');
 
@@ -2830,6 +2887,18 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 if (name && (stName === name || sk.toLowerCase() === name)) keys.add(sk);
             }
         });
+
+        if (!keys.size) {
+            const registeredKeys = [...allKeys].filter((key) => {
+                const st = statusMap[key] || {};
+                return st && st.status;
+            });
+            if (registeredKeys.length === 1) keys.add(String(registeredKeys[0]).trim());
+            else {
+                const sole = soleSubVendorServerKey(map, statusMap);
+                if (sole) keys.add(sole);
+            }
+        }
         return keys;
     }
 
@@ -2844,7 +2913,11 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
         function filterCompanyMap(map) {
             const src = map || {};
-            if (!allowedKeys.size) return {};
+            if (!allowedKeys.size) {
+                const sole = soleSubVendorServerKey(src);
+                if (sole && Object.prototype.hasOwnProperty.call(src, sole)) return { [sole]: src[sole] };
+                return {};
+            }
             const out = {};
             allowedKeys.forEach((key) => {
                 if (Object.prototype.hasOwnProperty.call(src, key)) out[key] = src[key];
@@ -2947,9 +3020,23 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         return String(sid);
     }
 
+    function companySelectValue(company) {
+        if (!company) return '';
+        if (company.server_id != null && company.server_id !== '') return `s:${company.server_id}`;
+        return `l:${company.id}`;
+    }
+
     function resolveCompanyFromList(companiesList, selectValue) {
         const val = String(selectValue || '').trim();
         if (!val) return null;
+        if (val.startsWith('s:')) {
+            const sid = val.slice(2);
+            return companiesList.find((c) => c.server_id != null && String(c.server_id) === sid) || null;
+        }
+        if (val.startsWith('l:')) {
+            const lid = val.slice(2);
+            return companiesList.find((c) => String(c.id) === lid) || null;
+        }
         let hit = companiesList.find(c => c.server_id != null && String(c.server_id) === val);
         if (hit) return hit;
         hit = companiesList.find(c => String(c.id) === val);
@@ -3206,6 +3293,17 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             const err = { ok: false, error: 'No project selected. Use the project dropdown in the header, then save again.' };
             if (!silent) showPayAppSaveStatus(err.error, true);
             return err;
+        }
+
+        if (!isSubVendorPayPortalUser()) {
+            pruneSubcontractorSOVToProjectCommitments();
+            casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+            casepmStore.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
+            casepmStore.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+            casepmStore.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+            casepmStore.setItem('subPendingSubmissions', JSON.stringify(subPendingSubmissions));
+            casepmStore.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+            casepmStore.setItem('subLienWaiverArchive', JSON.stringify(subLienWaiverArchive));
         }
 
         let result = null;
@@ -7427,7 +7525,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 } else {
                     eligible.forEach((c) => {
                         const opt = document.createElement('option');
-                        opt.value = companyStableKey(c);
+                        opt.value = companySelectValue(c);
                         opt.textContent = c.name || c.company_name || 'Unnamed Company';
                         selectEl.appendChild(opt);
                     });
@@ -7500,14 +7598,14 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     // Helper for the floating modal's Add button (adapts the original confirm logic)
     function confirmAddNewSubcontractorFromFloatingModal(modalEl) {
         const select = modalEl.querySelector('#newSubCompanySelect');
-        const selectedCompanyId = canonicalSubCompanyId(select ? select.value : '');
-        if (!selectedCompanyId) {
+        const rawValue = select ? select.value : '';
+        if (!rawValue) {
             showCenteredAlert("Please select a company from the list.", "warning");
             return;
         }
 
         const companiesList = JSON.parse(casepmStore.getItem('casepm_companies')) || [];
-        const selectedCompany = resolveCompanyFromList(companiesList, selectedCompanyId);
+        const selectedCompany = resolveCompanyFromList(companiesList, rawValue);
         if (!selectedCompany) {
             showCenteredAlert("Selected company not found.", "error");
             return;
@@ -7548,6 +7646,12 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     }
 
     async function registerSubcontractorOnProject(companyId, companyRecord) {
+        if (typeof CasePMPayAppSync !== 'undefined' && CasePMPayAppSync.loadFromServer) {
+            await CasePMPayAppSync.loadFromServer();
+            reloadPayAppStateFromStorage();
+        }
+        pruneSubcontractorSOVToProjectCommitments();
+
         const displayName = (companyRecord && (companyRecord.name || companyRecord.company_name))
             || resolveSubCompanyDisplayName(companyId) || '';
         const storageKey = serverCompanyIdForEntry(companyRecord) || canonicalSubCompanyId(companyId);
@@ -7590,14 +7694,14 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     function confirmAddNewSubcontractor(btn) {
         const modal = btn.closest('dialog');
         const select = document.getElementById('newSubCompanySelect');
-        const selectedCompanyId = canonicalSubCompanyId(select ? select.value : '');
-        if (!selectedCompanyId) {
+        const rawValue = select ? select.value : '';
+        if (!rawValue) {
             alert("Please select a company from the list.");
             return;
         }
 
         const companiesList = JSON.parse(casepmStore.getItem('casepm_companies')) || [];
-        const selectedCompany = resolveCompanyFromList(companiesList, selectedCompanyId);
+        const selectedCompany = resolveCompanyFromList(companiesList, rawValue);
         if (!selectedCompany) {
             alert("Selected company not found. Please refresh and try again.");
             return;
@@ -10373,6 +10477,9 @@ function printSubcontractorG703(companyId) {
             seedProjectContractDefaults();
             await refreshProjectFinancialSummary();
             reloadPayAppStateFromStorage();
+            if (!isSubVendorPayPortalUser()) {
+                pruneSubcontractorSOVToProjectCommitments();
+            }
             if (isSubVendorPayPortalUser()) {
                 sanitizeSubVendorPayAppState();
             }
@@ -10433,6 +10540,9 @@ function printSubcontractorG703(companyId) {
         });
         window.addEventListener('casepm:payapp-state-refreshed', () => {
             reloadPayAppStateFromStorage();
+            if (isSubVendorPayPortalUser()) {
+                ensureSubVendorSOVInitialized();
+            }
             renderPayAppContent();
         });
 
