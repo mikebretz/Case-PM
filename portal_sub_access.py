@@ -348,7 +348,9 @@ def get_company_job_project_ids(company, Commitment=None, PayAppProjectState=Non
             for record in PayAppProjectState.query.all():
                 payload = _parse_state(record)
                 sub_sov = payload.get('subcontractorSOV') or {}
-                if _find_sub_sov_keys_for_company(sub_sov, cid, getattr(company, 'name', None)):
+                found = _find_sub_sov_keys_for_company(sub_sov, cid, getattr(company, 'name', None))
+                sov_key_set = {str(k) for k in sub_sov.keys()}
+                if found and any(str(k) in sov_key_set for k in found):
                     pid = getattr(record, 'project_id', None)
                     if pid is not None:
                         ids.add(int(pid))
@@ -548,10 +550,20 @@ def sync_sub_vendor_memberships_from_pay_app_state(
 
     granted_users: set[int] = set()
     changed = False
-    for company in companies:
-        for user in iter_sub_vendor_users_for_company(company, User):
+    for key in keys:
+        company = resolve_company_from_sov_key(key, Company, state)
+        users_for_key = []
+        if company:
+            users_for_key.extend(iter_sub_vendor_users_for_company(company, User))
+        users_for_key.extend(iter_sub_vendor_users_for_sov_key(key, state, User))
+        seen_uids: set[int] = set()
+        for user in users_for_key:
+            uid = int(user.id)
+            if uid in seen_uids:
+                continue
+            seen_uids.add(uid)
             if grant_project_membership(pid, user, db, ProjectMembership):
-                granted_users.add(int(user.id))
+                granted_users.add(uid)
                 changed = True
     if changed:
         try:
@@ -594,6 +606,96 @@ def grant_company_contact_project_memberships(user, company, db, ProjectMembersh
     return project_ids
 
 
+def pay_app_state_includes_user(user, payload) -> bool:
+    """True when this vendor appears on a job's sub SOV (empty line list is OK)."""
+    if not isinstance(payload, dict):
+        return False
+    if resolve_sub_vendor_sov_keys(user, payload):
+        return True
+    sub_sov = payload.get('subcontractorSOV') or {}
+    sub_status = payload.get('subSOVStatus') or {}
+    if not isinstance(sub_sov, dict) and not isinstance(sub_status, dict):
+        return False
+    if not sub_sov and not sub_status:
+        return False
+    allowed = _allowed_key_variants(sub_vendor_company_keys(user))
+    cid, cname, company = resolve_sub_vendor_company(user)
+    names: set[str] = set()
+    for raw in (cname, getattr(user, 'company', None), getattr(company, 'name', None) if company else None):
+        name = (raw or '').strip().lower()
+        if name:
+            names.add(name)
+    cid_s = str(cid) if cid is not None else ''
+    for block in (sub_sov, sub_status):
+        if not isinstance(block, dict):
+            continue
+        for key in block.keys():
+            sk = str(key).strip()
+            if not sk:
+                continue
+            sk_lower = sk.lower()
+            if sk in allowed or sk_lower in allowed:
+                return True
+            if cid_s and sk == cid_s:
+                return True
+            if sk_lower in names:
+                return True
+            for name in names:
+                if name and (sk_lower == name or name in sk_lower or sk_lower in name):
+                    return True
+    return False
+
+
+def iter_sub_vendor_users_for_sov_key(key, state=None, User=None):
+    """Find portal users when Company lookup fails but SOV key matches profile."""
+    if User is None:
+        try:
+            from app import User as UserModel
+            User = UserModel
+        except Exception:
+            return
+    sk = str(key or '').strip()
+    if not sk:
+        return
+    sk_lower = sk.lower()
+    status_name = ''
+    if isinstance(state, dict):
+        entry = (state.get('subSOVStatus') or {}).get(sk) or (state.get('subSOVStatus') or {}).get(key)
+        if isinstance(entry, dict):
+            status_name = (entry.get('companyName') or entry.get('company_name') or '').strip().lower()
+    roles = ('Subcontractor Accountant', 'Subcontractor Contact', 'Subcontractor')
+    seen: set[int] = set()
+    try:
+        for user in User.query.filter(User.role.in_(roles)).all():
+            if user.id in seen or not is_sub_vendor_portal_user(user):
+                continue
+            uid_cid = str(getattr(user, 'company_id', '') or '').strip()
+            if uid_cid and uid_cid == sk:
+                seen.add(int(user.id))
+                yield user
+                continue
+            uname = (getattr(user, 'company', '') or '').strip().lower()
+            if uname and (uname == sk_lower or sk_lower in uname or uname in sk_lower):
+                seen.add(int(user.id))
+                yield user
+                continue
+            if status_name and uname and (uname == status_name or status_name in uname or uname in status_name):
+                seen.add(int(user.id))
+                yield user
+                continue
+            cid, cname, _ = resolve_sub_vendor_company(user)
+            if cid is not None and str(cid) == sk:
+                seen.add(int(user.id))
+                yield user
+                continue
+            cname_l = (cname or '').strip().lower()
+            if cname_l and (cname_l == sk_lower or sk_lower in cname_l or cname_l in sk_lower):
+                seen.add(int(user.id))
+                yield user
+    except Exception:
+        return
+
+
 def get_sub_vendor_pay_app_project_ids(user, PayAppProjectState=None) -> set[int]:
     """Projects where this vendor appears in subcontractor SOV / status maps."""
     if not is_sub_vendor_portal_user(user):
@@ -609,7 +711,7 @@ def get_sub_vendor_pay_app_project_ids(user, PayAppProjectState=None) -> set[int
         from pay_app_persistence import _parse_state
         for record in PayAppProjectState.query.all():
             payload = _parse_state(record)
-            if resolve_sub_vendor_sov_keys(user, payload):
+            if pay_app_state_includes_user(user, payload):
                 pid = getattr(record, 'project_id', None)
                 if pid is not None:
                     ids.add(int(pid))
@@ -711,7 +813,14 @@ def ensure_sub_vendor_project_memberships(user, db, ProjectMembership=None) -> s
         from app import Project
     except Exception:
         Project = None
-    project_ids = get_sub_vendor_project_ids(user, Project, PM)
+    PayAppProjectState = Commitment = None
+    try:
+        from app import PayAppProjectState as PState, Commitment as CModel
+        PayAppProjectState = PState
+        Commitment = CModel
+    except Exception:
+        pass
+    project_ids = get_sub_vendor_project_ids(user, Project, PM, Commitment, PayAppProjectState)
     if not project_ids:
         return set()
     uid = int(user.id)
