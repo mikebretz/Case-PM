@@ -327,7 +327,7 @@ def validate_sub_sov_requires_commitments(state_data, commitments, tolerance=0.0
             company_id = str(raw_cid).strip() if raw_cid is not None else None
         if not company_id and sk.isdigit():
             company_id = sk
-        cap = get_vendor_commitment_cap(commitments, company_id, company_name or sk)
+        cap = get_vendor_commitment_cap_for_sov_entry(commitments, key, status_entry)
         if cap is None:
             label = company_name or sk
             errors.append(
@@ -335,6 +335,58 @@ def validate_sub_sov_requires_commitments(state_data, commitments, tolerance=0.0
                 'commitment on this project. Create the commitment first.'
             )
     return errors
+
+
+def _sov_status_vendor_ids(key, status_entry=None):
+    """All company id variants stored on a subcontractor SOV bucket."""
+    ids = set()
+    sk = str(key).strip() if key is not None else ''
+    if sk:
+        ids.add(sk)
+    if isinstance(status_entry, dict):
+        for field in ('companyId', 'company_id', 'localCompanyId', 'commitmentCompanyId'):
+            raw = status_entry.get(field)
+            if raw is not None and str(raw).strip():
+                ids.add(str(raw).strip())
+    return ids
+
+
+def commitment_matches_sov_entry(commitment, key, status_entry=None, company_name=None):
+    """True when a subcontract commitment belongs to this SOV bucket."""
+    if getattr(commitment, 'commitment_type', None) != 'Subcontract':
+        return False
+    vendor_ids = _sov_status_vendor_ids(key, status_entry)
+    names = set()
+    if isinstance(status_entry, dict):
+        n = (status_entry.get('companyName') or status_entry.get('company_name') or '').strip().lower()
+        if n:
+            names.add(n)
+    if company_name:
+        names.add(str(company_name).strip().lower())
+    com_cid = str(getattr(commitment, 'company_id', None) or '').strip()
+    com_name = (getattr(commitment, 'company_name', None) or '').strip().lower()
+    if com_cid and com_cid in vendor_ids:
+        return True
+    if com_name and names and com_name in names:
+        return True
+    return False
+
+
+def get_vendor_commitment_cap_for_sov_entry(commitments, key, status_entry=None):
+    """Return subcontract commitment cap for a registered SOV bucket."""
+    best = None
+    for commitment in commitments or []:
+        if not commitment_matches_sov_entry(commitment, key, status_entry):
+            continue
+        current = getattr(commitment, 'current_amount', None)
+        original = float(getattr(commitment, 'original_amount', 0) or 0)
+        approved = float(getattr(commitment, 'approved_changes', 0) or 0)
+        cap = float(current) if current is not None else original + approved
+        if cap > 0:
+            return cap
+        if best is None:
+            best = cap
+    return best
 
 
 def prune_unregistered_sub_sov(state_data, commitments=None):
@@ -359,9 +411,7 @@ def prune_unregistered_sub_sov(state_data, commitments=None):
             remove.add(key)
             continue
         company_name = (entry.get('companyName') or entry.get('company_name') or '').strip()
-        raw_cid = entry.get('companyId') or entry.get('company_id') or sk
-        company_id = str(raw_cid).strip() if raw_cid is not None else sk
-        if commitments is not None and get_vendor_commitment_cap(commitments, company_id, company_name or sk) is None:
+        if commitments is not None and get_vendor_commitment_cap_for_sov_entry(commitments, key, entry) is None:
             remove.add(key)
     if not remove:
         return state_data
@@ -806,8 +856,15 @@ def sync_change_order_to_sov(
     }
 
 
-def commitment_matches_vendor(commitment, company_id=None, company_name=None):
+def commitment_matches_vendor(commitment, company_id=None, company_name=None, status_entry=None):
     """True when a commitment belongs to the given subcontractor vendor."""
+    if status_entry is not None:
+        return commitment_matches_sov_entry(
+            commitment,
+            company_id,
+            status_entry,
+            company_name=company_name,
+        )
     if getattr(commitment, 'commitment_type', None) != 'Subcontract':
         return False
     cid = str(company_id or '').strip()
@@ -987,15 +1044,25 @@ def _active_subcontract_commitment_keys(commitments):
     return {k for k in keys if k}
 
 
-def _sov_key_has_active_commitment(company_key, commitments):
+def _sov_key_has_active_commitment(company_key, commitments, state=None):
+    status = (state or {}).get('subSOVStatus') or {}
+    entry = status.get(company_key) or status.get(str(company_key)) or {}
     for com in commitments or []:
         if getattr(com, 'commitment_type', None) != 'Subcontract':
             continue
         if getattr(com, 'status', None) in ('Void', 'Rejected'):
             continue
+        if commitment_matches_sov_entry(com, company_key, entry):
+            return True
         if _commitment_matches_sov_key(com, company_key):
             return True
     return False
+
+
+def _sov_key_is_gc_registered(state, company_key):
+    status = (state or {}).get('subSOVStatus') or {}
+    entry = status.get(company_key) or status.get(str(company_key)) or {}
+    return isinstance(entry, dict) and bool(entry.get('status'))
 
 
 def prune_orphan_subcontractor_sov(state, commitments=None):
@@ -1011,7 +1078,7 @@ def prune_orphan_subcontractor_sov(state, commitments=None):
     cleaned = {}
 
     for company_key, lines in (sub_sov or {}).items():
-        has_commitment = _sov_key_has_active_commitment(company_key, commitments)
+        has_commitment = _sov_key_has_active_commitment(company_key, commitments, state)
         kept_lines = []
         for line in lines or []:
             if has_commitment or _sub_sov_line_has_activity(line):
@@ -1021,7 +1088,11 @@ def prune_orphan_subcontractor_sov(state, commitments=None):
 
         if kept_lines:
             cleaned[company_key] = kept_lines
-        elif has_commitment or _sub_pay_state_has_vendor_activity(state, company_key):
+        elif (
+            has_commitment
+            or _sub_pay_state_has_vendor_activity(state, company_key)
+            or _sov_key_is_gc_registered(state, company_key)
+        ):
             cleaned[company_key] = []
         else:
             removed_keys.append(company_key)
