@@ -212,10 +212,14 @@ def resolve_sub_vendor_sov_keys(user, data: dict | None) -> set[str]:
     """All pay-app dict keys that belong to this sub vendor (id vs name tolerant)."""
     if not data:
         return set()
-    cid, cname, _ = resolve_sub_vendor_company(user)
+    try:
+        cid, cname, _ = resolve_sub_vendor_company(user)
+    except Exception:
+        cid, cname = None, (getattr(user, 'company', None) or '').strip() or None
     allowed = sub_vendor_company_keys(user)
     allowed_variants = _allowed_key_variants(allowed)
     name_lower = (cname or (getattr(user, 'company', None) or '')).strip().lower()
+    cid_s = str(cid) if cid is not None else ''
     keys: set[str] = set()
 
     sub_sov = _normalize_company_map(data.get('subcontractorSOV'))
@@ -228,6 +232,34 @@ def resolve_sub_vendor_sov_keys(user, data: dict | None) -> set[str]:
     except Exception:
         pass
 
+    def _entry_matches_vendor(st_entry, sk: str) -> bool:
+        if not isinstance(st_entry, dict) or not st_entry.get('status'):
+            return False
+        sk_lower = sk.lower()
+        if sk in allowed or sk_lower in allowed_variants:
+            return True
+        if name_lower and sk_lower == name_lower:
+            return True
+        st_name = (st_entry.get('companyName') or st_entry.get('company_name') or '').strip()
+        st_name_lower = st_name.lower()
+        if st_name and (
+            st_name in allowed or st_name_lower in allowed_variants
+            or (name_lower and (st_name_lower == name_lower or name_lower in st_name_lower or st_name_lower in name_lower))
+        ):
+            return True
+        for field in ('companyId', 'company_id', 'localCompanyId', 'commitmentCompanyId'):
+            raw = st_entry.get(field)
+            if raw is None:
+                continue
+            raw_s = str(raw).strip()
+            if not raw_s:
+                continue
+            if raw_s in allowed or raw_s.lower() in allowed_variants:
+                return True
+            if cid_s and raw_s == cid_s:
+                return True
+        return False
+
     for map_data in (sub_sov, sub_status):
         if not isinstance(map_data, dict):
             continue
@@ -235,15 +267,8 @@ def resolve_sub_vendor_sov_keys(user, data: dict | None) -> set[str]:
             sk = str(key).strip()
             if not sk:
                 continue
-            if isinstance(sub_status, dict):
-                st_entry = sub_status.get(key) or sub_status.get(sk) or {}
-                if not (isinstance(st_entry, dict) and st_entry.get('status')):
-                    continue
-            sk_lower = sk.lower()
-            if sk in allowed or sk_lower in allowed_variants:
-                keys.add(str(key))
-                continue
-            if name_lower and sk_lower == name_lower:
+            st_entry = sub_status.get(key) or sub_status.get(sk) or val or {}
+            if _entry_matches_vendor(st_entry, sk):
                 keys.add(str(key))
                 continue
             if isinstance(val, dict):
@@ -252,6 +277,7 @@ def resolve_sub_vendor_sov_keys(user, data: dict | None) -> set[str]:
                 st_name_lower = st_name.lower()
                 if st_cid is not None and (
                     str(st_cid) in allowed or str(st_cid).lower() in allowed_variants
+                    or (cid_s and str(st_cid) == cid_s)
                 ):
                     keys.add(str(key))
                 elif st_name and (
@@ -310,7 +336,7 @@ def resolve_sub_vendor_sov_keys(user, data: dict | None) -> set[str]:
                 cid_s = str(cid)
                 if only_key == cid_s or st_cid == cid_s:
                     matched = True
-            if not matched and name_lower and (st_name == name_lower or only_key.lower() == name_lower):
+            if not matched and name_lower and (st_name == name_lower or name_lower in st_name or st_name in name_lower):
                 matched = True
             if matched:
                 keys.add(only_key)
@@ -378,10 +404,17 @@ def filter_pay_app_state_for_sub_vendor(user, data: dict | None) -> dict | None:
                     sov_keys.add(sk)
                     continue
                 st_name = (entry.get('companyName') or entry.get('company_name') or '').strip().lower()
-                if cname_l and st_name and st_name == cname_l:
+                if cname_l and st_name and (st_name == cname_l or cname_l in st_name or st_name in cname_l):
                     sov_keys.add(sk)
         except Exception:
             pass
+    if not sov_keys and pay_app_state_includes_user(user, out):
+        sub_status = _normalize_company_map(out.get('subSOVStatus'))
+        for key, entry in sub_status.items():
+            if isinstance(entry, dict) and entry.get('status'):
+                sk = str(key).strip()
+                if sk:
+                    sov_keys.add(sk)
     for field in (
         'subcontractorSOV', 'subSOVStatus', 'subPayAppHistory',
         'subPendingSubmissions', 'subPayAppNumbers',
