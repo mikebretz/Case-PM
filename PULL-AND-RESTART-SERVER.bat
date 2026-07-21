@@ -69,4 +69,6 @@ echo.
 echo If the footer build id did NOT change, the wrong PC
 echo may be running the server, or the server did not restart.
 echo.
+echo For a full restart with browser logout, use RESTART-EVERYTHING.bat
+echo.
 pause

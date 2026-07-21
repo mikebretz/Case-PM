@@ -2278,6 +2278,11 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     function renderSubSOVAdminActions(companyId) {
         const host = document.getElementById('subSovAdminActionsHost');
         if (!host) return;
+        if (isSubVendorPayPortalUser()) {
+            host.innerHTML = '';
+            host.classList.add('hidden');
+            return;
+        }
         if (!companyId) {
             host.innerHTML = '';
             host.classList.add('hidden');
@@ -2816,13 +2821,36 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         return portalId ? canonicalSubCompanyId(portalId) : null;
     }
 
-    function ensureSubVendorCompanyContext() {
-        if (!isSubVendorPayPortalUser()) return;
-        const bucketKey = resolveSubCompanyBucketKey(getSubVendorCompanyId());
-        if (!bucketKey) return;
+    function ensureSubVendorSOVInitialized() {
+        if (!isSubVendorPayPortalUser()) return null;
+        const portalId = getSubVendorCompanyId();
+        if (!portalId) return null;
+        const bucketKey = resolveSubCompanyBucketKey(portalId) || canonicalSubCompanyId(portalId);
         selectedSubCompanyId = bucketKey;
         selectedTrackerSubId = bucketKey;
         casepmStore.setItem('lastSelectedSubSOV', bucketKey);
+        if (!getSubCompanyMapEntry(subcontractorSOV, bucketKey)) {
+            subcontractorSOV[bucketKey] = [];
+            casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+        }
+        const statusEntry = getSubSOVStatusEntry(bucketKey);
+        if (!statusEntry.status) {
+            setSubSOVStatus(bucketKey, 'Draft', { companyName: getSubVendorCompanyName() || '' });
+        }
+        return bucketKey;
+    }
+
+    function ensureSubVendorCompanyContext() {
+        if (!isSubVendorPayPortalUser()) return;
+        ensureSubVendorSOVInitialized();
+    }
+
+    function subVendorCanEditOwnSOV(companyId) {
+        if (!isSubVendorPayPortalUser()) return false;
+        const cid = companyId || selectedSubCompanyId || getSubVendorCompanyId();
+        if (!cid) return false;
+        const status = getSubSOVStatus(cid);
+        return status === 'Draft' || status === 'Rejected' || isSubSOVRevisionDraft(cid);
     }
 
     function getPreviousSubFilterCompanyId() {
@@ -5596,7 +5624,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         const myCompanyId = getSubVendorCompanyId();
         const myCompanyName = getSubVendorCompanyName() || 'Your company';
         if (subVendorMode && myCompanyId) {
-            selectedSubCompanyId = canonicalSubCompanyId(myCompanyId);
+            ensureSubVendorSOVInitialized();
         }
 
         // Summary cards - RESTRUCTURED EXACTLY AS REQUESTED
@@ -5805,22 +5833,28 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             const setupMessage = revisionDraft
                 ? '<span class="text-amber-300">Pushback revision — lines with billed-to-date cannot be changed or deleted. Add new lines or edit lines with no billing, then resubmit for approval.</span>'
                 : '<span class="text-zinc-400">Setup Mode — Build the original Schedule of Values. When ready, submit for approval.</span>';
-            const addLineBtn = subVendorMode ? '' : `
+            const subCanEditSOV = subVendorMode && subVendorCanEditOwnSOV(selectedSubCompanyId);
+            const subSetupMessage = revisionDraft
+                ? '<span class="text-amber-300">Revision requested — update your schedule of values and resubmit for approval.</span>'
+                : '<span class="text-zinc-400">Build your Schedule of Values below. Add lines, then submit for GC approval.</span>';
+            const addLineBtn = (!subVendorMode || subCanEditSOV) ? `
                     <button onclick="addLineToSelectedSub()" class="ml-1 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-plus"></i> <span>Add Line</span>
-                    </button>`;
+                    </button>` : '';
             const seedBtn = subVendorMode ? '' : `
                     <button onclick="seedSubcontractorSOVFromBudget()" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-download"></i> <span>Seed from Budget</span>
                     </button>`;
+            const submitSovBtn = (!subVendorMode || subCanEditSOV) ? `
+                    <button onclick="submitSubSOVForApproval()" class="ml-auto px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-paper-plane"></i> <span>Submit SOV for Approval</span>
+                    </button>` : '';
             workflowHTML = `
                 <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
-                    ${subVendorMode ? '<span class="text-zinc-400">View your approved Schedule of Values below.</span>' : setupMessage}
+                    ${subVendorMode ? subSetupMessage : setupMessage}
                     ${seedBtn}
                     ${addLineBtn}
-                    ${subVendorMode ? '' : `<button onclick="submitSubSOVForApproval()" class="ml-auto px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
-                        <i class="fa-solid fa-paper-plane"></i> <span>Submit SOV for Approval</span>
-                    </button>`}
+                    ${submitSovBtn}
                 </div>
             `;
         } else if (currentStatus === 'Pending Approval') {
@@ -5882,9 +5916,14 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
             if (isInTracker) {
                 statusMessage = resolvedEntry.isCompliance
-                    ? 'Compliance pay app approved — in Sub Pay App Tracker (awaiting main G702 approval)'
-                    : 'Pay Application approved — in Sub Pay App Tracker (awaiting main G702 approval)';
-                buttonsHTML = `
+                    ? 'Compliance pay app approved — awaiting main G702 approval'
+                    : 'Pay Application approved — awaiting main G702 approval';
+                buttonsHTML = subVendorMode ? `
+                    <div class="ml-3 px-5 py-2 bg-emerald-900/50 border border-emerald-600 text-emerald-300 rounded text-sm font-medium flex items-center gap-2">
+                        <i class="fa-solid fa-clock"></i>
+                        <span>Submitted — waiting for GC to process this billing period</span>
+                    </div>
+                ` : `
                     <div class="ml-3 px-5 py-2 bg-emerald-900/50 border border-emerald-600 text-emerald-300 rounded text-sm font-medium flex items-center gap-2">
                         <i class="fa-solid fa-inbox"></i>
                         <span>In Tracker — open Sub Pay App Tracker to review</span>
@@ -5920,13 +5959,15 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                         </div>
                     `;
                 }
-                buttonsHTML += `
+                if (!subVendorMode) {
+                    buttonsHTML += `
                     <button onclick="requestRevisionSubPayApp(${jsArg(selectedSubCompanyId)})" 
                             class="px-5 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded text-sm font-medium flex items-center gap-2">
                         <i class="fa-solid fa-redo"></i> 
                         <span>Request Revision (Pay App)</span>
                     </button>
                 `;
+                }
             } else {
                 // Normal ready-to-bill state
                 statusMessage = isZeroComplianceDraft
@@ -5984,14 +6025,16 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 }
             }
 
+            const revisionBtn = subVendorMode ? '' : `
+                        <button onclick="requestRevisionSubSOV(${jsArg(selectedSubCompanyId)})" class="px-4 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                            <i class="fa-solid fa-redo"></i> <span>Request Revision</span>
+                        </button>`;
             workflowHTML = `
                 <div class="workflow-bar text-sm">
                     <div class="px-4 py-3 flex items-center gap-3 flex-wrap">
                         <span class="text-emerald-400 font-medium">${statusMessage}</span>
                         ${buttonsHTML}
-                        <button onclick="requestRevisionSubSOV(${jsArg(selectedSubCompanyId)})" class="px-4 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
-                            <i class="fa-solid fa-redo"></i> <span>Request Revision</span>
-                        </button>
+                        ${revisionBtn}
                         <button onclick="viewSubSOVAudit()" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5 ml-auto">
                             <i class="fa-solid fa-history"></i> <span>Approval History</span>
                         </button>
@@ -6077,7 +6120,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         tbody.innerHTML = '';
 
         if (subLines.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="13" class="px-6 py-10 text-center text-zinc-500">${isSubVendorPayPortalUser() ? 'No schedule of values lines are available for your company on this project yet. Ask your GC to add your subcontractor SOV.' : 'No SOV lines for this subcontractor yet. Click "Add Line to this Sub\'s SOV".'}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="13" class="px-6 py-10 text-center text-zinc-500">${isSubVendorPayPortalUser() ? 'No schedule lines yet. Click <strong class="text-zinc-300">Add Line</strong> to build your Schedule of Values, then submit for GC approval.' : 'No SOV lines for this subcontractor yet. Click "Add Line to this Sub\'s SOV".'}</td></tr>`;
             return;
         }
 
@@ -6179,8 +6222,8 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             tbody.appendChild(row);
         });
 
-        // Add submit button in workflow if Primary Contact
-        if (isPrimaryContact) {
+        // Legacy primary-contact submit bar (staff portal only — sub vendors use workflow bar above)
+        if (isPrimaryContact && !isSubVendorPayPortalUser()) {
             workflowBar.innerHTML = `
                 <div class="workflow-bar px-4 py-3 flex items-center gap-3">
                     <button onclick="submitSubSOVForApproval(${jsArg(selectedSubCompanyId)})" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium flex items-center gap-2">
@@ -6343,8 +6386,17 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     }
 
     function addLineToSelectedSub() {
-        if (isSubVendorPayPortalUser()) return;
-        if (!selectedSubCompanyId) {
+        if (isSubVendorPayPortalUser()) {
+            ensureSubVendorSOVInitialized();
+            if (!selectedSubCompanyId) {
+                showCenteredAlert("Your company is not linked to this portal. Ask your GC administrator to assign you in Companies → Who to Contact.", "warning");
+                return;
+            }
+            if (!subVendorCanEditOwnSOV(selectedSubCompanyId)) {
+                showCenteredAlert("Your Schedule of Values is locked while pending or approved. Contact your GC if changes are needed.", "warning");
+                return;
+            }
+        } else if (!selectedSubCompanyId) {
             showCenteredAlert("Please select a subcontractor first.", "warning");
             return;
         }
@@ -6355,6 +6407,9 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         const modal = document.getElementById('editSubSOVModal');
         const content = document.getElementById('editSubSOVContent');
         const company = companies.find(c => c.id == companyId);
+        const companyLabel = company
+            ? (company.name || company.company_name)
+            : (resolveSubCompanyDisplayName(companyId) || getSubVendorCompanyName() || 'Subcontractor');
 
         // Set context for live cost code reconciliation display
         currentEditingSubCompanyId = companyId;
@@ -6377,7 +6432,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
         content.innerHTML = `
             <div class="mb-4">
-                <div class="text-sm text-zinc-400">For: <span class="font-medium text-white">${company ? (company.name || company.company_name) : 'Subcontractor'}</span></div>
+                <div class="text-sm text-zinc-400">For: <span class="font-medium text-white">${companyLabel}</span></div>
                 ${isPrimary ? '<div class="text-xs text-emerald-400 mt-1">Primary Contact Mode — Original Commitment locked</div>' : ''}
                 ${isApproved && !canEditStructure ? '<div class="text-xs text-amber-400 mt-1">SOV is Approved & Locked. Use "Pushback to Draft" (Admin only) to allow revisions.</div>' : ''}
                 ${isRevisionLockedExisting ? '<div class="text-xs text-amber-400 mt-1">This line has billed-to-date amounts — it cannot be modified or deleted during pushback revision.</div>' : ''}
@@ -7282,11 +7337,19 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         // Ensure a real subcontractor from the company list is selected and "in charge" of this SOV
         const companyRecord = companies.find(c => c.id == companyId);
         if (!companyRecord) {
-            showErrorModal("The selected subcontractor is no longer valid. Please re-select a subcontractor that is actually in charge of this Schedule of Values.");
-            selectedSubCompanyId = null;
-            casepmStore.removeItem('lastSelectedSubSOV');
-            renderPayAppContent();
-            return;
+            const myId = getSubVendorCompanyId();
+            const mine = isSubVendorPayPortalUser() && myId && (
+                String(companyId) === String(myId)
+                || String(companyId) === String(selectedSubCompanyId)
+                || String(companyId) === String(resolveSubCompanyBucketKey(myId))
+            );
+            if (!mine) {
+                showErrorModal("The selected subcontractor is no longer valid. Please re-select a subcontractor that is actually in charge of this Schedule of Values.");
+                selectedSubCompanyId = null;
+                casepmStore.removeItem('lastSelectedSubSOV');
+                renderPayAppContent();
+                return;
+            }
         }
 
         const cid = String(companyId);

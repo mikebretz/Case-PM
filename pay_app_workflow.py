@@ -444,7 +444,7 @@ def sub_sov_workflow_action(state, company_key, action, user, body=None):
     if action == 'submit':
         if status not in ('Draft', 'Rejected'):
             raise ValueError('Sub SOV can only be submitted from Draft or Rejected')
-        if user.role not in ('Subcontractor Accountant', 'Subcontractor', 'Project Manager', 'Admin', 'Developer'):
+        if user.role not in ('Subcontractor Accountant', 'Subcontractor Contact', 'Subcontractor', 'Project Manager', 'Admin', 'Developer'):
             raise ValueError('Only subcontractor or Project Manager can submit sub SOV')
         entry['status'] = 'Pending Approval'
         entry['ball_in_court_role'] = SUB_SOV_BALL['Pending Approval']
@@ -489,7 +489,7 @@ def sub_pay_app_workflow_action(state, company_key, action, user, body=None):
 
     if action == 'submit':
         validate_sub_pay_app_lien_waiver(state, company_key, body)
-        if user.role not in ('Subcontractor Accountant', 'Subcontractor', 'Project Manager', 'Admin', 'Developer'):
+        if user.role not in ('Subcontractor Accountant', 'Subcontractor Contact', 'Subcontractor', 'Project Manager', 'Admin', 'Developer'):
             raise ValueError('Only subcontractor or Project Manager can submit sub pay applications')
         if not pending and not body.get('pending_entry'):
             raise ValueError('No pending sub pay app submission found')
