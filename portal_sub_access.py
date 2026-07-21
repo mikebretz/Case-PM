@@ -626,22 +626,33 @@ def pay_app_state_includes_user(user, payload) -> bool:
         if name:
             names.add(name)
     cid_s = str(cid) if cid is not None else ''
+    if not isinstance(sub_status, dict):
+        sub_status = {}
     for block in (sub_sov, sub_status):
         if not isinstance(block, dict):
             continue
-        for key in block.keys():
+        for key, val in block.items():
             sk = str(key).strip()
             if not sk:
                 continue
             sk_lower = sk.lower()
+            st_name = ''
+            if isinstance(val, dict):
+                st_name = (val.get('companyName') or val.get('company_name') or '').strip().lower()
             if sk in allowed or sk_lower in allowed:
                 return True
             if cid_s and sk == cid_s:
                 return True
             if sk_lower in names:
                 return True
+            if st_name and st_name in names:
+                return True
             for name in names:
-                if name and (sk_lower == name or name in sk_lower or sk_lower in name):
+                if not name:
+                    continue
+                if sk_lower == name or name in sk_lower or sk_lower in name:
+                    return True
+                if st_name and (st_name == name or name in st_name or st_name in name):
                     return True
     return False
 

@@ -11081,6 +11081,9 @@ def api_commitment_workflow(commitment_id):
         )
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': f'Commitment workflow failed: {exc}'}), 500
 
     budget_sync = None
     sov_sync = None
@@ -11103,14 +11106,20 @@ def api_commitment_workflow(commitment_id):
             )
         except Exception:
             pass
-        _sage_commitment_event(
-            c, 'CommitmentSubmitted',
-            message=f'{c.number} submitted — ball with {c.ball_in_court_role}',
-            user_id=current_user.id,
-        )
+        try:
+            _sage_commitment_event(
+                c, 'CommitmentSubmitted',
+                message=f'{c.number} submitted — ball with {c.ball_in_court_role}',
+                user_id=current_user.id,
+            )
+        except Exception:
+            pass
 
     if action == 'reject':
-        _sage_commitment_event(c, 'CommitmentRejected', user_id=current_user.id)
+        try:
+            _sage_commitment_event(c, 'CommitmentRejected', user_id=current_user.id)
+        except Exception:
+            pass
         try:
             from accounting_reconcile import reconcile_project_accounting
             reconcile_result = reconcile_project_accounting(
@@ -14492,19 +14501,28 @@ def api_save_pay_app_state():
         merged = sanitize_pay_app_state(existing, patch)
     alloc_errors = []
     sov_errors = []
+    commitment_errors = []
     try:
         from portal_sub_access import is_sub_vendor_portal_user
-        from pay_app_persistence import validate_sub_sov_cost_code_allocations, validate_sub_vendor_pay_app_save
+        from pay_app_persistence import (
+            validate_sub_sov_cost_code_allocations,
+            validate_sub_vendor_pay_app_save,
+            validate_sub_sov_requires_commitments,
+        )
+        commitments = Commitment.query.filter_by(project_id=int(project_id)).all()
         if is_sub_vendor_portal_user(current_user):
             sov_errors = validate_sub_vendor_pay_app_save(
                 existing, merged, current_user, Commitment=Commitment, project_id=project_id,
             )
         else:
             alloc_errors = validate_sub_sov_cost_code_allocations(merged)
+            commitment_errors = validate_sub_sov_requires_commitments(merged, commitments)
     except Exception:
         pass
     if sov_errors:
         return jsonify({'error': sov_errors[0], 'sov_errors': sov_errors}), 400
+    if commitment_errors:
+        return jsonify({'error': commitment_errors[0], 'commitment_errors': commitment_errors}), 400
     if alloc_errors:
         return jsonify({'error': alloc_errors[0], 'allocation_errors': alloc_errors}), 400
     try:

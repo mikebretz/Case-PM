@@ -346,12 +346,15 @@ def commitment_workflow_action(commitment, action, user, body=None, CommitmentAl
         commitment.status = 'Submitted'
         commitment.approval_stage = 0
         set_ball_in_court(commitment)
-        queue_commitment_sage_event(
-            commitment,
-            'CommitmentSubmitted',
-            message=f'{commitment.number} submitted — ball with {commitment.ball_in_court_role}',
-            user_id=getattr(user, 'id', None),
-        )
+        try:
+            queue_commitment_sage_event(
+                commitment,
+                'CommitmentSubmitted',
+                message=f'{commitment.number} submitted — ball with {commitment.ball_in_court_role}',
+                user_id=getattr(user, 'id', None),
+            )
+        except Exception:
+            pass
         return commitment.status, False
 
     if action == 'reject':
@@ -642,6 +645,7 @@ def queue_commitment_sage_event(commitment, event_type, message='', extra=None, 
         payload=payload,
         user_id=user_id,
         Commitment=app_mod.Commitment,
+        defer_commit=True,
     )
 
 

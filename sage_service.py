@@ -164,6 +164,7 @@ def create_and_process_sage_event(
     auto_process=True,
     Commitment=None,
     require_accounting_review=False,
+    defer_commit=False,
 ):
     ctx = _project_sage_context(Project, project_id)
     sage_payload = build_sage_payload(event_type, ctx, payload)
@@ -217,7 +218,10 @@ def create_and_process_sage_event(
         except Exception:
             pass
 
-    db.session.commit()
+    if defer_commit:
+        db.session.flush()
+    else:
+        db.session.commit()
     return event
 
 
