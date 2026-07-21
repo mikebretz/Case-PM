@@ -534,7 +534,7 @@
     el.innerHTML = '<option value="">— Select Company —</option>' +
       state.companies.map(c => {
         const name = c.company_name || c.name || '';
-        const id = c.id || name;
+        const id = c.server_id != null && c.server_id !== '' ? c.server_id : (c.id || name);
         return `<option value="${id}" data-name="${esc(name)}" ${String(id) === String(selectedId) ? 'selected' : ''}>${esc(name)}</option>`;
       }).join('');
   }

@@ -757,9 +757,13 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 removeKeys.push(key);
                 return;
             }
-            const companyId = st.companyId || st.company_id || key;
             const companyName = st.companyName || st.company_name || '';
-            const fakeCompany = { id: companyId, server_id: companyId, name: companyName, company_name: companyName };
+            const fakeCompany = {
+                id: st.localCompanyId || st.companyId || st.company_id || key,
+                server_id: st.companyId || st.company_id || key,
+                name: companyName,
+                company_name: companyName,
+            };
             if (!companyHasSubcontractCommitmentOnProject(fakeCompany)) {
                 removeKeys.push(key);
             }
@@ -2893,10 +2897,22 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 const st = statusMap[key] || {};
                 return st && st.status;
             });
-            if (registeredKeys.length === 1) keys.add(String(registeredKeys[0]).trim());
-            else {
-                const sole = soleSubVendorServerKey(map, statusMap);
-                if (sole) keys.add(sole);
+            if (registeredKeys.length === 1) {
+                const onlyKey = String(registeredKeys[0]).trim();
+                const st = statusMap[onlyKey] || {};
+                const stName = (st.companyName || st.company_name || '').trim().toLowerCase();
+                const stCid = st.companyId != null ? String(st.companyId) : (st.company_id != null ? String(st.company_id) : '');
+                let matched = false;
+                if (portalId != null) {
+                    for (const variant of subCompanyKeyVariants(portalId)) {
+                        const vs = String(variant);
+                        if (onlyKey === vs || stCid === vs) matched = true;
+                    }
+                }
+                if (!matched && portalName && (stName === portalName || onlyKey.toLowerCase() === portalName)) {
+                    matched = true;
+                }
+                if (matched) keys.add(onlyKey);
             }
         }
         return keys;
@@ -3052,27 +3068,47 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         ).trim();
     }
 
+    function findCompanyByStableKey(companiesList, key) {
+        const sk = String(key ?? '').trim();
+        if (!sk) return null;
+        const byServer = (companiesList || []).find((c) => c.server_id != null && String(c.server_id) === sk);
+        if (byServer) return byServer;
+        return (companiesList || []).find((c) => String(c.id) === sk) || null;
+    }
+
+    function companyCommitmentKeys(company) {
+        const keys = new Set();
+        if (!company) return keys;
+        if (company.id != null && company.id !== '') keys.add(String(company.id));
+        if (company.server_id != null && company.server_id !== '') keys.add(String(company.server_id));
+        return keys;
+    }
+
     function companyHasSubcontractCommitmentOnProject(company) {
         if (!company) return false;
-        const key = companyStableKey(company);
+        const keys = companyCommitmentKeys(company);
         const name = (company.name || company.company_name || '').trim().toLowerCase();
         return (projectCommitmentsCache || []).some((com) => {
             if (com.commitment_type !== 'Subcontract') return false;
             if (com.status === 'Void') return false;
             const comId = String(com.company_id || '');
             const comName = (com.company_name || '').trim().toLowerCase();
-            return (key && comId && comId === key) || (name && comName && comName === name);
+            return (comId && keys.has(comId)) || (name && comName && comName === name);
         });
     }
 
     function getSubcontractCommitmentForCompany(companyId) {
-        const cid = String(companyId || getSubVendorCompanyId() || '');
-        const name = (resolveSubCompanyDisplayName(companyId) || getSubVendorCompanyName() || '').trim().toLowerCase();
+        const st = getSubSOVStatusEntry(companyId);
+        const keys = new Set(subCompanyKeyVariants(companyId).map(String));
+        if (st.companyId != null) keys.add(String(st.companyId));
+        if (st.company_id != null) keys.add(String(st.company_id));
+        if (st.localCompanyId != null) keys.add(String(st.localCompanyId));
+        const name = (st.companyName || st.company_name || '').trim().toLowerCase();
         for (const com of projectCommitmentsCache || []) {
             if (com.commitment_type && com.commitment_type !== 'Subcontract') continue;
             const comId = String(com.company_id || '');
             const comName = (com.company_name || '').trim().toLowerCase();
-            if ((cid && comId && comId === cid) || (name && comName && comName === name)) {
+            if ((comId && keys.has(comId)) || (name && comName && comName === name)) {
                 return com;
             }
         }
@@ -3214,29 +3250,21 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         if (portalName && portalId && String(companyId) === String(portalId)) return portalName;
         if (portalName && String(companyId).trim().toLowerCase() === portalName.toLowerCase()) return portalName;
 
-        const companiesList = JSON.parse(casepmStore.getItem('casepm_companies') || '[]');
-        const match = companiesList.find((x) =>
-            String(x.id) === String(companyId) || String(x.server_id) === String(companyId)
-        );
-        if (match) return match.name || match.company_name || null;
+        for (const k of subCompanyKeyVariants(companyId)) {
+            const st = subSOVStatus[k] || subSOVStatus[String(k)] || {};
+            if (st.companyName || st.company_name) return st.companyName || st.company_name;
+        }
 
         for (const com of projectCommitmentsCache || []) {
-            if (String(com.company_id || '') === String(companyId) && com.company_name) {
+            const comId = String(com.company_id || '');
+            if (comId && subCompanyKeyVariants(companyId).some((v) => String(v) === comId) && com.company_name) {
                 return com.company_name;
             }
         }
 
-        const status = (subSOVStatus && (subSOVStatus[companyId] || subSOVStatus[String(companyId)])) || {};
-        if (status.companyName) return status.companyName;
-
-        if (portalName) {
-            for (const key of Object.keys(subSOVStatus || {})) {
-                if (String(key) === String(companyId)) {
-                    const st = subSOVStatus[key];
-                    if (st && st.companyName) return st.companyName;
-                }
-            }
-        }
+        const companiesList = JSON.parse(casepmStore.getItem('casepm_companies') || '[]');
+        const match = findCompanyByStableKey(companiesList, companyId);
+        if (match) return match.name || match.company_name || null;
 
         return portalName || null;
     }
@@ -3257,8 +3285,10 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             for (const com of projectCommitmentsCache) {
                 if (!com.company_id || !com.company_name) continue;
                 const key = String(com.company_id);
-                if (!subSOVStatus[key]) subSOVStatus[key] = {};
-                if (!subSOVStatus[key].companyName) subSOVStatus[key].companyName = com.company_name;
+                const existing = subSOVStatus[key];
+                if (existing && existing.status && !existing.companyName) {
+                    existing.companyName = com.company_name;
+                }
             }
         } catch (_) {
             projectCommitmentsCache = [];
@@ -7627,15 +7657,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         modalEl.remove();
         registerSubcontractorOnProject(companyStableKey(selectedCompany), selectedCompany).then(({ storageKey }) => {
             if (!storageKey) return;
-            selectedSubCompanyId = storageKey;
-            renderPayAppContent();
-            setTimeout(() => {
-                const selector = document.getElementById('subSelector');
-                if (selector) {
-                    selector.value = String(storageKey);
-                    selectSubcontractorForSOV(storageKey);
-                }
-            }, 120);
+            selectSubcontractorForSOV(storageKey);
         });
     }
 
@@ -7646,14 +7668,9 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     }
 
     async function registerSubcontractorOnProject(companyId, companyRecord) {
-        if (typeof CasePMPayAppSync !== 'undefined' && CasePMPayAppSync.loadFromServer) {
-            await CasePMPayAppSync.loadFromServer();
-            reloadPayAppStateFromStorage();
-        }
         pruneSubcontractorSOVToProjectCommitments();
 
-        const displayName = (companyRecord && (companyRecord.name || companyRecord.company_name))
-            || resolveSubCompanyDisplayName(companyId) || '';
+        const displayName = (companyRecord && (companyRecord.name || companyRecord.company_name)) || '';
         const storageKey = serverCompanyIdForEntry(companyRecord) || canonicalSubCompanyId(companyId);
         if (!storageKey) return { ok: false, error: 'Invalid company', storageKey: null };
 
@@ -7664,12 +7681,16 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         if (!subSOVStatus[storageKey]) subSOVStatus[storageKey] = {};
         if (!subSOVStatus[storageKey].status) subSOVStatus[storageKey].status = 'Draft';
         if (displayName) subSOVStatus[storageKey].companyName = displayName;
-        subSOVStatus[storageKey].companyId = storageKey;
+        subSOVStatus[storageKey].companyId = String(storageKey);
+        if (companyRecord && companyRecord.id != null && String(companyRecord.id) !== String(storageKey)) {
+            subSOVStatus[storageKey].localCompanyId = String(companyRecord.id);
+        }
         if (!subPayAppNumbers[storageKey]) subPayAppNumbers[storageKey] = 1;
 
         casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
         casepmStore.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
         casepmStore.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+        casepmStore.setItem('lastSelectedSubSOV', String(storageKey));
         showUnsavedIndicator();
 
         const result = await persistPayAppStateNow({ silent: false });
@@ -7726,8 +7747,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
         registerSubcontractorOnProject(companyStableKey(selectedCompany), selectedCompany).then(({ storageKey }) => {
             if (!storageKey) return;
-            selectedSubCompanyId = storageKey;
-            renderPayAppContent();
+            selectSubcontractorForSOV(storageKey);
         });
     }
 
