@@ -10925,6 +10925,17 @@ def api_list_commitments():
     if ctype:
         q = q.filter_by(commitment_type=ctype)
     rows = q.order_by(Commitment.created_at.desc()).all()
+    try:
+        from portal_sub_access import is_sub_vendor_portal_user, resolve_sub_vendor_company
+        from pay_app_persistence import commitment_matches_vendor
+        if is_sub_vendor_portal_user(current_user):
+            cid, cname, _ = resolve_sub_vendor_company(current_user, Company, db, persist_link=True)
+            rows = [
+                c for c in rows
+                if commitment_matches_vendor(c, cid, cname)
+            ]
+    except Exception:
+        pass
     result = []
     for c in rows:
         allocs = CommitmentAllocation.query.filter_by(commitment_id=c.id).all()
@@ -14480,11 +14491,20 @@ def api_save_pay_app_state():
     else:
         merged = sanitize_pay_app_state(existing, patch)
     alloc_errors = []
+    sov_errors = []
     try:
-        from pay_app_persistence import validate_sub_sov_cost_code_allocations
-        alloc_errors = validate_sub_sov_cost_code_allocations(merged)
+        from portal_sub_access import is_sub_vendor_portal_user
+        from pay_app_persistence import validate_sub_sov_cost_code_allocations, validate_sub_vendor_pay_app_save
+        if is_sub_vendor_portal_user(current_user):
+            sov_errors = validate_sub_vendor_pay_app_save(
+                existing, merged, current_user, Commitment=Commitment, project_id=project_id,
+            )
+        else:
+            alloc_errors = validate_sub_sov_cost_code_allocations(merged)
     except Exception:
         pass
+    if sov_errors:
+        return jsonify({'error': sov_errors[0], 'sov_errors': sov_errors}), 400
     if alloc_errors:
         return jsonify({'error': alloc_errors[0], 'allocation_errors': alloc_errors}), 400
     try:
