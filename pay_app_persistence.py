@@ -294,6 +294,40 @@ def validate_sub_sov_commitment_totals(
     return errors
 
 
+def validate_sub_sov_requires_commitments(state_data, commitments, tolerance=0.01):
+    """Each subcontractor on the SOV list must have a Subcontract commitment on the project."""
+    sub_sov = state_data.get('subcontractorSOV') or {}
+    sub_status = state_data.get('subSOVStatus') or {}
+    if not isinstance(sub_sov, dict) and not isinstance(sub_status, dict):
+        return []
+    keys = set()
+    for block in (sub_sov, sub_status):
+        if isinstance(block, dict):
+            keys.update(str(k) for k in block.keys())
+    errors = []
+    for key in sorted(keys):
+        sk = str(key).strip()
+        if not sk:
+            continue
+        status_entry = sub_status.get(key) or sub_status.get(sk) or {}
+        company_name = ''
+        company_id = None
+        if isinstance(status_entry, dict):
+            company_name = (status_entry.get('companyName') or status_entry.get('company_name') or '').strip()
+            raw_cid = status_entry.get('companyId') or status_entry.get('company_id')
+            company_id = str(raw_cid).strip() if raw_cid is not None else None
+        if not company_id and sk.isdigit():
+            company_id = sk
+        cap = get_vendor_commitment_cap(commitments, company_id, company_name or sk)
+        if cap is None:
+            label = company_name or sk
+            errors.append(
+                f'{label} is on the subcontractor schedule of values but has no Subcontract '
+                'commitment on this project. Create the commitment first.'
+            )
+    return errors
+
+
 def validate_sub_vendor_pay_app_save(
     existing,
     merged,

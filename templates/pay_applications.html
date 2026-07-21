@@ -2831,15 +2831,53 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             if (Object.prototype.hasOwnProperty.call(map, k)) return true;
             if (Object.prototype.hasOwnProperty.call(statusMap, k)) return true;
         }
-        const name = (resolveSubCompanyDisplayName(cid) || getSubVendorCompanyName() || '').trim().toLowerCase();
-        if (name) {
-            for (const key of Object.keys(statusMap)) {
-                const st = statusMap[key] || {};
-                const stName = (st.companyName || '').trim().toLowerCase();
-                if (stName === name || String(key).trim().toLowerCase() === name) return true;
-            }
+        const portalName = (getSubVendorCompanyName() || '').trim().toLowerCase();
+        const name = (resolveSubCompanyDisplayName(cid) || '').trim().toLowerCase();
+        const names = new Set([portalName, name].filter(Boolean));
+        for (const key of Object.keys(statusMap)) {
+            const st = statusMap[key] || {};
+            const stName = (st.companyName || '').trim().toLowerCase();
+            if (stName && names.has(stName)) return true;
+            if (String(key).trim().toLowerCase() && names.has(String(key).trim().toLowerCase())) return true;
         }
         return false;
+    }
+
+    function companyStableKey(company) {
+        if (!company) return '';
+        const sid = company.server_id != null ? company.server_id : company.id;
+        return String(sid);
+    }
+
+    function resolveCompanyFromList(companiesList, selectValue) {
+        const val = String(selectValue || '').trim();
+        if (!val) return null;
+        let hit = companiesList.find(c => c.server_id != null && String(c.server_id) === val);
+        if (hit) return hit;
+        hit = companiesList.find(c => String(c.id) === val);
+        return hit || null;
+    }
+
+    function formatPortalUserName(u) {
+        if (!u) return '';
+        return (
+            u.full_name || u.fullName ||
+            `${u.firstName || u.first_name || ''} ${u.lastName || u.last_name || ''}`.trim() ||
+            u.name || ''
+        ).trim();
+    }
+
+    function companyHasSubcontractCommitmentOnProject(company) {
+        if (!company) return false;
+        const key = companyStableKey(company);
+        const name = (company.name || company.company_name || '').trim().toLowerCase();
+        return (projectCommitmentsCache || []).some((com) => {
+            if (com.commitment_type !== 'Subcontract') return false;
+            if (com.status === 'Void') return false;
+            const comId = String(com.company_id || '');
+            const comName = (com.company_name || '').trim().toLowerCase();
+            return (key && comId && comId === key) || (name && comName && comName === name);
+        });
     }
 
     function getSubcontractCommitmentForCompany(companyId) {
@@ -7170,6 +7208,12 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
     function showAddNewSubcontractorQuick() {
         if (isSubVendorPayPortalUser()) return;
+        loadProjectCommitmentsCache().then(() => {
+            openAddNewSubcontractorModal();
+        });
+    }
+
+    function openAddNewSubcontractorModal() {
         // FREE-FLOATING DRAGGABLE MODAL (user can move it anywhere on screen)
         const modal = document.createElement('div');
         modal.className = 'fixed z-[200] bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl text-white w-full max-w-md';
@@ -7193,7 +7237,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                         <select id="newSubCompanySelect" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" required>
                             <option value="">-- Select Existing Company --</option>
                         </select>
-                        <p class="text-[10px] text-zinc-500 mt-1">Live list from Companies / Vendors page. Select to link as Subcontractor.</p>
+                        <p class="text-[10px] text-zinc-500 mt-1">Only companies with a Subcontract commitment on this project are listed. Create the commitment first, then add them here.</p>
                     </div>
                     <div id="newSubContactInfo" class="hidden bg-zinc-800 border border-zinc-700 rounded-md p-3 text-sm">
                         <div class="text-zinc-400 text-xs mb-1">PRIMARY CONTACT (from Company record)</div>
@@ -7274,73 +7318,82 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
             if (selectEl) {
                 const companiesList = JSON.parse(casepmStore.getItem('casepm_companies')) || [];
+                const eligible = companiesList.filter((c) => companyHasSubcontractCommitmentOnProject(c));
                 selectEl.innerHTML = '<option value="">-- Select Existing Company --</option>';
-                companiesList.forEach(c => {
+                if (!eligible.length) {
                     const opt = document.createElement('option');
-                    opt.value = c.id;
-                    opt.textContent = c.name || c.company_name || 'Unnamed Company';
+                    opt.value = '';
+                    opt.textContent = 'No subcontractors with commitments on this project';
+                    opt.disabled = true;
                     selectEl.appendChild(opt);
-                });
+                } else {
+                    eligible.forEach((c) => {
+                        const opt = document.createElement('option');
+                        opt.value = companyStableKey(c);
+                        opt.textContent = c.name || c.company_name || 'Unnamed Company';
+                        selectEl.appendChild(opt);
+                    });
+                }
+
+                function renderCompanyContacts(company) {
+                    if (!company || !contactInfoDiv || !contactDisplay) return;
+                    const allUsers = JSON.parse(casepmStore.getItem('users') || '[]');
+                    const blocks = [];
+
+                    function contactBlock(role, userId, fallbackEmail, fallbackPhone, fallbackName) {
+                        let name = fallbackName || '';
+                        let email = fallbackEmail || '';
+                        let phone = fallbackPhone || '';
+                        if (userId) {
+                            const u = allUsers.find((x) => String(x.id) === String(userId));
+                            if (u) {
+                                name = formatPortalUserName(u) || name;
+                                email = u.email || email;
+                                phone = u.phone || phone;
+                            }
+                        }
+                        if (!name && !email && !phone) return;
+                        let html = `<div class="mb-2 last:mb-0"><div class="text-[10px] uppercase text-zinc-500 mb-0.5">${role} contact</div>`;
+                        html += `<div class="font-medium text-emerald-300">${name || 'Not set'}</div>`;
+                        if (email) html += `<div class="text-xs text-zinc-400">${email}</div>`;
+                        if (phone) html += `<div class="text-xs text-zinc-400">${phone}</div></div>`;
+                        else html += '</div>';
+                        blocks.push(html);
+                    }
+
+                    contactBlock('Primary', company.primary_contact_user_id,
+                        company.primary_contact_email || company.primaryContactEmail || company.email,
+                        company.primary_contact_phone || company.primaryContactPhone || company.phone,
+                        company.primary_contact_name || company.primaryContactName);
+                    contactBlock('Financial', company.financial_contact_user_id,
+                        company.financial_email || company.financial_contact_email,
+                        company.financial_phone || company.financial_contact_phone,
+                        company.financial_contact_name);
+
+                    if (!blocks.length && company.contacts && company.contacts.length) {
+                        const primaryContact = company.contacts.find(c => c.isPrimary || c.primary) || company.contacts[0];
+                        contactBlock('Primary', null, primaryContact.email, primaryContact.phone || primaryContact.mobile, primaryContact.name || primaryContact.fullName);
+                    }
+
+                    if (blocks.length) {
+                        contactDisplay.innerHTML = blocks.join('');
+                    } else {
+                        contactDisplay.innerHTML = `
+                            <div class="font-medium text-emerald-300">Not set on company record</div>
+                            <div class="text-xs text-amber-400">Set Primary or Financial Contact in Companies → Who to Contact.</div>`;
+                    }
+                    contactInfoDiv.classList.remove('hidden');
+                }
 
                 selectEl.onchange = function() {
                     const selectedId = this.value;
-                    if (!selectedId || !contactInfoDiv || !contactDisplay) {
+                    if (!selectedId) {
                         if (contactInfoDiv) contactInfoDiv.classList.add('hidden');
                         return;
                     }
-                    const company = companiesList.find(c => c.id == selectedId);
-                    if (company) {
-                        const allUsers = JSON.parse(casepmStore.getItem('users') || '[]');
-                        let pcName = 'Not set on company record';
-                        let pcEmail = '';
-                        let pcPhone = '';
-                        let contactRole = 'Financial';
-
-                        if (company.financial_contact_user_id) {
-                            const fu = allUsers.find(u => u.id == company.financial_contact_user_id);
-                            if (fu) {
-                                pcName = `${fu.firstName || ''} ${fu.lastName || ''}`.trim() || 'Not set';
-                                pcEmail = fu.email || company.financial_email || company.email || '';
-                                pcPhone = fu.phone || company.financial_phone || company.phone || '';
-                            }
-                        } else if (company.financial_email || company.financial_phone) {
-                            pcEmail = company.financial_email || '';
-                            pcPhone = company.financial_phone || '';
-                            pcName = 'Financial contact (no user linked)';
-                        } else if (company.primary_contact_user_id) {
-                            contactRole = 'Primary';
-                            const pu = allUsers.find(u => u.id == company.primary_contact_user_id);
-                            if (pu) {
-                                pcName = `${pu.firstName || ''} ${pu.lastName || ''}`.trim() || 'Not set';
-                                pcEmail = pu.email || company.primary_contact_email || company.email || '';
-                                pcPhone = pu.phone || company.primary_contact_phone || company.phone || '';
-                            }
-                        } else if (company.contacts && Array.isArray(company.contacts) && company.contacts.length > 0) {
-                            const primaryContact = company.contacts.find(c => c.isPrimary || c.primary) || company.contacts[0];
-                            if (primaryContact) {
-                                pcName = primaryContact.name || primaryContact.fullName || 'Not set';
-                                pcEmail = primaryContact.email || '';
-                                pcPhone = primaryContact.phone || primaryContact.mobile || '';
-                            }
-                        } else if (company.primary_contact_name || company.primaryContactName) {
-                            pcName = company.primary_contact_name || company.primaryContactName || 'Not set';
-                            pcEmail = company.primary_contact_email || company.primaryContactEmail || company.email || '';
-                            pcPhone = company.primary_contact_phone || company.primaryContactPhone || company.phone || '';
-                        }
-
-                        let html = '';
-                        if (pcName && pcName !== 'Not set on company record' && pcName !== 'Not set') {
-                            html = `<div class="text-[10px] uppercase text-zinc-500 mb-0.5">${contactRole} contact</div>`;
-                            html += `<div class="font-medium text-emerald-300">${pcName}</div>`;
-                            if (pcEmail) html += `<div class="text-xs text-zinc-400">${pcEmail}</div>`;
-                            if (pcPhone) html += `<div class="text-xs text-zinc-400">${pcPhone}</div>`;
-                        } else {
-                            html = `<div class="font-medium text-emerald-300">Not set on company record</div>`;
-                            html += `<div class="text-xs text-amber-400">Set Financial Contact in Companies (pay apps / AP) or Primary for project coordination.</div>`;
-                        }
-                        contactDisplay.innerHTML = html;
-                        contactInfoDiv.classList.remove('hidden');
-                    }
+                    const company = resolveCompanyFromList(companiesList, selectedId);
+                    if (company) renderCompanyContacts(company);
+                    else if (contactInfoDiv) contactInfoDiv.classList.add('hidden');
                 };
             }
         }, 80);
@@ -7356,11 +7409,17 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         }
 
         const companiesList = JSON.parse(casepmStore.getItem('casepm_companies')) || [];
-        const selectedCompany = companiesList.find(c =>
-            String(c.id) === String(selectedCompanyId) || String(c.server_id) === String(selectedCompanyId)
-        );
+        const selectedCompany = resolveCompanyFromList(companiesList, selectedCompanyId);
         if (!selectedCompany) {
             showCenteredAlert("Selected company not found.", "error");
+            return;
+        }
+
+        if (!companyHasSubcontractCommitmentOnProject(selectedCompany)) {
+            showCenteredAlert(
+                `${selectedCompany.name || selectedCompany.company_name || 'This company'} does not have a Subcontract commitment on this project.\n\nCreate the commitment first (Commitments page), then add them to the Schedule of Values.`,
+                'warning'
+            );
             return;
         }
 
@@ -7370,7 +7429,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         }
 
         modalEl.remove();
-        registerSubcontractorOnProject(selectedCompanyId, selectedCompany).then(({ storageKey }) => {
+        registerSubcontractorOnProject(companyStableKey(selectedCompany), selectedCompany).then(({ storageKey }) => {
             if (!storageKey) return;
             selectedSubCompanyId = storageKey;
             renderPayAppContent();
@@ -7439,13 +7498,18 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             return;
         }
 
-        // Find the selected company from the live list
         const companiesList = JSON.parse(casepmStore.getItem('casepm_companies')) || [];
-        const selectedCompany = companiesList.find(c =>
-            String(c.id) === String(selectedCompanyId) || String(c.server_id) === String(selectedCompanyId)
-        );
+        const selectedCompany = resolveCompanyFromList(companiesList, selectedCompanyId);
         if (!selectedCompany) {
             alert("Selected company not found. Please refresh and try again.");
+            return;
+        }
+
+        if (!companyHasSubcontractCommitmentOnProject(selectedCompany)) {
+            showCenteredAlert(
+                `${selectedCompany.name || selectedCompany.company_name || 'This company'} does not have a Subcontract commitment on this project. Create the commitment first.`,
+                'warning'
+            );
             return;
         }
 
@@ -7458,7 +7522,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         modal.close();
         modal.remove();
 
-        registerSubcontractorOnProject(selectedCompanyId, selectedCompany).then(({ storageKey }) => {
+        registerSubcontractorOnProject(companyStableKey(selectedCompany), selectedCompany).then(({ storageKey }) => {
             if (!storageKey) return;
             selectedSubCompanyId = storageKey;
             renderPayAppContent();
