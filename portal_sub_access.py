@@ -284,7 +284,19 @@ def resolve_sub_vendor_sov_keys(user, data: dict | None) -> set[str]:
             if str(k).strip() and isinstance(entry, dict) and entry.get('status')
         ]
         if len(registered) == 1:
-            keys.add(registered[0])
+            only_key = registered[0]
+            entry = sub_status.get(only_key) or {}
+            st_name = (entry.get('companyName') or entry.get('company_name') or '').strip().lower()
+            st_cid = str(entry.get('companyId') or entry.get('company_id') or '').strip()
+            matched = False
+            if cid is not None:
+                cid_s = str(cid)
+                if only_key == cid_s or st_cid == cid_s:
+                    matched = True
+            if not matched and name_lower and (st_name == name_lower or only_key.lower() == name_lower):
+                matched = True
+            if matched:
+                keys.add(only_key)
     return keys
 
 
