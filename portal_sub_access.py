@@ -357,6 +357,173 @@ def get_company_job_project_ids(company, Commitment=None, PayAppProjectState=Non
     return ids
 
 
+def resolve_company_from_sov_key(key, Company=None):
+    """Resolve a subcontractorSOV dict key to a Company row (id or name)."""
+    if Company is None:
+        try:
+            from app import Company as CompanyModel
+            Company = CompanyModel
+        except Exception:
+            return None
+    sk = str(key or '').strip()
+    if not sk:
+        return None
+    try:
+        company = Company.query.get(int(sk))
+        if company:
+            return company
+    except (TypeError, ValueError):
+        pass
+    try:
+        from sqlalchemy import func
+        company = Company.query.filter(func.lower(Company.name) == sk.lower()).first()
+        if company:
+            return company
+    except Exception:
+        pass
+    return None
+
+
+def iter_sub_vendor_users_for_company(company, User=None):
+    """Yield portal sub/vendor users linked to a company."""
+    if not company:
+        return
+    if User is None:
+        try:
+            from app import User as UserModel
+            User = UserModel
+        except Exception:
+            return
+    seen: set[int] = set()
+    candidates = []
+    for uid in (
+        getattr(company, 'primary_contact_user_id', None),
+        getattr(company, 'financial_contact_user_id', None),
+    ):
+        if uid is None:
+            continue
+        try:
+            uid = int(uid)
+        except (TypeError, ValueError):
+            continue
+        if uid in seen:
+            continue
+        user = User.query.get(uid)
+        if user:
+            candidates.append(user)
+            seen.add(uid)
+    try:
+        for user in User.query.filter_by(company_id=company.id).all():
+            if user.id not in seen:
+                candidates.append(user)
+                seen.add(int(user.id))
+    except Exception:
+        pass
+    cname = (getattr(company, 'name', None) or '').strip()
+    if cname:
+        try:
+            from sqlalchemy import func
+            for user in User.query.filter(func.lower(User.company) == cname.lower()).all():
+                if user.id not in seen:
+                    candidates.append(user)
+                    seen.add(int(user.id))
+        except Exception:
+            pass
+    for user in candidates:
+        if is_sub_vendor_portal_user(user):
+            yield user
+
+
+def grant_project_membership(project_id, user, db, ProjectMembership=None, role='Subcontractor') -> bool:
+    """Add a single project membership row if missing. Returns True when added."""
+    if not project_id or not user or not db:
+        return False
+    PM = ProjectMembership
+    if PM is None:
+        try:
+            from case_workflow import ProjectMembership as PMModel
+            PM = PMModel
+        except Exception:
+            return False
+    if PM is None:
+        return False
+    try:
+        pid = int(project_id)
+        uid = int(user.id)
+    except (TypeError, ValueError):
+        return False
+    existing = PM.query.filter_by(project_id=pid, user_id=uid).first()
+    if existing:
+        return False
+    db.session.add(PM(project_id=pid, user_id=uid, role=role))
+    return True
+
+
+def sync_sub_vendor_memberships_from_pay_app_state(
+    project_id,
+    state,
+    db,
+    Company=None,
+    User=None,
+    ProjectMembership=None,
+) -> set[int]:
+    """
+    When subcontractors are added to a job's SOV, grant their portal users
+    membership on that project so it appears in the current-project list.
+    """
+    if not project_id or not isinstance(state, dict) or not db:
+        return set()
+    try:
+        pid = int(project_id)
+    except (TypeError, ValueError):
+        return set()
+    if Company is None:
+        try:
+            from app import Company as CompanyModel
+            Company = CompanyModel
+        except Exception:
+            return set()
+    if User is None:
+        try:
+            from app import User as UserModel
+            User = UserModel
+        except Exception:
+            return set()
+
+    keys: set[str] = set()
+    for field in ('subcontractorSOV', 'subSOVStatus'):
+        block = state.get(field) or {}
+        if not isinstance(block, dict):
+            continue
+        for key in block.keys():
+            sk = str(key).strip()
+            if sk:
+                keys.add(sk)
+
+    company_ids: set[int] = set()
+    companies = []
+    for key in keys:
+        company = resolve_company_from_sov_key(key, Company)
+        if company and company.id not in company_ids:
+            company_ids.add(int(company.id))
+            companies.append(company)
+
+    granted_users: set[int] = set()
+    changed = False
+    for company in companies:
+        for user in iter_sub_vendor_users_for_company(company, User):
+            if grant_project_membership(pid, user, db, ProjectMembership):
+                granted_users.add(int(user.id))
+                changed = True
+    if changed:
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            return set()
+    return granted_users
+
+
 def grant_company_contact_project_memberships(user, company, db, ProjectMembership=None) -> set[int]:
     """Ensure a company contact can access every job site linked to that company."""
     if not user or not company or not db:

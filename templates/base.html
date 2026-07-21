@@ -635,7 +635,25 @@
 
             <!-- Main Content Block -->
             <div id="mainContent" class="flex-1 min-h-0 overflow-auto p-4">
+                {% if page_requires_active_project %}
+                <div id="casepmProjectRequiredGate" class="flex items-center justify-center min-h-[50vh] p-8">
+                    <div class="max-w-lg text-center bg-zinc-900 border border-amber-600/50 rounded-lg p-8">
+                        <i class="fa-solid fa-folder-open text-amber-400 text-4xl mb-4"></i>
+                        <h2 class="text-xl font-semibold text-white mb-2">Select a Project</h2>
+                        <p class="text-sm text-zinc-400 mb-4">Choose a <strong class="text-zinc-300">Current Project</strong> from the dropdown in the header before using this module. Pay applications, budget, RFIs, and other job data are tied to the selected project.</p>
+                        <p class="text-xs text-zinc-500">Email, dashboard, and company settings do not require a project.</p>
+                        {% if all_projects %}
+                        <button type="button" onclick="toggleProjectDropdown(event)" class="mt-5 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold text-white">
+                            <i class="fa-solid fa-chevron-down mr-2"></i>Open Project List
+                        </button>
+                        {% else %}
+                        <p class="text-xs text-amber-400/90 mt-4">No projects are assigned to your account yet. If you were just added to a job's subcontractor schedule, ask your GC to save Pay Applications, then refresh this page.</p>
+                        {% endif %}
+                    </div>
+                </div>
+                {% else %}
                 {% block content %}{% endblock %}
+                {% endif %}
             </div>
             
             <!-- Footer Bar -->
@@ -1027,7 +1045,37 @@
             '/notifications',
             '/profile',
             '/search',
+            '/developer',
         ];
+
+        window.casepmHasActiveProject = function() {
+            const raw = window.CASEPM_ACTIVE_PROJECT_ID || localStorage.getItem('casepm_current_project_id');
+            const id = parseInt(raw, 10);
+            if (!id) return false;
+            const registry = window.CASEPM_PROJECT_REGISTRY || [];
+            if (!registry.length) return !!id;
+            return registry.some((p) => parseInt(p.id, 10) === id);
+        };
+
+        window.applyProjectRequiredNav = function() {
+            const hasProject = window.casepmHasActiveProject();
+            const agnostic = new Set([
+                'dashboard', 'projects', 'email', 'companies', 'users',
+                'program_settings', 'audit_log', 'developer', 'notifications',
+            ]);
+            document.querySelectorAll('.nav-link[data-nav-module]').forEach((link) => {
+                const mod = link.dataset.navModule;
+                if (!mod || agnostic.has(mod)) return;
+                link.classList.toggle('nav-requires-project', true);
+                link.classList.toggle('opacity-40', !hasProject);
+                link.classList.toggle('pointer-events-none', !hasProject);
+                if (!hasProject) {
+                    link.setAttribute('title', 'Select a current project first');
+                } else {
+                    link.removeAttribute('title');
+                }
+            });
+        };
 
         window.isProjectAgnosticPath = function(path) {
             const p = path || window.location.pathname;
@@ -1118,6 +1166,8 @@
                 window.onCasePmProjectChanged(projectId, project);
             }
 
+            applyProjectRequiredNav();
+
             if (window.isProjectAgnosticPath(window.location.pathname)) {
                 return;
             }
@@ -1130,6 +1180,8 @@
         {% if active_project %}
         localStorage.setItem('casepm_current_project_id', '{{ active_project.id }}');
         {% endif %}
+
+        applyProjectRequiredNav();
 
         // Sidebar collapse
         window.toggleSidebarCollapse = function() {

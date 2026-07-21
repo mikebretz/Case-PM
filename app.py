@@ -199,6 +199,7 @@ PROJECT_AGNOSTIC_ENDPOINTS = frozenset({
     'api_stats',
     'api_current_project',
     'api_portfolio_schedules',
+    'developer_console',
 })
 
 CURRENT_PROJECT_SESSION_KEY = 'current_project_id'
@@ -880,6 +881,15 @@ def inject_project_context():
         csrf_token = ensure_csrf_token()
     except Exception:
         pass
+    ep = request.endpoint or ''
+    path = request.path or ''
+    page_requires_active_project = bool(
+        active is None
+        and ep
+        and ep not in PROJECT_AGNOSTIC_ENDPOINTS
+        and not path.startswith('/api/')
+        and not path.startswith('/static/')
+    )
     return {
         'active_project': active,
         'project_name': active.name if active else 'Select Project',
@@ -889,6 +899,7 @@ def inject_project_context():
         'current_user_profile': profile,
         'csrf_token': csrf_token,
         'sub_vendor_company_linked': sub_vendor_company_linked,
+        'page_requires_active_project': page_requires_active_project,
         **portal,
     }
 
@@ -14401,6 +14412,16 @@ def _require_linked_sub_vendor_company():
     return None
 
 
+def _sync_sub_memberships_after_pay_app_save(project_id, state):
+    try:
+        from portal_sub_access import sync_sub_vendor_memberships_from_pay_app_state
+        sync_sub_vendor_memberships_from_pay_app_state(
+            project_id, state, db, Company=Company, User=User,
+        )
+    except Exception:
+        pass
+
+
 @app.route('/api/pay-applications/state', methods=['GET'])
 @login_required
 def api_get_pay_app_state():
@@ -14480,6 +14501,7 @@ def api_save_pay_app_state():
     except Exception:
         pass
     record = persist_state(PayAppProjectState, db, project_id, merged, current_user.id)
+    _sync_sub_memberships_after_pay_app_save(project_id, merged)
     reconcile_result = None
     try:
         from accounting_reconcile import reconcile_project_accounting
@@ -14522,6 +14544,7 @@ def api_import_pay_app_local():
     _, existing = load_state(PayAppProjectState, project_id)
     data = sanitize_pay_app_state(existing, data)
     record = persist_state(PayAppProjectState, db, int(project_id), data, current_user.id)
+    _sync_sub_memberships_after_pay_app_save(project_id, data)
     return jsonify({'ok': True, 'version': record.version})
 
 
