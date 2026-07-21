@@ -41,10 +41,10 @@ APPROVAL_CHAIN = (
 )
 
 ROLE_APPROVERS = {
-    'Project Manager': ('Project Manager', 'Admin'),
-    'Contractor Accounting': ('Contractor Accounting', 'Admin'),
-    'Owner': ('Owner', 'Admin'),
-    'Creator': ('Project Manager', 'Admin', 'Company User'),
+    'Project Manager': ('Project Manager', 'Admin', 'Developer'),
+    'Contractor Accounting': ('Contractor Accounting', 'Admin', 'Developer'),
+    'Owner': ('Owner', 'Admin', 'Developer'),
+    'Creator': ('Project Manager', 'Admin', 'Developer', 'Company User'),
 }
 
 OWNER_APPROVAL_THRESHOLD = 50000.0
@@ -305,7 +305,7 @@ def compute_dashboard_stats(Commitment, project_id):
 def user_can_act_on_ball_in_court(user, role):
     if not user or not role:
         return False
-    if user.role == 'Admin':
+    if user.role in ('Admin', 'Developer'):
         return True
     return user.role in ROLE_APPROVERS.get(role, (role,))
 
