@@ -206,6 +206,149 @@ def validate_sub_sov_cost_code_allocations(state_data, tolerance=0.01):
     return errors
 
 
+def _sov_keys_for_vendor(state_data, company_id=None, company_name=None):
+    """Dict keys in pay-app state that belong to a subcontractor vendor."""
+    keys: set[str] = set()
+    sub_sov = state_data.get('subcontractorSOV') or {}
+    sub_status = state_data.get('subSOVStatus') or {}
+    for block in (sub_sov, sub_status):
+        if not isinstance(block, dict):
+            continue
+        for key in _find_sub_sov_keys_for_company(block, company_id, company_name):
+            keys.add(str(key))
+    return keys
+
+
+def is_vendor_on_sub_sov(state_data, company_id=None, company_name=None) -> bool:
+    """True when the GC has registered this vendor on the subcontractor SOV list."""
+    return bool(_sov_keys_for_vendor(state_data or {}, company_id, company_name))
+
+
+def _sum_sub_sov_line_commitments(lines):
+    total = 0.0
+    for line in lines or []:
+        if not isinstance(line, dict):
+            continue
+        total += float(line.get('original_commitment') or line.get('original') or 0)
+        total += float(line.get('change_orders') or 0)
+    return total
+
+
+def get_vendor_commitment_cap(commitments, company_id=None, company_name=None):
+    """Return the subcontract commitment cap for a vendor, or None if none on file."""
+    best = None
+    for commitment in commitments or []:
+        if not commitment_matches_vendor(commitment, company_id, company_name):
+            continue
+        current = getattr(commitment, 'current_amount', None)
+        original = float(getattr(commitment, 'original_amount', 0) or 0)
+        approved = float(getattr(commitment, 'approved_changes', 0) or 0)
+        cap = float(current) if current is not None else original + approved
+        if cap > 0:
+            best = cap
+            break
+        if best is None:
+            best = cap
+    return best
+
+
+def validate_sub_sov_commitment_totals(
+    state_data,
+    commitments,
+    *,
+    company_id=None,
+    company_name=None,
+    tolerance=0.01,
+):
+    """Ensure each sub's SOV total does not exceed their subcontract commitment."""
+    sub_sov = state_data.get('subcontractorSOV') or {}
+    if not isinstance(sub_sov, dict):
+        return []
+
+    vendor_keys = None
+    if company_id is not None or company_name:
+        vendor_keys = _sov_keys_for_vendor(state_data, company_id, company_name)
+
+    errors = []
+    for key, lines in sub_sov.items():
+        sk = str(key).strip()
+        if vendor_keys is not None and sk not in vendor_keys:
+            continue
+        total = _sum_sub_sov_line_commitments(lines)
+        if total <= tolerance:
+            continue
+        cap = get_vendor_commitment_cap(commitments, company_id, company_name)
+        if cap is None:
+            label = company_name or sk
+            errors.append(
+                f'No subcontract commitment on file for {label}. '
+                'Enter the PO/subcontract amount before building the Schedule of Values.'
+            )
+            continue
+        if total > float(cap) + tolerance:
+            label = company_name or sk
+            errors.append(
+                f'Schedule of Values for {label} totals ${total:,.2f}, '
+                f'which exceeds the original contract amount of ${float(cap):,.2f}.'
+            )
+    return errors
+
+
+def validate_sub_vendor_pay_app_save(
+    existing,
+    merged,
+    user,
+    *,
+    Commitment=None,
+    project_id=None,
+    tolerance=0.01,
+):
+    """Server-side rules for sub-vendor SOV entry (no G703 caps; commitment + registration)."""
+    from portal_sub_access import resolve_sub_vendor_company, resolve_sub_vendor_sov_keys
+
+    existing = dict(existing or {})
+    merged = dict(merged or {})
+    cid, cname, _ = resolve_sub_vendor_company(user)
+    if not is_vendor_on_sub_sov(existing, cid, cname):
+        return [
+            'You are not registered on this project\'s subcontractor schedule of values. '
+            'Ask your GC to add your company under Select Subcontractor and save.'
+        ]
+
+    existing_keys = set(str(k) for k in (existing.get('subcontractorSOV') or {}))
+    existing_keys |= set(str(k) for k in (existing.get('subSOVStatus') or {}))
+    allowed_keys = {str(k) for k in resolve_sub_vendor_sov_keys(user, existing)}
+    merged_sov = merged.get('subcontractorSOV') or {}
+    merged_status = merged.get('subSOVStatus') or {}
+    for block in (merged_sov, merged_status):
+        if not isinstance(block, dict):
+            continue
+        for key in block:
+            sk = str(key).strip()
+            if not sk:
+                continue
+            if sk in existing_keys or sk in allowed_keys:
+                continue
+            return [
+                'You cannot add schedule of values for this project until your company '
+                'is added to the subcontractor schedule of values list.'
+            ]
+
+    commitments = []
+    if Commitment is not None and project_id is not None:
+        try:
+            commitments = Commitment.query.filter_by(project_id=int(project_id)).all()
+        except Exception:
+            commitments = []
+    return validate_sub_sov_commitment_totals(
+        merged,
+        commitments,
+        company_id=cid,
+        company_name=cname,
+        tolerance=tolerance,
+    )
+
+
 def apply_co_to_contractor_sov(state_data, amount, cost_code=None, description=None):
     """Add approved change order amount to contractor SOV co_amount."""
     lines = state_data.get('contractorSOV') or []

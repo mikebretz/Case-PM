@@ -704,9 +704,12 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     function subCompanyIdsInSOV(subSOVData) {
         const seen = new Set();
         const ids = [];
-        Object.keys(subSOVData || {}).forEach((key) => {
-            const lines = subSOVData[key];
-            if (!Array.isArray(lines)) return;
+        const statusData = subSOVStatus || JSON.parse(casepmStore.getItem('subSOVStatus') || '{}');
+        const allKeys = new Set([
+            ...Object.keys(subSOVData || {}),
+            ...Object.keys(statusData || {}),
+        ]);
+        allKeys.forEach((key) => {
             const cid = canonicalSubCompanyId(key);
             if (cid == null || seen.has(String(cid))) return;
             seen.add(String(cid));
@@ -2790,9 +2793,14 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         const portalId = preferredId != null ? preferredId : getSubVendorCompanyId();
         const portalName = (getSubVendorCompanyName() || '').trim().toLowerCase();
 
+        function keyIsRegistered(k) {
+            return Object.prototype.hasOwnProperty.call(map, k)
+                || Object.prototype.hasOwnProperty.call(statusMap, k);
+        }
+
         if (portalId != null) {
             for (const k of subCompanyKeyVariants(portalId)) {
-                if (map[k] != null) return canonicalSubCompanyId(k);
+                if (keyIsRegistered(k)) return canonicalSubCompanyId(k);
             }
         }
 
@@ -2803,48 +2811,90 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 if (stName === portalName) return canonicalSubCompanyId(key);
                 if (String(key).trim().toLowerCase() === portalName) return canonicalSubCompanyId(key);
             }
+            for (const key of Object.keys(statusMap)) {
+                const st = statusMap[key] || {};
+                const stName = (st.companyName || '').trim().toLowerCase();
+                if (stName === portalName) return canonicalSubCompanyId(key);
+                if (String(key).trim().toLowerCase() === portalName) return canonicalSubCompanyId(key);
+            }
         }
 
+        return null;
+    }
+
+    function isCompanyRegisteredOnProjectSubSOV(companyId) {
+        const map = subcontractorSOV || {};
+        const statusMap = subSOVStatus || {};
+        const cid = canonicalSubCompanyId(companyId);
+        if (!cid) return false;
+        for (const k of subCompanyKeyVariants(cid)) {
+            if (Object.prototype.hasOwnProperty.call(map, k)) return true;
+            if (Object.prototype.hasOwnProperty.call(statusMap, k)) return true;
+        }
+        const name = (resolveSubCompanyDisplayName(cid) || getSubVendorCompanyName() || '').trim().toLowerCase();
+        if (name) {
+            for (const key of Object.keys(statusMap)) {
+                const st = statusMap[key] || {};
+                const stName = (st.companyName || '').trim().toLowerCase();
+                if (stName === name || String(key).trim().toLowerCase() === name) return true;
+            }
+        }
+        return false;
+    }
+
+    function getSubcontractCommitmentForCompany(companyId) {
+        const cid = String(companyId || getSubVendorCompanyId() || '');
+        const name = (resolveSubCompanyDisplayName(companyId) || getSubVendorCompanyName() || '').trim().toLowerCase();
         for (const com of projectCommitmentsCache || []) {
+            if (com.commitment_type && com.commitment_type !== 'Subcontract') continue;
+            const comId = String(com.company_id || '');
             const comName = (com.company_name || '').trim().toLowerCase();
-            const comId = com.company_id != null ? String(com.company_id) : '';
-            if (portalId && comId && comId === String(portalId)) {
-                for (const key of Object.keys(map)) {
-                    if (String(key) === comId) return canonicalSubCompanyId(key);
-                }
-            }
-            if (portalName && comName === portalName) {
-                for (const key of Object.keys(map)) {
-                    if (String(key) === comId || String(key).trim().toLowerCase() === portalName) {
-                        return canonicalSubCompanyId(key);
-                    }
-                }
+            if ((cid && comId && comId === cid) || (name && comName && comName === name)) {
+                return com;
             }
         }
+        return null;
+    }
 
-        return portalId ? canonicalSubCompanyId(portalId) : null;
+    function getSubCommitmentCapAmount(companyId) {
+        const com = getSubcontractCommitmentForCompany(companyId);
+        if (!com) return null;
+        const cur = parseFloat(com.current_amount);
+        if (!isNaN(cur) && cur > 0) return cur;
+        const orig = parseFloat(com.original_amount);
+        const changes = parseFloat(com.approved_changes || 0);
+        if (!isNaN(orig) && orig > 0) return orig + (isNaN(changes) ? 0 : changes);
+        if (!isNaN(orig)) return orig;
+        return null;
+    }
+
+    function sumSubSOVLineCommitments(companyId, excludeLineId = null) {
+        const lines = getSubCompanyMapEntry(subcontractorSOV, companyId) || [];
+        let total = 0;
+        for (const line of lines) {
+            if (excludeLineId && line.id === excludeLineId) continue;
+            total += (parseFloat(line.original_commitment) || 0) + (parseFloat(line.change_orders) || 0);
+        }
+        return total;
+    }
+
+    function isSubVendorDraftSOVSetup(companyId) {
+        return isSubVendorPayPortalUser() && subVendorCanEditOwnSOV(companyId);
     }
 
     function ensureSubVendorSOVInitialized() {
         if (!isSubVendorPayPortalUser()) return null;
         const portalId = getSubVendorCompanyId();
         if (!portalId) return null;
-        const bucketKey = resolveSubCompanyBucketKey(portalId) || canonicalSubCompanyId(portalId);
+        const bucketKey = resolveSubCompanyBucketKey(portalId);
+        if (!bucketKey || !isCompanyRegisteredOnProjectSubSOV(bucketKey)) {
+            selectedSubCompanyId = null;
+            selectedTrackerSubId = null;
+            return null;
+        }
         selectedSubCompanyId = bucketKey;
         selectedTrackerSubId = bucketKey;
         casepmStore.setItem('lastSelectedSubSOV', bucketKey);
-        if (!getSubCompanyMapEntry(subcontractorSOV, bucketKey)) {
-            subcontractorSOV[bucketKey] = [];
-            casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
-        }
-        const statusEntry = getSubSOVStatusEntry(bucketKey);
-        if (!statusEntry.status) {
-            try {
-                updateSubSOVStatus(bucketKey, 'Draft', { companyName: getSubVendorCompanyName() || '' });
-            } catch (err) {
-                console.warn('[CasePM] could not initialize sub SOV status', err);
-            }
-        }
         return bucketKey;
     }
 
@@ -5842,10 +5892,13 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 ? '<span class="text-amber-300">Pushback revision — lines with billed-to-date cannot be changed or deleted. Add new lines or edit lines with no billing, then resubmit for approval.</span>'
                 : '<span class="text-zinc-400">Setup Mode — Build the original Schedule of Values. When ready, submit for approval.</span>';
             const subCanEditSOV = subVendorMode && subVendorCanEditOwnSOV(selectedSubCompanyId);
+            const subMissingCommitment = subVendorMode && subCanEditSOV && getSubCommitmentCapAmount(selectedSubCompanyId) == null;
             const subSetupMessage = revisionDraft
                 ? '<span class="text-amber-300">Revision requested — update your schedule of values and resubmit for approval.</span>'
-                : '<span class="text-zinc-400">Build your Schedule of Values below. Add lines, then submit for GC approval.</span>';
-            const addLineBtn = (!subVendorMode || subCanEditSOV) ? `
+                : subMissingCommitment
+                    ? '<span class="text-amber-300">Your GC must enter your subcontract or purchase order commitment before you can add schedule lines.</span>'
+                    : '<span class="text-zinc-400">Build your Schedule of Values below. Add lines, then submit for GC approval.</span>';
+            const addLineBtn = (!subVendorMode || (subCanEditSOV && !subMissingCommitment)) ? `
                     <button onclick="addLineToSelectedSub()" class="ml-1 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-plus"></i> <span>Add Line</span>
                     </button>` : '';
@@ -6395,23 +6448,52 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
     function addLineToSelectedSub() {
         if (isSubVendorPayPortalUser()) {
-            ensureSubVendorSOVInitialized();
-            if (!selectedSubCompanyId) {
-                showCenteredAlert("Your company is not linked to this portal. Ask your GC administrator to assign you in Companies → Who to Contact.", "warning");
+            const bucketKey = ensureSubVendorSOVInitialized();
+            if (!bucketKey) {
+                showCenteredAlert(
+                    "You are not on this project's subcontractor schedule of values yet. Ask your GC to add your company under Select Subcontractor and click Save to Server.",
+                    "warning"
+                );
                 return;
             }
-            if (!subVendorCanEditOwnSOV(selectedSubCompanyId)) {
+            if (!subVendorCanEditOwnSOV(bucketKey)) {
                 showCenteredAlert("Your Schedule of Values is locked while pending or approved. Contact your GC if changes are needed.", "warning");
                 return;
             }
-        } else if (!selectedSubCompanyId) {
+            if (getSubCommitmentCapAmount(bucketKey) == null) {
+                showCenteredAlert(
+                    "No subcontract or purchase order commitment is on file for your company yet. Ask your GC to enter your commitment amount before you build your Schedule of Values.",
+                    "warning"
+                );
+                return;
+            }
+            showAddEditSubSOVLine(bucketKey, null);
+            return;
+        }
+        if (!selectedSubCompanyId) {
             showCenteredAlert("Please select a subcontractor first.", "warning");
+            return;
+        }
+        if (!isCompanyRegisteredOnProjectSubSOV(selectedSubCompanyId)) {
+            showCenteredAlert(
+                "This subcontractor is not on the project's schedule of values. Add them with Select Subcontractor first.",
+                "warning"
+            );
             return;
         }
         showAddEditSubSOVLine(selectedSubCompanyId, null);
     }
 
     function showAddEditSubSOVLine(companyId, lineId) {
+        if (!isCompanyRegisteredOnProjectSubSOV(companyId)) {
+            showCenteredAlert(
+                isSubVendorPayPortalUser()
+                    ? "You are not on this project's subcontractor schedule of values yet. Ask your GC to add your company under Select Subcontractor and save."
+                    : "This subcontractor is not on the project's schedule of values. Add them with Select Subcontractor first.",
+                "warning"
+            );
+            return;
+        }
         const modal = document.getElementById('editSubSOVModal');
         const content = document.getElementById('editSubSOVContent');
         const company = companies.find(c => c.id == companyId);
@@ -6432,6 +6514,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         const canEditStructure = devUnlockActive() || (
             !lineId || (!isApproved && !isRevisionLockedExisting)
         );
+        const hideG703Info = isSubVendorDraftSOVSetup(companyId);
 
         let line = null;
         if (lineId && subcontractorSOV[companyId]) {
@@ -6451,9 +6534,9 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                     <div>
                         <label class="block text-sm mb-1.5 text-zinc-300 flex items-center justify-between">
                             <span>Cost Code</span>
-                            ${(canEditStructure) ? `<button type="button" onclick="viewBudgetCostCodesForSOV('contractor-sov')" class="ml-2 px-2.5 py-0.5 text-[10px] bg-zinc-700 hover:bg-zinc-600 text-emerald-400 rounded">View Codes from G703</button>` : ''}
+                            ${(!hideG703Info && canEditStructure) ? `<button type="button" onclick="viewBudgetCostCodesForSOV('contractor-sov')" class="ml-2 px-2.5 py-0.5 text-[10px] bg-zinc-700 hover:bg-zinc-600 text-emerald-400 rounded">View Codes from G703</button>` : ''}
                         </label>
-                        <input type="text" id="subCostCode" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? line.cost_code : ''}" ${!canEditStructure ? 'readonly' : ''} oninput="updateCostCodeTotalDisplay()" onblur="updateCostCodeTotalDisplay()">
+                        <input type="text" id="subCostCode" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? line.cost_code : ''}" ${!canEditStructure ? 'readonly' : ''} oninput="updateSubSOVEntryDisplay()" onblur="updateSubSOVEntryDisplay()">
                     </div>
                     <div>
                         <label class="block text-sm mb-1.5 text-zinc-300">Description</label>
@@ -6464,25 +6547,26 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm mb-1.5 text-zinc-300">Original Commitment</label>
-                        <input type="text" id="subOriginal" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm casepm-money-input text-right" value="${line ? moneyInputValue(line.original_commitment || 0) : ''}" ${!canEditStructure ? 'readonly' : ''} oninput="updateCostCodeTotalDisplay()">
+                        <input type="text" id="subOriginal" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm casepm-money-input text-right" value="${line ? moneyInputValue(line.original_commitment || 0) : ''}" ${!canEditStructure ? 'readonly' : ''} oninput="updateSubSOVEntryDisplay()">
                         ${!canEditStructure ? '<div class="text-xs text-zinc-500 mt-1">Locked (Approved SOV)</div>' : ''}
                     </div>
                     <div>
                         <label class="block text-sm mb-1.5 text-zinc-300">Change Orders</label>
-                        <input type="text" id="subCO" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm casepm-money-input text-right" value="${line ? moneyInputValue(line.change_orders || 0) : ''}" ${!canEditStructure ? 'readonly' : ''} oninput="updateCostCodeTotalDisplay()">
+                        <input type="text" id="subCO" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm casepm-money-input text-right" value="${line ? moneyInputValue(line.change_orders || 0) : ''}" ${!canEditStructure ? 'readonly' : ''} oninput="updateSubSOVEntryDisplay()">
                     </div>
                 </div>
 
-                <!-- Cost Code Total Display (live reconciled contractor G703 total for this code across subs) -->
-                <div id="costCodeTotalDisplay" class="hidden bg-emerald-900/10 border border-emerald-800 rounded-md p-3 text-xs">
+                <div id="costCodeTotalDisplay" class="${hideG703Info ? '' : 'hidden'} bg-emerald-900/10 border border-emerald-800 rounded-md p-3 text-xs">
                     <div class="flex items-center justify-between">
                         <div>
-                            <span class="text-emerald-400 font-medium">Contractor G703 Total for this Cost Code:</span>
+                            <span class="text-emerald-400 font-medium">${hideG703Info ? 'Your Original Contract Amount:' : 'Contractor G703 Total for this Cost Code:'}</span>
                             <span id="costCodeTotalValue" class="font-mono text-emerald-300 ml-2">$0</span>
                         </div>
                         <div id="costCodeProjected" class="text-[10px] text-emerald-500"></div>
                     </div>
-                    <div class="text-[10px] text-zinc-500 mt-1">Reconciles against Contractor G703. Other subs' commitments reduce what you can allocate. Cannot exceed 100% of the G703 line across all subcontractors.</div>
+                    <div class="text-[10px] text-zinc-500 mt-1">${hideG703Info
+                        ? 'Running total of your subcontract commitment as you add schedule lines. Contractor cost code budgets are not shown.'
+                        : 'Reconciles against Contractor G703. Other subs\' commitments reduce what you can allocate. Cannot exceed 100% of the G703 line across all subcontractors.'}</div>
                 </div>
 
                 <div>
@@ -6498,14 +6582,10 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         `;
         modal.showModal();
 
-        // Initialize live Cost Code total display (aesthetic helper only — does not affect any workflow or data saving)
         setTimeout(() => {
             setupAccountingFormat('subOriginal');
             setupAccountingFormat('subCO');
-            const costCodeInput = document.getElementById('subCostCode');
-            if (costCodeInput && costCodeInput.value.trim()) {
-                updateCostCodeTotalDisplay();
-            }
+            updateSubSOVEntryDisplay();
         }, 50);
     }
 
@@ -6514,6 +6594,51 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     // Blocks overbilling on Save (existing logic in saveSubSOVLine remains the authority)
     let currentEditingSubCompanyId = null;
     let currentEditingLineId = null;
+
+    function updateSubSOVEntryDisplay() {
+        if (isSubVendorDraftSOVSetup(currentEditingSubCompanyId)) {
+            updateSubCommitmentRunningTotalDisplay();
+        } else {
+            updateCostCodeTotalDisplay();
+        }
+    }
+
+    function updateSubCommitmentRunningTotalDisplay() {
+        const originalEl = document.getElementById('subOriginal');
+        const coEl = document.getElementById('subCO');
+        const display = document.getElementById('costCodeTotalDisplay');
+        const valueEl = document.getElementById('costCodeTotalValue');
+        const projectedEl = document.getElementById('costCodeProjected');
+        if (!display || !valueEl) return;
+
+        const companyId = currentEditingSubCompanyId;
+        const cap = getSubCommitmentCapAmount(companyId);
+        display.classList.remove('hidden');
+
+        let thisEntry = 0;
+        if (originalEl) thisEntry += parseMoneyInput(originalEl);
+        if (coEl) thisEntry += parseMoneyInput(coEl);
+
+        const otherLines = sumSubSOVLineCommitments(companyId, currentEditingLineId);
+        const totalAfter = otherLines + thisEntry;
+        const remaining = cap != null ? cap - totalAfter : null;
+
+        valueEl.textContent = cap != null ? formatCurrency(cap) : 'Not on file';
+
+        if (projectedEl) {
+            let html = `Scheduled so far: <span class="font-mono">${formatCurrency(otherLines)}</span><br>`;
+            if (cap != null) {
+                const leftColor = remaining < -0.01 ? 'text-red-400' : 'text-emerald-400';
+                html += `Remaining after this line: <span class="font-mono font-semibold ${leftColor}">${formatCurrency(Math.max(0, remaining))}</span>`;
+                if (remaining < -0.01) {
+                    html += `<br><span class="text-red-400">This line would exceed your original contract amount.</span>`;
+                }
+            } else {
+                html += '<span class="text-amber-400">Ask your GC to enter your subcontract/PO commitment.</span>';
+            }
+            projectedEl.innerHTML = html;
+        }
+    }
 
     function updateCostCodeTotalDisplay() {
         const costCodeEl = document.getElementById('subCostCode');
@@ -6781,18 +6906,17 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             return;
         }
 
-        // === HARD VALIDATION: Cannot over-allocate a cost code beyond the GC G703 total across ALL subs ===
-        const gcG703Total = getContractorG703TotalForCostCode(costCode);
-        const allocInfo = getCostCodeAllocationInfo(costCode, companyId, lineId || null);
-        const otherSubsCommitted = allocInfo.allocated;
-
-        if (gcG703Total <= 0) {
+        if (!isCompanyRegisteredOnProjectSubSOV(companyId)) {
             showCenteredAlert(
-                `Cost code ${costCode} is not on the Contractor G703 (G703 tab). Add the GC line first before assigning it to a subcontractor.`,
-                'error'
+                isSubVendorPayPortalUser()
+                    ? "You are not on this project's subcontractor schedule of values yet. Ask your GC to add your company under Select Subcontractor and save."
+                    : "This subcontractor is not on the project's schedule of values. Add them with Select Subcontractor first.",
+                'warning'
             );
             return;
         }
+
+        const subDraftSetup = isSubVendorDraftSOVSetup(companyId);
 
         if (!lineId && subAlreadyHasCostCode(companyId, costCode)) {
             showCenteredAlert(
@@ -6803,21 +6927,59 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         }
 
         const thisLineCommitment = original + changeOrders;
-        const wouldBeTotalForCode = otherSubsCommitted + thisLineCommitment;
 
-        if (wouldBeTotalForCode > gcG703Total + 0.01) {
-            const remaining = Math.max(0, gcG703Total - otherSubsCommitted);
-            const pctLeft = gcG703Total > 0 ? Math.max(0, ((remaining / gcG703Total) * 100)) : 0;
-            showCenteredAlert(
-                `BLOCKED: This would over-allocate cost code ${costCode}.\n\n` +
-                `GC G703 total: ${formatCurrency(gcG703Total)} (100%)\n` +
-                `Already committed by other subs: ${formatCurrency(otherSubsCommitted)}\n` +
-                `This line would commit: ${formatCurrency(thisLineCommitment)}\n` +
-                `Remaining available: ${formatCurrency(remaining)} (${pctLeft.toFixed(0)}%)\n\n` +
-                `You cannot allocate more than 100% of a cost code across all subcontractors.`,
-                'error'
-            );
-            return;
+        if (subDraftSetup) {
+            const cap = getSubCommitmentCapAmount(companyId);
+            if (cap == null) {
+                showCenteredAlert(
+                    "No subcontract or purchase order commitment is on file for your company yet. Ask your GC to enter your commitment amount before you build your Schedule of Values.",
+                    'warning'
+                );
+                return;
+            }
+            const otherLines = sumSubSOVLineCommitments(companyId, lineId || null);
+            if (otherLines + thisLineCommitment > cap + 0.01) {
+                const remaining = Math.max(0, cap - otherLines);
+                showCenteredAlert(
+                    `BLOCKED: This would exceed your original contract amount.\n\n` +
+                    `Original contract: ${formatCurrency(cap)}\n` +
+                    `Already scheduled: ${formatCurrency(otherLines)}\n` +
+                    `This line would add: ${formatCurrency(thisLineCommitment)}\n` +
+                    `Remaining available: ${formatCurrency(remaining)}`,
+                    'error'
+                );
+                return;
+            }
+        } else {
+            // === HARD VALIDATION: Cannot over-allocate a cost code beyond the GC G703 total across ALL subs ===
+            const gcG703Total = getContractorG703TotalForCostCode(costCode);
+            const allocInfo = getCostCodeAllocationInfo(costCode, companyId, lineId || null);
+            const otherSubsCommitted = allocInfo.allocated;
+
+            if (gcG703Total <= 0) {
+                showCenteredAlert(
+                    `Cost code ${costCode} is not on the Contractor G703 (G703 tab). Add the GC line first before assigning it to a subcontractor.`,
+                    'error'
+                );
+                return;
+            }
+
+            const wouldBeTotalForCode = otherSubsCommitted + thisLineCommitment;
+
+            if (wouldBeTotalForCode > gcG703Total + 0.01) {
+                const remaining = Math.max(0, gcG703Total - otherSubsCommitted);
+                const pctLeft = gcG703Total > 0 ? Math.max(0, ((remaining / gcG703Total) * 100)) : 0;
+                showCenteredAlert(
+                    `BLOCKED: This would over-allocate cost code ${costCode}.\n\n` +
+                    `GC G703 total: ${formatCurrency(gcG703Total)} (100%)\n` +
+                    `Already committed by other subs: ${formatCurrency(otherSubsCommitted)}\n` +
+                    `This line would commit: ${formatCurrency(thisLineCommitment)}\n` +
+                    `Remaining available: ${formatCurrency(remaining)} (${pctLeft.toFixed(0)}%)\n\n` +
+                    `You cannot allocate more than 100% of a cost code across all subcontractors.`,
+                    'error'
+                );
+                return;
+            }
         }
 
         if (lineId) {
