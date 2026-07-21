@@ -7619,7 +7619,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             return;
         }
 
-        if (getSubCompanyMapEntry(subcontractorSOV, selectedCompanyId)) {
+        if (getSubCompanyMapEntry(subcontractorSOV, companyStableKey(selectedCompany))) {
             showCenteredAlert("This company is already added as a subcontractor for this job.", "warning");
             return;
         }
