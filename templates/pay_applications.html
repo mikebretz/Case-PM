@@ -221,8 +221,8 @@
         </div>
         <div id="unsavedDot" class="hidden w-2.5 h-2.5 bg-amber-500 rounded-full" title="Unsaved changes"></div>
         <span id="payAppSaveStatus" class="hidden text-xs text-emerald-400">Saved</span>
-        <button id="savePayAppBtn" onclick="savePayApplications()" class="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold transition-colors h-[38px] flex-shrink-0">
-            <i class="fa-solid fa-save"></i><span>Save</span>
+        <button id="savePayAppBtn" onclick="savePayApplications()" class="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold transition-colors h-[38px] flex-shrink-0" title="Save pay app data to the server (required for subcontractor portal access)">
+            <i class="fa-solid fa-save"></i><span>Save to Server</span>
         </button>
     </div>
 
@@ -7194,45 +7194,78 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         }
 
         const companiesList = JSON.parse(casepmStore.getItem('casepm_companies')) || [];
-        const selectedCompany = companiesList.find(c => String(c.id) === String(selectedCompanyId));
+        const selectedCompany = companiesList.find(c =>
+            String(c.id) === String(selectedCompanyId) || String(c.server_id) === String(selectedCompanyId)
+        );
         if (!selectedCompany) {
             showCenteredAlert("Selected company not found.", "error");
             return;
         }
 
-        // Prevent duplicates
-        if (!subcontractorSOV) subcontractorSOV = JSON.parse(casepmStore.getItem('subcontractorSOV') || '{}');
         if (getSubCompanyMapEntry(subcontractorSOV, selectedCompanyId)) {
             showCenteredAlert("This company is already added as a subcontractor for this job.", "warning");
             return;
         }
 
-        // Initialize empty SOV for the new sub
-        subcontractorSOV[selectedCompanyId] = [];
-        casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
-
-        // Initialize pay app counter
-        if (!subPayAppNumbers) subPayAppNumbers = JSON.parse(casepmStore.getItem('subPayAppNumbers') || '{}');
-        subPayAppNumbers[selectedCompanyId] = 1;
-        casepmStore.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
-
-        // Close modal
         modalEl.remove();
+        registerSubcontractorOnProject(selectedCompanyId, selectedCompany).then(({ storageKey }) => {
+            if (!storageKey) return;
+            selectedSubCompanyId = storageKey;
+            renderPayAppContent();
+            setTimeout(() => {
+                const selector = document.getElementById('subSelector');
+                if (selector) {
+                    selector.value = String(storageKey);
+                    selectSubcontractorForSOV(storageKey);
+                }
+            }, 120);
+        });
+    }
 
-        // Refresh the Subcontractor Schedule of Values tab so the new sub appears in the dropdown
-        renderPayAppContent();
-        persistPayAppStateNow({ silent: true });
+    function serverCompanyIdForEntry(company) {
+        if (!company) return null;
+        const sid = company.server_id != null ? company.server_id : company.id;
+        return canonicalSubCompanyId(sid);
+    }
 
-        // Auto-select the newly added sub
-        setTimeout(() => {
-            const selector = document.getElementById('subSelector');
-            if (selector) {
-                selector.value = selectedCompanyId;
-                selectSubcontractorForSOV(selectedCompanyId);
-            }
-        }, 120);
+    async function registerSubcontractorOnProject(companyId, companyRecord) {
+        const displayName = (companyRecord && (companyRecord.name || companyRecord.company_name))
+            || resolveSubCompanyDisplayName(companyId) || '';
+        const storageKey = serverCompanyIdForEntry(companyRecord) || canonicalSubCompanyId(companyId);
+        if (!storageKey) return { ok: false, error: 'Invalid company', storageKey: null };
 
-        // No success popup — the dropdown now shows the new sub and it is auto-selected (UI confirms the action)
+        if (!getSubCompanyMapEntry(subcontractorSOV, storageKey)) {
+            deleteSubCompanyMapKeys(subcontractorSOV, storageKey);
+            subcontractorSOV[storageKey] = [];
+        }
+        if (!subSOVStatus[storageKey]) subSOVStatus[storageKey] = {};
+        if (!subSOVStatus[storageKey].status) subSOVStatus[storageKey].status = 'Draft';
+        if (displayName) subSOVStatus[storageKey].companyName = displayName;
+        subSOVStatus[storageKey].companyId = storageKey;
+        if (!subPayAppNumbers[storageKey]) subPayAppNumbers[storageKey] = 1;
+
+        casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+        casepmStore.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
+        casepmStore.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+        showUnsavedIndicator();
+
+        const result = await persistPayAppStateNow({ silent: false });
+        if (!result || result.ok === false) {
+            showCenteredAlert(
+                `${displayName || 'Subcontractor'} was added on this screen but not saved to the server yet.\n\n` +
+                '1. Select the correct project in the header (top center)\n' +
+                '2. Click the green Save button\n\n' +
+                'Then have the subcontractor log out and back in to see the project.',
+                'warning'
+            );
+            return { ok: false, storageKey, result };
+        }
+        showCenteredAlert(
+            `${displayName || 'Subcontractor'} saved to the server. Their portal user can refresh, log out/in, and select this project.`,
+            'success'
+        );
+        hideUnsavedIndicator();
+        return { ok: true, storageKey, result };
     }
 
     function confirmAddNewSubcontractor(btn) {
@@ -7246,36 +7279,28 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
         // Find the selected company from the live list
         const companiesList = JSON.parse(casepmStore.getItem('casepm_companies')) || [];
-        const selectedCompany = companiesList.find(c => String(c.id) === String(selectedCompanyId));
+        const selectedCompany = companiesList.find(c =>
+            String(c.id) === String(selectedCompanyId) || String(c.server_id) === String(selectedCompanyId)
+        );
         if (!selectedCompany) {
             alert("Selected company not found. Please refresh and try again.");
             return;
         }
 
-        // Mark as Subcontractor type if not already
         if (!selectedCompany.type || selectedCompany.type !== 'Subcontractor') {
             selectedCompany.type = 'Subcontractor';
             selectedCompany.company_type = 'Subcontractor';
             casepmStore.setItem('casepm_companies', JSON.stringify(companiesList));
         }
 
-        // Initialize empty SOV for this sub if needed
-        if (!getSubCompanyMapEntry(subcontractorSOV, selectedCompanyId)) {
-            deleteSubCompanyMapKeys(subcontractorSOV, selectedCompanyId);
-            subcontractorSOV[selectedCompanyId] = [];
-            casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
-        }
-
-        selectedSubCompanyId = selectedCompanyId;
-
         modal.close();
         modal.remove();
 
-        // Refresh to update dropdown and view
-        renderPayAppContent();
-        persistPayAppStateNow({ silent: true });
-
-        // Success feedback removed per user request (link state + add lines enabled)
+        registerSubcontractorOnProject(selectedCompanyId, selectedCompany).then(({ storageKey }) => {
+            if (!storageKey) return;
+            selectedSubCompanyId = storageKey;
+            renderPayAppContent();
+        });
     }
 
     // ==================== SUB SOV APPROVAL WORKFLOW ====================

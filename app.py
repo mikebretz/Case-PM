@@ -815,7 +815,6 @@ def redirect_with_project(endpoint, **values):
 def inject_project_context():
     if not getattr(current_user, 'is_authenticated', False):
         return {'current_user_profile': {}}
-    active = get_active_project()
     portal = {}
     try:
         from case_workflow import get_role_permissions, user_portal_type, is_sub_user, is_architect_user
@@ -856,25 +855,28 @@ def inject_project_context():
                 'require_2fa': bool(getattr(current_user, 'require_2fa', False)),
             }
     from project_access import filter_projects_for_user
-    all_projects = filter_projects_for_user(
-        current_user,
-        Project.query.order_by(Project.name).all(),
-        Project,
-    )
     sub_vendor_company_linked = True
     try:
         from portal_sub_access import (
             is_sub_vendor_portal_user,
             resolve_sub_vendor_company,
             ensure_sub_vendor_project_memberships,
+            user_has_linked_vendor_company,
         )
         if is_sub_vendor_portal_user(current_user):
             cid, _, _ = resolve_sub_vendor_company(current_user, Company, db, persist_link=True)
-            sub_vendor_company_linked = cid is not None
-            if sub_vendor_company_linked:
-                ensure_sub_vendor_project_memberships(current_user, db)
+            sub_vendor_company_linked = user_has_linked_vendor_company(
+                current_user, Company, db, persist_link=False,
+            ) or cid is not None or bool((getattr(current_user, 'company', None) or '').strip())
+            ensure_sub_vendor_project_memberships(current_user, db)
     except Exception:
         sub_vendor_company_linked = True
+    all_projects = filter_projects_for_user(
+        current_user,
+        Project.query.order_by(Project.name).all(),
+        Project,
+    )
+    active = get_active_project()
     csrf_token = ''
     try:
         from security_platform import ensure_csrf_token

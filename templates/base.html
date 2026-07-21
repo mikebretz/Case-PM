@@ -176,6 +176,12 @@
         .portal-architect .portal-banner-architect {
             display: flex;
         }
+        .portal-sub-vendor .portal-banner-sub-vendor {
+            display: flex;
+        }
+        .portal-sub-vendor .portal-banner-sub {
+            display: none !important;
+        }
 
         .app-sidebar {
             width: 14rem;
@@ -311,11 +317,17 @@
 
     <div id="appShell" class="flex flex-col h-full min-h-0 overflow-hidden">
 
-    {% if is_sub_portal or is_architect_portal %}
+    {% if is_sub_vendor_portal %}
+    <div class="portal-banner-sub-vendor hidden items-center px-5 py-1.5 bg-emerald-950/80 border-b border-emerald-700 text-xs text-emerald-200 flex-shrink-0">
+        <span><i class="fa-solid fa-hard-hat mr-2"></i><strong>Subcontractor Portal</strong> — pay applications and project messages</span>
+    </div>
+    {% elif is_sub_portal %}
     <div class="portal-banner-sub hidden items-center justify-between px-5 py-1.5 bg-amber-950/80 border-b border-amber-800 text-xs text-amber-200 flex-shrink-0">
         <span><i class="fa-solid fa-hard-hat mr-2"></i><strong>Subcontractor Portal</strong> — submit pay apps, submittals, and respond to RFIs</span>
         <a href="{{ url_for('email_page') }}?tab=internal" class="text-amber-400 hover:underline">Internal messages</a>
     </div>
+    {% endif %}
+    {% if is_architect_portal %}
     <div class="portal-banner-architect hidden items-center justify-between px-5 py-1.5 bg-sky-950/80 border-b border-sky-800 text-xs text-sky-200 flex-shrink-0">
         <span><i class="fa-solid fa-compass-drafting mr-2"></i><strong>Architect Portal</strong> — review submittals, RFIs, and change orders</span>
         <a href="{{ url_for('email_page') }}?tab=internal" class="text-sky-400 hover:underline">Approvals inbox</a>
