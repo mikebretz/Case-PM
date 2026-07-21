@@ -14487,13 +14487,17 @@ def api_get_pay_app_state():
             pass
     except Exception as exc:
         app.logger.exception('pay app state filter failed for project %s', project_id)
-        return jsonify({'error': 'Could not load pay application state.'}), 500
-    return jsonify({
-        'project_id': project_id,
-        'data': data,
-        'version': record.version,
-        'updated_at': record.updated_at.isoformat() if record.updated_at else None,
-    })
+        return jsonify({'error': 'Could not load pay application state.', 'detail': str(exc)}), 500
+    try:
+        return jsonify({
+            'project_id': project_id,
+            'data': data,
+            'version': record.version,
+            'updated_at': record.updated_at.isoformat() if record.updated_at else None,
+        })
+    except Exception as exc:
+        app.logger.exception('pay app state response failed for project %s', project_id)
+        return jsonify({'error': 'Could not serialize pay application state.', 'detail': str(exc)}), 500
 
 
 @app.route('/api/pay-applications/state', methods=['PUT'])
@@ -14551,21 +14555,27 @@ def api_save_pay_app_state():
     if alloc_errors:
         return jsonify({'error': alloc_errors[0], 'allocation_errors': alloc_errors}), 400
     try:
-        from portal_sub_access import is_sub_vendor_portal_user, sub_vendor_company_keys
+        from portal_sub_access import is_sub_vendor_portal_user, sub_vendor_company_keys, resolve_sub_vendor_sov_keys
         if is_sub_vendor_portal_user(current_user):
-            allowed = sub_vendor_company_keys(current_user)
+            sov_keys = resolve_sub_vendor_sov_keys(current_user, existing) | resolve_sub_vendor_sov_keys(current_user, merged)
+            if not sov_keys:
+                sov_keys = {str(k) for k in sub_vendor_company_keys(current_user) if k}
             for field in ('subcontractorSOV', 'subSOVStatus', 'subPayAppHistory', 'subPendingSubmissions', 'subPayAppNumbers'):
                 prev = existing.get(field) if isinstance(existing.get(field), dict) else {}
                 new = merged.get(field) if isinstance(merged.get(field), dict) else {}
-                kept = {k: v for k, v in prev.items() if str(k) not in allowed}
-                owned = {k: v for k, v in new.items() if str(k) in allowed}
-                merged[field] = {**kept, **owned}
+                other = {k: v for k, v in prev.items() if str(k) not in sov_keys}
+                owned = {k: v for k, v in new.items() if str(k) in sov_keys}
+                merged[field] = {**other, **owned}
             for field in ('contractorSOV', 'currentPayAppPeriod', 'payAppHistory', 'previousPayApps'):
                 if field in existing:
                     merged[field] = existing[field]
     except Exception:
         pass
-    record = persist_state(PayAppProjectState, db, project_id, merged, current_user.id)
+    try:
+        record = persist_state(PayAppProjectState, db, project_id, merged, current_user.id)
+    except Exception as exc:
+        app.logger.exception('pay app state save failed for project %s', project_id)
+        return jsonify({'error': 'Could not save pay application state.', 'detail': str(exc)}), 500
     _sync_sub_memberships_after_pay_app_save(project_id, merged)
     reconcile_result = None
     try:

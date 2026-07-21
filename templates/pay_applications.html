@@ -745,13 +745,17 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         [key, st.companyId, st.company_id, st.localCompanyId, st.commitmentCompanyId].forEach((raw) => {
             if (raw != null && String(raw).trim()) ids.add(String(raw).trim());
         });
+        const company = findCompanyByStableKey(companies, key);
+        if (company) companyCommitmentKeys(company).forEach((k) => ids.add(String(k)));
         const name = (st.companyName || st.company_name || '').trim().toLowerCase();
         return (projectCommitmentsCache || []).some((com) => {
             if (com.commitment_type !== 'Subcontract') return false;
             if (com.status === 'Void') return false;
             const comId = String(com.company_id || '');
             const comName = (com.company_name || '').trim().toLowerCase();
-            return (comId && ids.has(comId)) || (name && comName && comName === name);
+            if (comId && ids.has(comId)) return true;
+            if (!name || !comName) return false;
+            return comName === name || name.includes(comName) || comName.includes(name);
         });
     }
 
@@ -6200,13 +6204,14 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 ? '<span class="text-amber-300">Pushback revision — lines with billed-to-date cannot be changed or deleted. Add new lines or edit lines with no billing, then resubmit for approval.</span>'
                 : '<span class="text-zinc-400">Setup Mode — Build the original Schedule of Values. When ready, submit for approval.</span>';
             const subCanEditSOV = subVendorMode && subVendorCanEditOwnSOV(selectedSubCompanyId);
-            const subMissingCommitment = subVendorMode && subCanEditSOV && getSubCommitmentCapAmount(selectedSubCompanyId) == null;
+            const subRegistered = subVendorMode && getRegisteredSubSOVKeys().size > 0;
+            const subMissingCommitment = subVendorMode && subRegistered && subCanEditSOV && getSubCommitmentCapAmount(selectedSubCompanyId) == null;
             const subSetupMessage = revisionDraft
                 ? '<span class="text-amber-300">Revision requested — update your schedule of values and resubmit for approval.</span>'
                 : subMissingCommitment
                     ? '<span class="text-amber-300">Your GC must enter your subcontract or purchase order commitment before you can add schedule lines.</span>'
                     : '<span class="text-zinc-400">Build your Schedule of Values below. Add lines, then submit for GC approval.</span>';
-            const addLineBtn = (!subVendorMode || (subCanEditSOV && !subMissingCommitment)) ? `
+            const addLineBtn = (!subVendorMode || (subRegistered && subCanEditSOV && !subMissingCommitment)) ? `
                     <button onclick="addLineToSelectedSub()" class="ml-1 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-plus"></i> <span>Add Line</span>
                     </button>` : '';

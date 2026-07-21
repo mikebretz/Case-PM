@@ -318,6 +318,8 @@ def validate_sub_sov_commitment_totals(
 
 def validate_sub_sov_requires_commitments(state_data, commitments, tolerance=0.01):
     """Each subcontractor on the SOV list must have a Subcontract commitment on the project."""
+    if not commitments:
+        return []
     sub_sov = state_data.get('subcontractorSOV') or {}
     sub_status = state_data.get('subSOVStatus') or {}
     if not isinstance(sub_sov, dict) and not isinstance(sub_status, dict):
@@ -426,7 +428,7 @@ def prune_unregistered_sub_sov(state_data, commitments=None):
             remove.add(key)
             continue
         company_name = (entry.get('companyName') or entry.get('company_name') or '').strip()
-        if commitments is not None and get_vendor_commitment_cap_for_sov_entry(commitments, key, entry) is None:
+        if commitments and get_vendor_commitment_cap_for_sov_entry(commitments, key, entry) is None:
             remove.add(key)
     if not remove:
         return state_data
@@ -456,8 +458,8 @@ def validate_sub_vendor_pay_app_save(
 
     existing = dict(existing or {})
     merged = dict(merged or {})
-    cid, cname, _ = resolve_sub_vendor_company(user)
-    if not is_vendor_on_sub_sov(existing, cid, cname):
+    allowed_keys = resolve_sub_vendor_sov_keys(user, existing)
+    if not allowed_keys:
         return [
             'You are not registered on this project\'s subcontractor schedule of values. '
             'Ask your GC to add your company under Select Subcontractor and save.'
@@ -465,7 +467,7 @@ def validate_sub_vendor_pay_app_save(
 
     existing_keys = set(str(k) for k in (existing.get('subcontractorSOV') or {}))
     existing_keys |= set(str(k) for k in (existing.get('subSOVStatus') or {}))
-    allowed_keys = {str(k) for k in resolve_sub_vendor_sov_keys(user, existing)}
+    allowed_keys = {str(k) for k in allowed_keys}
     merged_sov = merged.get('subcontractorSOV') or {}
     merged_status = merged.get('subSOVStatus') or {}
     for block in (merged_sov, merged_status):
