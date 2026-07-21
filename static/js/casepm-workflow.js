@@ -20,9 +20,31 @@
 
   async function loadPortal() {
     if (portal) return portal;
-    portal = await api('/api/portal/context');
+    try {
+      portal = await api('/api/portal/context');
+    } catch (err) {
+      console.warn('[CasePM] portal context unavailable, using page fallback', err);
+      portal = buildFallbackPortalFromDom();
+    }
     global.CASEPM_PORTAL = portal;
     return portal;
+  }
+
+  function buildFallbackPortalFromDom() {
+    const body = document.body;
+    const subVendor = !!(body && body.classList.contains('portal-sub-vendor'));
+    const companyId = body && body.getAttribute('data-user-company-id');
+    return {
+      userId: Number((body && body.getAttribute('data-current-user-id')) || 0) || null,
+      userName: (body && body.getAttribute('data-current-user')) || '',
+      userEmail: (body && body.getAttribute('data-current-user-email')) || '',
+      role: (body && body.getAttribute('data-current-user-role')) || '',
+      companyId: companyId || null,
+      companyName: (body && body.getAttribute('data-current-user-company')) || '',
+      isSubVendorPayPortal: subVendor,
+      vendorCompanyLinked: subVendor ? !!companyId : true,
+      permissions: { global: {} },
+    };
   }
 
   function projectId() {

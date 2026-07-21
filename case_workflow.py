@@ -495,41 +495,15 @@ def register_workflow(app, _db, models):
     @login_required
     def api_portal_context():
         try:
-            perms = get_role_permissions(current_user)
-            from portal_sub_access import is_sub_vendor_portal_user, resolve_sub_vendor_company
-            company_id, company_name, company = resolve_sub_vendor_company(
-                current_user, Company, db, persist_link=False,
-            )
-            if company is None and getattr(current_user, 'company_id', None):
-                company = Company.query.get(current_user.company_id)
-                if company:
-                    company_id = company.id
-                    company_name = company.name
-            linked = True
-            if is_sub_vendor_portal_user(current_user):
-                linked = company_id is not None
-            return jsonify({
-                'userId': current_user.id,
-                'userName': current_user.full_name,
-                'userEmail': current_user.email,
-                'role': current_user.role,
-                'isAdmin': current_user.role == 'Admin',
-                'portal': user_portal_type(current_user),
-                'companyId': company_id,
-                'companyName': company_name or (current_user.company or ''),
-                'companyType': getattr(company, 'type', None) or '' if company else '',
-                'vendorCompanyLinked': linked,
-                'canApprove': {m: user_can_approve(current_user, m) for m in
-                               ['Pay Applications', 'Change Orders', 'Submittals', 'RFIs', 'Budget']},
-                'permissions': perms,
-                'isSub': is_sub_user(current_user),
-                'isArchitect': is_architect_user(current_user),
-                'isSubVendorPayPortal': is_sub_vendor_portal_user(current_user),
-                'emailInternalOnly': bool(
-                    (perms.get('global') or {}).get('email_internal_only')
-                    or is_sub_vendor_portal_user(current_user)
-                ),
+            from portal_sub_access import build_portal_context_payload
+            payload = build_portal_context_payload(current_user, Company, db, {
+                'get_role_permissions': get_role_permissions,
+                'user_portal_type': user_portal_type,
+                'is_sub_user': is_sub_user,
+                'is_architect_user': is_architect_user,
+                'user_can_approve': user_can_approve,
             })
+            return jsonify(payload)
         except Exception as exc:
             import traceback
             traceback.print_exc()

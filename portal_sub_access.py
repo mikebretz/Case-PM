@@ -28,15 +28,29 @@ def is_sub_vendor_portal_user(user) -> bool:
     flags = user_global_flags(user)
     if flags.get('sub_vendor_portal_only'):
         return True
+    role = (getattr(user, 'role', None) or '').strip()
+    if role in ('Subcontractor Accountant', 'Subcontractor Contact'):
+        return True
     try:
-        from case_workflow import is_sub_user, user_has_module_access
-        if not is_sub_user(user):
+        from user_permissions_persistence import get_user_permissions
+        from permissions_catalog import ACCESS_RANK
+        perms = get_user_permissions(user)
+        portal = perms.get('portal') or ''
+        if portal not in ('sub', '') and role not in ('Subcontractor', 'Company User'):
             return False
-        if user_has_module_access(user, 'pay_applications_gc', 'view'):
+        modules = perms.get('modules') or {}
+
+        def _rank(mod):
+            entry = modules.get(mod) or {}
+            if isinstance(entry, dict):
+                return ACCESS_RANK.get(entry.get('access', 'none'), 0)
+            return 0
+
+        if _rank('pay_applications_gc') >= ACCESS_RANK.get('view', 1):
             return False
-        return user_has_module_access(user, 'pay_applications_sub', 'view')
+        return _rank('pay_applications_sub') >= ACCESS_RANK.get('view', 1)
     except Exception:
-        return False
+        return role in ('Subcontractor Accountant', 'Subcontractor Contact', 'Subcontractor')
 
 
 def resolve_sub_vendor_company(user, Company=None, db=None, persist_link: bool = False):
@@ -145,6 +159,44 @@ def _allowed_key_variants(allowed: set[str]) -> set[str]:
     return variants
 
 
+def _discover_sov_keys_from_data(data: dict | None, company_id=None, company_name=None, user=None) -> set[str]:
+    """Last-resort SOV key discovery when strict id/name matching fails."""
+    keys: set[str] = set()
+    if not isinstance(data, dict):
+        return keys
+    names: set[str] = set()
+    for raw in (company_name, getattr(user, 'company', None) if user else None):
+        name = (raw or '').strip().lower()
+        if name:
+            names.add(name)
+    cid_s = str(company_id) if company_id is not None else ''
+    for field in ('subcontractorSOV', 'subSOVStatus'):
+        block = data.get(field) or {}
+        if not isinstance(block, dict):
+            continue
+        for key, val in block.items():
+            sk = str(key).strip()
+            if not sk:
+                continue
+            sk_lower = sk.lower()
+            if cid_s and sk == cid_s:
+                keys.add(sk)
+                continue
+            if sk_lower in names:
+                keys.add(sk)
+                continue
+            if isinstance(val, dict):
+                st_name = (val.get('companyName') or val.get('company_name') or '').strip().lower()
+                st_cid = str(val.get('companyId') or val.get('company_id') or '').strip()
+                if st_cid and cid_s and st_cid == cid_s:
+                    keys.add(sk)
+                elif st_name and (st_name in names or any(n in st_name or st_name in n for n in names)):
+                    keys.add(sk)
+            elif isinstance(val, list) and val and names and sk_lower in names:
+                keys.add(sk)
+    return keys
+
+
 def resolve_sub_vendor_sov_keys(user, data: dict | None) -> set[str]:
     """All pay-app dict keys that belong to this sub vendor (id vs name tolerant)."""
     if not data:
@@ -192,6 +244,11 @@ def resolve_sub_vendor_sov_keys(user, data: dict | None) -> set[str]:
                     or (name_lower and st_name_lower == name_lower)
                 ):
                     keys.add(str(key))
+    if not keys:
+        keys = _discover_sov_keys_from_data(
+            {'subcontractorSOV': sub_sov, 'subSOVStatus': sub_status},
+            cid, cname, user,
+        )
     return keys
 
 
@@ -233,6 +290,9 @@ def filter_pay_app_state_for_sub_vendor(user, data: dict | None) -> dict | None:
         return data
     out = dict(data)
     sov_keys = resolve_sub_vendor_sov_keys(user, out)
+    if not sov_keys and is_sub_vendor_portal_user(user):
+        cid, cname, _ = resolve_sub_vendor_company(user)
+        sov_keys = _discover_sov_keys_from_data(out, cid, cname, user)
     for field in (
         'subcontractorSOV', 'subSOVStatus', 'subPayAppHistory',
         'subPendingSubmissions', 'subPayAppNumbers',
@@ -484,3 +544,68 @@ def user_is_company_contact(user, Company=None) -> bool:
         }
     except Exception:
         return False
+
+
+def build_portal_context_payload(user, Company, db, helpers: dict) -> dict:
+    """Assemble JSON-safe payload for GET /api/portal/context."""
+    import json
+
+    try:
+        from companies_persistence import ensure_company_schema
+        ensure_company_schema(db)
+    except Exception:
+        pass
+
+    get_role_permissions = helpers['get_role_permissions']
+    user_portal_type = helpers['user_portal_type']
+    is_sub_user = helpers['is_sub_user']
+    is_architect_user = helpers['is_architect_user']
+    user_can_approve = helpers['user_can_approve']
+
+    perms = get_role_permissions(user) or {}
+    try:
+        perms = json.loads(json.dumps(perms, default=str))
+    except Exception:
+        perms = {}
+
+    company_id, company_name, company = resolve_sub_vendor_company(
+        user, Company, db, persist_link=False,
+    )
+    if company is None and getattr(user, 'company_id', None):
+        try:
+            company = Company.query.get(int(user.company_id))
+            if company:
+                company_id = company.id
+                company_name = company.name
+        except Exception:
+            company = None
+
+    sub_vendor = is_sub_vendor_portal_user(user)
+    linked = True
+    if sub_vendor:
+        linked = company_id is not None
+
+    global_flags = perms.get('global') if isinstance(perms.get('global'), dict) else {}
+    return {
+        'userId': user.id,
+        'userName': user.full_name,
+        'userEmail': user.email,
+        'role': user.role,
+        'isAdmin': user.role == 'Admin',
+        'portal': user_portal_type(user),
+        'companyId': company_id,
+        'companyName': company_name or (getattr(user, 'company', None) or ''),
+        'companyType': (getattr(company, 'type', None) or '') if company else '',
+        'vendorCompanyLinked': linked,
+        'canApprove': {
+            m: bool(user_can_approve(user, m))
+            for m in ('Pay Applications', 'Change Orders', 'Submittals', 'RFIs', 'Budget')
+        },
+        'permissions': perms,
+        'isSub': is_sub_user(user),
+        'isArchitect': is_architect_user(user),
+        'isSubVendorPayPortal': sub_vendor,
+        'emailInternalOnly': bool(
+            (global_flags or {}).get('email_internal_only') or sub_vendor
+        ),
+    }
