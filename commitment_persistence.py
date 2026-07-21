@@ -337,24 +337,33 @@ def _resolve_next_status(commitment, default_next, CommitmentAllocation=None):
     return default_next
 
 
-def commitment_workflow_action(commitment, action, user, body=None, CommitmentAllocation=None):
+def commitment_workflow_action(commitment, action, user, body=None, CommitmentAllocation=None, sage_ctx=None):
     action = (action or '').lower()
     body = body or {}
+    sage_kwargs = dict(sage_ctx or {})
+
+    def _queue_sage(event_type, message=''):
+        try:
+            queue_commitment_sage_event(
+                commitment,
+                event_type,
+                message=message,
+                user_id=getattr(user, 'id', None),
+                **sage_kwargs,
+            )
+        except Exception:
+            pass
+
     if action == 'submit':
         if commitment.status not in ('Draft',):
             raise ValueError('Only draft commitments can be submitted')
         commitment.status = 'Submitted'
         commitment.approval_stage = 0
         set_ball_in_court(commitment)
-        try:
-            queue_commitment_sage_event(
-                commitment,
-                'CommitmentSubmitted',
-                message=f'{commitment.number} submitted — ball with {commitment.ball_in_court_role}',
-                user_id=getattr(user, 'id', None),
-            )
-        except Exception:
-            pass
+        _queue_sage(
+            'CommitmentSubmitted',
+            message=f'{commitment.number} submitted — ball with {commitment.ball_in_court_role}',
+        )
         return commitment.status, False
 
     if action == 'reject':
@@ -362,7 +371,7 @@ def commitment_workflow_action(commitment, action, user, body=None, CommitmentAl
         workflow_reject_authorized(user, commitment.ball_in_court_role, user_can_act_fn=user_can_act_on_ball_in_court)
         commitment.status = 'Rejected'
         commitment.ball_in_court_role = None
-        queue_commitment_sage_event(commitment, 'CommitmentRejected', user_id=getattr(user, 'id', None))
+        _queue_sage('CommitmentRejected')
         return commitment.status, False
 
     if action == 'approve':
@@ -378,18 +387,14 @@ def commitment_workflow_action(commitment, action, user, body=None, CommitmentAl
         set_ball_in_court(commitment)
         if next_status == 'Approved':
             commitment.ball_in_court_role = None
-            queue_commitment_sage_event(
-                commitment,
+            _queue_sage(
                 'CommitmentApproved',
                 message=f'Commitment {commitment.number} approved',
-                user_id=getattr(user, 'id', None),
             )
             return commitment.status, True
-        queue_commitment_sage_event(
-            commitment,
+        _queue_sage(
             'CommitmentApprovalStep',
             message=f'{commitment.number} advanced to {next_status}',
-            user_id=getattr(user, 'id', None),
         )
         return commitment.status, False
 
@@ -416,7 +421,7 @@ def commitment_workflow_action(commitment, action, user, body=None, CommitmentAl
             raise ValueError('Commitment is already void')
         commitment.status = 'Void'
         commitment.ball_in_court_role = None
-        queue_commitment_sage_event(commitment, 'CommitmentVoided', user_id=getattr(user, 'id', None))
+        _queue_sage('CommitmentVoided')
         return commitment.status, False
 
     raise ValueError('action must be submit, approve, reject, sign_internal, send_docusign, or void')
@@ -622,31 +627,59 @@ def build_commitment_sage_payload(commitment, allocations=None, extra=None):
     }
 
 
-def queue_commitment_sage_event(commitment, event_type, message='', extra=None, user_id=None, allocations=None):
+def queue_commitment_sage_event(
+    commitment,
+    event_type,
+    message='',
+    extra=None,
+    user_id=None,
+    allocations=None,
+    *,
+    db=None,
+    SageSyncEvent=None,
+    Project=None,
+    Commitment=None,
+    CommitmentAllocation=None,
+):
     """Queue Sage sync for commitment workflow (API routes, simulations, scripts)."""
-    try:
-        import importlib
-        app_mod = importlib.import_module('app')
-    except ImportError:
-        return None
     from sage_service import create_and_process_sage_event
 
-    CommitmentAllocation = app_mod.CommitmentAllocation
-    if allocations is None:
-        allocations = CommitmentAllocation.query.filter_by(commitment_id=commitment.id).all()
+    if db is None:
+        try:
+            from flask import has_app_context
+            if not has_app_context():
+                return None
+            import app as app_mod
+            db = app_mod.db
+            SageSyncEvent = SageSyncEvent or app_mod.SageSyncEvent
+            Project = Project or app_mod.Project
+            Commitment = Commitment or app_mod.Commitment
+            CommitmentAllocation = CommitmentAllocation or app_mod.CommitmentAllocation
+        except Exception:
+            return None
+
+    if allocations is None and CommitmentAllocation is not None:
+        try:
+            allocations = CommitmentAllocation.query.filter_by(commitment_id=commitment.id).all()
+        except Exception:
+            allocations = []
+
     payload = build_commitment_sage_payload(commitment, allocations, extra)
-    return create_and_process_sage_event(
-        app_mod.SageSyncEvent,
-        app_mod.Project,
-        app_mod.db,
-        commitment.project_id,
-        event_type,
-        message=message or f'{commitment.number} — {event_type}',
-        payload=payload,
-        user_id=user_id,
-        Commitment=app_mod.Commitment,
-        defer_commit=True,
-    )
+    try:
+        return create_and_process_sage_event(
+            SageSyncEvent,
+            Project,
+            db,
+            commitment.project_id,
+            event_type,
+            message=message or f'{commitment.number} — {event_type}',
+            payload=payload,
+            user_id=user_id,
+            Commitment=Commitment,
+            defer_commit=True,
+        )
+    except Exception:
+        return None
 
 
 def validate_budget_headroom(BudgetProjectState, project_id, allocations):
