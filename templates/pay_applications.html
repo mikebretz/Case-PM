@@ -2370,11 +2370,15 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
     function updateSubSOVStatus(companyId, newStatus, extra = {}) {
         if (!companyId) return;
-        if (!subSOVStatus[companyId]) subSOVStatus[companyId] = {};
-        subSOVStatus[companyId].status = newStatus;
-        if (extra.submittedDate) subSOVStatus[companyId].submittedDate = extra.submittedDate;
-        if (extra.approvedBy) subSOVStatus[companyId].approvedBy = extra.approvedBy;
-        if (extra.approvedDate) subSOVStatus[companyId].approvedDate = extra.approvedDate;
+        const key = String(companyId);
+        if (!subSOVStatus[key] && !subSOVStatus[companyId]) subSOVStatus[key] = {};
+        const entry = subSOVStatus[key] || subSOVStatus[companyId];
+        entry.status = newStatus;
+        if (extra.submittedDate) entry.submittedDate = extra.submittedDate;
+        if (extra.approvedBy) entry.approvedBy = extra.approvedBy;
+        if (extra.approvedDate) entry.approvedDate = extra.approvedDate;
+        if (extra.companyName) entry.companyName = extra.companyName;
+        subSOVStatus[key] = entry;
         casepmStore.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
     }
 
@@ -2835,7 +2839,11 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         }
         const statusEntry = getSubSOVStatusEntry(bucketKey);
         if (!statusEntry.status) {
-            setSubSOVStatus(bucketKey, 'Draft', { companyName: getSubVendorCompanyName() || '' });
+            try {
+                updateSubSOVStatus(bucketKey, 'Draft', { companyName: getSubVendorCompanyName() || '' });
+            } catch (err) {
+                console.warn('[CasePM] could not initialize sub SOV status', err);
+            }
         }
         return bucketKey;
     }
@@ -6934,7 +6942,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
         // Original flow: First time submitting the SOV setup for approval
         logPayAppAudit('SUB_SOV_SUBMITTED', { company: company.name || company.company_name, lines: subLines.length });
-        setSubSOVStatus(companyId, 'Pending Approval', { submittedDate: new Date().toISOString() });
+        updateSubSOVStatus(companyId, 'Pending Approval', { submittedDate: new Date().toISOString() });
         // Success feedback removed per user request (status change visible)
         renderPayAppContent();
     }

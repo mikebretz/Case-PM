@@ -507,7 +507,28 @@ def register_workflow(app, _db, models):
         except Exception as exc:
             import traceback
             traceback.print_exc()
-            return jsonify({'error': 'Portal context unavailable', 'detail': str(exc)}), 500
+            role = getattr(current_user, 'role', None) or ''
+            sub_roles = ('Subcontractor Accountant', 'Subcontractor Contact', 'Subcontractor')
+            return jsonify({
+                'userId': getattr(current_user, 'id', None),
+                'userName': getattr(current_user, 'full_name', None) or '',
+                'userEmail': getattr(current_user, 'email', None) or '',
+                'role': role,
+                'isAdmin': role == 'Admin',
+                'portal': 'sub' if role in sub_roles else 'staff',
+                'companyId': getattr(current_user, 'company_id', None),
+                'companyName': getattr(current_user, 'company', None) or '',
+                'companyType': '',
+                'vendorCompanyLinked': bool(getattr(current_user, 'company_id', None)),
+                'canApprove': {},
+                'permissions': {'global': {}},
+                'isSub': role in sub_roles,
+                'isArchitect': role == 'Architect',
+                'isSubVendorPayPortal': role in ('Subcontractor Accountant', 'Subcontractor Contact'),
+                'emailInternalOnly': role in ('Subcontractor Accountant', 'Subcontractor Contact'),
+                '_fallback': True,
+                '_detail': str(exc),
+            })
 
     @app.route('/api/internal-messages')
     @login_required

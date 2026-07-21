@@ -552,26 +552,32 @@ def build_portal_context_payload(user, Company, db, helpers: dict) -> dict:
 
     try:
         from companies_persistence import ensure_company_schema
-        ensure_company_schema(db)
+        if db is not None:
+            ensure_company_schema(db)
     except Exception:
         pass
 
-    get_role_permissions = helpers['get_role_permissions']
-    user_portal_type = helpers['user_portal_type']
-    is_sub_user = helpers['is_sub_user']
-    is_architect_user = helpers['is_architect_user']
-    user_can_approve = helpers['user_can_approve']
+    get_role_permissions = helpers.get('get_role_permissions')
+    user_portal_type = helpers.get('user_portal_type')
+    is_sub_user = helpers.get('is_sub_user')
+    is_architect_user = helpers.get('is_architect_user')
+    user_can_approve = helpers.get('user_can_approve')
 
-    perms = get_role_permissions(user) or {}
+    perms = {}
     try:
+        perms = (get_role_permissions(user) if get_role_permissions else {}) or {}
         perms = json.loads(json.dumps(perms, default=str))
     except Exception:
         perms = {}
 
-    company_id, company_name, company = resolve_sub_vendor_company(
-        user, Company, db, persist_link=False,
-    )
-    if company is None and getattr(user, 'company_id', None):
+    company_id, company_name, company = None, None, None
+    try:
+        company_id, company_name, company = resolve_sub_vendor_company(
+            user, Company, db, persist_link=False,
+        )
+    except Exception:
+        pass
+    if company is None and getattr(user, 'company_id', None) and Company is not None:
         try:
             company = Company.query.get(int(user.company_id))
             if company:
@@ -580,30 +586,54 @@ def build_portal_context_payload(user, Company, db, helpers: dict) -> dict:
         except Exception:
             company = None
 
-    sub_vendor = is_sub_vendor_portal_user(user)
+    try:
+        sub_vendor = is_sub_vendor_portal_user(user)
+    except Exception:
+        role = (getattr(user, 'role', None) or '').strip()
+        sub_vendor = role in ('Subcontractor Accountant', 'Subcontractor Contact')
+
     linked = True
     if sub_vendor:
         linked = company_id is not None
 
     global_flags = perms.get('global') if isinstance(perms.get('global'), dict) else {}
+    can_approve = {}
+    for mod in ('Pay Applications', 'Change Orders', 'Submittals', 'RFIs', 'Budget'):
+        try:
+            can_approve[mod] = bool(user_can_approve(user, mod)) if user_can_approve else False
+        except Exception:
+            can_approve[mod] = False
+
+    try:
+        portal = user_portal_type(user) if user_portal_type else 'staff'
+    except Exception:
+        portal = perms.get('portal', 'staff')
+
+    try:
+        is_sub = is_sub_user(user) if is_sub_user else False
+    except Exception:
+        is_sub = portal == 'sub'
+
+    try:
+        is_arch = is_architect_user(user) if is_architect_user else False
+    except Exception:
+        is_arch = (getattr(user, 'role', None) or '') == 'Architect'
+
     return {
-        'userId': user.id,
-        'userName': user.full_name,
-        'userEmail': user.email,
-        'role': user.role,
-        'isAdmin': user.role == 'Admin',
-        'portal': user_portal_type(user),
+        'userId': getattr(user, 'id', None),
+        'userName': getattr(user, 'full_name', None) or '',
+        'userEmail': getattr(user, 'email', None) or '',
+        'role': getattr(user, 'role', None) or '',
+        'isAdmin': getattr(user, 'role', None) == 'Admin',
+        'portal': portal,
         'companyId': company_id,
         'companyName': company_name or (getattr(user, 'company', None) or ''),
         'companyType': (getattr(company, 'type', None) or '') if company else '',
         'vendorCompanyLinked': linked,
-        'canApprove': {
-            m: bool(user_can_approve(user, m))
-            for m in ('Pay Applications', 'Change Orders', 'Submittals', 'RFIs', 'Budget')
-        },
+        'canApprove': can_approve,
         'permissions': perms,
-        'isSub': is_sub_user(user),
-        'isArchitect': is_architect_user(user),
+        'isSub': is_sub,
+        'isArchitect': is_arch,
         'isSubVendorPayPortal': sub_vendor,
         'emailInternalOnly': bool(
             (global_flags or {}).get('email_internal_only') or sub_vendor
