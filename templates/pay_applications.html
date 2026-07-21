@@ -170,6 +170,13 @@
   .pay-app-table-panel.is-hidden {
     display: none;
   }
+  body.portal-sub-vendor:not(.pay-app-sub-ready) #payAppSummaryCards,
+  body.portal-sub-vendor:not(.pay-app-sub-ready) #payAppWorkflowBar,
+  body.portal-sub-vendor:not(.pay-app-sub-ready) #payAppTablePanel,
+  body.portal-sub-vendor:not(.pay-app-sub-ready) #payAppTrackerPanel,
+  body.portal-sub-vendor:not(.pay-app-sub-ready) #payAppErpPanel {
+    visibility: hidden;
+  }
   #payAppTrackerSplit {
     flex: 1 1 auto;
     min-height: 0;
@@ -1357,6 +1364,9 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         defaultRetainagePercent = parseFloat(casepmStore.getItem('payAppRetainagePercent') || '10');
         sageSyncAutoEnabled = casepmStore.getItem('sageSyncAutoEnabled') !== 'false';
         budgetContractAmount = projectOriginalContractAmount || parseFloat(casepmStore.getItem('budgetContractAmount')) || resolveServerContractAmount() || 0;
+        if (isSubVendorPayPortalUser()) {
+            sanitizeSubVendorPayAppState();
+        }
     }
 
     function renderSageSyncStatus() {
@@ -2786,8 +2796,90 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         return null;
     }
 
+    /** Collect subcontractorSOV / subSOVStatus keys that belong to this vendor. */
+    function collectSubVendorSOVKeys(forCompanyId) {
+        const map = subcontractorSOV || {};
+        const statusMap = subSOVStatus || {};
+        const portalId = forCompanyId != null ? forCompanyId : getSubVendorCompanyId();
+        const portalName = (getSubVendorCompanyName() || '').trim().toLowerCase();
+        const keys = new Set();
+        const allKeys = new Set([...Object.keys(map), ...Object.keys(statusMap)]);
+
+        allKeys.forEach((key) => {
+            const sk = String(key).trim();
+            if (!sk) return;
+            const st = statusMap[key] || statusMap[sk] || {};
+            const stName = (st.companyName || st.company_name || '').trim().toLowerCase();
+            const stCid = st.companyId != null ? String(st.companyId) : (st.company_id != null ? String(st.company_id) : '');
+
+            if (portalId != null) {
+                for (const variant of subCompanyKeyVariants(portalId)) {
+                    const vs = String(variant);
+                    if (sk === vs || stCid === vs) keys.add(sk);
+                }
+            }
+            if (portalName) {
+                if (stName === portalName || sk.toLowerCase() === portalName) keys.add(sk);
+            }
+            if (forCompanyId != null) {
+                for (const variant of subCompanyKeyVariants(forCompanyId)) {
+                    const vs = String(variant);
+                    if (sk === vs || stCid === vs) keys.add(sk);
+                }
+                const name = (resolveSubCompanyDisplayName(forCompanyId) || '').trim().toLowerCase();
+                if (name && (stName === name || sk.toLowerCase() === name)) keys.add(sk);
+            }
+        });
+        return keys;
+    }
+
+    function sanitizeSubVendorPayAppState() {
+        if (!isSubVendorPayPortalUser()) return;
+        const allowedKeys = collectSubVendorSOVKeys();
+        const stripKeys = [
+            'contractorSOV', 'payAppHistory', 'previousPayApps', 'currentPayAppPeriod',
+            'payAppBillingLines', 'mainLienWaiver',
+        ];
+        stripKeys.forEach((key) => casepmStore.removeItem(key));
+
+        function filterCompanyMap(map) {
+            const src = map || {};
+            if (!allowedKeys.size) return {};
+            const out = {};
+            allowedKeys.forEach((key) => {
+                if (Object.prototype.hasOwnProperty.call(src, key)) out[key] = src[key];
+            });
+            return out;
+        }
+
+        subcontractorSOV = filterCompanyMap(subcontractorSOV);
+        subSOVStatus = filterCompanyMap(subSOVStatus);
+        subPayAppHistory = filterCompanyMap(subPayAppHistory);
+        subPendingSubmissions = filterCompanyMap(subPendingSubmissions);
+        subPayAppNumbers = filterCompanyMap(subPayAppNumbers);
+        subLienWaivers = filterCompanyMap(subLienWaivers);
+        subLienWaiverArchive = filterCompanyMap(subLienWaiverArchive);
+
+        casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+        casepmStore.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
+        casepmStore.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+        casepmStore.setItem('subPendingSubmissions', JSON.stringify(subPendingSubmissions));
+        casepmStore.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+        casepmStore.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+        casepmStore.setItem('subLienWaiverArchive', JSON.stringify(subLienWaiverArchive));
+        contractorSOV = [];
+        payAppHistory = [];
+        currentPayAppPeriod = null;
+    }
+
     /** Find the subcontractorSOV dict key for this vendor (id vs name mismatch). */
     function resolveSubCompanyBucketKey(preferredId) {
+        if (isSubVendorPayPortalUser()) {
+            const keys = collectSubVendorSOVKeys(preferredId);
+            if (!keys.size) return null;
+            return canonicalSubCompanyId([...keys][0]);
+        }
+
         const map = subcontractorSOV || {};
         const statusMap = subSOVStatus || {};
         const portalId = preferredId != null ? preferredId : getSubVendorCompanyId();
@@ -2823,6 +2915,9 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     }
 
     function isCompanyRegisteredOnProjectSubSOV(companyId) {
+        if (isSubVendorPayPortalUser()) {
+            return collectSubVendorSOVKeys().size > 0;
+        }
         const map = subcontractorSOV || {};
         const statusMap = subSOVStatus || {};
         const cid = canonicalSubCompanyId(companyId);
@@ -2831,14 +2926,17 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             if (Object.prototype.hasOwnProperty.call(map, k)) return true;
             if (Object.prototype.hasOwnProperty.call(statusMap, k)) return true;
         }
-        const portalName = (getSubVendorCompanyName() || '').trim().toLowerCase();
         const name = (resolveSubCompanyDisplayName(cid) || '').trim().toLowerCase();
-        const names = new Set([portalName, name].filter(Boolean));
-        for (const key of Object.keys(statusMap)) {
+        const names = new Set(name ? [name] : []);
+        for (const key of new Set([...Object.keys(map), ...Object.keys(statusMap)])) {
             const st = statusMap[key] || {};
-            const stName = (st.companyName || '').trim().toLowerCase();
+            const stName = (st.companyName || st.company_name || '').trim().toLowerCase();
+            const stCid = st.companyId != null ? String(st.companyId) : (st.company_id != null ? String(st.company_id) : '');
             if (stName && names.has(stName)) return true;
             if (String(key).trim().toLowerCase() && names.has(String(key).trim().toLowerCase())) return true;
+            for (const variant of subCompanyKeyVariants(cid)) {
+                if (stCid && stCid === String(variant)) return true;
+            }
         }
         return false;
     }
@@ -10259,6 +10357,9 @@ function printSubcontractorG703(companyId) {
     function initializePayApplications() {
         if (!SUB_VENDOR_COMPANY_LINKED) return;
         const boot = async () => {
+            if (isSubVendorPayPortalUser() && document.body) {
+                document.body.classList.remove('pay-app-sub-ready');
+            }
             if (typeof CasePMAccountingReconcile !== 'undefined') {
                 await CasePMAccountingReconcile.initAndReconcile();
             } else if (typeof CasePMPayAppSync !== 'undefined') {
@@ -10272,6 +10373,9 @@ function printSubcontractorG703(companyId) {
             seedProjectContractDefaults();
             await refreshProjectFinancialSummary();
             reloadPayAppStateFromStorage();
+            if (isSubVendorPayPortalUser()) {
+                sanitizeSubVendorPayAppState();
+            }
             seedDemoDataIfNeeded();
             bindPayAppSettingsAutoSave();
             pruneInlineLienWaiverPayloads();
@@ -10288,6 +10392,9 @@ function printSubcontractorG703(companyId) {
             renderPayAppContent();
             renderSageSyncStatus();
             bindPayAppNavigationGuards();
+            if (isSubVendorPayPortalUser() && document.body) {
+                document.body.classList.add('pay-app-sub-ready');
+            }
 
             window.addEventListener('beforeunload', (e) => {
                 if (payAppHasPendingChanges()) {

@@ -49,6 +49,12 @@
       const val = bundle[key];
       store.setItem(key, typeof val === 'string' ? val : JSON.stringify(val));
     });
+    const portal = global.CASEPM_PORTAL || {};
+    if (portal.is_sub_vendor_portal || portal.isSubVendorPayPortal) {
+      ['contractorSOV', 'payAppHistory', 'previousPayApps', 'currentPayAppPeriod', 'payAppBillingLines'].forEach((key) => {
+        store.removeItem(key);
+      });
+    }
   }
 
   async function loadFromServer(options) {
