@@ -14474,7 +14474,20 @@ def api_get_pay_app_state():
     if not record:
         return jsonify({'project_id': project_id, 'data': None, 'version': 0})
     from financial_security import filter_pay_app_state_for_sub_vendor
-    data = filter_pay_app_state_for_sub_vendor(current_user, data)
+    try:
+        data = filter_pay_app_state_for_sub_vendor(current_user, data)
+        try:
+            from portal_sub_access import is_sub_vendor_portal_user, ensure_sub_vendor_project_memberships
+            from case_workflow import ProjectMembership
+            if is_sub_vendor_portal_user(current_user):
+                ensure_sub_vendor_project_memberships(
+                    current_user, db, ProjectMembership=ProjectMembership,
+                )
+        except Exception:
+            pass
+    except Exception as exc:
+        app.logger.exception('pay app state filter failed for project %s', project_id)
+        return jsonify({'error': 'Could not load pay application state.'}), 500
     return jsonify({
         'project_id': project_id,
         'data': data,
