@@ -240,6 +240,31 @@ def guard_api_request(current_user):
         except Exception:
             pass
 
+    # Pay-app state sync — sub portal users hold entry on pay_applications_sub, not edit on pay_applications.
+    if path.startswith('/api/pay-applications/state'):
+        try:
+            from portal_sub_access import is_sub_vendor_portal_user
+            from case_workflow import user_has_module_access
+            if is_sub_vendor_portal_user(current_user):
+                needed = 'view' if request.method in ('GET', 'HEAD', 'OPTIONS') else 'entry'
+                if user_has_module_access(current_user, 'pay_applications_sub', needed):
+                    return None
+                if user_has_module_access(current_user, 'pay_applications', needed):
+                    return None
+        except Exception:
+            pass
+
+    # Read-only contract context for the pay applications page.
+    if path.startswith('/api/projects/financial-summary'):
+        try:
+            from case_workflow import user_has_module_access
+            if user_has_module_access(current_user, 'pay_applications', 'view'):
+                return None
+            if user_has_module_access(current_user, 'pay_applications_sub', 'view'):
+                return None
+        except Exception:
+            pass
+
     # User self-service profile routes under /api/users/me are always allowed.
     if path.startswith('/api/users/me'):
         return None

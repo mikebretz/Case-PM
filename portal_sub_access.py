@@ -148,6 +148,11 @@ def sub_vendor_company_keys(user) -> set[str]:
     return keys
 
 
+def _normalize_company_map(block) -> dict:
+    """Pay-app company buckets must be dicts; tolerate legacy/corrupt list values."""
+    return block if isinstance(block, dict) else {}
+
+
 def _allowed_key_variants(allowed: set[str]) -> set[str]:
     variants: set[str] = set()
     for key in allowed:
@@ -213,8 +218,8 @@ def resolve_sub_vendor_sov_keys(user, data: dict | None) -> set[str]:
     name_lower = (cname or (getattr(user, 'company', None) or '')).strip().lower()
     keys: set[str] = set()
 
-    sub_sov = data.get('subcontractorSOV') or {}
-    sub_status = data.get('subSOVStatus') or {}
+    sub_sov = _normalize_company_map(data.get('subcontractorSOV'))
+    sub_status = _normalize_company_map(data.get('subSOVStatus'))
 
     try:
         from pay_app_persistence import _find_sub_sov_keys_for_company
@@ -349,10 +354,34 @@ def filter_pay_app_state_for_sub_vendor(user, data: dict | None) -> dict | None:
     if not data:
         return data
     out = dict(data)
+    for field in ('subcontractorSOV', 'subSOVStatus', 'subPayAppHistory', 'subPendingSubmissions', 'subPayAppNumbers'):
+        if field in out:
+            out[field] = _normalize_company_map(out.get(field))
     sov_keys = resolve_sub_vendor_sov_keys(user, out)
-    if not sov_keys and is_sub_vendor_portal_user(user):
+    if not sov_keys:
         cid, cname, _ = resolve_sub_vendor_company(user)
         sov_keys = _discover_sov_keys_from_data(out, cid, cname, user)
+    if not sov_keys:
+        try:
+            from pay_app_persistence import _sov_status_vendor_ids
+            cid, cname, _ = resolve_sub_vendor_company(user)
+            cid_s = str(cid) if cid is not None else ''
+            cname_l = (cname or '').strip().lower()
+            sub_status = _normalize_company_map(out.get('subSOVStatus'))
+            for key, entry in sub_status.items():
+                if not isinstance(entry, dict) or not entry.get('status'):
+                    continue
+                sk = str(key).strip()
+                if not sk:
+                    continue
+                if cid_s and cid_s in _sov_status_vendor_ids(sk, entry):
+                    sov_keys.add(sk)
+                    continue
+                st_name = (entry.get('companyName') or entry.get('company_name') or '').strip().lower()
+                if cname_l and st_name and st_name == cname_l:
+                    sov_keys.add(sk)
+        except Exception:
+            pass
     for field in (
         'subcontractorSOV', 'subSOVStatus', 'subPayAppHistory',
         'subPendingSubmissions', 'subPayAppNumbers',
