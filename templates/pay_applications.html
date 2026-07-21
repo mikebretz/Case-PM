@@ -2867,6 +2867,35 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         return null;
     }
 
+    /** GC-registered subcontractor buckets present in loaded pay-app state. */
+    function getRegisteredSubSOVKeys() {
+        const keys = new Set();
+        const statusMap = subSOVStatus || {};
+        Object.keys(statusMap).forEach((key) => {
+            const st = statusMap[key] || {};
+            if (st && st.status) keys.add(String(key).trim());
+        });
+        return keys;
+    }
+
+    function portalIdMatchesSOVEntry(st, portalId, portalName) {
+        if (!st || !st.status) return false;
+        const stName = (st.companyName || st.company_name || '').trim().toLowerCase();
+        const idFields = [st.companyId, st.company_id, st.localCompanyId, st.commitmentCompanyId];
+        if (portalId != null) {
+            for (const variant of subCompanyKeyVariants(portalId)) {
+                const vs = String(variant);
+                for (const raw of idFields) {
+                    if (raw != null && String(raw) === vs) return true;
+                }
+            }
+        }
+        if (portalName) {
+            if (stName && stName === portalName) return true;
+        }
+        return false;
+    }
+
     /** Collect subcontractorSOV / subSOVStatus keys that belong to this vendor. */
     function collectSubVendorSOVKeys(forCompanyId) {
         const map = subcontractorSOV || {};
@@ -2883,11 +2912,13 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             if (!st.status) return;
             const stName = (st.companyName || st.company_name || '').trim().toLowerCase();
             const stCid = st.companyId != null ? String(st.companyId) : (st.company_id != null ? String(st.company_id) : '');
+            const stLocal = st.localCompanyId != null ? String(st.localCompanyId) : '';
+            const stCommit = st.commitmentCompanyId != null ? String(st.commitmentCompanyId) : '';
 
             if (portalId != null) {
                 for (const variant of subCompanyKeyVariants(portalId)) {
                     const vs = String(variant);
-                    if (sk === vs || stCid === vs) keys.add(sk);
+                    if (sk === vs || stCid === vs || stLocal === vs || stCommit === vs) keys.add(sk);
                 }
             }
             if (portalName) {
@@ -2908,22 +2939,12 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 const st = statusMap[key] || {};
                 return st && st.status;
             });
-            if (registeredKeys.length === 1) {
-                const onlyKey = String(registeredKeys[0]).trim();
-                const st = statusMap[onlyKey] || {};
-                const stName = (st.companyName || st.company_name || '').trim().toLowerCase();
-                const stCid = st.companyId != null ? String(st.companyId) : (st.company_id != null ? String(st.company_id) : '');
-                let matched = false;
-                if (portalId != null) {
-                    for (const variant of subCompanyKeyVariants(portalId)) {
-                        const vs = String(variant);
-                        if (onlyKey === vs || stCid === vs) matched = true;
-                    }
-                }
-                if (!matched && portalName && (stName === portalName || onlyKey.toLowerCase() === portalName)) {
-                    matched = true;
-                }
-                if (matched) keys.add(onlyKey);
+            registeredKeys.forEach((key) => {
+                const st = statusMap[key] || {};
+                if (portalIdMatchesSOVEntry(st, portalId, portalName)) keys.add(String(key).trim());
+            });
+            if (!keys.size && registeredKeys.length === 1) {
+                keys.add(String(registeredKeys[0]).trim());
             }
         }
         return keys;
@@ -2931,34 +2952,33 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
     function sanitizeSubVendorPayAppState() {
         if (!isSubVendorPayPortalUser()) return;
-        const allowedKeys = collectSubVendorSOVKeys();
         const stripKeys = [
             'contractorSOV', 'payAppHistory', 'previousPayApps', 'currentPayAppPeriod',
             'payAppBillingLines', 'mainLienWaiver',
         ];
         stripKeys.forEach((key) => casepmStore.removeItem(key));
 
-        function filterCompanyMap(map) {
-            const src = map || {};
-            if (!allowedKeys.size) {
-                const sole = soleSubVendorServerKey(src);
-                if (sole && Object.prototype.hasOwnProperty.call(src, sole)) return { [sole]: src[sole] };
-                return {};
+        // Server already scoped pay-app state to this vendor — keep every registered bucket.
+        const registeredKeys = getRegisteredSubSOVKeys();
+        if (!registeredKeys.size) {
+            const allowedKeys = collectSubVendorSOVKeys();
+            function filterCompanyMap(map) {
+                const src = map || {};
+                if (!allowedKeys.size) return {};
+                const out = {};
+                allowedKeys.forEach((key) => {
+                    if (Object.prototype.hasOwnProperty.call(src, key)) out[key] = src[key];
+                });
+                return out;
             }
-            const out = {};
-            allowedKeys.forEach((key) => {
-                if (Object.prototype.hasOwnProperty.call(src, key)) out[key] = src[key];
-            });
-            return out;
+            subcontractorSOV = filterCompanyMap(subcontractorSOV);
+            subSOVStatus = filterCompanyMap(subSOVStatus);
+            subPayAppHistory = filterCompanyMap(subPayAppHistory);
+            subPendingSubmissions = filterCompanyMap(subPendingSubmissions);
+            subPayAppNumbers = filterCompanyMap(subPayAppNumbers);
+            subLienWaivers = filterCompanyMap(subLienWaivers);
+            subLienWaiverArchive = filterCompanyMap(subLienWaiverArchive);
         }
-
-        subcontractorSOV = filterCompanyMap(subcontractorSOV);
-        subSOVStatus = filterCompanyMap(subSOVStatus);
-        subPayAppHistory = filterCompanyMap(subPayAppHistory);
-        subPendingSubmissions = filterCompanyMap(subPendingSubmissions);
-        subPayAppNumbers = filterCompanyMap(subPayAppNumbers);
-        subLienWaivers = filterCompanyMap(subLienWaivers);
-        subLienWaiverArchive = filterCompanyMap(subLienWaiverArchive);
 
         casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
         casepmStore.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
@@ -3016,6 +3036,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
     function isCompanyRegisteredOnProjectSubSOV(companyId) {
         if (isSubVendorPayPortalUser()) {
+            if (getRegisteredSubSOVKeys().size > 0) return true;
             return collectSubVendorSOVKeys().size > 0;
         }
         const map = subcontractorSOV || {};
@@ -3161,15 +3182,19 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         if (!isSubVendorPayPortalUser()) return null;
         const portalId = getSubVendorCompanyId();
         if (!portalId) return null;
-        const bucketKey = resolveSubCompanyBucketKey(portalId);
-        if (!bucketKey || !isCompanyRegisteredOnProjectSubSOV(bucketKey)) {
+
+        let keys = collectSubVendorSOVKeys(portalId);
+        if (!keys.size) keys = getRegisteredSubSOVKeys();
+        if (!keys.size) {
             selectedSubCompanyId = null;
             selectedTrackerSubId = null;
             return null;
         }
+
+        const bucketKey = canonicalSubCompanyId([...keys][0]);
         selectedSubCompanyId = bucketKey;
         selectedTrackerSubId = bucketKey;
-        casepmStore.setItem('lastSelectedSubSOV', bucketKey);
+        casepmStore.setItem('lastSelectedSubSOV', String(bucketKey));
         return bucketKey;
     }
 

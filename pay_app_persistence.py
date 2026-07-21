@@ -223,6 +223,21 @@ def _sov_keys_for_vendor(state_data, company_id=None, company_name=None):
             entry = sub_status.get(key) or sub_status.get(sk) or {}
             if isinstance(entry, dict) and entry.get('status'):
                 keys.add(sk)
+    cid_s = str(company_id).strip() if company_id is not None and str(company_id).strip() else ''
+    name_lower = (company_name or '').strip().lower()
+    for key, entry in sub_status.items():
+        if not isinstance(entry, dict) or not entry.get('status'):
+            continue
+        sk = str(key).strip()
+        if not sk:
+            continue
+        vendor_ids = _sov_status_vendor_ids(key, entry)
+        if cid_s and cid_s in vendor_ids:
+            keys.add(sk)
+            continue
+        st_name = (entry.get('companyName') or entry.get('company_name') or '').strip().lower()
+        if name_lower and st_name and st_name == name_lower:
+            keys.add(sk)
     return keys
 
 

@@ -261,6 +261,18 @@ def resolve_sub_vendor_sov_keys(user, data: dict | None) -> set[str]:
         )
     if cid is not None:
         cid_s = str(cid)
+        try:
+            from pay_app_persistence import _sov_status_vendor_ids
+            for key, entry in (sub_status or {}).items():
+                if not isinstance(entry, dict) or not entry.get('status'):
+                    continue
+                sk = str(key).strip()
+                if not sk:
+                    continue
+                if cid_s in _sov_status_vendor_ids(key, entry):
+                    keys.add(sk)
+        except Exception:
+            pass
         for block in (sub_sov, sub_status):
             if not isinstance(block, dict):
                 continue
