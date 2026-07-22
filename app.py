@@ -10111,6 +10111,29 @@ def api_submittal_delete_comment(submittal_id, comment_id):
     return jsonify({'ok': True, 'comments': _parse_json(submittal.comments_json, [])})
 
 
+@app.route('/api/submittals/<int:submittal_id>/signature', methods=['POST'])
+@login_required
+def api_submittal_apply_signature(submittal_id):
+    from submittal_persistence import append_submittal_digital_signature
+    from document_module_security import assert_submittal_signature_allowed, submittal_visible_to_user
+    from financial_security import require_financial_project_access
+    submittal = Submittal.query.get_or_404(submittal_id)
+    try:
+        require_financial_project_access(current_user, submittal.project_id, Project)
+        if not submittal_visible_to_user(submittal, current_user, Company=Company, db=db):
+            return jsonify({'error': 'Permission denied'}), 403
+        assert_submittal_signature_allowed(current_user, submittal, Company=Company, db=db)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    body = request.get_json(silent=True) or {}
+    try:
+        entry, history = append_submittal_digital_signature(submittal, current_user, body)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    db.session.commit()
+    return jsonify({'ok': True, 'signature_entry': entry, 'history': history})
+
+
 @app.route('/api/submittals/<int:submittal_id>/attachments', methods=['GET'])
 @login_required
 def api_submittal_list_attachments(submittal_id):
