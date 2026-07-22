@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Email{% endblock %}
+{% block title %}{% if is_sub_vendor_portal %}Internal Communications{% else %}Email{% endif %}{% endblock %}
 
 {% block content %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/email-client.css') }}">
@@ -12,7 +12,7 @@
     <div class="email-main">
         <!-- Left sidebar -->
         <aside class="email-sidebar">
-            <div class="p-3 flex-shrink-0">
+            <div class="p-3 flex-shrink-0{% if is_sub_vendor_portal %} hidden{% endif %}">
                 <button type="button" onclick="CasePMEmail.compose()"
                         class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-semibold text-white">
                     <i class="fa-solid fa-pen"></i> Compose

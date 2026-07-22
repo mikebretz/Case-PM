@@ -118,6 +118,61 @@ def coerce_pay_app_state(data) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def build_g703_cost_code_index(state_data, tolerance=0.01):
+    """G703 cost codes for sub-vendor pickers — code, description, availability only (no amounts)."""
+    contractor = state_data.get('contractorSOV') or []
+    if not isinstance(contractor, list):
+        return []
+    sub_sov = state_data.get('subcontractorSOV') or {}
+    if not isinstance(sub_sov, dict):
+        sub_sov = {}
+
+    gc_totals = {}
+    display = {}
+    for line in contractor:
+        if not isinstance(line, dict):
+            continue
+        norm = normalize_cost_code(line.get('cost_code'))
+        if not norm:
+            continue
+        amt = float(line.get('original') or 0) + _contractor_line_co_amount(line)
+        gc_totals[norm] = gc_totals.get(norm, 0.0) + amt
+        display[norm] = line.get('cost_code') or norm
+
+    sub_totals = {}
+    for _cid, lines in sub_sov.items():
+        for line in lines or []:
+            if not isinstance(line, dict):
+                continue
+            norm = normalize_cost_code(line.get('cost_code'))
+            if not norm:
+                continue
+            amt = float(line.get('original_commitment') or line.get('original') or 0)
+            amt += float(line.get('change_orders') or 0)
+            sub_totals[norm] = sub_totals.get(norm, 0.0) + amt
+
+    seen = set()
+    out = []
+    for line in contractor:
+        if not isinstance(line, dict):
+            continue
+        code = (line.get('cost_code') or '').strip()
+        norm = normalize_cost_code(code)
+        if not norm or norm in seen:
+            continue
+        seen.add(norm)
+        gc_total = gc_totals.get(norm, 0.0)
+        if gc_total <= tolerance:
+            continue
+        allocated = sub_totals.get(norm, 0.0)
+        out.append({
+            'cost_code': display.get(norm, code),
+            'description': (line.get('description') or '').strip(),
+            'available': allocated < gc_total - tolerance,
+        })
+    return out
+
+
 def _parse_state(record):
     if not record or not record.data_json:
         return {}
