@@ -126,3 +126,100 @@ def fill_submittal_form_pdf(submittal, project=None, company_info=None, template
         return doc.tobytes()
     finally:
         doc.close()
+
+
+def _is_pdf_bytes(data: bytes) -> bool:
+    return bool(data) and data[:4] == b'%PDF'
+
+
+def _is_image_bytes(data: bytes) -> bool:
+    if not data:
+        return False
+    if data[:8] == b'\x89PNG\r\n\x1a\n':
+        return True
+    if data[:3] == b'\xff\xd8\xff':
+        return True
+    if data[:6] in (b'GIF87a', b'GIF89a'):
+        return True
+    return False
+
+
+def _read_attachment_bytes(attachment: dict, *, submittal_id: int, project_id: int, upload_folder: str, Document=None) -> bytes | None:
+    if not attachment or not isinstance(attachment, dict):
+        return None
+    doc_id = attachment.get('document_id')
+    if doc_id and Document is not None:
+        doc = Document.query.get(int(doc_id))
+        if not doc or doc.deleted_at:
+            return None
+        path = os.path.join(upload_folder, 'documents', str(project_id), doc.filename)
+        if os.path.isfile(path):
+            with open(path, 'rb') as fh:
+                return fh.read()
+        return None
+    filename = (attachment.get('filename') or '').strip()
+    if not filename:
+        return None
+    path = os.path.join(upload_folder, 'submittals', str(submittal_id), filename)
+    if not os.path.isfile(path):
+        return None
+    with open(path, 'rb') as fh:
+        return fh.read()
+
+
+def _append_bytes_to_pdf(merged: fitz.Document, data: bytes) -> None:
+    if not data:
+        return
+    if _is_pdf_bytes(data):
+        src = fitz.open(stream=data, filetype='pdf')
+        try:
+            merged.insert_pdf(src)
+        finally:
+            src.close()
+        return
+    if _is_image_bytes(data):
+        from document_features import image_bytes_to_pdf
+        img_pdf = image_bytes_to_pdf(data)
+        src = fitz.open(stream=img_pdf, filetype='pdf')
+        try:
+            merged.insert_pdf(src)
+        finally:
+            src.close()
+
+
+def build_submittal_print_pdf(
+    submittal,
+    project=None,
+    company_info=None,
+    attachments=None,
+    *,
+    upload_folder: str,
+    Document=None,
+    template_path: str | None = None,
+) -> bytes:
+    """Filled submittal form followed by every attachment (PDF/image pages)."""
+    form_bytes = fill_submittal_form_pdf(
+        submittal,
+        project=project,
+        company_info=company_info,
+        template_path=template_path,
+    )
+    merged = fitz.open(stream=form_bytes, filetype='pdf')
+    try:
+        project_id = getattr(submittal, 'project_id', None) or getattr(project, 'id', None)
+        submittal_id = getattr(submittal, 'id', None)
+        for attachment in attachments or []:
+            try:
+                data = _read_attachment_bytes(
+                    attachment,
+                    submittal_id=int(submittal_id),
+                    project_id=int(project_id),
+                    upload_folder=upload_folder,
+                    Document=Document,
+                )
+                _append_bytes_to_pdf(merged, data)
+            except Exception:
+                continue
+        return merged.tobytes()
+    finally:
+        merged.close()

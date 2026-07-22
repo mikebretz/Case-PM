@@ -4242,6 +4242,7 @@ def _link_document_to_json_attachments(entity, project_id, doc_ids, attachments_
             'linked_from_documents': True,
             'uploaded_at': datetime.utcnow().isoformat(),
             'uploaded_by': _attachment_user_label(),
+            'uploaded_by_id': current_user.id,
         })
         linked.append(doc.id)
     return attachments, linked
@@ -4676,6 +4677,7 @@ def api_submittal_upload_attachment(submittal_id):
         'original_name': f.filename,
         'uploaded_at': datetime.utcnow().isoformat(),
         'uploaded_by': f'{current_user.first_name} {current_user.last_name}'.strip(),
+        'uploaded_by_id': current_user.id,
     })
     submittal.attachments_json = json.dumps(attachments)
     db.session.commit()
@@ -9859,7 +9861,7 @@ def api_submittal_print_form(submittal_id):
     from document_module_security import assert_submittal_read_allowed, submittal_visible_to_user
     from financial_security import require_financial_project_access
     from program_settings_persistence import load_company_info
-    from submittal_form_pdf import fill_submittal_form_pdf
+    from submittal_form_pdf import build_submittal_print_pdf
     import io
 
     submittal = Submittal.query.get_or_404(submittal_id)
@@ -9870,13 +9872,18 @@ def api_submittal_print_form(submittal_id):
             return jsonify({'error': 'Permission denied'}), 403
     except (ValueError, PermissionError) as exc:
         return jsonify({'error': str(exc)}), 403
+    from rfi_persistence import _parse_json
+    attachments = _parse_json(submittal.attachments_json, [])
     project = Project.query.get(submittal.project_id)
     template_path = os.path.join(app.static_folder, 'forms', 'Submittal_Form.pdf')
     try:
-        pdf_bytes = fill_submittal_form_pdf(
+        pdf_bytes = build_submittal_print_pdf(
             submittal,
             project=project,
             company_info=load_company_info(),
+            attachments=attachments,
+            upload_folder=app.config['UPLOAD_FOLDER'],
+            Document=Document,
             template_path=template_path,
         )
     except FileNotFoundError as exc:
@@ -9962,6 +9969,61 @@ def api_submittal_list_attachments(submittal_id):
             a['url'] = url_for('api_documents_download', doc_id=a['document_id'])
         elif a.get('filename'):
             a['url'] = url_for('serve_submittal_attachment', submittal_id=submittal_id, filename=a.get('filename', ''))
+    return jsonify({'ok': True, 'attachments': attachments})
+
+
+@app.route('/api/submittals/<int:submittal_id>/attachments', methods=['DELETE'])
+@login_required
+def api_submittal_delete_attachment(submittal_id):
+    from rfi_persistence import _parse_json
+    from financial_security import require_financial_project_access, assert_mutable_submittal
+    from document_module_security import assert_submittal_attachment_delete_allowed, submittal_visible_to_user
+
+    submittal = Submittal.query.get_or_404(submittal_id)
+    body = request.get_json(silent=True) or {}
+    filename = (body.get('filename') or '').strip()
+    document_id = body.get('document_id')
+    try:
+        require_financial_project_access(current_user, submittal.project_id, Project)
+        if not submittal_visible_to_user(submittal, current_user, Company=Company, db=db):
+            return jsonify({'error': 'Permission denied'}), 403
+        assert_mutable_submittal(submittal)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403 if isinstance(exc, PermissionError) else 400
+
+    attachments = _parse_json(submittal.attachments_json, [])
+    target = None
+    target_idx = None
+    for idx, att in enumerate(attachments):
+        if document_id is not None and att.get('document_id') == int(document_id):
+            target = att
+            target_idx = idx
+            break
+        if filename and att.get('filename') == filename:
+            target = att
+            target_idx = idx
+            break
+    if target is None:
+        return jsonify({'error': 'Attachment not found'}), 404
+    try:
+        assert_submittal_attachment_delete_allowed(
+            current_user, submittal, target, Company=Company, db=db,
+        )
+    except PermissionError as exc:
+        return jsonify({'error': str(exc)}), 403
+
+    if target.get('filename') and not target.get('document_id'):
+        folder = os.path.join(app.config['UPLOAD_FOLDER'], 'submittals', str(submittal_id))
+        path = os.path.join(folder, target['filename'])
+        if os.path.isfile(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+    attachments.pop(target_idx)
+    submittal.attachments_json = json.dumps(attachments)
+    db.session.commit()
     return jsonify({'ok': True, 'attachments': attachments})
 
 

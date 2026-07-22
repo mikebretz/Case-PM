@@ -17,6 +17,10 @@ class SubmittalAccessControlTests(unittest.TestCase):
             'view',
         )
         self.assertEqual(
+            min_access_for_request('DELETE', '/api/submittals/2/attachments'),
+            'view',
+        )
+        self.assertEqual(
             min_access_for_request('POST', '/api/submittals/sync'),
             'view',
         )
@@ -76,6 +80,38 @@ class SubmittalFormPdfTests(unittest.TestCase):
 
         pdf = fill_submittal_form_pdf(submittal, project=project, company_info=company_info)
         self.assertTrue(pdf.startswith(b'%PDF'))
+
+    def test_uploader_may_delete_attachment(self):
+        from document_module_security import assert_submittal_attachment_delete_allowed
+
+        user = SimpleNamespace(id=5, role='Subcontractor Contact', first_name='Bob', last_name='Sub')
+        submittal = SimpleNamespace(status='Draft', assigned_company_id=42)
+        att = {'uploaded_by_id': 5, 'filename': 'test.pdf'}
+        assert_submittal_attachment_delete_allowed(user, submittal, att)
+
+    def test_other_sub_cannot_delete_attachment(self):
+        from document_module_security import assert_submittal_attachment_delete_allowed
+
+        user = SimpleNamespace(
+            id=6,
+            role='Subcontractor Contact',
+            first_name='Other',
+            last_name='User',
+            permissions_json=json.dumps({
+                'version': 2,
+                'portal': 'sub',
+                'modules': {'submittals': {'access': 'view', 'approve': 'none'}},
+            }),
+        )
+        submittal = SimpleNamespace(
+            status='Draft',
+            assigned_company_id=42,
+            assigned_contact_user_id=6,
+            assigned_company_name='My Co',
+        )
+        att = {'uploaded_by_id': 5, 'filename': 'test.pdf'}
+        with self.assertRaises(PermissionError):
+            assert_submittal_attachment_delete_allowed(user, submittal, att)
 
 
 if __name__ == '__main__':

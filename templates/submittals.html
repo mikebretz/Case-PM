@@ -101,6 +101,7 @@ function resetSubmittalModalEditable() {
     enableSubmittalAssigneeEditableFields();
     const saveBtn = document.getElementById('submittalModalSaveBtn');
     if (saveBtn) saveBtn.classList.remove('hidden');
+    updateSubmittalAssigneeAssignmentDisplay(false);
 }
 function applySubmittalModalReadOnly(readOnly) {
     const mainCol = document.getElementById('submittalDetailMainCol');
@@ -181,6 +182,39 @@ function applySubmittalAssigneeFieldLocks(isAssignee) {
     }
     const impactGrid = document.getElementById('submittalImpactGrid');
     if (impactGrid) impactGrid.classList.toggle('hidden', isAssignee);
+    updateSubmittalAssigneeAssignmentDisplay(isAssignee);
+}
+function updateSubmittalAssigneeAssignmentDisplay(isAssignee) {
+    const companySel = document.getElementById('modalAssignedCompany');
+    const contactSel = document.getElementById('modalAssignedContact');
+    const companyRo = document.getElementById('modalAssignedCompanyReadonly');
+    const contactRo = document.getElementById('modalAssignedContactReadonly');
+    if (!companySel || !contactSel) return;
+    if (isAssignee) {
+        companySel.classList.add('hidden');
+        contactSel.classList.add('hidden');
+        if (companyRo) {
+            companyRo.classList.remove('hidden');
+            companyRo.textContent = currentModalItem?.assignedCompanyName || currentModalItem?.receivedFrom || '—';
+        }
+        if (contactRo) {
+            contactRo.classList.remove('hidden');
+            const parts = [currentModalItem?.assignedContactName, currentModalItem?.assignedContactEmail].filter(Boolean);
+            contactRo.textContent = parts.join(' · ') || '—';
+        }
+    } else {
+        companySel.classList.remove('hidden');
+        contactSel.classList.remove('hidden');
+        if (companyRo) companyRo.classList.add('hidden');
+        if (contactRo) contactRo.classList.add('hidden');
+    }
+}
+function submittalCanDeleteAttachment(att) {
+    if (!att || !currentModalItem) return false;
+    const uid = SUBMITTAL_ACCESS.userId;
+    if (att.uploaded_by_id != null && String(att.uploaded_by_id) === String(uid)) return true;
+    if (!SUBMITTAL_ACCESS.isSubPortal && submittalCanModifyItem(currentModalItem)) return true;
+    return false;
 }
 function refreshSubmittalActionButtons() {
     const level = submittalAccessLevel();
@@ -890,6 +924,7 @@ function refreshSubmittalActionButtons() {
                             <select id="modalAssignedCompany" onchange="onSubmittalCompanyChange()" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
                                 <option value="">— Select Company —</option>
                             </select>
+                            <div id="modalAssignedCompanyReadonly" class="hidden w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200"></div>
                         </div>
 
                         <div>
@@ -897,6 +932,7 @@ function refreshSubmittalActionButtons() {
                             <select id="modalAssignedContact" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
                                 <option value="">— Select Contact —</option>
                             </select>
+                            <div id="modalAssignedContactReadonly" class="hidden w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200"></div>
                         </div>
                         
                         <div>
@@ -1983,6 +2019,8 @@ async function applySubmittalStatusWorkflow(serverId, wf) {
     return json;
 }
 
+let submittalAttachmentCache = [];
+
 async function loadSubmittalAttachments(serverId) {
     const el = document.getElementById('submittalAttachmentList');
     if (!el || !serverId) return;
@@ -1990,11 +2028,37 @@ async function loadSubmittalAttachments(serverId) {
         const res = await fetch(`/api/submittals/${serverId}/attachments`, { credentials: 'same-origin' });
         const json = await res.json();
         const list = json.attachments || [];
-        el.innerHTML = list.length ? list.map(a =>
-            `<div><a href="${a.url}" class="text-sky-400 hover:underline" target="_blank">${escapeSubmittalHtml(a.original_name || a.filename)}</a></div>`
-        ).join('') : '<p class="text-zinc-500">No attachments yet</p>';
+        submittalAttachmentCache = list;
+        el.innerHTML = list.length ? list.map((a, idx) => {
+            const name = escapeSubmittalHtml(a.original_name || a.filename || 'Attachment');
+            const deleteBtn = submittalCanDeleteAttachment(a)
+                ? `<button type="button" onclick="deleteSubmittalAttachmentByIndex(${serverId}, ${idx})" class="ml-2 px-2 py-0.5 text-xs text-red-400 hover:bg-red-900/30 rounded">Remove</button>`
+                : '';
+            return `<div class="flex items-center gap-1"><a href="${a.url}" class="text-sky-400 hover:underline" target="_blank">${name}</a>${deleteBtn}</div>`;
+        }).join('') : '<p class="text-zinc-500">No attachments yet</p>';
     } catch (e) {
+        submittalAttachmentCache = [];
         el.innerHTML = '<p class="text-zinc-500">Could not load attachments</p>';
+    }
+}
+
+async function deleteSubmittalAttachmentByIndex(serverId, idx) {
+    const att = submittalAttachmentCache[idx];
+    if (!att) return;
+    if (!confirm('Remove this attachment? You can upload a new file afterward.')) return;
+    const payload = att.document_id ? { document_id: att.document_id } : { filename: att.filename };
+    try {
+        const res = await fetch(`/api/submittals/${serverId}/attachments`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify(payload),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Could not remove attachment');
+        await loadSubmittalAttachments(serverId);
+    } catch (err) {
+        showCenteredAlert(err.message || 'Could not remove attachment', 'error');
     }
 }
 

@@ -102,8 +102,8 @@ METHOD_MIN_ACCESS = {
 
 APPROVAL_PATH_RE = re.compile(r'^/api/approvals/\d+/(decide|approve|reject)', re.I)
 USERS_ADMIN_PATH_RE = re.compile(r'^/api/users(?:/\d+)?(?:/permissions|/reset-password)?$', re.I)
-# Assigned subs with view-only submittals access may sync, comment, attach, and submit.
-SUBMITTAL_ASSIGNEE_POST_RE = re.compile(
+# Assigned subs with view-only submittals access may sync, comment, attach, submit, and delete own files.
+SUBMITTAL_ASSIGNEE_WRITE_RE = re.compile(
     r'^/api/submittals(?:/sync|/\d+/(?:comments|attachments|workflow))$',
     re.I,
 )
@@ -238,7 +238,7 @@ def min_access_for_request(method: str, path: str) -> str:
         if method.upper() in ('GET', 'HEAD', 'OPTIONS'):
             return 'view'
         return 'admin'
-    if method.upper() in ('POST', 'PUT', 'PATCH') and SUBMITTAL_ASSIGNEE_POST_RE.match(base):
+    if method.upper() in ('POST', 'PUT', 'PATCH', 'DELETE') and SUBMITTAL_ASSIGNEE_WRITE_RE.match(base):
         return 'view'
     return METHOD_MIN_ACCESS.get((method or 'GET').upper(), 'edit')
 
