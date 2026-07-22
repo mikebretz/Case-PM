@@ -376,9 +376,11 @@ def filter_pay_app_state_for_sub_vendor(user, data: dict | None) -> dict | None:
     """Return pay app state limited to the sub vendor's company."""
     if not is_sub_vendor_portal_user(user):
         return data
-    allowed = sub_vendor_company_keys(user)
+    from pay_app_persistence import coerce_pay_app_state
+    data = coerce_pay_app_state(data)
     if not data:
         return data
+    allowed = sub_vendor_company_keys(user)
     out = dict(data)
     for field in ('subcontractorSOV', 'subSOVStatus', 'subPayAppHistory', 'subPendingSubmissions', 'subPayAppNumbers'):
         if field in out:

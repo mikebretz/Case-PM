@@ -103,11 +103,16 @@ def register_models(db):
   return PayAppProjectState, SageSyncEvent, ChangeOrderAllocation
 
 
+def coerce_pay_app_state(data) -> dict:
+    """Pay app state must be a dict; tolerate corrupt persisted JSON."""
+    return data if isinstance(data, dict) else {}
+
+
 def _parse_state(record):
     if not record or not record.data_json:
         return {}
     try:
-        return json.loads(record.data_json)
+        return coerce_pay_app_state(json.loads(record.data_json))
     except (TypeError, json.JSONDecodeError):
         return {}
 
@@ -120,8 +125,7 @@ def get_pay_app_state(PayAppProjectState, project_id):
 
 
 def save_pay_app_state(PayAppProjectState, db, project_id, data, user_id=None):
-    if not isinstance(data, dict):
-        raise ValueError('data must be a dict')
+    data = coerce_pay_app_state(data)
     record = PayAppProjectState.query.filter_by(project_id=project_id).first()
     payload = json.dumps(data)
     if record:
@@ -142,8 +146,9 @@ def save_pay_app_state(PayAppProjectState, db, project_id, data, user_id=None):
 
 
 def merge_state_patch(existing, patch):
-    merged = dict(existing or {})
-    for key, value in (patch or {}).items():
+    merged = dict(coerce_pay_app_state(existing))
+    patch = patch if isinstance(patch, dict) else {}
+    for key, value in patch.items():
         if key in PAY_APP_STATE_KEYS or key.startswith('_'):
             merged[key] = value
     return merged
