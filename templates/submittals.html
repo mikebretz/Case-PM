@@ -1208,15 +1208,9 @@ function renderSubmittalsTable(list) {
     rows.forEach(item => {
         const row = document.createElement('tr');
         row.className = 'hover:bg-zinc-700/40 cursor-pointer border-b border-zinc-700';
-
-        if (submittalAccessLevel() === 'view') {
-            row.onclick = () => viewSubmittalDocument(item.id);
-        }
-        // Double-click: view-only opens print-style document viewer; others open edit modal
-        row.ondblclick = () => {
-            if (submittalAccessLevel() === 'view') viewSubmittalDocument(item.id);
-            else openDetailModal(item.id);
-        };
+        
+        // Double-click to open
+        row.ondblclick = () => openDetailModal(item.id);
         
         row.innerHTML = `
             <td class="px-4 py-2 font-mono text-emerald-400 font-semibold">${item.number || '<span class="text-zinc-500 italic">Draft</span>'}</td>
@@ -1330,78 +1324,6 @@ function openDetailModal(id, isNew = false, newData = null) {
 function closeDetailModal() {
     document.getElementById('detailModal').classList.add('hidden');
     currentModalItem = null;
-}
-
-function buildSubmittalDetailPrintHtml(item) {
-    const P = typeof CasePMPrint !== 'undefined' ? CasePMPrint : null;
-    const e = P?.esc || escapeSubmittalHtml;
-    const meta = getSubmittalProjectMeta();
-    const writableField = (label, value) => {
-        if (P?.buildWritableField) return P.buildWritableField(label, value);
-        const text = String(value || '').trim();
-        if (!text) return '';
-        return `<div><span class="label">${e(label)}</span>${e(text)}</div>`;
-    };
-    const metaFields = [
-        writableField('Spec Section', item.specSection),
-        writableField('Paragraph', item.paragraph),
-        writableField('Revision', item.rev),
-        writableField('Type', item.type),
-        writableField('Date Received', item.dateReceived),
-        writableField('Required By', item.requiredBy),
-        writableField('Assigned Company', item.assignedCompanyName),
-        writableField('Assigned Contact', item.assignedContactName),
-        writableField('Received From', item.receivedFrom),
-        writableField('Referred To', item.referredTo),
-        writableField('Cost Impact', item.costImpact ? `$${item.costImpact}` : ''),
-        writableField('Schedule Impact', item.scheduleDays ? `${item.scheduleDays} days` : ''),
-    ].filter(Boolean).join('');
-    const statusBadge = item.status
-        ? `<span class="sub-detail-status" style="font-size:7.5pt;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:#555;padding:2px 8px;border:1px solid #ccc;border-radius:3px;">${e(item.status)}</span>`
-        : '';
-    const descriptionBlock = P?.buildWritableBox
-        ? P.buildWritableBox('Description / Impact Notes', item.impactNotes || item.subject || '', { minHeight: 48 })
-        : `<div class="sub-detail-box"><h4>Description / Impact Notes</h4>${e(item.impactNotes || item.subject || '—')}</div>`;
-    const sectionLine = item.sectionName
-        ? `<div style="font-size:8pt;color:#555;margin-bottom:8px;">${e(item.sectionName)}</div>`
-        : '';
-    const headerHtml = P?.buildPrintHeaderHtml
-        ? P.buildPrintHeaderHtml(meta, 'SUBMITTAL', { classPrefix: 'submittal-print-', showLocation: false })
-        : `<div class="casepm-print-header"><div class="casepm-print-title">SUBMITTAL</div></div>`;
-    return `<div class="casepm-print-page">
-      ${headerHtml}
-      <div class="casepm-submittal-detail">
-        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px;flex-wrap:wrap;">
-          <span class="sub-detail-number">${e(item.number || 'Draft')}</span>
-          ${statusBadge}
-        </div>
-        <div class="sub-detail-subject">${e(item.subject || '')}</div>
-        ${sectionLine}
-        <div class="sub-detail-grid">${metaFields}</div>
-        ${descriptionBlock}
-      </div>
-      <div class="casepm-print-footer">
-        <span>Confidential</span>
-        <span class="center">__PRINTED_ON__</span>
-        <span class="right"></span>
-      </div>
-    </div>`;
-}
-
-function viewSubmittalDocument(id) {
-    if (typeof CasePMPrint === 'undefined' || !CasePMPrint.openHtmlDocumentViewer) {
-        showCenteredAlert('Document viewer not available.', 'warning');
-        return;
-    }
-    const item = submittals.find(s => s.id === id);
-    if (!item) return;
-    const bodyHtml = buildSubmittalDetailPrintHtml(item);
-    CasePMPrint.openHtmlDocumentViewer({
-        title: `Submittal ${item.number || 'Draft'}`,
-        subtitle: item.subject || '',
-        docTitle: `Submittal ${item.number || item.id}`,
-        bodyHtml,
-    });
 }
 
 function saveSubmittalFromModal() {
