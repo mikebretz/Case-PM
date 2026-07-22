@@ -16076,6 +16076,11 @@ with app.app_context():
         except Exception as _re:
             print('RFI schema:', _re)
         try:
+            from submittal_persistence import ensure_submittal_schema
+            ensure_submittal_schema(db.engine, db)
+        except Exception as _sub:
+            print('Submittal schema:', _sub)
+        try:
             from drawing_persistence import ensure_drawing_schema
             ensure_drawing_schema(db.engine, db)
         except Exception as _dr:
