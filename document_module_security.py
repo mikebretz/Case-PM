@@ -165,6 +165,30 @@ def assert_submittal_comment_allowed(user, submittal, *, Company=None, db=None) 
             raise PermissionError('This submittal is not assigned to your company or contact.')
 
 
+def assert_submittal_attachment_delete_allowed(user, submittal, attachment, *, Company=None, db=None) -> None:
+    """Uploader may delete their attachment; staff assignees may delete on editable submittals."""
+    if _is_privileged(user):
+        return
+    if not attachment or not isinstance(attachment, dict):
+        raise PermissionError('Attachment not found.')
+    uid = getattr(user, 'id', None)
+    uploaded_id = attachment.get('uploaded_by_id')
+    if uploaded_id is not None and uid is not None and int(uploaded_id) == int(uid):
+        return
+    uploaded_name = (attachment.get('uploaded_by') or '').strip().lower()
+    user_name = ''
+    for part in (getattr(user, 'first_name', None), getattr(user, 'last_name', None)):
+        if part:
+            user_name = f'{user_name} {part}'.strip() if user_name else str(part).strip()
+    if not user_name:
+        user_name = (getattr(user, 'email', None) or '').strip()
+    if uploaded_name and user_name and uploaded_name == user_name.lower():
+        return
+    if is_sub_portal_user(user) and not is_staff_portal_user(user):
+        raise PermissionError('You may only remove attachments you uploaded.')
+    assert_submittal_edit_allowed(user, submittal, Company=Company, db=db)
+
+
 def assert_submittal_spec_book_read_allowed(user) -> None:
     """Read spec book metadata/PDF when submittals module is readable (staff entry or assigned subs)."""
     if _is_privileged(user):
