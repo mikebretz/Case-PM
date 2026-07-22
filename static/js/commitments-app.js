@@ -61,6 +61,8 @@
   }
 
   function isAdmin() {
+    const el = document.documentElement;
+    if (el && (el.dataset.isAdmin === '1' || el.dataset.isDeveloper === '1')) return true;
     const p = global.CASEPM_PORTAL;
     if (p) {
       if (p.isAdmin === true) return true;
@@ -68,6 +70,10 @@
       if (p.permissions && p.permissions.modules === '*') return true;
     }
     return false;
+  }
+
+  function isPrivilegedUser() {
+    return isAdmin();
   }
 
   function userRole() {
@@ -709,6 +715,11 @@
     } else {
       bar.classList.add('hidden');
     }
+    const overrideRow = document.getElementById('budgetOverrideRow');
+    if (overrideRow) {
+      if (isPrivilegedUser()) overrideRow.classList.remove('hidden');
+      else overrideRow.classList.add('hidden');
+    }
   }
 
   function renderAllocationRows() {
@@ -835,8 +846,27 @@
       insurance_requirements: document.getElementById('modalInsuranceRequirements')?.value.trim() || null,
       original_amount: total || readMoney('modalAmount'),
       allocations: allocs,
+      budget_override: !!(document.getElementById('modalBudgetOverride')?.checked),
       aia_contract: readContractFromForm(),
     };
+  }
+
+  function validateAllocationsBeforeSave(allocs) {
+    const valid = (allocs || []).filter((a) => (a.cost_code || '').trim() && (a.amount || 0) > 0);
+    if (!valid.length) {
+      alert(
+        'Add at least one cost code allocation with an amount.\n\n' +
+        'Commitments must be tied to budget cost codes (same codes used in Budget and Contractor G703). ' +
+        'Sage 300 expects job cost detail by cost code, not lump-sum commitments without a code.'
+      );
+      return false;
+    }
+    const missingCode = (allocs || []).some((a) => (a.amount || 0) > 0 && !(a.cost_code || '').trim());
+    if (missingCode) {
+      alert('Every allocation line with an amount must have a cost code.');
+      return false;
+    }
+    return true;
   }
 
   async function saveModal(e) {
@@ -847,12 +877,14 @@
       alert('Title or description is required.');
       return;
     }
+    if (!validateAllocationsBeforeSave(payload.allocations)) return;
     try {
       const json = id
         ? await api(`/api/commitments/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
         : await api('/api/commitments', { method: 'POST', body: JSON.stringify(payload) });
       if (json.budget_warnings?.length) {
         console.warn('Budget warnings:', json.budget_warnings);
+        toast(`Saved — ${json.budget_warnings.length} budget note(s); review console or increase budget/SOV if needed.`);
       }
       const saved = json.commitment;
       logCommitmentAudit(id ? 'COMMITMENT_UPDATED' : 'COMMITMENT_CREATED', {
@@ -865,7 +897,35 @@
       await refreshAll();
       toast('Commitment saved');
     } catch (err) {
-      alert(err.message);
+      const msg = err.message || 'Save failed';
+      if (isPrivilegedUser() && /exceeds budget|no budget line/i.test(msg)) {
+        const useOverride = confirm(
+          `${msg}\n\nUse Admin/Developer budget override?\n\n` +
+          'You should still increase the Budget or Contractor G703 schedule of values for this cost code ' +
+          'so Sage job cost and pay applications stay aligned (standard Procore / Sage practice).'
+        );
+        if (useOverride) {
+          const overrideBox = document.getElementById('modalBudgetOverride');
+          if (overrideBox) {
+            overrideBox.checked = true;
+            overrideBox.closest('#budgetOverrideRow')?.classList.remove('hidden');
+          }
+          payload.budget_override = true;
+          try {
+            const json = id
+              ? await api(`/api/commitments/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+              : await api('/api/commitments', { method: 'POST', body: JSON.stringify(payload) });
+            document.getElementById('comModal').close();
+            await refreshAll();
+            toast('Commitment saved with budget override');
+            return;
+          } catch (retryErr) {
+            alert(retryErr.message);
+            return;
+          }
+        }
+      }
+      alert(msg);
     }
   }
 
@@ -873,12 +933,12 @@
     const c = state.commitments.find(x => x.id === id) || state.drawerRecord;
     if (!c) return;
     if (!canDeleteRecord(c)) {
-      alert(`Only administrators can delete commitments. Your role: ${userRole() || 'unknown'}.`);
+      alert(`Only administrators or developers can delete commitments. Your role: ${userRole() || 'unknown'}.`);
       return;
     }
     const needsForce = !isDirectlyDeletable(c);
     const msg = needsForce
-      ? `${c.number} is "${c.status}". As Admin, void and permanently delete?`
+      ? `${c.number} is "${c.status}". Void and permanently delete?`
       : `Permanently delete ${c.number}? This cannot be undone.`;
     if (!options.skipConfirm && !confirm(msg)) return;
     try {

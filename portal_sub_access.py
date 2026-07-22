@@ -1007,6 +1007,17 @@ def user_is_company_contact(user, Company=None) -> bool:
         return False
 
 
+def _portal_user_is_privileged(user) -> bool:
+    """Admin or Developer — full override privileges in portal context."""
+    if not user:
+        return False
+    try:
+        from developer_tools import is_admin_or_developer
+        return is_admin_or_developer(user)
+    except Exception:
+        return getattr(user, 'role', None) in ('Admin', 'Developer')
+
+
 def build_portal_context_payload(user, Company, db, helpers: dict) -> dict:
     """Assemble JSON-safe payload for GET /api/portal/context."""
     import json
@@ -1085,7 +1096,7 @@ def build_portal_context_payload(user, Company, db, helpers: dict) -> dict:
         'userName': getattr(user, 'full_name', None) or '',
         'userEmail': getattr(user, 'email', None) or '',
         'role': getattr(user, 'role', None) or '',
-        'isAdmin': getattr(user, 'role', None) == 'Admin',
+        'isAdmin': _portal_user_is_privileged(user),
         'portal': portal,
         'companyId': company_id,
         'companyName': company_name or (getattr(user, 'company', None) or ''),

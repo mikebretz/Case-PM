@@ -29,11 +29,28 @@
     return raw ? parseInt(raw, 10) : null;
   }
 
+  const SUB_VENDOR_SYNC_KEYS = new Set([
+    'subcontractorSOV', 'subPayAppHistory', 'subPendingSubmissions', 'subPayAppNumbers',
+    'subSOVStatus', 'subLienWaivers', 'subLienWaiverArchive', 'previousSubPayAppArchive',
+    'g703CostCodes', 'payAppRetainagePercent', 'requireLienWaiverOnSubPayApp',
+    'requireSubmissionDeadline', 'submissionDeadlineDay', 'allowZeroDollarSubPayApps',
+    'payAppAuditLog',
+  ]);
+
+  function isSubVendorPortal() {
+    const portal = global.CASEPM_PORTAL || {};
+    return !!(portal.isSubVendorPayPortal || portal.is_sub_vendor_portal);
+  }
+
+  function activeSyncKeys() {
+    return isSubVendorPortal() ? SUB_VENDOR_SYNC_KEYS : SYNC_KEYS;
+  }
+
   function collectLocalBundle() {
     const store = global.casepmStore;
     if (!store) return {};
     const bundle = {};
-    SYNC_KEYS.forEach(key => {
+    activeSyncKeys().forEach(key => {
       const raw = store.getItem(key);
       if (raw != null) {
         try { bundle[key] = JSON.parse(raw); } catch { bundle[key] = raw; }
@@ -116,6 +133,10 @@
 
   function scheduleSave(patch) {
     if (!autoSaveEnabled) return;
+    if (isSubVendorPortal()) {
+      const portal = global.CASEPM_PORTAL || {};
+      if (portal.vendorCompanyLinked === false) return;
+    }
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       saveTimer = null;
