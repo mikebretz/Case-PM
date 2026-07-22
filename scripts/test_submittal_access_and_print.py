@@ -29,6 +29,10 @@ class SubmittalAccessControlTests(unittest.TestCase):
             'view',
         )
         self.assertEqual(
+            min_access_for_request('POST', '/api/submittals/2/signature'),
+            'view',
+        )
+        self.assertEqual(
             min_access_for_request('POST', '/api/submittals/2/workflow'),
             'view',
         )

@@ -146,6 +146,38 @@ def delete_submittal_comment(submittal, comment_id):
     submittal.updated_at = datetime.utcnow()
 
 
+def append_submittal_digital_signature(submittal, user, body):
+    """Record a profile-linked electronic signature on the submittal audit trail."""
+    from user_signature_persistence import verify_user_signature_attestation
+
+    if not body.get('signature_attestation'):
+        raise ValueError('Electronic signature attestation is required')
+    verify_user_signature_attestation(user, (body.get('signature_hash') or '').strip())
+    details = _parse_json(getattr(submittal, 'details_json', None), {})
+    history = list(details.get('history') or [])
+    signed_name = (body.get('signature_legal_name') or '').strip() or getattr(user, 'full_name', None) or 'User'
+    entry = {
+        'date': datetime.utcnow().isoformat(),
+        'action': 'Digitally Signed',
+        'user': signed_name,
+        'user_id': getattr(user, 'id', None),
+        'signature_hash': getattr(user, 'signature_hash', None),
+    }
+    history.append(entry)
+    details['history'] = history
+    signatures = list(details.get('digital_signatures') or [])
+    signatures.append({
+        'signed_at': entry['date'],
+        'signed_by_name': signed_name,
+        'signed_by_id': entry['user_id'],
+        'signature_hash': entry['signature_hash'],
+    })
+    details['digital_signatures'] = signatures
+    submittal.details_json = json.dumps(details)
+    submittal.updated_at = datetime.utcnow()
+    return entry, history
+
+
 def _bump_submittal_revision(submittal):
     details = _parse_json(getattr(submittal, 'details_json', None), {})
     try:

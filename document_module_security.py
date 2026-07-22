@@ -206,6 +206,15 @@ def assert_submittal_spec_book_read_allowed(user) -> None:
     assert_submittal_log_manage_allowed(user)
 
 
+def assert_submittal_signature_allowed(user, submittal, *, Company=None, db=None) -> None:
+    """Anyone who can view the submittal may apply their own profile signature."""
+    if _is_privileged(user):
+        return
+    assert_submittal_read_allowed(user)
+    if not submittal_visible_to_user(submittal, user, Company=Company, db=db):
+        raise PermissionError('Permission denied')
+
+
 def assert_submittal_workflow_allowed(user, submittal, action: str, *, Company=None, db=None) -> None:
     if _is_privileged(user):
         return

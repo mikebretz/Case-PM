@@ -209,6 +209,33 @@ class DocumentModuleSecurityTests(unittest.TestCase):
         clear_submittal_comments(sub)
         self.assertEqual(_parse_json(sub.comments_json, []), [])
 
+    def test_submittal_digital_signature_requires_profile(self):
+        from submittal_persistence import append_submittal_digital_signature
+
+        user = SimpleNamespace(id=1, full_name='Jane Sub', signature_hash=None)
+        sub = SimpleNamespace(details_json='{}', updated_at=None)
+        with self.assertRaises(ValueError) as ctx:
+            append_submittal_digital_signature(
+                sub,
+                user,
+                {'signature_attestation': True, 'signature_hash': 'abc'},
+            )
+        self.assertIn('signature', str(ctx.exception).lower())
+
+    def test_view_only_assigned_sub_can_sign(self):
+        from document_module_security import assert_submittal_signature_allowed
+
+        user = self._user('Subcontractor', {
+            'submittals': {'access': 'view', 'approve': 'none'},
+        }, portal='sub')
+        user.company_id = 42
+        submittal = SimpleNamespace(
+            assigned_company_id=42,
+            assigned_contact_user_id=None,
+            assigned_company_name='My Co',
+        )
+        assert_submittal_signature_allowed(user, submittal)
+
 
 if __name__ == '__main__':
     unittest.main()

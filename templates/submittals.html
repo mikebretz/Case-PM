@@ -187,6 +187,22 @@ function applySubmittalAssigneeFieldLocks(isAssignee) {
     const impactGrid = document.getElementById('submittalImpactGrid');
     if (impactGrid) impactGrid.classList.toggle('hidden', isAssignee);
     updateSubmittalAssigneeAssignmentDisplay(isAssignee);
+    updateSubmittalAssigneeSpecDisplay(isAssignee);
+}
+function updateSubmittalAssigneeSpecDisplay(isAssignee) {
+    const specSel = document.getElementById('modalSpecSection');
+    const specRo = document.getElementById('modalSpecSectionReadonly');
+    if (!specSel || !specRo) return;
+    if (isAssignee) {
+        specSel.classList.add('hidden');
+        specRo.classList.remove('hidden');
+        const sec = currentModalItem?.specSection || '—';
+        const name = (currentModalItem?.sectionName || '').trim();
+        specRo.textContent = name ? `${sec} — ${name}` : sec;
+    } else {
+        specSel.classList.remove('hidden');
+        specRo.classList.add('hidden');
+    }
 }
 function updateSubmittalAssigneeAssignmentDisplay(isAssignee) {
     const companySel = document.getElementById('modalAssignedCompany');
@@ -899,6 +915,7 @@ function refreshSubmittalActionButtons() {
                             <select id="modalSpecSection" onchange="updateSectionNameFromSelect(); updateViewInSpecBookButton();" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
                                 <!-- Populated by JS -->
                             </select>
+                            <div id="modalSpecSectionReadonly" class="hidden w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-sky-300 font-mono"></div>
                         </div>
                         <div>
                             <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Section Name</label>
@@ -1026,7 +1043,7 @@ function refreshSubmittalActionButtons() {
                     <button onclick="applyDigitalSignature()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold">
                         Apply Digital Signature (as Current User)
                     </button>
-                    <p class="text-xs text-zinc-500 mt-2">In production, this pulls your digital signature from your User Profile.</p>
+                    <p class="text-xs text-zinc-500 mt-2">Uses your saved signature from User Management → Signature. You must set one up before signing.</p>
                 </div>
             </div>
             </div>
@@ -1719,6 +1736,8 @@ function openDetailModal(id, isNew = false, newData = null) {
     if (isAssignee) enableSubmittalAssigneeEditableFields();
     loadReviewComments(currentModalItem.serverId);
     updateSubmittalCommentDevControls();
+    updateSubmittalAssigneeSpecDisplay(isAssignee);
+    renderWorkflowHistory();
     bindSubmittalDetailAutoSave();
     switchTab(0);
 }
@@ -2433,6 +2452,14 @@ function populateSpecSectionDropdown() {
         opt.textContent = `${s.number} — ${s.title}`;
         sel.appendChild(opt);
     });
+    const currentSec = currentModalItem?.specSection;
+    if (currentSec && !specSections.some(s => s.number === currentSec)) {
+        const opt = document.createElement('option');
+        opt.value = currentSec;
+        const name = (currentModalItem?.sectionName || '').trim();
+        opt.textContent = name ? `${currentSec} — ${name}` : currentSec;
+        sel.appendChild(opt);
+    }
 }
 
 function loadSubmittalCompanies() {
@@ -2609,18 +2636,74 @@ function handleStatusChangeInModal() {
 function switchTab(tab) {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
     document.getElementById('tab' + tab).classList.remove('hidden');
+    if (tab === 1) renderWorkflowHistory();
 }
 
-function applyDigitalSignature() {
+function renderWorkflowHistory() {
+    const el = document.getElementById('workflowHistory');
+    if (!el) return;
+    const history = currentModalItem?.history || [];
+    if (!history.length) {
+        el.innerHTML = '<p class="text-zinc-500">No workflow events yet.</p>';
+        return;
+    }
+    el.innerHTML = history.map(h => `
+        <div class="border border-zinc-700 rounded-lg p-3">
+            <div class="flex justify-between text-xs text-zinc-500 mb-1">
+                <span>${escapeSubmittalHtml(h.user || h.user_name || 'User')}</span>
+                <span>${escapeSubmittalHtml((h.date || h.created_at || '').replace('T', ' ').slice(0, 16))}</span>
+            </div>
+            <div class="text-zinc-200">${escapeSubmittalHtml(h.action || h.note || '')}</div>
+        </div>
+    `).join('');
+}
+
+async function applyDigitalSignature() {
     if (!currentModalItem) return;
-    currentModalItem.history = currentModalItem.history || [];
-    currentModalItem.history.push({
-        date: new Date().toISOString(),
-        action: 'Digitally Signed by Current User',
-        user: 'Current User (Simulated)'
-    });
-    showCenteredAlert('Digital signature applied (simulated).', 'success');
-    // Re-render history if on that tab
+    if (typeof CasePMEsign === 'undefined') {
+        showCenteredAlert('E-sign module not loaded. Please refresh the page.', 'error');
+        return;
+    }
+    let payload;
+    try {
+        payload = await CasePMEsign.buildAttestationPayload();
+    } catch (err) {
+        showCenteredAlert(
+            err.message || 'Set up your electronic signature in User Management → Signature first.',
+            'warning'
+        );
+        return;
+    }
+    const ok = await showCenteredConfirm(
+        'Apply your certified electronic signature to this submittal? This is linked to your User Management profile.',
+        { title: 'Apply Digital Signature', confirmText: 'Sign' }
+    );
+    if (!ok) return;
+    let sid = currentModalItem.serverId;
+    if (!sid) {
+        await syncSubmittalToServer(currentModalItem);
+        sid = currentModalItem.serverId;
+    }
+    if (!sid) {
+        showCenteredAlert('Save the submittal before applying a signature.', 'warning');
+        return;
+    }
+    try {
+        const res = await fetch(`/api/submittals/${sid}/signature`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify(payload),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Could not apply signature');
+        currentModalItem.history = json.history || [];
+        saveData();
+        renderWorkflowHistory();
+        showCenteredAlert('Digital signature applied.', 'success');
+    } catch (err) {
+        showCenteredAlert(err.message || 'Could not apply signature', 'error');
+    }
 }
 
 function filterSubmittals() {
