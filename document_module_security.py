@@ -76,6 +76,15 @@ def submittal_assigned_to_user(submittal, user, Company=None, db=None) -> bool:
     assigned_name = (getattr(submittal, 'assigned_company_name', None) or '').strip().lower()
     if assigned_name and user_cname and assigned_name == user_cname.lower():
         return True
+
+    assigned_email = (getattr(submittal, 'assigned_contact_email', None) or '').strip().lower()
+    user_email = (getattr(user, 'email', None) or '').strip().lower()
+    if assigned_email and user_email and assigned_email == user_email:
+        return True
+
+    if assigned_name and user_cname:
+        if assigned_name in user_cname.lower() or user_cname.lower() in assigned_name:
+            return True
     return False
 
 
