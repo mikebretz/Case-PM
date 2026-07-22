@@ -150,6 +150,15 @@ class ReconcileCanonicalKeyTests(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         self.assertEqual(lines[0]['original_commitment'], 50_000)
 
+    def test_normalize_pay_period_starts_at_one_without_history(self):
+        from pay_app_persistence import normalize_current_pay_app_period
+        state = {
+            'currentPayAppPeriod': {'periodNumber': 7, 'status': 'Draft'},
+            'payAppHistory': [],
+        }
+        out = normalize_current_pay_app_period(state)
+        self.assertEqual(out['currentPayAppPeriod']['periodNumber'], 1)
+
     def test_reconcile_new_line_ids_are_numeric(self):
         from accounting_reconcile import apply_sub_sov_reconcile, compute_sub_sov_derivatives
         from types import SimpleNamespace

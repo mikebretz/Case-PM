@@ -670,9 +670,76 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         return typeof CasePMDeveloperUnlock !== 'undefined' && CasePMDeveloperUnlock.isActive();
     }
 
-    /** Safe value for inline onclick/oninput handlers (string company IDs must be quoted). */
+    /** Safe literal for inline onclick/oninput inside double-quoted HTML attributes. */
     function jsArg(val) {
-        return JSON.stringify(val == null ? '' : val);
+        if (val == null || val === '') return 'null';
+        if (typeof val === 'number' && Number.isFinite(val)) return String(val);
+        if (typeof val === 'boolean') return val ? 'true' : 'false';
+        const s = String(val)
+            .replace(/\\/g, '\\\\')
+            .replace(/'/g, "\\'")
+            .replace(/\r/g, '')
+            .replace(/\n/g, '\\n');
+        return `'${s}'`;
+    }
+
+    function getMonthPeriodBounds(date) {
+        const d = date || new Date();
+        const start = new Date(d.getFullYear(), d.getMonth(), 1);
+        const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+        const iso = (dt) => dt.toISOString().split('T')[0];
+        return { periodStart: iso(start), periodEnd: iso(end) };
+    }
+
+    function getMaxApprovedPayAppPeriodNumber() {
+        if (!payAppHistory || !payAppHistory.length) return 0;
+        return payAppHistory.reduce((max, p) => {
+            if (!p || p.status !== 'Approved') return max;
+            const n = Number(p.periodNumber) || 0;
+            return n > max ? n : max;
+        }, 0);
+    }
+
+    function buildFreshPayAppPeriod(periodNumber) {
+        const bounds = getMonthPeriodBounds();
+        return {
+            id: Date.now(),
+            periodNumber: periodNumber || 1,
+            periodStart: bounds.periodStart,
+            periodEnd: bounds.periodEnd,
+            status: 'Draft',
+        };
+    }
+
+    /** Ensure G702 period is 1 when no previous pay apps exist; otherwise align to history. */
+    function ensureCurrentPayAppPeriod(options) {
+        const persist = !options || options.persist !== false;
+        const stored = parseStoreJson('currentPayAppPeriod', null);
+        if (stored && stored.periodNumber != null) currentPayAppPeriod = stored;
+
+        const maxApproved = getMaxApprovedPayAppPeriodNumber();
+        const hasHistory = !!(payAppHistory && payAppHistory.length);
+
+        if (!hasHistory) {
+            const bounds = getMonthPeriodBounds();
+            const prev = currentPayAppPeriod || {};
+            currentPayAppPeriod = {
+                ...prev,
+                id: prev.id || Date.now(),
+                periodNumber: 1,
+                periodStart: prev.periodStart || bounds.periodStart,
+                periodEnd: prev.periodEnd || bounds.periodEnd,
+                status: prev.status || 'Draft',
+            };
+            if (persist) casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
+            return currentPayAppPeriod;
+        }
+
+        if (!currentPayAppPeriod) {
+            currentPayAppPeriod = buildFreshPayAppPeriod(maxApproved + 1);
+            if (persist) casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
+        }
+        return currentPayAppPeriod;
     }
 
     /** Normalize subcontractor company id from select/value (never parseInt — breaks string ids). */
@@ -915,17 +982,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     // Demo seed removed (v76.43) — contractorSOV and subcontractorSOV no longer auto-populate test data on empty.
     // This ensures user "Clear All / Reset to start from scratch" stays clean on hard refresh.
     function seedDemoDataIfNeeded() {
-        // Only ensure a default pay period exists if none is set (non-destructive to user data)
-        if (!currentPayAppPeriod) {
-            currentPayAppPeriod = {
-                id: Date.now(),
-                periodNumber: 7,
-                periodStart: "2026-07-01",
-                periodEnd: "2026-07-31",
-                status: "Draft"
-            };
-            casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
-        }
+        ensureCurrentPayAppPeriod({ persist: true });
     }
 
     function safeSetLocalStorage(key, value) {
@@ -1528,6 +1585,8 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         budgetContractAmount = projectOriginalContractAmount || parseFloat(casepmStore.getItem('budgetContractAmount')) || resolveServerContractAmount() || 0;
         if (isSubVendorPayPortalUser()) {
             sanitizeSubVendorPayAppState();
+        } else {
+            ensureCurrentPayAppPeriod({ persist: true });
         }
     }
 
@@ -4145,16 +4204,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         contractorSOV = JSON.parse(casepmStore.getItem('contractorSOV')) || [];
         payAppBillingLines = JSON.parse(casepmStore.getItem('payAppBillingLines')) || {};
 
-        // Robust reload of current period from storage (fixes header showing stale "Period 1" after advancing)
-        const storedPeriod = JSON.parse(casepmStore.getItem('currentPayAppPeriod') || 'null');
-        if (storedPeriod && storedPeriod.periodNumber) {
-            currentPayAppPeriod = storedPeriod;
-        }
-
-        if (!currentPayAppPeriod) {
-            currentPayAppPeriod = { id: Date.now(), periodNumber: 7, periodStart: "2026-07-01", periodEnd: "2026-07-31", status: "Draft" };
-            casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
-        }
+        ensureCurrentPayAppPeriod({ persist: true });
 
         // Calculate live totals
         const g703 = computeG703Rollup();
@@ -4461,12 +4511,12 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
         // Pre-fill next period number
         const numInput = document.getElementById('newPeriodNumber');
-        if (numInput && currentPayAppPeriod) numInput.value = (currentPayAppPeriod.periodNumber || 7) + 1;
+        if (numInput && currentPayAppPeriod) numInput.value = (currentPayAppPeriod.periodNumber || 1) + 1;
         modal.showModal();
     }
 
     function confirmCreateNewPeriod() {
-        const num = parseInt(document.getElementById('newPeriodNumber').value) || 8;
+        const num = parseInt(document.getElementById('newPeriodNumber').value, 10) || ((currentPayAppPeriod?.periodNumber || 1) + 1);
         const start = document.getElementById('newPeriodStart').value || '2026-08-01';
         const end = document.getElementById('newPeriodEnd').value || '2026-08-31';
 
@@ -9823,7 +9873,7 @@ function printSubcontractorG703(companyId) {
             return;
         }
 
-        const period = currentPayAppPeriod || { periodNumber: 7, periodStart: '2026-07-01', periodEnd: '2026-07-31' };
+        const period = currentPayAppPeriod || buildFreshPayAppPeriod(1);
         const retainageRate = (typeof defaultRetainagePercent !== 'undefined' ? defaultRetainagePercent : 10) / 100;
 
         if (currentPayAppTab === 'payapp') {
@@ -11173,7 +11223,7 @@ function printSubcontractorG703(companyId) {
             ? `<span class="px-3 py-0.5 text-xs rounded-full bg-amber-900/70 text-amber-400 font-medium">${status}</span>`
             : `<span class="px-3 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-400 font-medium">${status}</span>`;
 
-        const revisionArg = revisionHistoryKey ? `, ${JSON.stringify(revisionHistoryKey)}` : '';
+        const revisionArg = revisionHistoryKey ? `, ${jsArg(revisionHistoryKey)}` : '';
 
         container.innerHTML = `
             <div class="flex items-start justify-between mb-3">
