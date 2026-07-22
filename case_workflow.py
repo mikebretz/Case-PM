@@ -828,6 +828,8 @@ def register_workflow(app, _db, models):
                     return jsonify({'error': 'RFI module unavailable'}), 500
                 rfi = RFI.query.get_or_404(entity_id)
                 try:
+                    from document_module_security import assert_rfi_read_allowed, assert_rfi_workflow_allowed
+                    assert_rfi_read_allowed(current_user)
                     require_financial_project_access(current_user, rfi.project_id, Project)
                 except (ValueError, PermissionError) as exc:
                     return jsonify({'error': str(exc)}), 403
@@ -839,6 +841,10 @@ def register_workflow(app, _db, models):
                     return jsonify({'ok': True, **ctx})
                 body = request.get_json(silent=True) or {}
                 action = body.get('action')
+                try:
+                    assert_rfi_workflow_allowed(current_user)
+                except PermissionError as exc:
+                    return jsonify({'error': str(exc)}), 403
                 execute_rfi_action(rfi, action, current_user, User, body)
                 db.session.commit()
                 ctx = get_rfi_responder_context(rfi, current_user, linked_cos, linked_pcos)
