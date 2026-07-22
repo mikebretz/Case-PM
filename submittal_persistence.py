@@ -131,6 +131,21 @@ def add_submittal_comment(submittal, body, user_id, user_name, user_role=None):
     return entry
 
 
+def clear_submittal_comments(submittal):
+    submittal.comments_json = json.dumps([])
+    submittal.updated_at = datetime.utcnow()
+
+
+def delete_submittal_comment(submittal, comment_id):
+    comments = _parse_json(getattr(submittal, 'comments_json', None), [])
+    cid = int(comment_id)
+    filtered = [c for c in comments if int(c.get('id', -1)) != cid]
+    if len(filtered) == len(comments):
+        raise ValueError('Comment not found')
+    submittal.comments_json = json.dumps(filtered)
+    submittal.updated_at = datetime.utcnow()
+
+
 def _bump_submittal_revision(submittal):
     details = _parse_json(getattr(submittal, 'details_json', None), {})
     try:
