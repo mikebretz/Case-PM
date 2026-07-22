@@ -415,8 +415,9 @@ def commitment_workflow_action(commitment, action, user, body=None, CommitmentAl
         return commitment.status, False
 
     if action == 'void':
-        if not user or user.role != 'Admin':
-            raise ValueError('Only administrators can void commitments')
+        from developer_tools import is_admin_or_developer
+        if not user or not is_admin_or_developer(user):
+            raise ValueError('Only administrators or developers can void commitments')
         if commitment.status == 'Void':
             raise ValueError('Commitment is already void')
         commitment.status = 'Void'
@@ -685,24 +686,60 @@ def queue_commitment_sage_event(
         return None
 
 
-def validate_budget_headroom(BudgetProjectState, project_id, allocations):
+def validate_commitment_allocations(allocations):
+    """Require at least one cost-coded line with a positive amount."""
+    errors = []
+    valid_lines = 0
+    for item in allocations or []:
+        code = (item.get('cost_code') if isinstance(item, dict) else getattr(item, 'cost_code', None) or '')
+        code = str(code).strip()
+        amt = float(item.get('amount') if isinstance(item, dict) else getattr(item, 'amount', 0) or 0)
+        if amt > 0 and not code:
+            errors.append('Each allocation with an amount must include a cost code.')
+        if code and amt > 0:
+            valid_lines += 1
+    if valid_lines == 0 and not errors:
+        errors.append(
+            'At least one cost code allocation is required. '
+            'Commitments must be tied to budget cost codes before approval or Sage sync.'
+        )
+    return errors
+
+
+def validate_budget_headroom(BudgetProjectState, project_id, allocations, *, budget_override=False, tolerance=0.01):
     from budget_persistence import get_budget_state
 
     _, state = get_budget_state(BudgetProjectState, project_id)
     lines = state.get('budgetLines') or []
     warnings = []
+    errors = []
     for alloc in allocations or []:
         code = alloc.cost_code if hasattr(alloc, 'cost_code') else alloc.get('cost_code')
         amt = float(alloc.amount if hasattr(alloc, 'amount') else alloc.get('amount') or 0)
         if not code:
             continue
+        if amt <= 0:
+            continue
         target = normalize_cost_code(code)
         line = next((l for l in lines if normalize_cost_code(l.get('cost_code')) == target), None)
         if not line:
-            warnings.append(f'{code}: no budget line — commitment will create committed amount')
+            msg = f'{code}: no budget line — add budget or contractor SOV line before committing this amount'
+            if budget_override:
+                warnings.append(f'Override — {msg}')
+            else:
+                errors.append(msg)
             continue
         budget_cap = float(line.get('original_budget') or 0) + float(line.get('approved_changes') or 0)
         committed = float(line.get('committed') or 0) + amt
-        if budget_cap and committed > budget_cap * 1.05:
-            warnings.append(f'{code}: commitment exceeds budget by ${committed - budget_cap:,.0f}')
-    return warnings
+        if budget_cap and committed > budget_cap + tolerance:
+            over = committed - budget_cap
+            msg = (
+                f'{code}: commitment ${committed:,.0f} exceeds budget ${budget_cap:,.0f} '
+                f'by ${over:,.0f}. Increase the budget or contractor schedule of values first, '
+                f'or use admin budget override.'
+            )
+            if budget_override:
+                warnings.append(f'Override — {msg}')
+            else:
+                errors.append(msg)
+    return errors, warnings

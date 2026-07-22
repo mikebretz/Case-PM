@@ -151,6 +151,14 @@ class ReconcileCanonicalKeyTests(unittest.TestCase):
         self.assertEqual(lines[0]['original_commitment'], 50_000)
 
 
+class CommitmentValidationTests(unittest.TestCase):
+    def test_validate_commitment_allocations_requires_cost_code(self):
+        from commitment_persistence import validate_commitment_allocations
+        self.assertEqual(len(validate_commitment_allocations([])), 1)
+        self.assertEqual(len(validate_commitment_allocations([{'amount': 1000}])), 1)
+        self.assertEqual(validate_commitment_allocations([{'cost_code': '03-300', 'amount': 1000}]), [])
+
+
 class PutBypassTests(unittest.TestCase):
     def test_strip_workflow_fields_removes_status(self):
         from financial_security import strip_workflow_fields

@@ -548,10 +548,21 @@ def validate_sub_vendor_pay_app_save(
     merged = dict(merged or {})
     allowed_keys = resolve_sub_vendor_sov_keys(user, existing)
     if not allowed_keys:
-        return [
-            'You are not registered on this project\'s subcontractor schedule of values. '
-            'Ask your GC to add your company under Select Subcontractor and save.'
-        ]
+        has_vendor_payload = False
+        for field in (
+            'subcontractorSOV', 'subSOVStatus', 'subPayAppHistory',
+            'subPendingSubmissions', 'subPayAppNumbers', 'subLienWaivers', 'subLienWaiverArchive',
+        ):
+            block = merged.get(field)
+            if isinstance(block, dict) and block:
+                has_vendor_payload = True
+                break
+        if has_vendor_payload:
+            return [
+                'You are not registered on this project\'s subcontractor schedule of values. '
+                'Ask your GC to add your company under Select Subcontractor and save.'
+            ]
+        return []
 
     existing_keys = set(str(k) for k in (existing.get('subcontractorSOV') or {}))
     existing_keys |= set(str(k) for k in (existing.get('subSOVStatus') or {}))

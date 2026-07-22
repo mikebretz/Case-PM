@@ -10962,7 +10962,11 @@ def api_get_commitment(commitment_id):
 @app.route('/api/commitments', methods=['POST'])
 @login_required
 def api_create_commitment():
-    from commitment_persistence import apply_commitment_fields, commitment_to_dict, save_allocations, validate_budget_headroom
+    from commitment_persistence import (
+        apply_commitment_fields, commitment_to_dict, save_allocations,
+        validate_budget_headroom, validate_commitment_allocations,
+    )
+    from developer_tools import is_admin_or_developer
     from financial_security import require_financial_project_access, assert_draft_create_status, strip_workflow_fields
     try:
         body = strip_workflow_fields(request.get_json(silent=True) or {})
@@ -10973,6 +10977,20 @@ def api_create_commitment():
         description = (body.get('description') or body.get('title') or '').strip()
         if not description:
             return jsonify({'error': 'description required'}), 400
+        alloc_errors = validate_commitment_allocations(body.get('allocations') or [])
+        if alloc_errors:
+            return jsonify({'error': alloc_errors[0], 'allocation_errors': alloc_errors}), 400
+        budget_override = bool(body.get('budget_override')) and is_admin_or_developer(current_user)
+        budget_errors, warnings = validate_budget_headroom(
+            BudgetProjectState, int(project_id), body.get('allocations') or [],
+            budget_override=budget_override,
+        )
+        if budget_errors:
+            return jsonify({
+                'error': budget_errors[0],
+                'budget_errors': budget_errors,
+                'can_override': is_admin_or_developer(current_user),
+            }), 400
         assert_draft_create_status(body.get('status') or 'Draft', entity_label='Commitment')
         ctype = body.get('commitment_type') or 'Purchase Order'
         number = body.get('number') or generate_commitment_number(ctype, project_id)
@@ -10994,7 +11012,7 @@ def api_create_commitment():
             if total:
                 c.original_amount = total
                 c.current_amount = total + float(c.approved_changes or 0)
-        warnings = validate_budget_headroom(BudgetProjectState, int(project_id), body.get('allocations') or [])
+        c.budget_validated = not budget_errors
         db.session.commit()
         allocs = CommitmentAllocation.query.filter_by(commitment_id=c.id).all()
         return jsonify({'ok': True, 'commitment': commitment_to_dict(c, allocs), 'budget_warnings': warnings})
@@ -11006,7 +11024,11 @@ def api_create_commitment():
 @app.route('/api/commitments/<int:commitment_id>', methods=['PUT'])
 @login_required
 def api_update_commitment(commitment_id):
-    from commitment_persistence import apply_commitment_fields, commitment_to_dict, save_allocations, validate_budget_headroom
+    from commitment_persistence import (
+        apply_commitment_fields, commitment_to_dict, save_allocations,
+        validate_budget_headroom, validate_commitment_allocations,
+    )
+    from developer_tools import is_admin_or_developer
     from financial_security import require_financial_project_access, assert_mutable_commitment, strip_workflow_fields
     c = Commitment.query.get_or_404(commitment_id)
     try:
@@ -11015,6 +11037,23 @@ def api_update_commitment(commitment_id):
     except (ValueError, PermissionError) as exc:
         return jsonify({'error': str(exc)}), 403 if isinstance(exc, PermissionError) else 400
     body = strip_workflow_fields(request.get_json(silent=True) or {})
+    if body.get('allocations') is not None:
+        alloc_errors = validate_commitment_allocations(body.get('allocations') or [])
+        if alloc_errors:
+            return jsonify({'error': alloc_errors[0], 'allocation_errors': alloc_errors}), 400
+    budget_override = bool(body.get('budget_override')) and is_admin_or_developer(current_user)
+    budget_errors, warnings = [], []
+    if body.get('allocations') is not None:
+        budget_errors, warnings = validate_budget_headroom(
+            BudgetProjectState, c.project_id, body.get('allocations') or [],
+            budget_override=budget_override,
+        )
+        if budget_errors:
+            return jsonify({
+                'error': budget_errors[0],
+                'budget_errors': budget_errors,
+                'can_override': is_admin_or_developer(current_user),
+            }), 400
     old_type = c.commitment_type
     apply_commitment_fields(c, body)
     new_type = body.get('commitment_type') or c.commitment_type
@@ -11029,7 +11068,7 @@ def api_update_commitment(commitment_id):
         if total:
             c.original_amount = total
             c.current_amount = total + float(c.approved_changes or 0)
-    warnings = validate_budget_headroom(BudgetProjectState, c.project_id, body.get('allocations') or [])
+        c.budget_validated = not budget_errors
     db.session.commit()
     allocs = CommitmentAllocation.query.filter_by(commitment_id=c.id).all()
     return jsonify({'ok': True, 'commitment': commitment_to_dict(c, allocs), 'budget_warnings': warnings})
@@ -11038,8 +11077,9 @@ def api_update_commitment(commitment_id):
 @app.route('/api/commitments/<int:commitment_id>', methods=['DELETE'])
 @login_required
 def api_delete_commitment(commitment_id):
-    if current_user.role != 'Admin':
-        return jsonify({'error': 'Only administrators can delete commitments'}), 403
+    from developer_tools import is_admin_or_developer
+    if not is_admin_or_developer(current_user):
+        return jsonify({'error': 'Only administrators or developers can delete commitments'}), 403
     c = Commitment.query.get_or_404(commitment_id)
     force = request.args.get('force') == '1'
     body = request.get_json(silent=True) or {}
