@@ -129,19 +129,21 @@ def assert_submittal_create_allowed(user) -> None:
 def assert_submittal_edit_allowed(user, submittal=None, *, Company=None, db=None) -> None:
     if _is_privileged(user):
         return
-    if not _has_module(user, 'submittals', 'edit') and not _has_module(user, 'submittals', 'entry'):
-        raise PermissionError('Permission denied — submittals requires entry access.')
-
     if is_sub_portal_user(user) and not is_staff_portal_user(user):
         if submittal is None:
             raise PermissionError('Submittal record required for permission check.')
+        if not _has_module(user, 'submittals', 'view'):
+            raise PermissionError('Permission denied — submittals requires view access.')
         if not submittal_assigned_to_user(submittal, user, Company=Company, db=db):
             raise PermissionError('This submittal is not assigned to your company or contact.')
         status = (getattr(submittal, 'status', None) or '').strip()
-        if status not in ('Sent to Subcontractor', 'Revise & Resubmit'):
+        if status not in ('Draft', 'Sent to Subcontractor', 'Revise & Resubmit'):
             raise PermissionError(
                 'You may only update submittals while they are assigned to you for submission.'
             )
+        return
+    if not _has_module(user, 'submittals', 'edit') and not _has_module(user, 'submittals', 'entry'):
+        raise PermissionError('Permission denied — submittals requires entry access.')
 
 
 def assert_submittal_comment_allowed(user, submittal, *, Company=None, db=None) -> None:

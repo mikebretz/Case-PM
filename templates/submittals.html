@@ -51,8 +51,22 @@ function submittalIsSubAssignee(item) {
     const st = item.status || '';
     return st === 'Sent to Subcontractor' || st === 'Revise & Resubmit';
 }
+function submittalCanFillAsAssignee(item) {
+    if (!item || !SUBMITTAL_ACCESS.isSubPortal) return false;
+    if (!submittalItemAssignedToMe(item)) return false;
+    const st = (item.status || '').trim();
+    return st === 'Draft' || st === 'Sent to Subcontractor' || st === 'Revise & Resubmit';
+}
+function submittalCanSubmitForReview(item) {
+    return submittalIsSubAssignee(item);
+}
+function submittalCanViewSpecBook(item) {
+    if (!item?.specSection) return false;
+    if (SUBMITTAL_ACCESS.isSubPortal && submittalItemAssignedToMe(item)) return true;
+    return !submittalIsViewOnly();
+}
 function submittalCanModifyItem(item) {
-    if (submittalIsSubAssignee(item)) return true;
+    if (submittalCanFillAsAssignee(item)) return true;
     const level = submittalAccessLevel();
     if (level === 'view') return false;
     if (!SUBMITTAL_ACCESS.isSubPortal || level === 'edit') return true;
@@ -63,7 +77,7 @@ function submittalCanModifyItem(item) {
 function submittalCanCommentOn(item) {
     if (!item) return false;
     if (SUBMITTAL_ACCESS.isSubPortal) return submittalItemAssignedToMe(item);
-    return submittalAccessLevel() !== 'view' || true;
+    return true;
 }
 function enableSubmittalAssigneeEditableFields() {
     ['modalImpactNotes', 'submittalAttachmentInput', 'reviewCommentInput'].forEach(id => {
@@ -93,12 +107,12 @@ function resetSubmittalModalEditable() {
 function applySubmittalModalReadOnly(readOnly) {
     const mainCol = document.getElementById('submittalDetailMainCol');
     if (!mainCol) return;
-    const isAssignee = submittalIsSubAssignee(currentModalItem);
+    const canFill = submittalCanFillAsAssignee(currentModalItem);
     const assigneeEditable = new Set(['modalImpactNotes', 'submittalAttachmentInput']);
     mainCol.querySelectorAll('input, select, textarea, button').forEach(el => {
         if (el.id === 'submittalModalSaveBtn') return;
-        if (isAssignee && assigneeEditable.has(el.id)) return;
-        if (readOnly) {
+        if (canFill && assigneeEditable.has(el.id)) return;
+        if (readOnly && !canFill) {
             if (el.tagName === 'BUTTON' && (el.textContent || '').toLowerCase().includes('save')) {
                 el.classList.add('hidden');
             } else if (el.type === 'file') {
@@ -109,24 +123,31 @@ function applySubmittalModalReadOnly(readOnly) {
             } else {
                 el.disabled = true;
             }
+        } else if (!readOnly || canFill) {
+            if (el.id !== 'modalStatus') {
+                if (el.type === 'file' || el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' || el.tagName === 'SELECT') {
+                    if (!canFill || !assigneeEditable.has(el.id)) {
+                        if (!readOnly) {
+                            el.disabled = false;
+                            el.readOnly = false;
+                        }
+                    }
+                }
+            }
         }
     });
     const saveBtn = document.getElementById('submittalModalSaveBtn');
-    if (saveBtn) saveBtn.classList.toggle('hidden', !!readOnly && !isAssignee);
-    const uploadInput = document.getElementById('submittalAttachmentInput');
-    if (uploadInput && isAssignee) {
-        uploadInput.disabled = false;
-        uploadInput.readOnly = false;
-    } else if (uploadInput) {
-        uploadInput.disabled = !!readOnly;
-    }
-    if (isAssignee) enableSubmittalAssigneeEditableFields();
+    if (saveBtn) saveBtn.classList.toggle('hidden', !!readOnly && !canFill);
+    if (canFill) enableSubmittalAssigneeEditableFields();
     const submitBtn = document.getElementById('submittalSubmitForReviewBtn');
-    if (submitBtn) submitBtn.classList.toggle('hidden', !isAssignee);
+    if (submitBtn) submitBtn.classList.toggle('hidden', !submittalCanSubmitForReview(currentModalItem));
     const commentInput = document.getElementById('reviewCommentInput');
     const postBtn = document.getElementById('submittalPostCommentBtn');
     const canComment = submittalCanCommentOn(currentModalItem);
-    if (commentInput) commentInput.disabled = !canComment;
+    if (commentInput) {
+        commentInput.disabled = !canComment;
+        commentInput.readOnly = !canComment;
+    }
     if (postBtn) postBtn.disabled = !canComment;
 }
 function applySubmittalAssigneeFieldLocks(isAssignee) {
@@ -326,7 +347,6 @@ function refreshSubmittalActionButtons() {
   }
   .submittal-field-locked {
     opacity: 0.85;
-    pointer-events: none;
   }
 
   /* ─── Submittal Log print (ALDI-style register, not screen capture) ─── */
@@ -672,7 +692,7 @@ function refreshSubmittalActionButtons() {
     </div>
 
     <!-- Summary Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-3 flex-shrink-0">
+    <div id="submittalMetricsRow" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-3 flex-shrink-0">
         <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4">
             <div class="text-xs uppercase tracking-wider text-zinc-500">Total Submittals</div>
             <div id="metricTotal" class="text-3xl font-semibold text-white mt-1">0</div>
@@ -1515,7 +1535,7 @@ function renderSubmittalsTable(list) {
         row.innerHTML = `
             <td class="px-4 py-2 font-mono text-emerald-400 font-semibold">${item.number || '<span class="text-zinc-500 italic">Draft</span>'}</td>
             <td class="px-3 py-2 text-center font-mono">${item.rev}</td>
-            <td class="px-3 py-2 font-mono ${submittalIsViewOnly() ? 'text-sky-400' : 'text-sky-400 hover:underline cursor-pointer'}" ${submittalIsViewOnly() ? '' : `title="View full spec section in specifications book" onclick="event.stopPropagation(); openSpecSectionFromSubmittal(${item.id})"`}>${item.specSection}</td>
+            <td class="px-3 py-2 font-mono text-sky-400 ${submittalCanViewSpecBook(item) ? 'hover:underline cursor-pointer' : ''}" ${submittalCanViewSpecBook(item) ? `title="View full spec section in specifications book" onclick="event.stopPropagation(); openSpecSectionFromSubmittal(${item.id})"` : ''}>${item.specSection}</td>
             <td class="px-3 py-2 text-xs text-zinc-400">${item.paragraph || '-'}</td>
             <td class="px-4 py-2"><div class="font-medium">${item.subject}</div>${item.sectionName ? `<div class="text-xs text-zinc-500 mt-0.5">${item.sectionName}</div>` : ''}</td>
             <td class="px-3 py-2 text-xs">${item.type || '-'}</td>
@@ -1608,20 +1628,26 @@ function openDetailModal(id, isNew = false, newData = null) {
     const statusText = currentModalItem.status || 'Draft';
     const badge = document.getElementById('modalStatusBadge');
     if (badge) badge.textContent = statusText;
-    const statusReadonly = document.getElementById('modalStatusReadonlyWrap');
-    if (statusReadonly) statusReadonly.textContent = statusText;
-    const isAssignee = submittalIsSubAssignee(currentModalItem);
+    const statusReadonlyEl = document.getElementById('modalStatusReadonlyWrap');
+    if (statusReadonlyEl) statusReadonlyEl.textContent = statusText;
+    const isAssignee = submittalCanFillAsAssignee(currentModalItem);
     applySubmittalAssigneeFieldLocks(isAssignee);
     const submitBtn = document.getElementById('submittalSubmitForReviewBtn');
-    if (submitBtn) submitBtn.classList.toggle('hidden', !isAssignee);
+    if (submitBtn) submitBtn.classList.toggle('hidden', !submittalCanSubmitForReview(currentModalItem));
     const saveBtn = document.getElementById('submittalModalSaveBtn');
     if (saveBtn) {
         saveBtn.innerHTML = isAssignee
             ? '<i class="fa-solid fa-save"></i> Save Draft'
             : '<i class="fa-solid fa-save"></i> Save Changes';
+        saveBtn.classList.toggle('hidden', isAssignee);
     }
-    applySubmittalModalReadOnly(!submittalCanModifyItem(currentModalItem));
+    const statusSel = document.getElementById('modalStatus');
+    if (statusSel) statusSel.classList.add('hidden');
+    if (statusReadonlyEl) statusReadonlyEl.classList.remove('hidden');
+    applySubmittalModalReadOnly(!submittalCanModifyItem(currentModalItem) && !isAssignee);
+    if (isAssignee) enableSubmittalAssigneeEditableFields();
     loadReviewComments(currentModalItem.serverId);
+    bindSubmittalDetailAutoSave();
     switchTab(0);
 }
 
@@ -1637,12 +1663,12 @@ function closeDetailModal() {
 
 function saveSubmittalFromModal() {
     if (!currentModalItem) return;
-    if (!submittalCanModifyItem(currentModalItem)) {
+    const isAssignee = submittalCanFillAsAssignee(currentModalItem);
+    if (!submittalCanModifyItem(currentModalItem) && !isAssignee) {
         showCenteredAlert('You do not have permission to edit this submittal.', 'warning');
         return;
     }
 
-    const isAssignee = submittalIsSubAssignee(currentModalItem);
     if (isAssignee) {
         const impact = readSubmittalImpactFieldsFromModal();
         currentModalItem.costImpactChoice = impact.costChoice;
@@ -1722,7 +1748,7 @@ function saveSubmittalFromModal() {
 }
 
 async function submitSubmittalForApproval() {
-    if (!currentModalItem || !submittalIsSubAssignee(currentModalItem)) return;
+    if (!currentModalItem || !submittalCanSubmitForReview(currentModalItem)) return;
     const impact = readSubmittalImpactFieldsFromModal();
     currentModalItem.costImpactChoice = impact.costChoice;
     currentModalItem.scheduleImpactChoice = impact.scheduleChoice;
@@ -1788,6 +1814,42 @@ async function loadReviewComments(serverId) {
     }
 }
 
+async function autoSaveAssigneeDraft() {
+    if (!currentModalItem || !submittalCanFillAsAssignee(currentModalItem)) return;
+    currentModalItem.impactNotes = document.getElementById('modalImpactNotes')?.value || '';
+    const today = new Date().toISOString().slice(0, 10);
+    currentModalItem.dateReceived = today;
+    saveData();
+    try {
+        await syncSubmittalToServer(currentModalItem);
+    } catch (e) {
+        console.warn('Auto-save failed', e);
+    }
+}
+
+let impactNotesSaveTimer = null;
+function bindSubmittalDetailAutoSave() {
+    const notes = document.getElementById('modalImpactNotes');
+    if (notes && !notes.dataset.autosaveBound) {
+        notes.dataset.autosaveBound = '1';
+        notes.addEventListener('input', () => {
+            if (!submittalCanFillAsAssignee(currentModalItem)) return;
+            clearTimeout(impactNotesSaveTimer);
+            impactNotesSaveTimer = setTimeout(() => autoSaveAssigneeDraft(), 700);
+        });
+    }
+    const commentInput = document.getElementById('reviewCommentInput');
+    if (commentInput && !commentInput.dataset.enterBound) {
+        commentInput.dataset.enterBound = '1';
+        commentInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                postReviewComment();
+            }
+        });
+    }
+}
+
 async function postReviewComment() {
     if (!currentModalItem) return;
     const input = document.getElementById('reviewCommentInput');
@@ -1813,6 +1875,7 @@ async function postReviewComment() {
         if (!res.ok) throw new Error(json.error || 'Could not post comment');
         if (input) input.value = '';
         currentModalItem.comments = json.comments || [];
+        saveData();
         renderReviewComments(currentModalItem.comments);
     } catch (err) {
         showCenteredAlert(err.message || 'Could not post comment', 'error');
@@ -4613,7 +4676,7 @@ function formatSpecBookPageLabel({ specSection, paragraph, safePage, maxPage, se
 function updateViewInSpecBookButton() {
     const btn = document.getElementById('viewInSpecBookBtn');
     if (!btn) return;
-    const canView = !submittalIsViewOnly() && !!(specBookArchive && currentModalItem && currentModalItem.specSection);
+    const canView = submittalCanViewSpecBook(currentModalItem) && !!(specBookArchive && currentModalItem && currentModalItem.specSection);
     btn.classList.toggle('hidden', !canView);
     if (canView) {
         const range = resolveSpecBookPageRangeForSection(currentModalItem.specSection);
@@ -4647,15 +4710,13 @@ async function ensureSpecBookReadyForViewer() {
 }
 
 async function openSpecSectionFromSubmittal(id) {
-    if (submittalIsViewOnly()) return;
-    const item = submittals.find(s => s.id === id);
-    if (!item?.specSection) return;
+    const item = submittals.find(s => String(s.id) === String(id) || String(s.serverId) === String(id));
+    if (!item?.specSection || !submittalCanViewSpecBook(item)) return;
     await viewSpecSectionInSpecBook(item);
 }
 
 async function viewSpecSectionInSpecBook(item) {
-    if (submittalIsViewOnly()) return;
-    if (!item?.specSection) return;
+    if (!item?.specSection || !submittalCanViewSpecBook(item)) return;
     if (!(await ensureSpecBookReadyForViewer())) return;
     await ensureSpecBookFooterMaps();
 
@@ -4698,7 +4759,8 @@ function closeSpecBookViewer(trigger) {
 }
 
 async function openSpecBookViewer({ page, title, subtitle, specSection, paragraph, sectionPageRange }) {
-    if (submittalIsViewOnly()) return;
+    if (currentModalItem && !submittalCanViewSpecBook(currentModalItem)) return;
+    if (!currentModalItem && submittalIsViewOnly()) return;
     if (!specBookArchive) {
         showCenteredAlert('Specifications book file is not available.', 'error');
         return;

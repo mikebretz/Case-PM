@@ -122,7 +122,7 @@ class DocumentModuleSecurityTests(unittest.TestCase):
         from document_module_security import assert_submittal_comment_allowed
 
         user = self._user('Subcontractor Contact', {
-            'submittals': {'access': 'entry', 'approve': 'submit'},
+            'submittals': {'access': 'view', 'approve': 'none'},
         }, portal='sub')
         user.id = 100
         user.company_id = 42
@@ -132,6 +132,21 @@ class DocumentModuleSecurityTests(unittest.TestCase):
             assigned_company_name='My Co',
         )
         assert_submittal_comment_allowed(user, submittal)
+
+    def test_view_only_assigned_sub_can_edit_draft(self):
+        from document_module_security import assert_submittal_edit_allowed
+
+        user = self._user('Subcontractor', {
+            'submittals': {'access': 'view', 'approve': 'none'},
+        }, portal='sub')
+        user.company_id = 42
+        submittal = SimpleNamespace(
+            status='Draft',
+            assigned_company_id=42,
+            assigned_contact_user_id=None,
+            assigned_company_name='My Co',
+        )
+        assert_submittal_edit_allowed(user, submittal)
 
 
 if __name__ == '__main__':
