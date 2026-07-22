@@ -165,6 +165,11 @@ def assert_submittal_comment_allowed(user, submittal, *, Company=None, db=None) 
             raise PermissionError('This submittal is not assigned to your company or contact.')
 
 
+def assert_submittal_review_submission_allowed(user, submittal, *, Company=None, db=None) -> None:
+    """Formal review submissions use the same visibility rules as review comments."""
+    assert_submittal_comment_allowed(user, submittal, Company=Company, db=db)
+
+
 def assert_rfi_comment_allowed(user, rfi) -> None:
     """Anyone who can read an RFI may post review discussion comments."""
     if _is_privileged(user):

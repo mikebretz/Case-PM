@@ -236,6 +236,17 @@ class DocumentModuleSecurityTests(unittest.TestCase):
         )
         assert_submittal_signature_allowed(user, submittal)
 
+    def test_review_submission_persistence(self):
+        from submittal_persistence import add_submittal_review_submission, _parse_json
+
+        sub = SimpleNamespace(details_json='{}', updated_at=None, review_comments=None)
+        entry, subs = add_submittal_review_submission(
+            sub, {'body': 'Please clarify anchor spacing.'}, 2, 'Pat PM', 'Project Manager', party='Project Manager',
+        )
+        self.assertEqual(entry['party'], 'Project Manager')
+        details = _parse_json(sub.details_json, {})
+        self.assertEqual(len(details.get('reviewSubmissions') or []), 1)
+
 
 if __name__ == '__main__':
     unittest.main()

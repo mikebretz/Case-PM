@@ -108,6 +108,9 @@ def submittal_to_ui_item(submittal):
         'impactNotes': details.get('impactNotes') or '',
         'history': details.get('history') or [],
         'comments': d.get('comments') or [],
+        'reviewComments': (d.get('review_comments') or '').strip(),
+        'reviewSubmissions': details.get('reviewSubmissions') or details.get('review_submissions') or [],
+        'ballInCourt': d.get('ball_in_court') or '',
         'notifiedDate': details.get('notifiedDate') or '',
     }
 
@@ -129,6 +132,29 @@ def add_submittal_comment(submittal, body, user_id, user_name, user_role=None):
     submittal.comments_json = json.dumps(comments)
     submittal.updated_at = datetime.utcnow()
     return entry
+
+
+def add_submittal_review_submission(submittal, body, user_id, user_name, user_role=None, party=None):
+    """Append a formal review submission shown on the printable review sheet."""
+    details = _parse_json(getattr(submittal, 'details_json', None), {})
+    submissions = list(details.get('reviewSubmissions') or details.get('review_submissions') or [])
+    entry = {
+        'id': len(submissions) + 1,
+        'body': (body.get('body') or '').strip(),
+        'party': (party or body.get('party') or user_role or 'Reviewer').strip(),
+        'decision': (body.get('decision') or '').strip() or None,
+        'user_id': user_id,
+        'user_name': user_name,
+        'user_role': user_role or '',
+        'created_at': datetime.utcnow().isoformat(),
+    }
+    if not entry['body']:
+        raise ValueError('Review submission text is required')
+    submissions.append(entry)
+    details['reviewSubmissions'] = submissions
+    submittal.details_json = json.dumps(details)
+    submittal.updated_at = datetime.utcnow()
+    return entry, submissions
 
 
 def clear_submittal_comments(submittal):
@@ -329,6 +355,21 @@ def submittal_workflow_action(submittal, action, user, body=None, *, Company=Non
         submittal.ball_in_court = SUBMITTAL_BALL.get(decision)
         if body.get('review_comments'):
             submittal.review_comments = body['review_comments']
+        review_body = (body.get('review_comments') or body.get('body') or '').strip()
+        if review_body or decision:
+            actor_name = (body.get('signature_legal_name') or getattr(user, 'full_name', None) or 'User')
+            add_submittal_review_submission(
+                submittal,
+                {
+                    'body': review_body or f'Decision: {decision}',
+                    'decision': decision,
+                    'party': 'Architect / Engineer',
+                },
+                getattr(user, 'id', None),
+                actor_name,
+                user_role=getattr(user, 'role', None),
+                party='Architect / Engineer',
+            )
         return submittal.status
 
     if action == 'close':

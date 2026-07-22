@@ -17,6 +17,7 @@ window.SUBMITTAL_PROJECT_CTX = {
 };
 window.SUBMITTAL_ACCESS = {
     userId: {{ current_user.id }},
+    userRole: {{ (current_user.role or '')|tojson }},
     companyId: {{ (resolved_vendor_company_id if resolved_vendor_company_id is not none else (current_user.company_id if current_user.company_id else none))|tojson }},
     companyName: {{ (resolved_vendor_company_name or current_user.company or '')|tojson }},
     isSubPortal: {{ is_sub_portal|default(false)|tojson }},
@@ -75,6 +76,34 @@ function submittalCanModifyItem(item) {
 function submittalCanDeleteFromLog(item) {
     if (SUBMITTAL_ACCESS.isSubPortal) return false;
     return submittalAccessLevel() === 'edit';
+}
+function submittalStatusBadgeClass(status) {
+    const map = {
+        'Draft': 'bg-zinc-700 text-zinc-200',
+        'Sent to Subcontractor': 'bg-amber-900/50 text-amber-300 border border-amber-700/50',
+        'Returned from Subcontractor': 'bg-sky-900/60 text-sky-200 border border-sky-600/50',
+        'Submitted to Architect': 'bg-violet-900/50 text-violet-200 border border-violet-700/50',
+        'No Exceptions Taken': 'bg-emerald-900/50 text-emerald-300 border border-emerald-700/50',
+        'Reviewed as Noted': 'bg-teal-900/50 text-teal-200 border border-teal-700/50',
+        'Revise & Resubmit': 'bg-orange-900/50 text-orange-200 border border-orange-700/50',
+        'Rejected': 'bg-red-900/50 text-red-300 border border-red-700/50',
+        'Closed': 'bg-zinc-800 text-zinc-400 border border-zinc-600',
+    };
+    return map[status] || 'bg-zinc-700 text-zinc-200';
+}
+function submittalStatusBadgeHtml(status) {
+    const cls = submittalStatusBadgeClass(status || 'Draft');
+    return `<span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold ${cls}">${escapeSubmittalHtml(status || 'Draft')}</span>`;
+}
+function submittalCanActOnBall(item) {
+    return !!(item && item.canActOnBall);
+}
+function submittalReviewPartyLabel() {
+    if (SUBMITTAL_ACCESS.isSubPortal) return 'Subcontractor';
+    const role = SUBMITTAL_ACCESS.userRole || '';
+    if (role === 'Architect' || (role || '').includes('Engineer')) return 'Architect / Engineer';
+    if (role === 'Owner') return 'Owner';
+    return 'Project Manager';
 }
 function submittalCanCommentOn(item) {
     if (!item) return false;
@@ -890,6 +919,12 @@ function refreshSubmittalActionButtons() {
                 <button id="submittalSubmitForReviewBtn" type="button" onclick="submitSubmittalForApproval()" class="hidden px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold flex items-center gap-2">
                     <i class="fa-solid fa-paper-plane"></i> Submit for Review
                 </button>
+                <button id="submittalSubmitToDesignBtn" type="button" onclick="submitSubmittalToDesignProfessional()" class="hidden px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-sm font-semibold flex items-center gap-2">
+                    <i class="fa-solid fa-share"></i> Submit to Architect / Engineer
+                </button>
+                <button id="submittalPrintReviewSheetBtn" type="button" onclick="printSubmittalReviewSheet()" class="hidden px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg text-sm font-semibold flex items-center gap-2">
+                    <i class="fa-solid fa-file-lines"></i> Print Review Sheet
+                </button>
                 <button id="submittalModalSaveBtn" onclick="saveSubmittalFromModal()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold flex items-center gap-2">
                     <i class="fa-solid fa-save"></i> Save Draft
                 </button>
@@ -1019,6 +1054,32 @@ function refreshSubmittalActionButtons() {
                 <div class="mt-4">
                     <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Impact Notes / Description</label>
                     <textarea id="modalImpactNotes" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"></textarea>
+                </div>
+
+                <div id="submittalWorkflowPanel" class="hidden mt-6 pt-4 border-t border-zinc-700">
+                    <div class="flex items-center justify-between gap-3 mb-3">
+                        <h4 class="font-semibold text-white">Review Actions</h4>
+                        <span id="submittalBallInCourtBadge" class="text-xs px-2 py-1 rounded-full bg-zinc-800 text-zinc-400"></span>
+                    </div>
+                    <p id="submittalWorkflowHint" class="text-xs text-zinc-500 mb-3"></p>
+                    <div id="submittalArchitectDecisionBtns" class="hidden flex flex-wrap gap-2 mb-3">
+                        <button type="button" onclick="recordArchitectDecision('No Exceptions Taken')" class="px-3 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-lg text-sm font-semibold">No Exceptions Taken</button>
+                        <button type="button" onclick="recordArchitectDecision('Reviewed as Noted')" class="px-3 py-2 bg-teal-700 hover:bg-teal-600 rounded-lg text-sm font-semibold">Reviewed as Noted</button>
+                        <button type="button" onclick="recordArchitectDecision('Revise & Resubmit')" class="px-3 py-2 bg-orange-700 hover:bg-orange-600 rounded-lg text-sm font-semibold">Revise &amp; Resubmit</button>
+                        <button type="button" onclick="recordArchitectDecision('Rejected')" class="px-3 py-2 bg-red-800 hover:bg-red-700 rounded-lg text-sm font-semibold">Rejected</button>
+                    </div>
+                    <textarea id="submittalOfficialReviewInput" rows="3" placeholder="Official review comments for the review sheet (Architect / Engineer / Owner)…" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm mb-2"></textarea>
+                </div>
+
+                <div class="mt-6 pt-4 border-t border-zinc-700">
+                    <div class="flex items-center justify-between gap-3 mb-2">
+                        <h4 class="font-semibold text-white">Review Submissions</h4>
+                        <span class="text-[10px] text-zinc-500 uppercase tracking-wide">Printed on review sheet</span>
+                    </div>
+                    <p class="text-xs text-zinc-500 mb-3">Formal comments recorded on the submittal review cover page for Architect, Engineer, and Owner.</p>
+                    <div id="submittalReviewSubmissionsList" class="space-y-2 mb-3 text-sm"></div>
+                    <textarea id="submittalReviewSubmissionInput" rows="3" placeholder="Add a formal review submission…" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm mb-2"></textarea>
+                    <button type="button" id="submittalPostReviewSubmissionBtn" onclick="postReviewSubmission()" class="px-4 py-2 bg-sky-700 hover:bg-sky-600 text-white rounded-lg text-sm font-semibold">Post Review Submission</button>
                 </div>
 
                 <div class="mt-6 pt-4 border-t border-zinc-700">
@@ -1618,7 +1679,7 @@ function renderSubmittalsTable(list) {
             <td class="px-3 py-2 text-xs">${item.assignedContactName || '-'}</td>
             <td class="px-3 py-2 text-xs">${item.receivedFrom || '-'}</td>
             <td class="px-3 py-2 text-xs">${item.referredTo || '-'}</td>
-            <td class="px-3 py-2"><span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-700">${item.status}</span></td>
+            <td class="px-3 py-2">${submittalStatusBadgeHtml(item.status)}</td>
             ${submittalCanDeleteFromLog(item) ? `<td class="px-3 py-2 text-center">
                 <button onclick="event.stopImmediatePropagation(); deleteSubmittal(${item.id})" class="px-2 py-1 text-xs text-red-400 hover:bg-red-900/30 rounded">Del</button>
             </td>` : (SUBMITTAL_ACCESS.isSubPortal ? '' : '<td class="px-3 py-2 text-center"></td>')}
@@ -1715,7 +1776,10 @@ function openDetailModal(id, isNew = false, newData = null) {
     document.body.classList.add('submittal-detail-active');
     const statusText = currentModalItem.status || 'Draft';
     const badge = document.getElementById('modalStatusBadge');
-    if (badge) badge.textContent = statusText;
+    if (badge) {
+        badge.className = `px-3 py-1 rounded-full text-xs font-semibold ${submittalStatusBadgeClass(statusText)}`;
+        badge.textContent = statusText;
+    }
     const statusReadonlyEl = document.getElementById('modalStatusReadonlyWrap');
     if (statusReadonlyEl) statusReadonlyEl.textContent = statusText;
     const isAssignee = submittalCanFillAsAssignee(currentModalItem);
@@ -1735,9 +1799,12 @@ function openDetailModal(id, isNew = false, newData = null) {
     applySubmittalModalReadOnly(!submittalCanModifyItem(currentModalItem) && !isAssignee);
     if (isAssignee) enableSubmittalAssigneeEditableFields();
     loadReviewComments(currentModalItem.serverId);
+    loadReviewSubmissions(currentModalItem.serverId);
     updateSubmittalCommentDevControls();
     updateSubmittalAssigneeSpecDisplay(isAssignee);
     renderWorkflowHistory();
+    renderReviewSubmissions(currentModalItem.reviewSubmissions || []);
+    updateSubmittalWorkflowActions();
     bindSubmittalDetailAutoSave();
     switchTab(0);
 }
@@ -2118,6 +2185,188 @@ async function applySubmittalStatusWorkflow(serverId, wf) {
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || 'Submittal workflow failed');
     return json;
+}
+
+function updateSubmittalWorkflowActions() {
+    const item = currentModalItem;
+    const panel = document.getElementById('submittalWorkflowPanel');
+    const submitDesignBtn = document.getElementById('submittalSubmitToDesignBtn');
+    const printReviewBtn = document.getElementById('submittalPrintReviewSheetBtn');
+    const architectBtns = document.getElementById('submittalArchitectDecisionBtns');
+    const ballBadge = document.getElementById('submittalBallInCourtBadge');
+    const hint = document.getElementById('submittalWorkflowHint');
+    const officialInput = document.getElementById('submittalOfficialReviewInput');
+    if (!item) return;
+    const status = item.status || 'Draft';
+    const canAct = submittalCanActOnBall(item);
+    if (ballBadge) ballBadge.textContent = item.ballInCourt ? `Ball in court: ${item.ballInCourt}` : '';
+    if (officialInput && item.reviewComments) officialInput.value = item.reviewComments;
+    if (submitDesignBtn) {
+        submitDesignBtn.classList.toggle('hidden', !(status === 'Returned from Subcontractor' && canAct && !SUBMITTAL_ACCESS.isSubPortal));
+    }
+    if (printReviewBtn) {
+        printReviewBtn.classList.toggle('hidden', !item.serverId);
+    }
+    if (panel) {
+        const showPanel = canAct && (
+            status === 'Returned from Subcontractor' ||
+            status === 'Submitted to Architect' ||
+            (item.reviewSubmissions && item.reviewSubmissions.length)
+        );
+        panel.classList.toggle('hidden', !showPanel && status !== 'Submitted to Architect');
+    }
+    if (architectBtns) {
+        architectBtns.classList.toggle('hidden', !(status === 'Submitted to Architect' && canAct));
+    }
+    if (hint) {
+        if (status === 'Returned from Subcontractor' && canAct) {
+            hint.textContent = 'Review the submittal package, ask questions in Review Comments, then forward to the design professional.';
+        } else if (status === 'Submitted to Architect' && canAct) {
+            hint.textContent = 'Record your decision and official comments below. Comments appear on the printable review sheet.';
+        } else if (status === 'Submitted to Architect') {
+            hint.textContent = 'Awaiting architect / engineer review.';
+        } else {
+            hint.textContent = '';
+        }
+    }
+}
+
+async function submitSubmittalToDesignProfessional() {
+    if (!currentModalItem?.serverId || !submittalCanActOnBall(currentModalItem)) return;
+    const ok = await showCenteredConfirm(
+        'Submit this submittal to the Architect / Engineer for review?',
+        { title: 'Submit to Design Professional', confirmText: 'Submit' }
+    );
+    if (!ok) return;
+    try {
+        const json = await applySubmittalStatusWorkflow(currentModalItem.serverId, { action: 'submit_to_architect' });
+        if (json?.new_status) currentModalItem.status = json.new_status;
+        currentModalItem.ballInCourt = 'Architect';
+        saveData();
+        const badge = document.getElementById('modalStatusBadge');
+        if (badge) {
+            badge.className = `px-3 py-1 rounded-full text-xs font-semibold ${submittalStatusBadgeClass(currentModalItem.status)}`;
+            badge.textContent = currentModalItem.status;
+        }
+        updateSubmittalWorkflowActions();
+        renderSubmittalsTable();
+        updateMetrics();
+        showCenteredAlert('Submittal submitted to Architect / Engineer.', 'success');
+    } catch (err) {
+        showCenteredAlert(err.message || 'Could not submit to architect', 'error');
+    }
+}
+
+async function recordArchitectDecision(decision) {
+    if (!currentModalItem?.serverId || !submittalCanActOnBall(currentModalItem)) return;
+    const reviewComments = (document.getElementById('submittalOfficialReviewInput')?.value || '').trim();
+    const ok = await showCenteredConfirm(
+        `Record decision: ${decision}?`,
+        { title: 'Architect / Engineer Decision', confirmText: 'Confirm' }
+    );
+    if (!ok) return;
+    try {
+        const json = await applySubmittalStatusWorkflow(currentModalItem.serverId, {
+            action: 'architect_decision',
+            decision,
+            review_comments: reviewComments,
+            body: reviewComments,
+        });
+        if (json?.new_status) currentModalItem.status = json.new_status;
+        if (reviewComments) currentModalItem.reviewComments = reviewComments;
+        saveData();
+        await loadReviewSubmissions(currentModalItem.serverId);
+        const badge = document.getElementById('modalStatusBadge');
+        if (badge) {
+            badge.className = `px-3 py-1 rounded-full text-xs font-semibold ${submittalStatusBadgeClass(currentModalItem.status)}`;
+            badge.textContent = currentModalItem.status;
+        }
+        updateSubmittalWorkflowActions();
+        renderSubmittalsTable();
+        updateMetrics();
+        showCenteredAlert(`Decision recorded: ${decision}`, 'success');
+    } catch (err) {
+        showCenteredAlert(err.message || 'Could not record decision', 'error');
+    }
+}
+
+function renderReviewSubmissions(submissions) {
+    const el = document.getElementById('submittalReviewSubmissionsList');
+    if (!el) return;
+    const list = submissions || [];
+    if (!list.length) {
+        el.innerHTML = '<p class="text-sm text-zinc-500">No formal review submissions yet.</p>';
+        return;
+    }
+    el.innerHTML = list.map(s => `
+        <div class="border border-zinc-700 rounded-lg p-3 bg-zinc-900/60">
+            <div class="flex justify-between text-xs text-zinc-500 mb-1 gap-2">
+                <span>${escapeSubmittalHtml(s.party || s.user_role || 'Reviewer')} — ${escapeSubmittalHtml(s.user_name || 'User')}${s.decision ? ` · <span class="text-emerald-400">${escapeSubmittalHtml(s.decision)}</span>` : ''}</span>
+                <span class="flex-shrink-0">${escapeSubmittalHtml((s.created_at || '').replace('T', ' ').slice(0, 16))}</span>
+            </div>
+            <div class="whitespace-pre-wrap text-zinc-200 text-sm">${escapeSubmittalHtml(s.body || '')}</div>
+        </div>
+    `).join('');
+}
+
+async function loadReviewSubmissions(serverId) {
+    if (!serverId) {
+        renderReviewSubmissions(currentModalItem?.reviewSubmissions || []);
+        return;
+    }
+    try {
+        const res = await fetch(`/api/submittals/${serverId}/review-submissions`, { credentials: 'same-origin' });
+        const json = await res.json();
+        const submissions = json.review_submissions || [];
+        if (currentModalItem) {
+            currentModalItem.reviewSubmissions = submissions;
+            if (json.review_comments) currentModalItem.reviewComments = json.review_comments;
+        }
+        renderReviewSubmissions(submissions);
+    } catch (e) {
+        renderReviewSubmissions(currentModalItem?.reviewSubmissions || []);
+    }
+}
+
+async function postReviewSubmission() {
+    if (!currentModalItem) return;
+    const input = document.getElementById('submittalReviewSubmissionInput');
+    const body = (input?.value || '').trim();
+    if (!body) return;
+    let sid = currentModalItem.serverId;
+    if (!sid) {
+        await syncSubmittalToServer(currentModalItem);
+        sid = currentModalItem.serverId;
+    }
+    if (!sid) {
+        showCenteredAlert('Save the submittal before posting a review submission.', 'warning');
+        return;
+    }
+    try {
+        const res = await fetch(`/api/submittals/${sid}/review-submissions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ body, party: submittalReviewPartyLabel() }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Could not post review submission');
+        if (input) input.value = '';
+        currentModalItem.reviewSubmissions = json.review_submissions || [];
+        saveData();
+        renderReviewSubmissions(currentModalItem.reviewSubmissions);
+    } catch (err) {
+        showCenteredAlert(err.message || 'Could not post review submission', 'error');
+    }
+}
+
+async function printSubmittalReviewSheet() {
+    if (!currentModalItem?.serverId) {
+        showCenteredAlert('Save the submittal before printing the review sheet.', 'warning');
+        return;
+    }
+    const url = `/api/submittals/${currentModalItem.serverId}/print-review-sheet`;
+    window.open(url, '_blank');
 }
 
 let submittalAttachmentCache = [];

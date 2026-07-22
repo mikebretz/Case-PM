@@ -9821,6 +9821,7 @@ def api_list_submittals():
     from submittal_persistence import submittal_to_ui_item
     from document_module_security import assert_submittal_read_allowed, submittal_visible_to_user, submittal_assigned_to_user
     from financial_security import require_financial_project_access
+    from co_persistence import user_can_act_on_ball_in_court
     try:
         assert_submittal_read_allowed(current_user)
     except PermissionError as exc:
@@ -9839,6 +9840,7 @@ def api_list_submittals():
             continue
         item = submittal_to_ui_item(row)
         item['assignedToMe'] = submittal_assigned_to_user(row, current_user, Company=Company, db=db)
+        item['canActOnBall'] = user_can_act_on_ball_in_court(current_user, row.ball_in_court)
         items.append(item)
     return jsonify({'ok': True, 'submittals': items})
 
@@ -10132,6 +10134,92 @@ def api_submittal_apply_signature(submittal_id):
         return jsonify({'error': str(exc)}), 400
     db.session.commit()
     return jsonify({'ok': True, 'signature_entry': entry, 'history': history})
+
+
+@app.route('/api/submittals/<int:submittal_id>/review-submissions', methods=['GET'])
+@login_required
+def api_submittal_list_review_submissions(submittal_id):
+    from rfi_persistence import _parse_json
+    from document_module_security import assert_submittal_read_allowed, submittal_visible_to_user
+    from financial_security import require_financial_project_access
+    submittal = Submittal.query.get_or_404(submittal_id)
+    try:
+        assert_submittal_read_allowed(current_user)
+        require_financial_project_access(current_user, submittal.project_id, Project)
+        if not submittal_visible_to_user(submittal, current_user, Company=Company, db=db):
+            return jsonify({'error': 'Permission denied'}), 403
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    details = _parse_json(submittal.details_json, {})
+    submissions = details.get('reviewSubmissions') or details.get('review_submissions') or []
+    return jsonify({
+        'ok': True,
+        'review_submissions': submissions,
+        'review_comments': submittal.review_comments or '',
+    })
+
+
+@app.route('/api/submittals/<int:submittal_id>/review-submissions', methods=['POST'])
+@login_required
+def api_submittal_add_review_submission(submittal_id):
+    from rfi_persistence import _parse_json
+    from submittal_persistence import add_submittal_review_submission
+    from document_module_security import assert_submittal_review_submission_allowed, submittal_visible_to_user
+    from financial_security import require_financial_project_access
+    submittal = Submittal.query.get_or_404(submittal_id)
+    try:
+        require_financial_project_access(current_user, submittal.project_id, Project)
+        if not submittal_visible_to_user(submittal, current_user, Company=Company, db=db):
+            return jsonify({'error': 'Permission denied'}), 403
+        assert_submittal_review_submission_allowed(current_user, submittal, Company=Company, db=db)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    body = request.get_json(silent=True) or {}
+    actor_name = _user_display_name(current_user.id)
+    party = body.get('party') or getattr(current_user, 'role', None) or 'Reviewer'
+    try:
+        entry, submissions = add_submittal_review_submission(
+            submittal,
+            body,
+            current_user.id,
+            actor_name,
+            user_role=getattr(current_user, 'role', None),
+            party=party,
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    db.session.commit()
+    return jsonify({'ok': True, 'submission': entry, 'review_submissions': submissions})
+
+
+@app.route('/api/submittals/<int:submittal_id>/print-review-sheet', methods=['GET'])
+@login_required
+def api_submittal_print_review_sheet(submittal_id):
+    from document_module_security import assert_submittal_read_allowed, submittal_visible_to_user
+    from financial_security import require_financial_project_access
+    from program_settings_persistence import load_company_info
+    from submittal_form_pdf import build_submittal_review_sheet_pdf
+    submittal = Submittal.query.get_or_404(submittal_id)
+    try:
+        assert_submittal_read_allowed(current_user)
+        require_financial_project_access(current_user, submittal.project_id, Project)
+        if not submittal_visible_to_user(submittal, current_user, Company=Company, db=db):
+            return jsonify({'error': 'Permission denied'}), 403
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    project = Project.query.get(submittal.project_id)
+    pdf_bytes = build_submittal_review_sheet_pdf(
+        submittal,
+        project=project,
+        company_info=load_company_info(),
+    )
+    filename = f'Submittal_{submittal.number or submittal_id}_Review_Sheet.pdf'
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype='application/pdf',
+        as_attachment=False,
+        download_name=filename,
+    )
 
 
 @app.route('/api/submittals/<int:submittal_id>/attachments', methods=['GET'])
