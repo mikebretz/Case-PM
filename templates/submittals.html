@@ -15,6 +15,77 @@ window.SUBMITTAL_PROJECT_CTX = {
     number: {{ (active_project.number if active_project and active_project.number else '370 / 664')|tojson }},
     address: {{ (active_project.address if active_project and active_project.address else '6600 N SOCRUM LOOP LAKELAND, FL 33809')|tojson }}
 };
+window.SUBMITTAL_ACCESS = {
+    userId: {{ current_user.id }},
+    companyId: {{ current_user.company_id if current_user.company_id else 'null' }},
+    isSubPortal: {{ is_sub_portal|default(false)|tojson }},
+};
+function submittalAccessLevel() {
+    if (typeof canAccessModule === 'function') {
+        if (canAccessModule('submittals', 'edit')) return 'edit';
+        if (canAccessModule('submittals', 'entry')) return 'entry';
+        return 'view';
+    }
+    return 'view';
+}
+function submittalItemAssignedToMe(item) {
+    if (!item || !SUBMITTAL_ACCESS.isSubPortal) return true;
+    const uid = SUBMITTAL_ACCESS.userId;
+    if (item.assignedContactId && String(item.assignedContactId) === String(uid)) return true;
+    const cid = SUBMITTAL_ACCESS.companyId;
+    if (item.assignedCompanyId && cid && String(item.assignedCompanyId) === String(cid)) return true;
+    const userCo = (document.body?.dataset?.userCompanyId || '').trim();
+    if (item.assignedCompanyId && userCo && String(item.assignedCompanyId) === String(userCo)) return true;
+    return false;
+}
+function submittalCanModifyItem(item) {
+    const level = submittalAccessLevel();
+    if (level === 'view') return false;
+    if (!SUBMITTAL_ACCESS.isSubPortal || level === 'edit') return true;
+    if (!submittalItemAssignedToMe(item)) return false;
+    const st = item.status || '';
+    return st === 'Sent to Subcontractor' || st === 'Revise & Resubmit';
+}
+function resetSubmittalModalEditable() {
+    const modal = document.getElementById('detailModal');
+    if (!modal) return;
+    modal.querySelectorAll('input, select, textarea, button').forEach(el => {
+        if (el.id === 'submittalDetailModalClose' || el.classList.contains('modal-close-btn')) return;
+        el.disabled = false;
+        el.readOnly = false;
+        if (el.id === 'submittalModalSaveBtn') el.classList.remove('hidden');
+    });
+    const uploadInput = document.getElementById('submittalAttachmentInput');
+    if (uploadInput) uploadInput.disabled = false;
+}
+function applySubmittalModalReadOnly(readOnly) {
+    const modal = document.getElementById('submittalDetailModal');
+    if (!modal) return;
+    modal.querySelectorAll('input, select, textarea, button').forEach(el => {
+        if (el.id === 'submittalDetailModalClose' || el.classList.contains('modal-close-btn')) return;
+        if (readOnly) {
+            if (el.tagName === 'BUTTON' && (el.textContent || '').toLowerCase().includes('save')) {
+                el.classList.add('hidden');
+            } else if (el.type === 'file') {
+                el.disabled = true;
+            } else if (el.tagName !== 'BUTTON') {
+                el.readOnly = true;
+                el.disabled = true;
+            } else if (!el.classList.contains('modal-close-btn')) {
+                el.disabled = true;
+            }
+        }
+    });
+    const saveBtn = document.getElementById('submittalModalSaveBtn');
+    if (saveBtn) saveBtn.classList.toggle('hidden', !!readOnly);
+    const uploadInput = document.getElementById('submittalAttachmentInput');
+    if (uploadInput) uploadInput.disabled = !!readOnly;
+}
+function refreshSubmittalActionButtons() {
+    const level = submittalAccessLevel();
+    const newBtn = document.getElementById('submittalNewBtn');
+    if (newBtn) newBtn.classList.toggle('hidden', level === 'view' || (SUBMITTAL_ACCESS.isSubPortal && level !== 'edit'));
+}
 </script>
 <style>
   .submittal-dialog {
@@ -308,7 +379,7 @@ window.SUBMITTAL_PROJECT_CTX = {
         </div>
 
         <div class="flex items-center gap-3">
-            <button onclick="showNewSubmittalModal()" 
+            <button id="submittalNewBtn" onclick="showNewSubmittalModal()" 
                     class="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold transition-colors">
                 <i class="fa-solid fa-plus mr-1.5"></i>
                 New Submittal
@@ -612,7 +683,7 @@ window.SUBMITTAL_PROJECT_CTX = {
                         title="Open the full spec section in the uploaded specifications book">
                     <i class="fa-solid fa-book-open"></i> View in Spec Book
                 </button>
-                <button onclick="saveSubmittalFromModal()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold flex items-center gap-2">
+                <button id="submittalModalSaveBtn" onclick="saveSubmittalFromModal()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold flex items-center gap-2">
                     <i class="fa-solid fa-save"></i> Save Changes
                 </button>
                 <button onclick="closeDetailModal()" class="w-10 h-10 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg">
@@ -1155,7 +1226,7 @@ function renderSubmittalsTable(list) {
             <td class="px-3 py-2 text-xs">${item.referredTo || '-'}</td>
             <td class="px-3 py-2"><span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-700">${item.status}</span></td>
             <td class="px-3 py-2 text-center">
-                <button onclick="event.stopImmediatePropagation(); deleteSubmittal(${item.id})" class="px-2 py-1 text-xs text-red-400 hover:bg-red-900/30 rounded">Del</button>
+                ${submittalCanModifyItem(item) ? `<button onclick="event.stopImmediatePropagation(); deleteSubmittal(${item.id})" class="px-2 py-1 text-xs text-red-400 hover:bg-red-900/30 rounded">Del</button>` : ''}
             </td>
         `;
         tbody.appendChild(row);
@@ -1174,6 +1245,7 @@ function openDetailModal(id, isNew = false, newData = null) {
     }
     if (!currentModalItem) return;
     currentModalPreviousStatus = currentModalItem.status || 'Draft';
+    resetSubmittalModalEditable();
     
     // Populate basic fields
     document.getElementById('modalSubmittalNumber').textContent = currentModalItem.number || 'NEW';
@@ -1244,6 +1316,7 @@ function openDetailModal(id, isNew = false, newData = null) {
     
     // Show modal
     document.getElementById('detailModal').classList.remove('hidden');
+    applySubmittalModalReadOnly(!submittalCanModifyItem(currentModalItem));
     initDraggableSubmittalPanel('detailModal');
     switchTab(0);
 }
@@ -1255,6 +1328,10 @@ function closeDetailModal() {
 
 function saveSubmittalFromModal() {
     if (!currentModalItem) return;
+    if (!submittalCanModifyItem(currentModalItem)) {
+        showCenteredAlert('You do not have permission to edit this submittal.', 'warning');
+        return;
+    }
     
     currentModalItem.specSection = document.getElementById('modalSpecSection').value;
     currentModalItem.sectionName = document.getElementById('modalSectionName').value;
@@ -1324,6 +1401,20 @@ async function syncSubmittalToServer(item, opts = {}) {
         description: item.subject || item.description || 'Submittal',
         spec_section: item.specSection,
         priority: item.priority || 'Medium',
+        assigned_company_id: item.assignedCompanyId || null,
+        assigned_company_name: item.assignedCompanyName || null,
+        assigned_contact_user_id: item.assignedContactId || null,
+        assigned_contact_name: item.assignedContactName || null,
+        assigned_contact_email: item.assignedContactEmail || null,
+        due_date: item.requiredBy || null,
+        details: {
+            sectionName: item.sectionName,
+            paragraph: item.paragraph,
+            rev: item.rev,
+            type: item.type,
+            receivedFrom: item.receivedFrom,
+            referredTo: item.referredTo,
+        },
     };
     if (!item.serverId) {
         payload.status = 'Draft';
@@ -1512,6 +1603,10 @@ function generateNextNumber(specSection) {
 
 // New Submittal
 function showNewSubmittalModal() {
+    if (submittalAccessLevel() === 'view' || (SUBMITTAL_ACCESS.isSubPortal && submittalAccessLevel() !== 'edit')) {
+        showCenteredAlert('You do not have permission to create submittal log items.', 'warning');
+        return;
+    }
     const newItem = {
         id: Date.now(),
         number: '',
@@ -4269,6 +4364,7 @@ async function syncSpecBookToServerIfNeeded() {
 // Initialize
 async function initialize() {
     loadData();
+    refreshSubmittalActionButtons();
     await loadSpecBookArchive();
     await syncSpecBookToServerIfNeeded();
     if (!specBookArchive && localStorage.getItem(getSpecBookMetaKey())) {

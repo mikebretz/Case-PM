@@ -46,7 +46,25 @@
     return p.isAdmin === true || p.role === 'Admin' || p.role === 'Developer';
   }
 
+  function canEnterRfis() {
+    if (typeof global.canAccessModule === 'function') {
+      return global.canAccessModule('rfis', 'entry');
+    }
+    return isStaffPortal();
+  }
+
+  function canEditRfis() {
+    if (typeof global.canAccessModule === 'function') {
+      return global.canAccessModule('rfis', 'edit');
+    }
+    return isStaffPortal();
+  }
+
   async function openResponder(id) {
+    if (!canEnterRfis()) {
+      await view(id);
+      return;
+    }
     if (typeof global.CasePMApprovalResponder !== 'undefined') {
       await global.CasePMApprovalResponder.open('rfi', id);
       return;
@@ -649,8 +667,8 @@
         <td class="px-4 py-3 text-center" onclick="event.stopPropagation()">
           <div class="flex items-center justify-center gap-1">
             <button onclick="CasePMRfis.printDetail(${r.id})" class="p-1.5 text-zinc-300 hover:bg-zinc-800 rounded" title="Print RFI"><i class="fa-solid fa-print"></i></button>
-            <button onclick="CasePMRfis.openResponder(${r.id})" class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded" title="Review &amp; Respond"><i class="fa-solid fa-reply"></i></button>
-            ${isStaffPortal() ? `<button onclick="CasePMRfis.edit(${r.id})" class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded" title="Edit"><i class="fa-solid fa-edit"></i></button>` : ''}
+            <button onclick="CasePMRfis.openResponder(${r.id})" class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded" title="${canEnterRfis() ? 'Review &amp; Respond' : 'View'}"><i class="fa-solid fa-${canEnterRfis() ? 'reply' : 'eye'}"></i></button>
+            ${canEditRfis() && isStaffPortal() ? `<button onclick="CasePMRfis.edit(${r.id})" class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded" title="Edit"><i class="fa-solid fa-edit"></i></button>` : ''}
             ${canDeleteRfi() ? `<button onclick="CasePMRfis.deleteRfi(${r.id})" class="p-1.5 text-red-400 hover:bg-zinc-800 rounded" title="Delete RFI"><i class="fa-solid fa-trash"></i></button>` : ''}
           </div>
         </td>
@@ -932,12 +950,12 @@
         <div class="space-y-1">${linked}</div>
       </div>
       <div class="flex flex-wrap gap-2 pt-3 border-t border-zinc-700">
-        <button onclick="CasePMRfis.openResponder(${r.id})" class="px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md font-semibold"><i class="fa-solid fa-reply mr-1"></i>Review &amp; Respond</button>
-        ${isStaffPortal() ? `
+        <button onclick="CasePMRfis.openResponder(${r.id})" class="px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md font-semibold"><i class="fa-solid fa-${canEnterRfis() ? 'reply' : 'eye'} mr-1"></i>${canEnterRfis() ? 'Review &amp; Respond' : 'View'}</button>
+        ${canEnterRfis() && isStaffPortal() ? `
         <button onclick="CasePMRfis.workflow(${r.id}, 'submit')" class="px-3 py-1.5 text-xs bg-sky-800 hover:bg-sky-700 rounded-md">Send for Review</button>
         <button onclick="CasePMRfis.workflow(${r.id}, 'close')" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md">Close RFI</button>
-        <button onclick="CasePMRfis.promotePco(${r.id})" class="px-3 py-1.5 text-xs bg-violet-800 hover:bg-violet-700 rounded-md"><i class="fa-solid fa-lightbulb mr-1"></i>Create PCO</button>
-        <button onclick="CasePMRfis.edit(${r.id})" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md"><i class="fa-solid fa-edit mr-1"></i>Edit</button>` : ''}
+        <button onclick="CasePMRfis.promotePco(${r.id})" class="px-3 py-1.5 text-xs bg-violet-800 hover:bg-violet-700 rounded-md"><i class="fa-solid fa-lightbulb mr-1"></i>Create PCO</button>` : ''}
+        ${canEditRfis() && isStaffPortal() ? `<button onclick="CasePMRfis.edit(${r.id})" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md"><i class="fa-solid fa-edit mr-1"></i>Edit</button>` : ''}
         ${canDeleteRfi() ? `<button onclick="CasePMRfis.deleteRfi(${r.id})" class="px-3 py-1.5 text-xs bg-red-900/70 hover:bg-red-800 text-red-200 rounded-md"><i class="fa-solid fa-trash mr-1"></i>Delete</button>` : ''}
       </div>`;
     bindDrawerAttachmentHandlers(r.id);
@@ -1350,6 +1368,8 @@
     bindFilters();
     bindAttachmentHandlers();
     await Promise.all([loadDashboard(), loadRfis(), loadLinkOptions()]);
+    const newBtn = document.querySelector('[onclick="CasePMRfis.newRfi()"]');
+    if (newBtn && !canEnterRfis()) newBtn.classList.add('hidden');
     global.addEventListener('casepm:approval-responded', () => refresh());
     const params = new URLSearchParams(window.location.search);
     if (params.get('respond') === '1' && params.get('rfi_id')) {

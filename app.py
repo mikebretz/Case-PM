@@ -1657,6 +1657,13 @@ class Submittal(db.Model):
     ball_in_court = db.Column(db.String(50))
     review_comments = db.Column(db.Text)
     attachments_json = db.Column(db.Text)
+    assigned_company_id = db.Column(db.Integer, db.ForeignKey('company.id'), nullable=True)
+    assigned_company_name = db.Column(db.String(200))
+    assigned_contact_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    assigned_contact_name = db.Column(db.String(150))
+    assigned_contact_email = db.Column(db.String(200))
+    details_json = db.Column(db.Text)
+    updated_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -3970,7 +3977,9 @@ def api_get_rfi(rfi_id):
 @login_required
 def api_create_rfi():
     from rfi_persistence import apply_rfi_fields, rfi_to_dict
+    from document_module_security import assert_rfi_create_allowed
     try:
+        assert_rfi_create_allowed(current_user)
         body = request.get_json(silent=True) or {}
         project_id = body.get('project_id') or get_current_project_id()
         if not project_id:
@@ -4015,8 +4024,10 @@ def api_create_rfi():
 def api_update_rfi(rfi_id):
     from rfi_persistence import apply_rfi_fields, rfi_to_dict, get_linked_records
     from financial_security import strip_workflow_fields, require_financial_project_access, assert_mutable_rfi
+    from document_module_security import assert_rfi_edit_allowed
     rfi = RFI.query.get_or_404(rfi_id)
     try:
+        assert_rfi_edit_allowed(current_user)
         require_financial_project_access(current_user, rfi.project_id, Project)
         assert_mutable_rfi(rfi)
     except (ValueError, PermissionError) as exc:
@@ -4069,8 +4080,10 @@ def api_rfi_workflow(rfi_id):
     from rfi_persistence import rfi_to_dict, get_linked_records
     from workflow_responder import execute_rfi_action
     from financial_security import require_financial_project_access
+    from document_module_security import assert_rfi_workflow_allowed
     rfi = RFI.query.get_or_404(rfi_id)
     try:
+        assert_rfi_workflow_allowed(current_user)
         require_financial_project_access(current_user, rfi.project_id, Project)
     except (ValueError, PermissionError) as exc:
         return jsonify({'error': str(exc)}), 403
@@ -4107,7 +4120,14 @@ def _enrich_rfi_attachments(rfi_id, attachments):
 @login_required
 def api_rfi_list_attachments(rfi_id):
     from rfi_persistence import _parse_json
+    from financial_security import require_financial_project_access
+    from document_module_security import assert_rfi_read_allowed
     rfi = RFI.query.get_or_404(rfi_id)
+    try:
+        assert_rfi_read_allowed(current_user)
+        require_financial_project_access(current_user, rfi.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     attachments = _enrich_rfi_attachments(rfi_id, _parse_json(rfi.attachments_json, []))
     return jsonify({'ok': True, 'attachments': attachments})
 
@@ -4116,7 +4136,15 @@ def api_rfi_list_attachments(rfi_id):
 @login_required
 def api_rfi_upload_attachment(rfi_id):
     from rfi_persistence import apply_rfi_fields, _parse_json
+    from financial_security import require_financial_project_access, assert_mutable_rfi
+    from document_module_security import assert_rfi_edit_allowed
     rfi = RFI.query.get_or_404(rfi_id)
+    try:
+        assert_rfi_edit_allowed(current_user)
+        require_financial_project_access(current_user, rfi.project_id, Project)
+        assert_mutable_rfi(rfi)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     if 'file' not in request.files:
         return jsonify({'error': 'file required'}), 400
     f = request.files['file']
@@ -4549,7 +4577,9 @@ def submittals_page():
 @app.route('/submittals/create', methods=['POST'])
 @login_required
 def create_submittal():
+    from document_module_security import assert_submittal_create_allowed
     try:
+        assert_submittal_create_allowed(current_user)
         project_id = request.form.get('project_id')
         description = request.form.get('description')
         spec_section = request.form.get('spec_section')
@@ -4578,6 +4608,10 @@ def create_submittal():
         flash(f'Submittal {number} created successfully!', 'success')
         return redirect_with_project('submittals_page')
 
+    except PermissionError as exc:
+        db.session.rollback()
+        flash(str(exc), 'error')
+        return redirect_with_project('submittals_page')
     except Exception as e:
         db.session.rollback()
         flash(f'Error creating Submittal: {str(e)}', 'error')
@@ -4597,13 +4631,16 @@ def update_submittal_status(submittal_id):
 @login_required
 def api_submittal_upload_attachment(submittal_id):
     from rfi_persistence import _parse_json
-    from financial_security import require_financial_project_access
+    from financial_security import require_financial_project_access, assert_mutable_submittal
+    from document_module_security import assert_submittal_edit_allowed
 
     submittal = Submittal.query.get_or_404(submittal_id)
     try:
         require_financial_project_access(current_user, submittal.project_id, Project)
+        assert_mutable_submittal(submittal)
+        assert_submittal_edit_allowed(current_user, submittal, Company=Company, db=db)
     except (ValueError, PermissionError) as exc:
-        return jsonify({'error': str(exc)}), 403
+        return jsonify({'error': str(exc)}), 403 if isinstance(exc, PermissionError) else 400
     if 'file' not in request.files:
         return jsonify({'error': 'file required'}), 400
     f = request.files['file']
@@ -9639,6 +9676,11 @@ def api_submittal_sync():
     """Upsert a submittal from the UI and return server id for attachments."""
     from submittal_persistence import apply_submittal_fields
     from financial_security import require_financial_project_access, assert_mutable_submittal
+    from document_module_security import (
+        assert_submittal_create_allowed,
+        assert_submittal_edit_allowed,
+        is_staff_portal_user,
+    )
     body = request.get_json(silent=True) or {}
     project_id = body.get('project_id') or get_current_project_id()
     number = (body.get('number') or '').strip()
@@ -9651,6 +9693,10 @@ def api_submittal_sync():
         return jsonify({'error': str(exc)}), 403
     submittal = Submittal.query.filter_by(project_id=int(project_id), number=number).first()
     if not submittal:
+        try:
+            assert_submittal_create_allowed(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
         submittal = Submittal(
             project_id=int(project_id),
             number=number,
@@ -9666,9 +9712,17 @@ def api_submittal_sync():
     else:
         try:
             assert_mutable_submittal(submittal)
-        except ValueError as exc:
-            return jsonify({'error': str(exc)}), 400
-        apply_submittal_fields(submittal, body, is_create=False)
+            assert_submittal_edit_allowed(current_user, submittal, Company=Company, db=db)
+        except (ValueError, PermissionError) as exc:
+            return jsonify({'error': str(exc)}), 400 if isinstance(exc, ValueError) else 403
+        patch = dict(body)
+        if not is_staff_portal_user(current_user):
+            for key in (
+                'assigned_company_id', 'assigned_company_name',
+                'assigned_contact_user_id', 'assigned_contact_name', 'assigned_contact_email',
+            ):
+                patch.pop(key, None)
+        apply_submittal_fields(submittal, patch, is_create=False)
     db.session.commit()
     from rfi_persistence import _parse_json
     attachments = _parse_json(submittal.attachments_json, [])
@@ -9686,6 +9740,7 @@ def api_submittal_sync():
 def api_submittal_workflow(submittal_id):
     from submittal_persistence import submittal_workflow_action
     from financial_security import require_financial_project_access
+    from workflow_responder import notify_submittal_ball_in_court, notify_submittal_update
     submittal = Submittal.query.get_or_404(submittal_id)
     try:
         require_financial_project_access(current_user, submittal.project_id, Project)
@@ -9693,11 +9748,40 @@ def api_submittal_workflow(submittal_id):
         return jsonify({'error': str(exc)}), 403
     body = request.get_json(silent=True) or {}
     action = body.get('action')
+    old_status = submittal.status
     try:
-        new_status = submittal_workflow_action(submittal, action, current_user, body)
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
+        new_status = submittal_workflow_action(
+            submittal, action, current_user, body, Company=Company, db=db,
+        )
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403 if isinstance(exc, PermissionError) else 400
     db.session.commit()
+    try:
+        if action == 'send_to_sub':
+            notify_submittal_update(
+                submittal, User,
+                title=f'{submittal.number} — submittal assigned to subcontractor',
+                description=(
+                    f'Please prepare and return submittal {submittal.number}'
+                    f' ({submittal.description or ""}).'
+                ),
+                actor_id=current_user.id,
+                event='assigned',
+            )
+            notify_submittal_ball_in_court(submittal, User)
+        elif action == 'return_from_sub':
+            notify_submittal_update(
+                submittal, User,
+                title=f'{submittal.number} — returned from subcontractor',
+                description='The subcontractor returned this submittal for PM review.',
+                actor_id=current_user.id,
+                event='submit',
+            )
+            notify_submittal_ball_in_court(submittal, User)
+        elif new_status != old_status:
+            notify_submittal_ball_in_court(submittal, User)
+    except Exception:
+        pass
     return jsonify({'ok': True, 'new_status': new_status, 'submittal_id': submittal.id})
 
 
@@ -13014,6 +13098,7 @@ def _migrate_program_schemas():
         ('companies_persistence', 'ensure_company_schema'),
         ('co_persistence', 'ensure_co_schema'),
         ('rfi_persistence', 'ensure_rfi_schema'),
+        ('submittal_persistence', 'ensure_submittal_schema'),
         ('drawing_persistence', 'ensure_drawing_schema'),
         ('commitment_persistence', 'ensure_commitment_schema'),
         ('document_persistence', 'ensure_document_schema'),

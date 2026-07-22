@@ -370,6 +370,65 @@ def execute_rfi_action(rfi, action, user, User, body=None):
     return action
 
 
+def submittal_deep_link(project_id, submittal_id):
+    return f'/submittals?project_id={project_id}&submittal_id={submittal_id}'
+
+
+def _collect_submittal_notify_users(submittal, User, *, exclude_user_id=None, roles=None):
+    """Notify PM, assigned contact, and role holders for ball-in-court."""
+    user_ids = set()
+    assigned_uid = getattr(submittal, 'assigned_contact_user_id', None)
+    if assigned_uid:
+        user_ids.add(int(assigned_uid))
+    ball = (getattr(submittal, 'ball_in_court', None) or '').strip()
+    if ball:
+        try:
+            from co_persistence import ROLE_APPROVERS
+            for role in ROLE_APPROVERS.get(ball, ()):
+                for u in User.query.filter_by(role=role, status='Active').all():
+                    user_ids.add(u.id)
+        except Exception:
+            pass
+    if exclude_user_id:
+        user_ids.discard(int(exclude_user_id))
+    return [User.query.get(uid) for uid in user_ids if User.query.get(uid)]
+
+
+def notify_submittal_update(submittal, User, *, title, description, actor_id=None, event='update'):
+    action_url = submittal_deep_link(submittal.project_id, submittal.id)
+    targets = _collect_submittal_notify_users(submittal, User, exclude_user_id=actor_id)
+    for u in targets:
+        cw.notify_user(u.id, title, description, action_url)
+        cw.create_internal_message(
+            u.id,
+            folder='action-required' if event in ('submit', 'ball', 'assigned') else 'team',
+            msg_type='alert',
+            subject=title,
+            preview=description[:500],
+            body=f'<p>{description}</p>',
+            project_id=submittal.project_id,
+            from_label='Submittals',
+            module='Submittals',
+            action_url=action_url,
+            action_label='Open Submittal',
+            priority='high' if event in ('submit', 'ball', 'assigned') else 'normal',
+            requires_action=event in ('submit', 'ball', 'assigned'),
+        )
+
+
+def notify_submittal_ball_in_court(submittal, User, title=None, description=None):
+    ball = getattr(submittal, 'ball_in_court', None)
+    if not ball:
+        return
+    company = getattr(submittal, 'assigned_company_name', None) or ''
+    title = title or f'{submittal.number} — action required ({ball})'
+    description = description or (
+        f'{submittal.description or "Submittal"}'
+        + (f' — assigned to {company}' if company else '')
+    )
+    notify_submittal_update(submittal, User, title=title, description=description, event='ball')
+
+
 def execute_co_action(co, action, user, User, body=None, ChangeOrderAllocation=None, workflow_deps=None):
     """Execute CO approve/reject via the unified workflow path (same as main CO API)."""
     from co_persistence import co_to_dict, user_can_act_on_ball_in_court, process_change_order_workflow

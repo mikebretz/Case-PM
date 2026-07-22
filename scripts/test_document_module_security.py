@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""Tests for RFI/submittal document module permissions."""
+import sys
+import unittest
+from types import SimpleNamespace
+
+sys.path.insert(0, '/workspace')
+
+
+class DocumentModuleSecurityTests(unittest.TestCase):
+    def _user(self, role, modules, portal='sub'):
+        import json
+        return SimpleNamespace(
+            role=role,
+            is_authenticated=True,
+            permissions_json=json.dumps({
+                'version': 2,
+                'portal': portal,
+                'modules': modules,
+            }),
+        )
+
+    def test_view_only_cannot_edit_rfi(self):
+        from document_module_security import assert_rfi_edit_allowed, assert_rfi_create_allowed
+
+        user = self._user('Subcontractor', {
+            'rfis': {'access': 'view', 'approve': 'none'},
+        })
+        with self.assertRaises(PermissionError):
+            assert_rfi_create_allowed(user)
+        with self.assertRaises(PermissionError):
+            assert_rfi_edit_allowed(user)
+
+    def test_sub_cannot_edit_unassigned_submittal(self):
+        from document_module_security import assert_submittal_edit_allowed
+
+        user = self._user('Subcontractor', {
+            'submittals': {'access': 'entry', 'approve': 'submit'},
+        })
+        submittal = SimpleNamespace(
+            status='Sent to Subcontractor',
+            assigned_company_id=99,
+            assigned_contact_user_id=None,
+            assigned_company_name='Other Co',
+        )
+        with self.assertRaises(PermissionError):
+            assert_submittal_edit_allowed(user, submittal)
+
+    def test_sub_can_edit_assigned_submittal(self):
+        from document_module_security import assert_submittal_edit_allowed
+
+        user = self._user('Subcontractor', {
+            'submittals': {'access': 'entry', 'approve': 'submit'},
+        }, portal='sub')
+        user.company_id = 42
+        submittal = SimpleNamespace(
+            status='Sent to Subcontractor',
+            assigned_company_id=42,
+            assigned_contact_user_id=None,
+            assigned_company_name='My Co',
+        )
+        assert_submittal_edit_allowed(user, submittal)
+
+
+if __name__ == '__main__':
+    unittest.main()
