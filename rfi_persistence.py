@@ -271,3 +271,38 @@ def get_linked_records(rfi_id, ChangeOrder, PotentialChangeOrder):
         [{'id': c.id, 'number': c.number, 'title': getattr(c, 'title', None) or c.description, 'status': c.status} for c in cos],
         [{'id': p.id, 'number': p.number, 'title': p.title, 'status': p.status} for p in pcos],
     )
+
+
+def delete_rfi_record(db, rfi, upload_root, *, DrawingMarkup=None, ChangeOrder=None,
+                      PotentialChangeOrder=None, ApprovalRequest=None):
+    """Permanently delete an RFI and unlink related records (developer/admin maintenance)."""
+    import os
+    import shutil
+
+    rfi_id = int(rfi.id)
+    sid = str(rfi_id)
+
+    if DrawingMarkup is not None:
+        DrawingMarkup.query.filter(DrawingMarkup.linked_rfi_id == rfi_id).update(
+            {DrawingMarkup.linked_rfi_id: None}, synchronize_session=False,
+        )
+    if ChangeOrder is not None:
+        ChangeOrder.query.filter(ChangeOrder.linked_rfi_id == rfi_id).update(
+            {ChangeOrder.linked_rfi_id: None}, synchronize_session=False,
+        )
+    if PotentialChangeOrder is not None:
+        PotentialChangeOrder.query.filter(PotentialChangeOrder.linked_rfi_id == rfi_id).update(
+            {PotentialChangeOrder.linked_rfi_id: None}, synchronize_session=False,
+        )
+    if ApprovalRequest is not None:
+        ApprovalRequest.query.filter(
+            ApprovalRequest.entity_type.in_(('rfi', 'RFI', 'rfis')),
+            ApprovalRequest.entity_id.in_((sid, rfi_id)),
+        ).delete(synchronize_session=False)
+
+    folder = os.path.join(upload_root or 'uploads', 'rfis', sid)
+    if os.path.isdir(folder):
+        shutil.rmtree(folder, ignore_errors=True)
+
+    db.session.delete(rfi)
+    return rfi_id

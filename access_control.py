@@ -312,10 +312,12 @@ def guard_api_request(current_user):
         ):
             return jsonify({'error': 'Client portal access only — module not available.'}), 403
 
-        if flags.get('sub_vendor_portal_only'):
-            from portal_sub_access import SUB_VENDOR_ALLOWED_MODULES
-            if module_key not in SUB_VENDOR_ALLOWED_MODULES:
+        try:
+            from portal_sub_access import is_sub_vendor_portal_user, sub_vendor_module_allowed
+            if is_sub_vendor_portal_user(current_user) and not sub_vendor_module_allowed(current_user, module_key):
                 return jsonify({'error': 'Subcontractor portal access only — module not available.'}), 403
+        except Exception:
+            pass
 
         if flags.get('hide_financials') and module_key in FINANCIAL_MODULES:
             return jsonify({'error': 'Financial data is not available for your account.'}), 403

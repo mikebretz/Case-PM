@@ -13,6 +13,30 @@ SUB_VENDOR_ALLOWED_MODULES = frozenset({
     'notifications',
 })
 
+# Extra modules sub/vendor portal users may access when granted via User Management.
+SUB_VENDOR_PERMISSION_GATED_MODULES = frozenset({
+    'dashboard',
+    'projects',
+    'schedule',
+    'rfis',
+    'submittals',
+    'documents',
+    'drawings',
+})
+
+
+def sub_vendor_module_allowed(user, module_key: str) -> bool:
+    """Whether a sub/vendor portal user may reach this module at all."""
+    if module_key in SUB_VENDOR_ALLOWED_MODULES:
+        return True
+    if module_key in SUB_VENDOR_PERMISSION_GATED_MODULES:
+        try:
+            from case_workflow import user_has_module_access
+            return user_has_module_access(user, module_key, 'view')
+        except Exception:
+            return False
+    return False
+
 
 def user_global_flags(user) -> dict:
     try:

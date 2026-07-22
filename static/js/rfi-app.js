@@ -38,6 +38,14 @@
     return !p || p.portal === 'staff' || p.role === 'Admin';
   }
 
+  function canDeleteRfi() {
+    if (global.CASEPM_IS_DEVELOPER) return true;
+    if (document.body?.dataset?.isDeveloper === '1') return true;
+    if (document.body?.dataset?.isAdmin === '1') return true;
+    const p = global.CASEPM_PORTAL || {};
+    return p.isAdmin === true || p.role === 'Admin' || p.role === 'Developer';
+  }
+
   async function openResponder(id) {
     if (typeof global.CasePMApprovalResponder !== 'undefined') {
       await global.CasePMApprovalResponder.open('rfi', id);
@@ -643,6 +651,7 @@
             <button onclick="CasePMRfis.printDetail(${r.id})" class="p-1.5 text-zinc-300 hover:bg-zinc-800 rounded" title="Print RFI"><i class="fa-solid fa-print"></i></button>
             <button onclick="CasePMRfis.openResponder(${r.id})" class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded" title="Review &amp; Respond"><i class="fa-solid fa-reply"></i></button>
             ${isStaffPortal() ? `<button onclick="CasePMRfis.edit(${r.id})" class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded" title="Edit"><i class="fa-solid fa-edit"></i></button>` : ''}
+            ${canDeleteRfi() ? `<button onclick="CasePMRfis.deleteRfi(${r.id})" class="p-1.5 text-red-400 hover:bg-zinc-800 rounded" title="Delete RFI"><i class="fa-solid fa-trash"></i></button>` : ''}
           </div>
         </td>
       </tr>`;
@@ -929,6 +938,7 @@
         <button onclick="CasePMRfis.workflow(${r.id}, 'close')" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md">Close RFI</button>
         <button onclick="CasePMRfis.promotePco(${r.id})" class="px-3 py-1.5 text-xs bg-violet-800 hover:bg-violet-700 rounded-md"><i class="fa-solid fa-lightbulb mr-1"></i>Create PCO</button>
         <button onclick="CasePMRfis.edit(${r.id})" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md"><i class="fa-solid fa-edit mr-1"></i>Edit</button>` : ''}
+        ${canDeleteRfi() ? `<button onclick="CasePMRfis.deleteRfi(${r.id})" class="px-3 py-1.5 text-xs bg-red-900/70 hover:bg-red-800 text-red-200 rounded-md"><i class="fa-solid fa-trash mr-1"></i>Delete</button>` : ''}
       </div>`;
     bindDrawerAttachmentHandlers(r.id);
   }
@@ -955,6 +965,27 @@
       await loadLinkOptions();
       if (state.drawerRecord?.id === id) view(id);
     } catch (e) { alert(e.message); }
+  }
+
+  async function deleteRfi(id) {
+    const r = state.rfis.find((row) => row.id === id) || state.drawerRecord;
+    const label = r ? `${r.number || id}: ${r.subject || ''}` : `RFI #${id}`;
+    const ok = typeof CasePMDialog !== 'undefined'
+      ? await CasePMDialog.confirm(
+        `Permanently delete ${label}?\n\nThis cannot be undone. Linked CO/PCO references will be cleared.`,
+        { title: 'Delete RFI', danger: true, confirmText: 'Delete' },
+      )
+      : confirm(`Permanently delete ${label}?`);
+    if (!ok) return;
+    try {
+      await api(`/api/rfis/${id}`, { method: 'DELETE' });
+      toast('RFI deleted', 'success');
+      if (state.drawerRecord?.id === id) closeDrawer();
+      state.selected = null;
+      await Promise.all([loadRfis(), loadDashboard()]);
+    } catch (e) {
+      alert(e.message || 'Could not delete RFI');
+    }
   }
 
   async function addPlanPin(id) {
@@ -1349,6 +1380,7 @@
     refresh,
     workflow,
     promotePco,
+    deleteRfi,
     addPlanPin,
     removePin,
     closeDrawer,
