@@ -14530,6 +14530,20 @@ def api_get_pay_app_state():
         from financial_security import filter_pay_app_state_for_sub_vendor
         try:
             data = filter_pay_app_state_for_sub_vendor(current_user, data)
+            period = (data or {}).get('currentPayAppPeriod') if isinstance(data, dict) else None
+            if not period and record and record.data_json:
+                try:
+                    import json as _json
+                    raw = _json.loads(record.data_json)
+                    period = raw.get('currentPayAppPeriod')
+                except Exception:
+                    period = None
+            if isinstance(period, dict) and isinstance(data, dict):
+                data['payPeriodDisplay'] = {
+                    'periodNumber': period.get('periodNumber'),
+                    'periodStart': period.get('periodStart'),
+                    'periodEnd': period.get('periodEnd'),
+                }
             try:
                 from portal_sub_access import is_sub_vendor_portal_user, ensure_sub_vendor_project_memberships
                 from case_workflow import ProjectMembership
