@@ -223,10 +223,16 @@ def _sub_pay_app_entry_for_period(state, company_key, period_num):
 
 def _has_sub_lien_waiver(state, company_key, period_num, entry=None):
     waivers = state.get('subLienWaivers') or {}
+    archive = state.get('subLienWaiverArchive') or {}
     for k in (str(company_key), company_key):
-        bucket = waivers.get(k) or {}
-        for pkey in (str(period_num), period_num):
-            w = bucket.get(pkey)
+        for store in (waivers, archive):
+            bucket = store.get(k) or {}
+            for pkey in (str(period_num), period_num):
+                w = bucket.get(pkey)
+                if isinstance(w, dict) and (w.get('filename') or w.get('dataUrl')):
+                    return True
+            pending_key = f'pending_{period_num}'
+            w = bucket.get(pending_key)
             if isinstance(w, dict) and (w.get('filename') or w.get('dataUrl')):
                 return True
     entry = entry or _sub_pay_app_entry_for_period(state, company_key, period_num)
@@ -234,6 +240,12 @@ def _has_sub_lien_waiver(state, company_key, period_num, entry=None):
         lw = entry.get('lienWaiver') or {}
         if lw.get('filename') or lw.get('dataUrl'):
             return True
+        storage = lw.get('storagePeriod')
+        if storage is not None:
+            for k in (str(company_key), company_key):
+                archived = (archive.get(k) or {}).get(str(storage))
+                if isinstance(archived, dict) and (archived.get('filename') or archived.get('dataUrl')):
+                    return True
     return False
 
 

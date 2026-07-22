@@ -14644,7 +14644,7 @@ def api_save_pay_app_state():
                 sov_keys = resolve_sub_vendor_sov_keys(current_user, existing) | resolve_sub_vendor_sov_keys(current_user, merged)
                 if not sov_keys:
                     sov_keys = {str(k) for k in sub_vendor_company_keys(current_user) if k}
-                for field in ('subcontractorSOV', 'subSOVStatus', 'subPayAppHistory', 'subPendingSubmissions', 'subPayAppNumbers'):
+                for field in ('subcontractorSOV', 'subSOVStatus', 'subPayAppHistory', 'subPendingSubmissions', 'subPayAppNumbers', 'subLienWaivers', 'subLienWaiverArchive'):
                     prev = existing.get(field) if isinstance(existing.get(field), dict) else {}
                     new = merged.get(field) if isinstance(merged.get(field), dict) else {}
                     other = {k: v for k, v in prev.items() if str(k) not in sov_keys}

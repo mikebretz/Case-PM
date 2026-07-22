@@ -383,7 +383,7 @@ def filter_pay_app_state_for_sub_vendor(user, data: dict | None) -> dict | None:
             return data
         allowed = sub_vendor_company_keys(user)
         out = dict(data)
-        for field in ('subcontractorSOV', 'subSOVStatus', 'subPayAppHistory', 'subPendingSubmissions', 'subPayAppNumbers'):
+        for field in ('subcontractorSOV', 'subSOVStatus', 'subPayAppHistory', 'subPendingSubmissions', 'subPayAppNumbers', 'subLienWaivers', 'subLienWaiverArchive'):
             if field in out:
                 out[field] = _normalize_company_map(out.get(field))
         sov_keys = resolve_sub_vendor_sov_keys(user, out)
@@ -420,7 +420,7 @@ def filter_pay_app_state_for_sub_vendor(user, data: dict | None) -> dict | None:
                         sov_keys.add(sk)
         for field in (
             'subcontractorSOV', 'subSOVStatus', 'subPayAppHistory',
-            'subPendingSubmissions', 'subPayAppNumbers',
+            'subPendingSubmissions', 'subPayAppNumbers', 'subLienWaivers', 'subLienWaiverArchive',
         ):
             if field in out:
                 out[field] = _filter_company_dict(out.get(field), allowed, sov_keys)

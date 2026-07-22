@@ -159,6 +159,29 @@ class ReconcileCanonicalKeyTests(unittest.TestCase):
         out = normalize_current_pay_app_period(state)
         self.assertEqual(out['currentPayAppPeriod']['periodNumber'], 1)
 
+    def test_validate_sub_sov_commitment_matches_sov_bucket_not_only_user_id(self):
+        from pay_app_persistence import validate_sub_sov_commitment_totals
+        from types import SimpleNamespace
+
+        Commitment = SimpleNamespace
+        com = Commitment(
+            id=1, commitment_type='Subcontract', status='Approved',
+            company_id=None, company_name='Acme Concrete', number='SC-1',
+            original_amount=50_000, current_amount=50_000,
+        )
+        state = {
+            'subcontractorSOV': {
+                '10': [{'original_commitment': 10_000, 'change_orders': 0}],
+            },
+            'subSOVStatus': {
+                '10': {'status': 'Draft', 'companyName': 'Acme Concrete', 'companyId': '10'},
+            },
+        }
+        errors = validate_sub_sov_commitment_totals(
+            state, [com], company_id=10, company_name=None,
+        )
+        self.assertEqual(errors, [])
+
     def test_reconcile_new_line_ids_are_numeric(self):
         from accounting_reconcile import apply_sub_sov_reconcile, compute_sub_sov_derivatives
         from types import SimpleNamespace
