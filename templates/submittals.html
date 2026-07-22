@@ -34,6 +34,7 @@ function submittalIsViewOnly() {
 }
 function submittalItemAssignedToMe(item) {
     if (!item || !SUBMITTAL_ACCESS.isSubPortal) return true;
+    if (item.assignedToMe === true) return true;
     const uid = SUBMITTAL_ACCESS.userId;
     if (item.assignedContactId && String(item.assignedContactId) === String(uid)) return true;
     const cid = SUBMITTAL_ACCESS.companyId;
@@ -46,10 +47,7 @@ function submittalItemAssignedToMe(item) {
     return false;
 }
 function submittalIsSubAssignee(item) {
-    if (!item || !SUBMITTAL_ACCESS.isSubPortal) return false;
-    if (!submittalItemAssignedToMe(item)) return false;
-    const st = item.status || '';
-    return st === 'Sent to Subcontractor' || st === 'Revise & Resubmit';
+    return submittalCanFillAsAssignee(item);
 }
 function submittalCanFillAsAssignee(item) {
     if (!item || !SUBMITTAL_ACCESS.isSubPortal) return false;
@@ -58,7 +56,7 @@ function submittalCanFillAsAssignee(item) {
     return st === 'Draft' || st === 'Sent to Subcontractor' || st === 'Revise & Resubmit';
 }
 function submittalCanSubmitForReview(item) {
-    return submittalIsSubAssignee(item);
+    return submittalCanFillAsAssignee(item);
 }
 function submittalCanViewSpecBook(item) {
     if (!item?.specSection) return false;
@@ -123,22 +121,21 @@ function applySubmittalModalReadOnly(readOnly) {
             } else {
                 el.disabled = true;
             }
-        } else if (!readOnly || canFill) {
+        } else if (!readOnly && !canFill) {
             if (el.id !== 'modalStatus') {
                 if (el.type === 'file' || el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' || el.tagName === 'SELECT') {
-                    if (!canFill || !assigneeEditable.has(el.id)) {
-                        if (!readOnly) {
-                            el.disabled = false;
-                            el.readOnly = false;
-                        }
-                    }
+                    el.disabled = false;
+                    el.readOnly = false;
                 }
             }
         }
     });
     const saveBtn = document.getElementById('submittalModalSaveBtn');
     if (saveBtn) saveBtn.classList.toggle('hidden', !!readOnly && !canFill);
-    if (canFill) enableSubmittalAssigneeEditableFields();
+    if (canFill) {
+        enableSubmittalAssigneeEditableFields();
+        applySubmittalAssigneeFieldLocks(true);
+    }
     const submitBtn = document.getElementById('submittalSubmitForReviewBtn');
     if (submitBtn) submitBtn.classList.toggle('hidden', !submittalCanSubmitForReview(currentModalItem));
     const commentInput = document.getElementById('reviewCommentInput');
@@ -216,6 +213,9 @@ function refreshSubmittalActionButtons() {
             : 'Click "New Submittal", import an Excel log, or upload a Specifications Book PDF.';
     }
     if (emptyCreateBtn) emptyCreateBtn.classList.toggle('hidden', hideNew);
+
+    const printLogBtn = document.getElementById('submittalPrintLogBtn');
+    if (printLogBtn) printLogBtn.classList.toggle('hidden', !!SUBMITTAL_ACCESS.isSubPortal);
 }
 </script>
 <style>
@@ -675,7 +675,7 @@ function refreshSubmittalActionButtons() {
                 <span id="specBookLoadedName">Spec book loaded</span>
             </span>
             
-            <button onclick="showPrintSubmittalLogPicker()" 
+            <button id="submittalPrintLogBtn" onclick="showPrintSubmittalLogPicker()" 
                     class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-sm font-medium transition-colors">
                 <i class="fa-solid fa-print mr-2"></i>
                 Print / Export Log
@@ -1575,7 +1575,17 @@ function openDetailModal(id, isNew = false, newData = null) {
     document.getElementById('modalSubject').value = currentModalItem.subject || '';
     document.getElementById('modalType').value = currentModalItem.type || '';
     document.getElementById('modalDateReceived').value = currentModalItem.dateReceived || '';
-    document.getElementById('modalRequiredBy').value = currentModalItem.requiredBy || '';
+    let requiredBy = currentModalItem.requiredBy || '';
+    const notified = (currentModalItem.notifiedDate || '').slice(0, 10);
+    if (!requiredBy && notified) {
+        const due = new Date(notified);
+        if (!Number.isNaN(due.getTime())) {
+            due.setDate(due.getDate() + 14);
+            requiredBy = due.toISOString().slice(0, 10);
+            currentModalItem.requiredBy = requiredBy;
+        }
+    }
+    document.getElementById('modalRequiredBy').value = requiredBy;
     document.getElementById('modalStatus').value = currentModalItem.status || 'Draft';
     document.getElementById('modalImpactNotes').value = currentModalItem.impactNotes || '';
     applySubmittalImpactFieldsToModal(currentModalItem);
@@ -1588,6 +1598,10 @@ function openDetailModal(id, isNew = false, newData = null) {
         if (document.getElementById('modalAssignedCompany')) {
             document.getElementById('modalAssignedCompany').value = currentModalItem.assignedCompanyId || '';
             onSubmittalCompanyChange(currentModalItem.assignedContactId || '');
+        }
+        if (submittalCanFillAsAssignee(currentModalItem)) {
+            applySubmittalAssigneeFieldLocks(true);
+            enableSubmittalAssigneeEditableFields();
         }
     });
     populateSpecSectionDropdown();
@@ -1676,9 +1690,6 @@ function saveSubmittalFromModal() {
         currentModalItem.costImpact = impact.costImpact;
         currentModalItem.scheduleDays = impact.scheduleDays;
         currentModalItem.impactNotes = document.getElementById('modalImpactNotes').value;
-        const today = new Date().toISOString().slice(0, 10);
-        currentModalItem.dateReceived = today;
-        document.getElementById('modalDateReceived').value = today;
     } else {
         currentModalItem.specSection = document.getElementById('modalSpecSection').value;
         currentModalItem.sectionName = document.getElementById('modalSectionName').value;
@@ -1757,6 +1768,18 @@ async function submitSubmittalForApproval() {
     currentModalItem.impactNotes = document.getElementById('modalImpactNotes').value;
     const today = new Date().toISOString().slice(0, 10);
     currentModalItem.dateReceived = today;
+    const notified = (currentModalItem.notifiedDate || '').slice(0, 10);
+    if (notified) {
+        const due = new Date(notified);
+        if (!Number.isNaN(due.getTime())) {
+            due.setDate(due.getDate() + 14);
+            currentModalItem.requiredBy = due.toISOString().slice(0, 10);
+        }
+    }
+    document.getElementById('modalDateReceived').value = today;
+    if (currentModalItem.requiredBy) {
+        document.getElementById('modalRequiredBy').value = currentModalItem.requiredBy;
+    }
     saveData();
     await syncSubmittalToServer(currentModalItem);
     if (!currentModalItem.serverId) {
@@ -1817,8 +1840,6 @@ async function loadReviewComments(serverId) {
 async function autoSaveAssigneeDraft() {
     if (!currentModalItem || !submittalCanFillAsAssignee(currentModalItem)) return;
     currentModalItem.impactNotes = document.getElementById('modalImpactNotes')?.value || '';
-    const today = new Date().toISOString().slice(0, 10);
-    currentModalItem.dateReceived = today;
     saveData();
     try {
         await syncSubmittalToServer(currentModalItem);
@@ -1939,7 +1960,7 @@ async function syncSubmittalToServer(item, opts = {}) {
 function submittalWorkflowActionForTransition(oldStatus, newStatus) {
     if (!oldStatus || oldStatus === newStatus) return null;
     if (oldStatus === 'Draft' && newStatus === 'Sent to Subcontractor') return { action: 'send_to_sub' };
-    if (['Sent to Subcontractor', 'Revise & Resubmit'].includes(oldStatus) && newStatus === 'Returned from Subcontractor') return { action: 'return_from_sub' };
+    if (['Draft', 'Sent to Subcontractor', 'Revise & Resubmit'].includes(oldStatus) && newStatus === 'Returned from Subcontractor') return { action: 'return_from_sub' };
     if (oldStatus === 'Returned from Subcontractor' && newStatus === 'Submitted to Architect') return { action: 'submit_to_architect' };
     if (oldStatus === 'Submitted to Architect' && ['No Exceptions Taken', 'Reviewed as Noted', 'Revise & Resubmit', 'Rejected'].includes(newStatus)) {
         return { action: 'architect_decision', decision: newStatus };
@@ -2278,6 +2299,10 @@ let submittalCompaniesCache = null;
 
 async function ensureSubmittalCompaniesLoaded() {
     if (submittalCompaniesCache) return submittalCompaniesCache;
+    if (SUBMITTAL_ACCESS.isSubPortal) {
+        submittalCompaniesCache = loadSubmittalCompanies();
+        return submittalCompaniesCache;
+    }
     try {
         const res = await fetch('/api/companies', { credentials: 'same-origin' });
         const json = await res.json();
@@ -4676,7 +4701,7 @@ function formatSpecBookPageLabel({ specSection, paragraph, safePage, maxPage, se
 function updateViewInSpecBookButton() {
     const btn = document.getElementById('viewInSpecBookBtn');
     if (!btn) return;
-    const canView = submittalCanViewSpecBook(currentModalItem) && !!(specBookArchive && currentModalItem && currentModalItem.specSection);
+    const canView = submittalCanViewSpecBook(currentModalItem) && !!(currentModalItem && currentModalItem.specSection);
     btn.classList.toggle('hidden', !canView);
     if (canView) {
         const range = resolveSpecBookPageRangeForSection(currentModalItem.specSection);
@@ -5005,15 +5030,20 @@ async function syncSpecBookToServerIfNeeded() {
 async function initialize() {
     loadData();
     refreshSubmittalActionButtons();
-    await ensureSubmittalCompaniesLoaded();
+    if (!SUBMITTAL_ACCESS.isSubPortal) {
+        await ensureSubmittalCompaniesLoaded();
+    }
     await loadSubmittalsFromServer();
-    if (!submittalIsViewOnly()) {
+    const shouldLoadSpecBook = !submittalIsViewOnly() || SUBMITTAL_ACCESS.isSubPortal;
+    if (shouldLoadSpecBook) {
         await loadSpecBookArchive();
-        await syncSpecBookToServerIfNeeded();
-        if (!specBookArchive && localStorage.getItem(getSpecBookMetaKey())) {
-            localStorage.removeItem(getSpecBookMetaKey());
+        if (!SUBMITTAL_ACCESS.isSubPortal) {
+            await syncSpecBookToServerIfNeeded();
+            if (!specBookArchive && localStorage.getItem(getSpecBookMetaKey())) {
+                localStorage.removeItem(getSpecBookMetaKey());
+            }
+            updateSpecBookLoadedBadge();
         }
-        updateSpecBookLoadedBadge();
     }
     renderSubmittalsTable();
     updateMetrics();

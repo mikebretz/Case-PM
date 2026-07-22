@@ -156,13 +156,28 @@ def assert_submittal_comment_allowed(user, submittal, *, Company=None, db=None) 
             raise PermissionError('This submittal is not assigned to your company or contact.')
 
 
+def assert_submittal_spec_book_read_allowed(user) -> None:
+    """Read spec book metadata/PDF when submittals module is readable (staff entry or assigned subs)."""
+    if _is_privileged(user):
+        return
+    assert_submittal_read_allowed(user)
+    if is_sub_portal_user(user) and not is_staff_portal_user(user):
+        return
+    assert_submittal_log_manage_allowed(user)
+
+
 def assert_submittal_workflow_allowed(user, submittal, action: str, *, Company=None, db=None) -> None:
     if _is_privileged(user):
         return
-    require_module_access(user, 'submittals', 'entry')
     action = (action or '').lower()
     if action in ('return_from_sub',) and is_sub_portal_user(user) and not is_staff_portal_user(user):
+        if submittal is None:
+            raise PermissionError('Submittal record required for permission check.')
+        assert_submittal_read_allowed(user)
         if not submittal_assigned_to_user(submittal, user, Company=Company, db=db):
             raise PermissionError('This submittal is not assigned to your company or contact.')
-        if (submittal.status or '') not in ('Sent to Subcontractor', 'Revise & Resubmit'):
+        status = (getattr(submittal, 'status', None) or '').strip()
+        if status not in ('Draft', 'Sent to Subcontractor', 'Revise & Resubmit'):
             raise PermissionError('This submittal is not awaiting your submission.')
+        return
+    require_module_access(user, 'submittals', 'entry')

@@ -84,8 +84,14 @@ def require_financial_project_access(user, project_id, Project=None):
             raise ValueError('Project not found')
         try:
             from portal_sub_access import is_sub_vendor_portal_user, get_sub_vendor_project_ids
+            from document_module_security import is_sub_portal_user
             if is_sub_vendor_portal_user(user):
                 allowed = get_sub_vendor_project_ids(user, Project)
+                if pid not in allowed:
+                    raise PermissionError('You do not have access to this project.')
+                return pid
+            if is_sub_portal_user(user):
+                allowed = get_assigned_project_ids(user, Project)
                 if pid not in allowed:
                     raise PermissionError('You do not have access to this project.')
                 return pid

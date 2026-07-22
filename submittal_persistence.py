@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from financial_security import workflow_reject_authorized
 
@@ -108,6 +108,7 @@ def submittal_to_ui_item(submittal):
         'impactNotes': details.get('impactNotes') or '',
         'history': details.get('history') or [],
         'comments': d.get('comments') or [],
+        'notifiedDate': details.get('notifiedDate') or '',
     }
 
 
@@ -146,6 +147,22 @@ SUB_ASSIGNEE_DETAIL_KEYS = frozenset({
 })
 
 
+def _set_submittal_notified_date(submittal, notified_date=None):
+    """Record when the sub was notified and set required-by to two weeks later."""
+    details = _parse_json(getattr(submittal, 'details_json', None), {})
+    if details.get('notifiedDate'):
+        return
+    nd = notified_date or datetime.utcnow().date()
+    if isinstance(nd, str):
+        try:
+            nd = datetime.strptime(nd[:10], '%Y-%m-%d').date()
+        except ValueError:
+            nd = datetime.utcnow().date()
+    details['notifiedDate'] = nd.isoformat()
+    submittal.details_json = json.dumps(details)
+    submittal.due_date = nd + timedelta(days=14)
+
+
 def apply_submittal_sub_sync_fields(submittal, data):
     """Apply only fields a subcontractor assignee may update via sync."""
     details_in = data.get('details') or {}
@@ -156,7 +173,6 @@ def apply_submittal_sub_sync_fields(submittal, data):
         if key in details_in:
             existing[key] = details_in[key]
     submittal.details_json = json.dumps(existing)
-    submittal.date = datetime.utcnow().date()
     submittal.updated_at = datetime.utcnow()
 
 
@@ -191,6 +207,10 @@ def apply_submittal_fields(submittal, data, *, is_create=False):
         submittal.details_json = json.dumps(data.get('details') or {})
     elif data.get('details_json') is not None:
         submittal.details_json = data['details_json'] if isinstance(data['details_json'], str) else json.dumps(data['details_json'])
+    assigned_cid = data.get('assigned_company_id')
+    assigned_uid = data.get('assigned_contact_user_id')
+    if assigned_cid not in (None, '', 0) or assigned_uid not in (None, '', 0):
+        _set_submittal_notified_date(submittal)
     submittal.updated_at = datetime.utcnow()
     if is_create:
         submittal.status = 'Draft'
@@ -201,7 +221,7 @@ def apply_submittal_fields(submittal, data, *, is_create=False):
 
 def submittal_workflow_action(submittal, action, user, body=None, *, Company=None, db=None):
     """Advance submittal status through the review chain."""
-    from document_module_security import assert_submittal_workflow_allowed
+    from document_module_security import assert_submittal_workflow_allowed, is_sub_portal_user, is_staff_portal_user, submittal_assigned_to_user
 
     body = body or {}
     action = (action or '').lower()
@@ -209,21 +229,31 @@ def submittal_workflow_action(submittal, action, user, body=None, *, Company=Non
     status = submittal.status or 'Draft'
     ball = submittal.ball_in_court or SUBMITTAL_BALL.get(status, 'Project Manager')
 
+    def _sub_assignee_can_act():
+        return (
+            is_sub_portal_user(user)
+            and not is_staff_portal_user(user)
+            and submittal_assigned_to_user(submittal, user, Company=Company, db=db)
+        )
+
     if action == 'send_to_sub':
         if status != 'Draft':
             raise ValueError('Only draft submittals can be sent to subcontractor')
         if not _user_can_act(user, ball):
             raise ValueError('Cannot send submittal to subcontractor')
+        _set_submittal_notified_date(submittal)
         submittal.status = 'Sent to Subcontractor'
         submittal.ball_in_court = SUBMITTAL_BALL['Sent to Subcontractor']
         return submittal.status
 
     if action == 'return_from_sub':
-        if status not in ('Sent to Subcontractor', 'Revise & Resubmit'):
+        if status not in ('Sent to Subcontractor', 'Revise & Resubmit', 'Draft'):
             raise ValueError('Submittal is not with subcontractor')
-        if not _user_can_act(user, ball):
+        if not _sub_assignee_can_act() and not _user_can_act(user, ball):
             raise ValueError('Cannot return submittal from subcontractor')
+        _set_submittal_notified_date(submittal)
         _bump_submittal_revision(submittal)
+        submittal.date = datetime.utcnow().date()
         submittal.status = 'Returned from Subcontractor'
         submittal.ball_in_court = SUBMITTAL_BALL['Returned from Subcontractor']
         return submittal.status
