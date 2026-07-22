@@ -46,6 +46,13 @@
     return p.isAdmin === true || p.role === 'Admin' || p.role === 'Developer';
   }
 
+  function isDeveloper() {
+    if (global.CASEPM_IS_DEVELOPER) return true;
+    if (document.body?.dataset?.isDeveloper === '1') return true;
+    const p = global.CASEPM_PORTAL || {};
+    return p.role === 'Developer';
+  }
+
   function canEnterRfis() {
     if (typeof global.canAccessModule === 'function') {
       return global.canAccessModule('rfis', 'entry');
@@ -397,9 +404,9 @@
     renderModalAttachments();
   }
 
-  function bindDrawerAttachmentHandlers(rfiId) {
-    const dropZone = document.getElementById('rfiDrawerDropZone');
-    const fileInput = document.getElementById('rfiDrawerAttachmentInput');
+  function bindDetailAttachmentHandlers(rfiId) {
+    const dropZone = document.getElementById('rfiDetailDropZone');
+    const fileInput = document.getElementById('rfiDetailAttachmentInput');
     if (!dropZone || !fileInput) return;
 
     const onFiles = async (files) => {
@@ -415,11 +422,11 @@
     };
 
     dropZone.onclick = e => {
-      if (e.target.closest('[data-drawer-docs]')) return;
+      if (e.target.closest('[data-detail-docs]')) return;
       fileInput.click();
     };
     fileInput.onchange = e => { onFiles(e.target.files); };
-    dropZone.querySelector('[data-drawer-docs]')?.addEventListener('click', e => {
+    dropZone.querySelector('[data-detail-docs]')?.addEventListener('click', e => {
       e.stopPropagation();
       setActiveRfiForAttachments(rfiId);
       openDocumentPicker();
@@ -946,21 +953,122 @@
     try {
       const r = await api(`/api/rfis/${id}`);
       state.drawerRecord = r;
-      const actionable = r.status && !['Closed', 'Void', 'Draft'].includes(r.status);
-      if (actionable && typeof global.CasePMApprovalResponder !== 'undefined') {
-        await openResponder(id);
-        return;
-      }
-      renderDrawer(r);
-      document.getElementById('rfiDetailDrawer')?.classList.add('open');
-      document.getElementById('rfiDrawerBackdrop')?.classList.remove('hidden');
+      openDetailView(r);
     } catch (e) { alert(e.message); }
   }
 
-  function closeDrawer() {
-    document.getElementById('rfiDetailDrawer')?.classList.remove('open');
-    document.getElementById('rfiDrawerBackdrop')?.classList.add('hidden');
+  function openDetailView(r) {
+    const chrome = document.getElementById('rfiChrome');
+    const detail = document.getElementById('rfiDetailView');
+    if (chrome) chrome.classList.add('hidden');
+    if (detail) detail.classList.add('is-open');
+    document.body.classList.add('rfi-detail-active');
+    renderDetail(r);
+    loadRfiComments(r.id);
+    bindRfiCommentInput();
+    const clearBtn = document.getElementById('rfiClearCommentsDevBtn');
+    if (clearBtn) clearBtn.classList.toggle('hidden', !isDeveloper());
+  }
+
+  function closeDetail() {
+    const chrome = document.getElementById('rfiChrome');
+    const detail = document.getElementById('rfiDetailView');
+    if (detail) detail.classList.remove('is-open');
+    if (chrome) chrome.classList.remove('hidden');
+    document.body.classList.remove('rfi-detail-active');
     state.drawerRecord = null;
+  }
+
+  function closeDrawer() {
+    closeDetail();
+  }
+
+  function renderRfiReviewComments(comments) {
+    const el = document.getElementById('rfiReviewCommentsList');
+    if (!el) return;
+    const list = comments || [];
+    if (!list.length) {
+      el.innerHTML = '<p class="text-sm text-zinc-500">No comments yet. Ask a question or add a note for the team.</p>';
+      return;
+    }
+    el.innerHTML = list.map(c => `
+      <div class="review-comment-entry">
+        <div class="flex justify-between text-xs text-zinc-500 mb-1">
+          <span>${esc(c.user_name || 'User')}${c.user_role ? ` · ${esc(c.user_role)}` : ''}</span>
+          <span>${esc((c.created_at || '').replace('T', ' ').slice(0, 16))}</span>
+        </div>
+        <div class="whitespace-pre-wrap text-zinc-200">${esc(c.body || '')}</div>
+      </div>
+    `).join('');
+    el.scrollTop = el.scrollHeight;
+  }
+
+  async function loadRfiComments(rfiId) {
+    if (!rfiId) {
+      renderRfiReviewComments(state.drawerRecord?.comments || []);
+      return;
+    }
+    try {
+      const json = await api(`/api/rfis/${rfiId}/comments`);
+      const comments = json.comments || [];
+      if (state.drawerRecord) state.drawerRecord.comments = comments;
+      renderRfiReviewComments(comments);
+    } catch (e) {
+      renderRfiReviewComments(state.drawerRecord?.comments || []);
+    }
+  }
+
+  function bindRfiCommentInput() {
+    const input = document.getElementById('rfiReviewCommentInput');
+    if (!input || input.dataset.enterBound) return;
+    input.dataset.enterBound = '1';
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        postComment();
+      }
+    });
+  }
+
+  async function postComment() {
+    const r = state.drawerRecord;
+    if (!r?.id) return;
+    const input = document.getElementById('rfiReviewCommentInput');
+    const body = (input?.value || '').trim();
+    if (!body) return;
+    try {
+      const json = await api(`/api/rfis/${r.id}/comments`, { method: 'POST', body: JSON.stringify({ body }) });
+      if (input) input.value = '';
+      const comments = json.comments || [];
+      r.comments = comments;
+      renderRfiReviewComments(comments);
+    } catch (e) { alert(e.message); }
+  }
+
+  async function clearCommentsDev() {
+    const r = state.drawerRecord;
+    if (!r?.id) {
+      alert('Open an RFI detail view first.');
+      return;
+    }
+    const ok = typeof CasePMDialog !== 'undefined'
+      ? await CasePMDialog.confirm('Clear all review comments on this RFI?', { title: 'Clear Comments', danger: true, confirmText: 'Clear' })
+      : confirm('Clear all review comments on this RFI?');
+    if (!ok) return;
+    try {
+      const json = await api(`/api/rfis/${r.id}/comments`, { method: 'DELETE' });
+      r.comments = json.comments || [];
+      renderRfiReviewComments(r.comments);
+      toast('Review comments cleared');
+    } catch (e) { alert(e.message); }
+  }
+
+  async function clearCommentsDevFromQueue() {
+    if (!state.drawerRecord?.id) {
+      alert('Open an RFI first, then run Clear RFI Comments from Developer Console.');
+      return;
+    }
+    await clearCommentsDev();
   }
 
   function drawingPinHref(pin, rfiId) {
@@ -977,9 +1085,29 @@
     return `/drawings?${q.toString()}`;
   }
 
-  function renderDrawer(r) {
-    const el = document.getElementById('rfiDrawerContent');
+  function renderDetail(r) {
+    const numEl = document.getElementById('rfiDetailNumber');
+    const subjEl = document.getElementById('rfiDetailSubject');
+    const badgesEl = document.getElementById('rfiDetailBadges');
+    const actionsEl = document.getElementById('rfiDetailHeaderActions');
+    const el = document.getElementById('rfiDetailContent');
     if (!el) return;
+
+    if (numEl) numEl.textContent = r.number || '';
+    if (subjEl) subjEl.textContent = r.subject || '';
+    if (badgesEl) {
+      badgesEl.innerHTML = `${statusBadge(r.status)} ${priorityBadge(r.priority)} ${ballBadge(r.ball_in_court_role)}`;
+    }
+    if (actionsEl) {
+      actionsEl.innerHTML = `
+        <button type="button" onclick="CasePMRfis.printDetail(${r.id})" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg text-sm font-semibold flex items-center gap-2">
+          <i class="fa-solid fa-print"></i> Print
+        </button>
+        <button type="button" onclick="CasePMRfis.closeDetail()" class="w-10 h-10 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg">
+          <i class="fa-solid fa-times text-xl"></i>
+        </button>`;
+    }
+
     const responses = (r.responses || []).map(resp => `
       <div class="border border-zinc-700 rounded-md p-3 ${resp.is_official ? 'border-emerald-700 bg-emerald-950/20' : ''}">
         <div class="flex justify-between text-xs text-zinc-500 mb-1">
@@ -1010,17 +1138,6 @@
     }).join('');
 
     el.innerHTML = `
-      <div class="flex items-start justify-between mb-4 gap-3">
-        <div class="min-w-0">
-          <div class="font-mono text-sky-400 text-lg">${esc(r.number)}</div>
-          <h2 class="text-xl font-semibold mt-1">${esc(r.subject)}</h2>
-          <div class="flex flex-wrap gap-2 mt-2">${statusBadge(r.status)} ${priorityBadge(r.priority)} ${ballBadge(r.ball_in_court_role)}</div>
-        </div>
-        <div class="flex items-center gap-2 flex-shrink-0">
-          <button type="button" onclick="CasePMRfis.printDetail(${r.id})" class="px-3 py-1.5 text-xs bg-white text-zinc-900 hover:bg-zinc-100 rounded-md font-semibold border border-zinc-300"><i class="fa-solid fa-print mr-1"></i>Print</button>
-          <button onclick="CasePMRfis.closeDrawer()" class="text-zinc-400 hover:text-white text-xl leading-none">&times;</button>
-        </div>
-      </div>
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs mb-4">
         <div><span class="text-zinc-500">Due</span><div class="${r.is_overdue ? 'text-red-400' : ''}">${fmtDate(r.due_date)}</div></div>
         <div><span class="text-zinc-500">Drawing</span><div class="font-mono">${esc(r.drawing_reference || '—')}</div></div>
@@ -1041,16 +1158,16 @@
           <h3 class="text-xs uppercase text-emerald-400 font-semibold tracking-wide"><i class="fa-solid fa-paperclip mr-1"></i>Attachments</h3>
           <span class="text-[10px] text-zinc-500">${(r.attachments || []).length} file(s)</span>
         </div>
-        <div id="rfiDrawerDropZone" class="border-2 border-dashed border-emerald-700/40 hover:border-emerald-500 rounded-lg p-3 text-center cursor-pointer bg-zinc-950/50 mb-2 transition-all">
+        <div id="rfiDetailDropZone" class="border-2 border-dashed border-emerald-700/40 hover:border-emerald-500 rounded-lg p-3 text-center cursor-pointer bg-zinc-950/50 mb-2 transition-all">
           <div class="text-xs text-zinc-400"><i class="fa-solid fa-cloud-arrow-up text-emerald-500 mr-1"></i>Drop files here or click to upload</div>
-          ${isStaffPortal() ? '<button type="button" data-drawer-docs class="mt-2 text-xs px-2 py-1 rounded bg-sky-900/50 text-sky-200 border border-sky-700/50 hover:bg-sky-800/60">Browse Documents</button>' : ''}
+          ${isStaffPortal() ? '<button type="button" data-detail-docs class="mt-2 text-xs px-2 py-1 rounded bg-sky-900/50 text-sky-200 border border-sky-700/50 hover:bg-sky-800/60">Browse Documents</button>' : ''}
         </div>
         <div class="space-y-1">${attList || '<p class="text-zinc-500 text-xs px-1">No files attached yet</p>'}</div>
       </div>
       ${r.official_answer ? `<div class="mb-4"><h3 class="text-xs uppercase text-emerald-500 mb-1">Official Answer</h3><p class="text-sm whitespace-pre-wrap bg-emerald-950/20 rounded-md p-3 border border-emerald-800">${esc(r.official_answer)}</p></div>` : ''}
       <div class="mb-4">
-        <h3 class="text-xs uppercase text-zinc-500 mb-2">Responses</h3>
-        <div class="space-y-2 max-h-48 overflow-auto">${responses}</div>
+        <h3 class="text-xs uppercase text-zinc-500 mb-2">Workflow Responses</h3>
+        <div class="space-y-2">${responses}</div>
       </div>
       <div class="mb-4">
         <h3 class="text-xs uppercase text-zinc-500 mb-2">Plan Pins</h3>
@@ -1070,7 +1187,7 @@
         ${canEditRfis() && isStaffPortal() ? `<button onclick="CasePMRfis.edit(${r.id})" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md"><i class="fa-solid fa-edit mr-1"></i>Edit</button>` : ''}
         ${canDeleteRfi() ? `<button onclick="CasePMRfis.deleteRfi(${r.id})" class="px-3 py-1.5 text-xs bg-red-900/70 hover:bg-red-800 text-red-200 rounded-md"><i class="fa-solid fa-trash mr-1"></i>Delete</button>` : ''}
       </div>`;
-    bindDrawerAttachmentHandlers(r.id);
+    bindDetailAttachmentHandlers(r.id);
   }
 
   async function respond(id) {
@@ -1110,7 +1227,7 @@
     try {
       await api(`/api/rfis/${id}`, { method: 'DELETE' });
       toast('RFI deleted', 'success');
-      if (state.drawerRecord?.id === id) closeDrawer();
+      if (state.drawerRecord?.id === id) closeDetail();
       state.selected = null;
       await Promise.all([loadRfis(), loadDashboard()]);
     } catch (e) {
@@ -1498,6 +1615,9 @@
     if (new URLSearchParams(window.location.search).get('action') === 'new') {
       openModal('create');
     }
+    if (typeof global.CasePMDevActions !== 'undefined') {
+      global.CasePMDevActions.consume('rfis-clear-comments', clearCommentsDevFromQueue);
+    }
   }
 
   global.CasePMRfis = {
@@ -1516,6 +1636,9 @@
     addPlanPin,
     removePin,
     closeDrawer,
+    closeDetail,
+    postComment,
+    clearCommentsDev,
     exportExcel,
     printLog,
     printDetail,

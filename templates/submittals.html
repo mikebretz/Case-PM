@@ -317,7 +317,15 @@ function refreshSubmittalActionButtons() {
     overflow: hidden;
     padding: 1rem 1.5rem 0;
   }
-  #submittalChrome { flex-shrink: 0; display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; padding: 0; }
+  #submittalChrome {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0;
+  }
+  #submittalChrome.hidden { display: none !important; }
   #submittalTableScroll { flex: 1; min-height: 0; overflow: auto; }
   #detailModal.submittal-detail-fullpage {
     display: none;
@@ -330,6 +338,9 @@ function refreshSubmittalActionButtons() {
   #detailModal.submittal-detail-fullpage.is-open {
     display: flex;
     flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: 100%;
   }
   body.submittal-detail-active {
     overflow: hidden !important;
@@ -341,10 +352,13 @@ function refreshSubmittalActionButtons() {
   body.submittal-detail-active .submittals-stack {
     padding: 0 !important;
     height: 100%;
+    min-height: 0;
+    flex: 1;
   }
   body.submittal-detail-active .submittals-page {
     height: 100%;
     min-height: 0;
+    max-height: 100%;
   }
   #detailModal .submittal-detail-body {
     display: flex;

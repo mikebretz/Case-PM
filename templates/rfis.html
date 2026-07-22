@@ -11,31 +11,100 @@
     flex: 1;
     min-height: 0;
     width: 100%;
-    padding: 1rem 1rem 0;
     overflow: hidden;
     box-sizing: border-box;
   }
-  .rfi-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
-  #rfiDetailDrawer {
-    position: fixed;
-    top: 0;
-    right: 0;
-    height: 100%;
-    width: 100%;
-    max-width: 32rem;
-    background: #18181b;
-    border-left: 1px solid #3f3f46;
-    z-index: 55;
-    transform: translateX(100%);
-    transition: transform 0.25s ease;
-    box-shadow: -8px 0 24px rgba(0,0,0,0.35);
-    overflow: auto;
-    padding: 1.25rem;
+  .rfi-stack {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    padding: 1rem 1.5rem 0;
   }
-  #rfiDetailDrawer.open { transform: translateX(0); }
+  #rfiChrome {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0;
+  }
+  #rfiChrome.hidden { display: none !important; }
+  #rfiTableScroll { flex: 1; min-height: 0; overflow: auto; }
+  #rfiDetailView.rfi-detail-fullpage {
+    display: none;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    background: #09090b;
+    width: 100%;
+  }
+  #rfiDetailView.rfi-detail-fullpage.is-open {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: 100%;
+  }
+  body.rfi-detail-active {
+    overflow: hidden !important;
+  }
+  body.rfi-detail-active #mainContent {
+    overflow: hidden !important;
+    padding: 0 !important;
+  }
+  body.rfi-detail-active .rfi-stack {
+    padding: 0 !important;
+    height: 100%;
+    min-height: 0;
+    flex: 1;
+  }
+  body.rfi-detail-active .rfi-page {
+    height: 100%;
+    min-height: 0;
+    max-height: 100%;
+  }
+  body.rfi-detail-active .rfi-bottom-bar {
+    display: none !important;
+  }
+  #rfiDetailView .rfi-detail-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  #rfiDetailMainCol {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  #rfiDetailMainCol #rfiDetailContent {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 1.5rem;
+  }
+  #rfiReviewChatCol {
+    width: 380px;
+    min-width: 320px;
+    border-left: 1px solid #3f3f46;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: #0c0c0e;
+  }
+  #rfiReviewCommentsList .review-comment-entry {
+    border: 1px solid #3f3f46;
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    font-size: 0.875rem;
+  }
   #rfiPrintSheet { display: none; }
   #rfiAttachmentDropZone.rfi-drop-active,
-  #rfiDrawerDropZone.rfi-drop-active {
+  #rfiDetailDropZone.rfi-drop-active {
     border-color: #34d399;
     background: rgba(16, 185, 129, 0.12);
     transform: scale(1.01);
@@ -63,6 +132,8 @@
 
 <div class="rfi-page">
 <div class="rfi-stack">
+
+<div id="rfiChrome" class="content-wrapper">
 
 <!-- TOOLBAR -->
 <div class="flex items-center justify-between flex-shrink-0 mb-4">
@@ -120,12 +191,12 @@
 </div>
 
 <!-- RFI TABLE -->
-<div class="flex-1 min-h-0 flex flex-col border border-zinc-700 rounded-md bg-zinc-900 mb-20 overflow-hidden">
+<div class="flex-1 min-h-0 flex flex-col border border-zinc-700 rounded-md bg-zinc-900 mb-4 overflow-hidden">
     <div class="px-4 py-2 border-b border-zinc-800 text-xs text-zinc-500 flex items-center justify-between">
         <span>RFI register — full tracking &amp; workflow</span>
         <span class="text-zinc-600">Click a row for detail · Respond · Promote to PCO</span>
     </div>
-    <div class="flex-1 overflow-auto min-h-0">
+    <div id="rfiTableScroll" class="flex-1 overflow-auto min-h-0">
         <table class="w-full text-sm min-w-[1300px]">
             <thead class="bg-zinc-800 sticky top-0 z-20 border-b border-zinc-700">
                 <tr>
@@ -150,18 +221,48 @@
     </div>
 </div>
 
+</div><!-- /rfiChrome -->
+
+<!-- Full-page RFI detail (replaces log when open) -->
+<div id="rfiDetailView" class="rfi-detail-fullpage">
+    <div class="bg-zinc-900 flex flex-col flex-1 min-h-0 w-full h-full">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700 bg-zinc-950 flex-shrink-0 gap-3">
+            <div class="flex items-center gap-3 min-w-0">
+                <button type="button" onclick="CasePMRfis.closeDetail()" class="px-3 py-2 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-lg flex items-center gap-2 flex-shrink-0">
+                    <i class="fa-solid fa-arrow-left"></i> Back to Log
+                </button>
+                <div id="rfiDetailNumber" class="font-mono text-xl font-bold text-sky-400 flex-shrink-0"></div>
+                <div id="rfiDetailSubject" class="text-lg font-semibold text-white truncate min-w-0"></div>
+                <div id="rfiDetailBadges" class="flex flex-wrap gap-2 flex-shrink-0"></div>
+            </div>
+            <div id="rfiDetailHeaderActions" class="flex items-center gap-2 flex-shrink-0"></div>
+        </div>
+        <div class="rfi-detail-body">
+            <div id="rfiDetailMainCol">
+                <div id="rfiDetailContent"></div>
+            </div>
+            <aside id="rfiReviewChatCol">
+                <div class="px-4 py-3 border-b border-zinc-700 font-semibold text-white flex-shrink-0 flex items-center justify-between gap-2">
+                    <span>Review Comments</span>
+                    <button type="button" id="rfiClearCommentsDevBtn" onclick="CasePMRfis.clearCommentsDev()" class="hidden px-2 py-1 text-[10px] uppercase tracking-wide bg-red-950/60 hover:bg-red-900 text-red-300 border border-red-800 rounded" title="Developer: clear all review comments">Clear</button>
+                </div>
+                <div id="rfiReviewCommentsList" class="flex-1 overflow-auto p-4 space-y-3"></div>
+                <div class="p-4 border-t border-zinc-700 flex-shrink-0">
+                    <textarea id="rfiReviewCommentInput" rows="3" placeholder="Ask a question or add a note for the project team…" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm mb-2"></textarea>
+                    <button type="button" id="rfiPostCommentBtn" onclick="CasePMRfis.postComment()" class="w-full px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold">Post Comment</button>
+                </div>
+            </aside>
+        </div>
+    </div>
+</div>
+
 </div>
 </div>
 
-<!-- DETAIL DRAWER -->
-<div id="rfiDetailDrawer" aria-hidden="true">
-    <div id="rfiDrawerContent"></div>
-</div>
-<div id="rfiDrawerBackdrop" class="fixed inset-0 bg-black/40 z-[54] hidden" onclick="CasePMRfis.closeDrawer()"></div>
-<input type="file" id="rfiDrawerAttachmentInput" multiple class="hidden">
+<input type="file" id="rfiDetailAttachmentInput" multiple class="hidden">
 
 <!-- BOTTOM BAR -->
-<div class="fixed bottom-0 left-56 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60] no-print">
+<div class="rfi-bottom-bar fixed bottom-0 left-56 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60] no-print">
     <div class="flex items-center gap-4">
         <span>RFI workflow · Ball in court · Linked COs/PCOs · Plan pin markup (coming soon)</span>
         <a href="/change-orders" class="text-emerald-400 hover:text-emerald-300 underline">Change Orders</a>

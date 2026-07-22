@@ -165,6 +165,13 @@ def assert_submittal_comment_allowed(user, submittal, *, Company=None, db=None) 
             raise PermissionError('This submittal is not assigned to your company or contact.')
 
 
+def assert_rfi_comment_allowed(user, rfi) -> None:
+    """Anyone who can read an RFI may post review discussion comments."""
+    if _is_privileged(user):
+        return
+    assert_rfi_read_allowed(user)
+
+
 def assert_submittal_attachment_delete_allowed(user, submittal, attachment, *, Company=None, db=None) -> None:
     """Uploader may delete their attachment; staff assignees may delete on editable submittals."""
     if _is_privileged(user):

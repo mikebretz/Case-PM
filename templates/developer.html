@@ -221,6 +221,9 @@
                 <button type="button" class="dev-tool-btn w-full" onclick="devQueue('payapps-push-previous', {{ url_for('pay_applications_page')|tojson }})">
                     <i class="fa-solid fa-history text-violet-400 w-5"></i><span>Pay Apps — push to previous sub pay apps</span>
                 </button>
+                <button type="button" class="dev-tool-btn danger w-full" onclick="devQueue('rfis-clear-comments', {{ url_for('rfis_page')|tojson }})">
+                    <i class="fa-solid fa-comments text-orange-400 w-5"></i><span>RFIs — clear review comments (open RFI first)</span>
+                </button>
                 <button type="button" class="dev-tool-btn danger w-full" onclick="devQueue('submittals-clear-log', {{ url_for('submittals_page')|tojson }})">
                     <i class="fa-solid fa-clipboard text-pink-400 w-5"></i><span>Submittals — clear entire log</span>
                 </button>

@@ -172,6 +172,26 @@ class DocumentModuleSecurityTests(unittest.TestCase):
         )
         assert_submittal_workflow_allowed(user, submittal, 'return_from_sub')
 
+    def test_view_only_can_comment_on_rfi(self):
+        from document_module_security import assert_rfi_comment_allowed
+
+        user = self._user('Subcontractor', {
+            'rfis': {'access': 'view', 'approve': 'none'},
+        }, portal='sub')
+        rfi = SimpleNamespace(status='Open', project_id=1)
+        assert_rfi_comment_allowed(user, rfi)
+
+    def test_rfi_comment_persistence(self):
+        from rfi_persistence import add_rfi_comment, clear_rfi_comments, _parse_json
+
+        rfi = SimpleNamespace(comments_json=None, updated_at=None)
+        entry = add_rfi_comment(rfi, {'body': 'Test question'}, 1, 'Alice', 'PM')
+        self.assertEqual(entry['body'], 'Test question')
+        comments = _parse_json(rfi.comments_json, [])
+        self.assertEqual(len(comments), 1)
+        clear_rfi_comments(rfi)
+        self.assertEqual(_parse_json(rfi.comments_json, []), [])
+
 
 if __name__ == '__main__':
     unittest.main()
