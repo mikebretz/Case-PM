@@ -115,7 +115,46 @@ def register_models(db):
 
 def coerce_pay_app_state(data) -> dict:
     """Pay app state must be a dict; tolerate corrupt persisted JSON."""
-    return data if isinstance(data, dict) else {}
+    return normalize_current_pay_app_period(data if isinstance(data, dict) else {})
+
+
+def normalize_current_pay_app_period(state: dict) -> dict:
+    """Period 1 when no previous pay apps; never leave demo period-7 defaults on empty history."""
+    if not isinstance(state, dict):
+        return {}
+    history = state.get('payAppHistory') or []
+    if not isinstance(history, list):
+        history = []
+    period = state.get('currentPayAppPeriod')
+    if not isinstance(period, dict):
+        period = {}
+
+    max_approved = 0
+    for entry in history:
+        if not isinstance(entry, dict) or entry.get('status') != 'Approved':
+            continue
+        try:
+            max_approved = max(max_approved, int(entry.get('periodNumber') or 0))
+        except (TypeError, ValueError):
+            continue
+
+    if not history:
+        period = dict(period)
+        period['periodNumber'] = 1
+        if not period.get('status'):
+            period['status'] = 'Draft'
+        state = dict(state)
+        state['currentPayAppPeriod'] = period
+        return state
+
+    if not period.get('periodNumber'):
+        period = dict(period)
+        period['periodNumber'] = max_approved + 1 if max_approved else 1
+        if not period.get('status'):
+            period['status'] = 'Draft'
+        state = dict(state)
+        state['currentPayAppPeriod'] = period
+    return state
 
 
 def build_g703_cost_code_index(state_data, tolerance=0.01):
