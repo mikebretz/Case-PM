@@ -99,6 +99,11 @@ def assert_submittal_read_allowed(user) -> None:
     require_module_access(user, 'submittals', 'view')
 
 
+def assert_submittal_log_manage_allowed(user) -> None:
+    """Spec book upload, Excel import, and spec section management require entry access."""
+    require_module_access(user, 'submittals', 'entry')
+
+
 def assert_submittal_create_allowed(user) -> None:
     """Creating log items is a PM/staff capability."""
     if _is_privileged(user):

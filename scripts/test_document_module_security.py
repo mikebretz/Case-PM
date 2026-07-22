@@ -61,6 +61,15 @@ class DocumentModuleSecurityTests(unittest.TestCase):
         )
         assert_submittal_edit_allowed(user, submittal)
 
+    def test_view_only_cannot_manage_submittal_log(self):
+        from document_module_security import assert_submittal_log_manage_allowed
+
+        user = self._user('Subcontractor', {
+            'submittals': {'access': 'view', 'approve': 'none'},
+        })
+        with self.assertRaises(PermissionError):
+            assert_submittal_log_manage_allowed(user)
+
 
 if __name__ == '__main__':
     unittest.main()
