@@ -89,6 +89,67 @@ class ReconcileCanonicalKeyTests(unittest.TestCase):
         self.assertNotIn('Concrete Sim Co', originals)
         self.assertEqual(len(merged), 1)
 
+    def test_canonicalize_merges_split_vendor_buckets(self):
+        from pay_app_persistence import canonicalize_sub_sov_vendor_keys
+        from types import SimpleNamespace
+
+        Commitment = SimpleNamespace
+        com = Commitment(
+            id=1, commitment_type='Subcontract', status='Approved',
+            company_id='42', company_name='Acme', number='SC-1',
+        )
+        state = {
+            'subcontractorSOV': {
+                'local-5': [{
+                    'id': 1, 'cost_code': '03-300', 'description': 'Concrete',
+                    'original_commitment': 50_000, 'change_orders': 0,
+                }],
+            },
+            'subSOVStatus': {
+                'local-5': {
+                    'status': 'Approved',
+                    'companyName': 'Acme',
+                    'companyId': '42',
+                    'localCompanyId': 'local-5',
+                },
+            },
+        }
+        canonicalize_sub_sov_vendor_keys(state, [com])
+        self.assertIn('42', state['subcontractorSOV'])
+        self.assertIn('42', state['subSOVStatus'])
+        self.assertEqual(len(state['subcontractorSOV']['42']), 1)
+        self.assertEqual(state['subcontractorSOV']['42'][0]['original_commitment'], 50_000)
+
+    def test_approved_sov_survives_reconcile_and_prune(self):
+        from accounting_reconcile import apply_sub_sov_reconcile, compute_sub_sov_derivatives
+        from pay_app_persistence import canonicalize_sub_sov_vendor_keys, prune_unregistered_sub_sov
+        from types import SimpleNamespace
+
+        Commitment = SimpleNamespace
+        com = Commitment(
+            id=1, commitment_type='Subcontract', status='Approved',
+            company_id='42', company_name='Acme', number='SC-1',
+            original_amount=100_000, current_amount=100_000,
+        )
+        state = {
+            'subcontractorSOV': {
+                '42': [{
+                    'id': 1, 'cost_code': '03-300', 'description': 'Concrete',
+                    'original_commitment': 50_000, 'change_orders': 0,
+                }],
+            },
+            'subSOVStatus': {'42': {'status': 'Approved', 'companyName': 'Acme', 'companyId': '42'}},
+        }
+        originals, changes, display = compute_sub_sov_derivatives(
+            [], [com], {}, {}, state['subcontractorSOV'], Commitment,
+        )
+        state = apply_sub_sov_reconcile(dict(state), originals, changes, display)
+        state = canonicalize_sub_sov_vendor_keys(state, [com])
+        out = prune_unregistered_sub_sov(state, [com])
+        lines = out['subcontractorSOV'].get('42') or []
+        self.assertEqual(len(lines), 1)
+        self.assertEqual(lines[0]['original_commitment'], 50_000)
+
 
 class PutBypassTests(unittest.TestCase):
     def test_strip_workflow_fields_removes_status(self):

@@ -695,17 +695,53 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         return [...keys];
     }
 
+    /** All subcontractorSOV / subSOVStatus keys that refer to the same vendor (id vs name vs server id). */
+    function subCompanyAliasKeys(companyId) {
+        const keys = new Set(subCompanyKeyVariants(companyId).map(String));
+        const statusMap = subSOVStatus || {};
+        subCompanyKeyVariants(companyId).forEach((variant) => {
+            const st = statusMap[variant];
+            if (!st || typeof st !== 'object') return;
+            ['companyId', 'company_id', 'localCompanyId', 'commitmentCompanyId'].forEach((field) => {
+                if (st[field] != null && String(st[field]).trim()) keys.add(String(st[field]).trim());
+            });
+        });
+        Object.entries(statusMap).forEach(([bucketKey, st]) => {
+            if (!st || !st.status) return;
+            const ids = new Set([String(bucketKey)]);
+            ['companyId', 'company_id', 'localCompanyId', 'commitmentCompanyId'].forEach((field) => {
+                if (st[field] != null && String(st[field]).trim()) ids.add(String(st[field]).trim());
+            });
+            for (const variant of keys) {
+                if (ids.has(String(variant))) {
+                    ids.forEach((id) => keys.add(id));
+                    keys.add(String(bucketKey));
+                }
+            }
+        });
+        Object.keys(subcontractorSOV || {}).forEach((mapKey) => {
+            if (keys.has(String(mapKey))) keys.add(String(mapKey));
+        });
+        return [...keys];
+    }
+
     function getSubCompanyMapEntry(map, companyId) {
         if (!map || companyId == null) return undefined;
-        for (const k of subCompanyKeyVariants(companyId)) {
+        for (const k of subCompanyAliasKeys(companyId)) {
             if (map[k] != null) return map[k];
         }
         return undefined;
     }
 
+    function setSubCompanyMapEntry(map, companyId, value) {
+        if (!map || companyId == null) return;
+        const primary = canonicalSubCompanyId(companyId);
+        if (primary != null) map[primary] = value;
+    }
+
     function deleteSubCompanyMapKeys(map, companyId) {
         if (!map || companyId == null) return;
-        subCompanyKeyVariants(companyId).forEach((k) => { delete map[k]; });
+        subCompanyAliasKeys(companyId).forEach((k) => { delete map[k]; });
     }
 
     function subCompanyIdsInSOV(subSOVData) {
@@ -780,7 +816,13 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 return;
             }
             if (!statusHasCommitmentOnProject(st, key)) {
+                const lines = getSubCompanyMapEntry(subcontractorSOV, key) || [];
+                const hasScheduled = lines.some((l) =>
+                    (parseFloat(l.original_commitment) || 0) + (parseFloat(l.change_orders) || 0) > 0
+                );
+                if (hasScheduled && st.status) return;
                 removeKeys.push(key);
+                return;
             }
         });
         if (!removeKeys.length) return;
@@ -1146,33 +1188,38 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     function getSubcontractedCostForCode(code) {
         const norm = normalizeCostCode(code);
         let total = 0;
-        Object.keys(subcontractorSOV || {}).forEach(cid => {
-            // Only count from subs whose Schedule of Values has been Approved (per user requirement)
-            if (isSubSOVApproved(cid)) {
-                (subcontractorSOV[cid] || []).forEach(line => {
-                    if (normalizeCostCode(line.cost_code) === norm) {
-                        // FIX: Subcontractor SOV lines store the original amount under "original_commitment", not "original"
-                        const originalAmt = parseFloat(line.original_commitment || line.original || 0);
-                        const coAmt = parseFloat(line.change_orders || 0);
-                        total += originalAmt + coAmt;
-                    }
-                });
-            }
+        const countedVendors = new Set();
+        Object.keys(subSOVStatus || {}).forEach((cid) => {
+            if (!isSubSOVApproved(cid)) return;
+            const vendorKey = String(canonicalSubCompanyId(cid) ?? cid);
+            if (countedVendors.has(vendorKey)) return;
+            countedVendors.add(vendorKey);
+            const lines = getSubCompanyMapEntry(subcontractorSOV, cid) || [];
+            lines.forEach((line) => {
+                if (normalizeCostCode(line.cost_code) === norm) {
+                    const originalAmt = parseFloat(line.original_commitment || line.original || 0);
+                    const coAmt = parseFloat(line.change_orders || 0);
+                    total += originalAmt + coAmt;
+                }
+            });
         });
         return total;
     }
 
     function getTotalSubcontractedCost() {
         let total = 0;
-        Object.keys(subcontractorSOV || {}).forEach(cid => {
-            if (isSubSOVApproved(cid)) {
-                (subcontractorSOV[cid] || []).forEach(line => {
-                    // FIX: Subcontractor SOV lines use original_commitment
-                    const originalAmt = parseFloat(line.original_commitment || line.original || 0);
-                    const coAmt = parseFloat(line.change_orders || 0);
-                    total += originalAmt + coAmt;
-                });
-            }
+        const countedVendors = new Set();
+        Object.keys(subSOVStatus || {}).forEach((cid) => {
+            if (!isSubSOVApproved(cid)) return;
+            const vendorKey = String(canonicalSubCompanyId(cid) ?? cid);
+            if (countedVendors.has(vendorKey)) return;
+            countedVendors.add(vendorKey);
+            const lines = getSubCompanyMapEntry(subcontractorSOV, cid) || [];
+            lines.forEach((line) => {
+                const originalAmt = parseFloat(line.original_commitment || line.original || 0);
+                const coAmt = parseFloat(line.change_orders || 0);
+                total += originalAmt + coAmt;
+            });
         });
         return total;
     }
@@ -2332,7 +2379,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     // ==================== SUB SOV STATUS HELPERS (Approval Workflow) ====================
     function getSubSOVStatus(companyId) {
         if (!companyId) return 'Draft';
-        const statusData = subSOVStatus[companyId] || subSOVStatus[String(companyId)] || {};
+        const statusData = getSubSOVStatusEntry(companyId);
         const raw = statusData.status;
         if (typeof raw === 'string') return raw;
         return 'Draft';
@@ -2340,7 +2387,11 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
     function getSubSOVStatusEntry(companyId) {
         if (!companyId) return {};
-        return subSOVStatus[companyId] || subSOVStatus[String(companyId)] || {};
+        for (const k of subCompanyAliasKeys(companyId)) {
+            const entry = subSOVStatus[k];
+            if (entry && typeof entry === 'object') return entry;
+        }
+        return {};
     }
 
     /** True for Approved and legacy variants (e.g. "Approved — Lien Waiver Received"). */
@@ -7853,7 +7904,8 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             showCenteredAlert("This SOV is already approved. No need to submit again.");
             return;
         }
-        CasePMPayAppWorkflow.workflow('sub_sov', 'submit', { entity_key: selectedSubCompanyId, company_id: selectedSubCompanyId })
+        persistPayAppStateNow({ silent: true })
+            .then(() => CasePMPayAppWorkflow.workflow('sub_sov', 'submit', { entity_key: selectedSubCompanyId, company_id: selectedSubCompanyId }))
             .then(() => {
                 reloadPayAppStateFromStorage();
                 logPayAppAudit('SUB_SOV_SUBMITTED_FOR_APPROVAL', { companyId: selectedSubCompanyId });
@@ -7864,7 +7916,8 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
     function approveSubSOVSetup() {
         if (!selectedSubCompanyId) return;
-        CasePMPayAppWorkflow.workflow('sub_sov', 'approve', { entity_key: selectedSubCompanyId, company_id: selectedSubCompanyId })
+        persistPayAppStateNow({ silent: true })
+            .then(() => CasePMPayAppWorkflow.workflow('sub_sov', 'approve', { entity_key: selectedSubCompanyId, company_id: selectedSubCompanyId }))
             .then(() => {
                 reloadPayAppStateFromStorage();
                 logPayAppAudit('SUB_SOV_APPROVED', { companyId: selectedSubCompanyId });
