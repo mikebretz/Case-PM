@@ -69,7 +69,7 @@ ROLE_APPROVERS = {
     'Architect': ('Architect', 'Admin'),
     'Owner': ('Owner', 'Admin'),
     'Creator': ('Project Manager', 'Admin', 'Company User'),
-    'Subcontractor': ('Subcontractor Accountant', 'Company User', 'Subcontractor', 'Admin'),
+    'Subcontractor': ('Subcontractor Accountant', 'Company User', 'Subcontractor', 'Subcontractor Contact', 'Admin'),
 }
 REASON_CODES = (
     'Owner Request', 'Design Change', 'Unforeseen Condition', 'Code Compliance',

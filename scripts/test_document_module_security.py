@@ -148,6 +148,30 @@ class DocumentModuleSecurityTests(unittest.TestCase):
         )
         assert_submittal_edit_allowed(user, submittal)
 
+    def test_view_only_sub_can_read_spec_book(self):
+        from document_module_security import assert_submittal_spec_book_read_allowed
+
+        user = self._user('Subcontractor Contact', {
+            'submittals': {'access': 'view', 'approve': 'none'},
+        }, portal='sub')
+        assert_submittal_spec_book_read_allowed(user)
+
+    def test_sub_workflow_allowed_from_draft(self):
+        from document_module_security import assert_submittal_workflow_allowed
+
+        user = self._user('Subcontractor Contact', {
+            'submittals': {'access': 'view', 'approve': 'none'},
+        }, portal='sub')
+        user.id = 100
+        user.company_id = 42
+        submittal = SimpleNamespace(
+            status='Draft',
+            assigned_company_id=42,
+            assigned_contact_user_id=100,
+            assigned_company_name='My Co',
+        )
+        assert_submittal_workflow_allowed(user, submittal, 'return_from_sub')
+
 
 if __name__ == '__main__':
     unittest.main()
