@@ -182,15 +182,32 @@ class DocumentModuleSecurityTests(unittest.TestCase):
         assert_rfi_comment_allowed(user, rfi)
 
     def test_rfi_comment_persistence(self):
-        from rfi_persistence import add_rfi_comment, clear_rfi_comments, _parse_json
+        from rfi_persistence import add_rfi_comment, clear_rfi_comments, delete_rfi_comment, _parse_json
 
         rfi = SimpleNamespace(comments_json=None, updated_at=None)
         entry = add_rfi_comment(rfi, {'body': 'Test question'}, 1, 'Alice', 'PM')
         self.assertEqual(entry['body'], 'Test question')
         comments = _parse_json(rfi.comments_json, [])
         self.assertEqual(len(comments), 1)
+        delete_rfi_comment(rfi, entry['id'])
+        self.assertEqual(_parse_json(rfi.comments_json, []), [])
+        add_rfi_comment(rfi, {'body': 'Another'}, 1, 'Alice', 'PM')
         clear_rfi_comments(rfi)
         self.assertEqual(_parse_json(rfi.comments_json, []), [])
+
+    def test_submittal_comment_delete(self):
+        from submittal_persistence import add_submittal_comment, clear_submittal_comments, delete_submittal_comment, _parse_json
+
+        sub = SimpleNamespace(comments_json=None, updated_at=None)
+        entry = add_submittal_comment(sub, {'body': 'Note one'}, 1, 'Bob', 'PM')
+        add_submittal_comment(sub, {'body': 'Note two'}, 2, 'Carol', 'Sub')
+        self.assertEqual(len(_parse_json(sub.comments_json, [])), 2)
+        delete_submittal_comment(sub, entry['id'])
+        remaining = _parse_json(sub.comments_json, [])
+        self.assertEqual(len(remaining), 1)
+        self.assertEqual(remaining[0]['body'], 'Note two')
+        clear_submittal_comments(sub)
+        self.assertEqual(_parse_json(sub.comments_json, []), [])
 
 
 if __name__ == '__main__':

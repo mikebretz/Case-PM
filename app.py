@@ -4266,6 +4266,33 @@ def api_rfi_clear_comments(rfi_id):
     return jsonify({'ok': True, 'comments': _parse_json(rfi.comments_json, [])})
 
 
+@app.route('/api/rfis/<int:rfi_id>/comments/<int:comment_id>', methods=['DELETE'])
+@login_required
+def api_rfi_delete_comment(rfi_id, comment_id):
+    from rfi_persistence import _parse_json, delete_rfi_comment
+    from financial_security import require_financial_project_access
+    from document_module_security import assert_rfi_read_allowed
+    try:
+        from developer_tools import is_developer
+        if not is_developer(current_user) and getattr(current_user, 'role', None) != 'Admin':
+            return jsonify({'error': 'Developer access required'}), 403
+    except Exception:
+        if getattr(current_user, 'role', None) != 'Admin':
+            return jsonify({'error': 'Developer access required'}), 403
+    rfi = RFI.query.get_or_404(rfi_id)
+    try:
+        assert_rfi_read_allowed(current_user)
+        require_financial_project_access(current_user, rfi.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    try:
+        delete_rfi_comment(rfi, comment_id)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 404
+    db.session.commit()
+    return jsonify({'ok': True, 'comments': _parse_json(rfi.comments_json, [])})
+
+
 @app.route('/api/rfis/<int:rfi_id>/attachments/link', methods=['POST'])
 @login_required
 def api_rfi_link_document_attachment(rfi_id):
@@ -10025,6 +10052,63 @@ def api_submittal_add_comment(submittal_id):
     except Exception:
         pass
     return jsonify({'ok': True, 'comment': entry, 'comments': _parse_json(submittal.comments_json, [])})
+
+
+@app.route('/api/submittals/<int:submittal_id>/comments', methods=['DELETE'])
+@login_required
+def api_submittal_clear_comments(submittal_id):
+    from rfi_persistence import _parse_json
+    from submittal_persistence import clear_submittal_comments
+    from document_module_security import assert_submittal_read_allowed, submittal_visible_to_user
+    from financial_security import require_financial_project_access
+    try:
+        from developer_tools import is_developer
+        if not is_developer(current_user) and getattr(current_user, 'role', None) != 'Admin':
+            return jsonify({'error': 'Developer access required'}), 403
+    except Exception:
+        if getattr(current_user, 'role', None) != 'Admin':
+            return jsonify({'error': 'Developer access required'}), 403
+    submittal = Submittal.query.get_or_404(submittal_id)
+    try:
+        assert_submittal_read_allowed(current_user)
+        require_financial_project_access(current_user, submittal.project_id, Project)
+        if not submittal_visible_to_user(submittal, current_user, Company=Company, db=db):
+            return jsonify({'error': 'Permission denied'}), 403
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    clear_submittal_comments(submittal)
+    db.session.commit()
+    return jsonify({'ok': True, 'comments': _parse_json(submittal.comments_json, [])})
+
+
+@app.route('/api/submittals/<int:submittal_id>/comments/<int:comment_id>', methods=['DELETE'])
+@login_required
+def api_submittal_delete_comment(submittal_id, comment_id):
+    from rfi_persistence import _parse_json
+    from submittal_persistence import delete_submittal_comment
+    from document_module_security import assert_submittal_read_allowed, submittal_visible_to_user
+    from financial_security import require_financial_project_access
+    try:
+        from developer_tools import is_developer
+        if not is_developer(current_user) and getattr(current_user, 'role', None) != 'Admin':
+            return jsonify({'error': 'Developer access required'}), 403
+    except Exception:
+        if getattr(current_user, 'role', None) != 'Admin':
+            return jsonify({'error': 'Developer access required'}), 403
+    submittal = Submittal.query.get_or_404(submittal_id)
+    try:
+        assert_submittal_read_allowed(current_user)
+        require_financial_project_access(current_user, submittal.project_id, Project)
+        if not submittal_visible_to_user(submittal, current_user, Company=Company, db=db):
+            return jsonify({'error': 'Permission denied'}), 403
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    try:
+        delete_submittal_comment(submittal, comment_id)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 404
+    db.session.commit()
+    return jsonify({'ok': True, 'comments': _parse_json(submittal.comments_json, [])})
 
 
 @app.route('/api/submittals/<int:submittal_id>/attachments', methods=['GET'])

@@ -987,15 +987,19 @@
     const el = document.getElementById('rfiReviewCommentsList');
     if (!el) return;
     const list = comments || [];
+    const dev = isDeveloper();
     if (!list.length) {
       el.innerHTML = '<p class="text-sm text-zinc-500">No comments yet. Ask a question or add a note for the team.</p>';
       return;
     }
     el.innerHTML = list.map(c => `
       <div class="review-comment-entry">
-        <div class="flex justify-between text-xs text-zinc-500 mb-1">
+        <div class="flex justify-between items-start gap-2 text-xs text-zinc-500 mb-1">
           <span>${esc(c.user_name || 'User')}${c.user_role ? ` · ${esc(c.user_role)}` : ''}</span>
-          <span>${esc((c.created_at || '').replace('T', ' ').slice(0, 16))}</span>
+          <span class="flex items-center gap-2 flex-shrink-0">
+            <span>${esc((c.created_at || '').replace('T', ' ').slice(0, 16))}</span>
+            ${dev && c.id != null ? `<button type="button" onclick="CasePMRfis.deleteCommentDev(${Number(c.id)})" class="text-red-400 hover:text-red-300 p-0.5" title="Delete comment"><i class="fa-solid fa-trash-can text-[10px]"></i></button>` : ''}
+          </span>
         </div>
         <div class="whitespace-pre-wrap text-zinc-200">${esc(c.body || '')}</div>
       </div>
@@ -1060,6 +1064,21 @@
       r.comments = json.comments || [];
       renderRfiReviewComments(r.comments);
       toast('Review comments cleared');
+    } catch (e) { alert(e.message); }
+  }
+
+  async function deleteCommentDev(commentId) {
+    const r = state.drawerRecord;
+    if (!r?.id || commentId == null) return;
+    const ok = typeof CasePMDialog !== 'undefined'
+      ? await CasePMDialog.confirm('Delete this comment?', { title: 'Delete Comment', danger: true, confirmText: 'Delete' })
+      : confirm('Delete this comment?');
+    if (!ok) return;
+    try {
+      const json = await api(`/api/rfis/${r.id}/comments/${commentId}`, { method: 'DELETE' });
+      r.comments = json.comments || [];
+      renderRfiReviewComments(r.comments);
+      toast('Comment deleted');
     } catch (e) { alert(e.message); }
   }
 
@@ -1639,6 +1658,7 @@
     closeDetail,
     postComment,
     clearCommentsDev,
+    deleteCommentDev,
     exportExcel,
     printLog,
     printDetail,

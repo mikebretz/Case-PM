@@ -338,3 +338,13 @@ def add_rfi_comment(rfi, body, user_id, user_name, user_role=None):
 def clear_rfi_comments(rfi):
     rfi.comments_json = json.dumps([])
     rfi.updated_at = datetime.utcnow()
+
+
+def delete_rfi_comment(rfi, comment_id):
+    comments = _parse_json(getattr(rfi, 'comments_json', None), [])
+    cid = int(comment_id)
+    filtered = [c for c in comments if int(c.get('id', -1)) != cid]
+    if len(filtered) == len(comments):
+        raise ValueError('Comment not found')
+    rfi.comments_json = json.dumps(filtered)
+    rfi.updated_at = datetime.utcnow()
