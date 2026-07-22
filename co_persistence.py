@@ -66,7 +66,7 @@ SUB_APPROVAL_CHAIN = (
 
 ROLE_APPROVERS = {
     'Project Manager': ('Project Manager', 'Admin', 'Contractor Accounting'),
-    'Architect': ('Architect', 'Admin'),
+    'Architect': ('Architect', 'Structural Engineer', 'MEP Engineer', 'Civil Engineer', 'Admin'),
     'Owner': ('Owner', 'Admin'),
     'Creator': ('Project Manager', 'Admin', 'Company User'),
     'Subcontractor': ('Subcontractor Accountant', 'Company User', 'Subcontractor', 'Subcontractor Contact', 'Admin'),

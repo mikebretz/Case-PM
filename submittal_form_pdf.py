@@ -223,3 +223,70 @@ def build_submittal_print_pdf(
         return merged.tobytes()
     finally:
         merged.close()
+
+
+def build_submittal_review_sheet_pdf(
+    submittal,
+    project=None,
+    company_info=None,
+    *,
+    template_path: str | None = None,
+) -> bytes:
+    """Cover-style review sheet: official form header, blank stamp areas, review submissions below."""
+    if template_path is None:
+        template_path = os.path.join(
+            os.path.dirname(__file__), 'static', 'forms', 'Submittal_Form.pdf',
+        )
+    values = build_submittal_form_field_values(submittal, project=project, company_info=company_info)
+    values['Architect Field#1'] = ''
+    values['Engineer Field#1'] = ''
+    doc = fitz.open(template_path)
+    try:
+        page = doc[0]
+        for widget in page.widgets() or []:
+            val = values.get(widget.field_name)
+            if val is None:
+                continue
+            widget.field_value = val
+            widget.update()
+
+        details = {}
+        try:
+            import json
+            raw = getattr(submittal, 'details_json', None)
+            details = json.loads(raw) if raw else {}
+        except Exception:
+            details = {}
+        submissions = details.get('reviewSubmissions') or details.get('review_submissions') or []
+        review_comments = (getattr(submittal, 'review_comments', None) or '').strip()
+
+        y = page.rect.height - 220
+        page.insert_text((36, y), 'REVIEW COMMENTS — Architect / Engineer / Owner', fontsize=10, fontname='helv')
+        y += 16
+        lines = []
+        for sub in submissions:
+            stamp = (sub.get('created_at') or '').replace('T', ' ')[:16]
+            party = sub.get('party') or sub.get('user_role') or 'Reviewer'
+            name = sub.get('user_name') or 'User'
+            decision = sub.get('decision')
+            header = f'{stamp} — {party} — {name}'
+            if decision:
+                header += f' — {decision}'
+            lines.append(header)
+            body = (sub.get('body') or '').strip()
+            if body:
+                lines.extend(body.splitlines())
+            lines.append('')
+        if review_comments and not submissions:
+            lines.append(review_comments)
+        if not lines:
+            lines = ['(No review comments recorded yet.)', '', 'Architect / Engineer / Owner comments:']
+
+        for line in lines[:40]:
+            if y > page.rect.height - 24:
+                break
+            page.insert_text((40, y), line[:110], fontsize=8, fontname='helv')
+            y += 11
+        return doc.tobytes()
+    finally:
+        doc.close()
