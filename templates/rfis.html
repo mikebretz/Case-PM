@@ -316,12 +316,28 @@
                 <input type="text" id="modalRfiLocation" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="Building area, grid line, room number">
             </div>
             <div>
-                <label class="block text-sm text-zinc-400 mb-1">Est. Cost Impact ($)</label>
-                <input type="text" id="modalRfiCostImpact" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm casepm-money-input" data-casepm-money>
+                <label class="block text-sm text-zinc-400 mb-1">Cost Impact?</label>
+                <div class="flex gap-2 mb-3">
+                    <button type="button" onclick="CasePMRfis.setImpactChoice('cost', 'yes')" id="btnRfiCostYes" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-emerald-600 rounded-md text-sm">Yes</button>
+                    <button type="button" onclick="CasePMRfis.setImpactChoice('cost', 'no')" id="btnRfiCostNo" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">No</button>
+                    <button type="button" onclick="CasePMRfis.setImpactChoice('cost', 'tbd')" id="btnRfiCostTbd" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-amber-600 rounded-md text-sm">TBD</button>
+                </div>
+                <div id="rfiCostAmountContainer" class="hidden">
+                    <label class="block text-sm text-zinc-400 mb-1">Cost Estimate ($)</label>
+                    <input type="text" id="modalRfiCostImpact" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm casepm-money-input" data-casepm-money>
+                </div>
             </div>
             <div>
-                <label class="block text-sm text-zinc-400 mb-1">Schedule Impact (days)</label>
-                <input type="number" id="modalRfiSchedDays" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" value="0">
+                <label class="block text-sm text-zinc-400 mb-1">Schedule Impact?</label>
+                <div class="flex gap-2 mb-3">
+                    <button type="button" onclick="CasePMRfis.setImpactChoice('schedule', 'yes')" id="btnRfiScheduleYes" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-emerald-600 rounded-md text-sm">Yes</button>
+                    <button type="button" onclick="CasePMRfis.setImpactChoice('schedule', 'no')" id="btnRfiScheduleNo" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">No</button>
+                    <button type="button" onclick="CasePMRfis.setImpactChoice('schedule', 'tbd')" id="btnRfiScheduleTbd" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-amber-600 rounded-md text-sm">TBD</button>
+                </div>
+                <div id="rfiScheduleDaysContainer" class="hidden">
+                    <label class="block text-sm text-zinc-400 mb-1">Schedule Impact (days)</label>
+                    <input type="number" id="modalRfiSchedDays" min="0" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" value="0">
+                </div>
             </div>
             <div class="flex items-end pb-2">
                 <label class="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">

@@ -1047,6 +1047,7 @@ class RFI(db.Model):
     answered_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     notes = db.Column(db.Text)
     cost_impact_amount = db.Column(db.Float, default=0)
+    cost_impact_label = db.Column(db.String(50))
     schedule_impact_days = db.Column(db.Integer, default=0)
     schedule_impact_label = db.Column(db.String(50))
     is_private = db.Column(db.Integer, default=0)

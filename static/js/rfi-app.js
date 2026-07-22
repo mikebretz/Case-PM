@@ -60,6 +60,116 @@
     return isStaffPortal();
   }
 
+  function canViewRfisOnly() {
+    if (typeof global.canAccessModule === 'function') {
+      return global.canAccessModule('rfis', 'view') && !canEnterRfis();
+    }
+    return false;
+  }
+
+  function normalizeImpactChoice(value) {
+    const v = String(value || '').trim().toLowerCase();
+    if (v === 'yes' || v === 'y' || v === 'true') return 'yes';
+    if (v === 'no' || v === 'n' || v === 'false') return 'no';
+    if (v === 'tbd' || v === 'unknown' || v === 'to be determined') return 'tbd';
+    return '';
+  }
+
+  function inferImpactChoice(storedChoice, numericValue) {
+    const normalized = normalizeImpactChoice(storedChoice);
+    if (normalized) return normalized;
+    const n = parseFloat(numericValue);
+    if (!Number.isNaN(n) && n > 0) return 'yes';
+    return 'tbd';
+  }
+
+  function formatImpactChoiceLabel(choice) {
+    const normalized = normalizeImpactChoice(choice) || 'tbd';
+    if (normalized === 'tbd') return 'TBD';
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  }
+
+  function formatRfiImpactDisplay(label, value, type) {
+    const choice = inferImpactChoice(label, value);
+    const choiceText = formatImpactChoiceLabel(choice);
+    if (choice === 'yes') {
+      if (type === 'cost' && value) return `${choiceText} — $${Number(value).toLocaleString()}`;
+      if (type === 'schedule' && value) return `${choiceText} — ${value} days`;
+      return choiceText;
+    }
+    return choiceText;
+  }
+
+  function setImpactChoice(type, choice) {
+    const normalized = normalizeImpactChoice(choice) || 'tbd';
+    const isCost = type === 'cost';
+    const yesBtn = document.getElementById(isCost ? 'btnRfiCostYes' : 'btnRfiScheduleYes');
+    const noBtn = document.getElementById(isCost ? 'btnRfiCostNo' : 'btnRfiScheduleNo');
+    const tbdBtn = document.getElementById(isCost ? 'btnRfiCostTbd' : 'btnRfiScheduleTbd');
+    const amountContainer = document.getElementById(isCost ? 'rfiCostAmountContainer' : 'rfiScheduleDaysContainer');
+    [yesBtn, noBtn, tbdBtn].forEach((btn) => {
+      if (!btn) return;
+      btn.classList.remove('bg-emerald-600', 'bg-amber-600');
+      if (!btn.classList.contains('bg-zinc-700')) btn.classList.add('bg-zinc-700');
+    });
+    if (normalized === 'yes' && yesBtn) {
+      yesBtn.classList.add('bg-emerald-600');
+      yesBtn.classList.remove('bg-zinc-700');
+    } else if (normalized === 'no' && noBtn) {
+      noBtn.classList.add('bg-emerald-600');
+      noBtn.classList.remove('bg-zinc-700');
+    } else if (tbdBtn) {
+      tbdBtn.classList.add('bg-amber-600');
+      tbdBtn.classList.remove('bg-zinc-700');
+    }
+    if (amountContainer) amountContainer.classList.toggle('hidden', normalized !== 'yes');
+  }
+
+  function applyImpactFieldsToModal(record) {
+    const costChoice = inferImpactChoice(record?.cost_impact_label, record?.cost_impact_amount);
+    const scheduleChoice = inferImpactChoice(record?.schedule_impact_label, record?.schedule_impact_days);
+    setImpactChoice('cost', costChoice);
+    setImpactChoice('schedule', scheduleChoice);
+    const costEl = document.getElementById('modalRfiCostImpact');
+    const costValue = costChoice === 'yes' ? (record?.cost_impact_amount || '') : '';
+    if (global.CasePMMoney && costEl) {
+      global.CasePMMoney.setMoneyInput(costEl, costValue);
+      global.CasePMMoney.setupMoneyInput(costEl);
+    } else if (costEl) {
+      costEl.value = costValue;
+    }
+    const schedEl = document.getElementById('modalRfiSchedDays');
+    if (schedEl) schedEl.value = scheduleChoice === 'yes' ? (record?.schedule_impact_days || '') : '';
+  }
+
+  function readImpactFieldsFromModal() {
+    const costChoice = document.getElementById('btnRfiCostYes')?.classList.contains('bg-emerald-600') ? 'yes'
+      : document.getElementById('btnRfiCostNo')?.classList.contains('bg-emerald-600') ? 'no'
+      : 'tbd';
+    const scheduleChoice = document.getElementById('btnRfiScheduleYes')?.classList.contains('bg-emerald-600') ? 'yes'
+      : document.getElementById('btnRfiScheduleNo')?.classList.contains('bg-emerald-600') ? 'no'
+      : 'tbd';
+    const costEl = document.getElementById('modalRfiCostImpact');
+    let costAmount = 0;
+    if (costChoice === 'yes') {
+      if (global.CasePMMoney && costEl) {
+        const parsed = global.CasePMMoney.readMoneyInput(costEl);
+        costAmount = parseFloat(parsed) || 0;
+      } else {
+        costAmount = parseFloat(costEl?.value) || 0;
+      }
+    }
+    const scheduleDays = scheduleChoice === 'yes'
+      ? parseInt(document.getElementById('modalRfiSchedDays')?.value, 10) || 0
+      : 0;
+    return {
+      cost_impact_label: formatImpactChoiceLabel(costChoice),
+      schedule_impact_label: formatImpactChoiceLabel(scheduleChoice),
+      cost_impact_amount: costAmount,
+      schedule_impact_days: scheduleDays,
+    };
+  }
+
   async function openResponder(id) {
     if (!canEnterRfis()) {
       await view(id);
@@ -724,10 +834,9 @@
       set('modalRfiNotes', '');
       set('modalRfiLocation', '');
       set('modalRfiDiscipline', '');
-      set('modalRfiCostImpact', '');
-      set('modalRfiSchedDays', '0');
       setCheck('modalRfiPrivate', false);
       document.getElementById('modalRfiNumber').textContent = 'Auto';
+      applyImpactFieldsToModal({ cost_impact_label: 'TBD', schedule_impact_label: 'TBD' });
     } else if (record) {
       set('modalRfiSubject', record.subject);
       set('modalRfiQuestion', record.question);
@@ -747,9 +856,8 @@
       set('modalRfiNotes', record.notes);
       set('modalRfiLocation', record.location_description);
       set('modalRfiDiscipline', record.discipline);
-      set('modalRfiCostImpact', record.cost_impact_amount || '');
-      set('modalRfiSchedDays', record.schedule_impact_days || 0);
       setCheck('modalRfiPrivate', record.is_private);
+      applyImpactFieldsToModal(record);
       document.getElementById('modalRfiNumber').textContent = record.number;
     }
     populateCompanySelects();
@@ -782,6 +890,7 @@
   function modalPayload() {
     const assignees = (document.getElementById('modalRfiAssignees')?.value || '').split(',').map(s => s.trim()).filter(Boolean);
     const distribution = (document.getElementById('modalRfiDistribution')?.value || '').split(',').map(s => s.trim()).filter(Boolean);
+    const impacts = readImpactFieldsFromModal();
     return {
       subject: document.getElementById('modalRfiSubject')?.value?.trim(),
       question: document.getElementById('modalRfiQuestion')?.value?.trim(),
@@ -800,8 +909,10 @@
       notes: document.getElementById('modalRfiNotes')?.value?.trim(),
       location_description: document.getElementById('modalRfiLocation')?.value?.trim(),
       discipline: document.getElementById('modalRfiDiscipline')?.value,
-      cost_impact_amount: parseFloat(document.getElementById('modalRfiCostImpact')?.value) || 0,
-      schedule_impact_days: parseInt(document.getElementById('modalRfiSchedDays')?.value, 10) || 0,
+      cost_impact_amount: impacts.cost_impact_amount,
+      cost_impact_label: impacts.cost_impact_label,
+      schedule_impact_days: impacts.schedule_impact_days,
+      schedule_impact_label: impacts.schedule_impact_label,
       is_private: document.getElementById('modalRfiPrivate')?.checked,
     };
   }
@@ -918,7 +1029,8 @@
         <div><span class="text-zinc-500">From</span><div>${esc(r.received_from_company || r.from_party || '—')}</div></div>
         <div><span class="text-zinc-500">To / Assignee</span><div>${esc((r.assignees || []).join(', ') || r.to_party || '—')}</div></div>
         <div><span class="text-zinc-500">RFI Manager</span><div>${esc(r.rfi_manager_name || '—')}</div></div>
-        <div><span class="text-zinc-500">Cost Impact</span><div>${r.cost_impact_amount ? '$' + Number(r.cost_impact_amount).toLocaleString() : '—'}</div></div>
+        <div><span class="text-zinc-500">Cost Impact</span><div>${formatRfiImpactDisplay(r.cost_impact_label, r.cost_impact_amount, 'cost')}</div></div>
+        <div><span class="text-zinc-500">Schedule Impact</span><div>${formatRfiImpactDisplay(r.schedule_impact_label, r.schedule_impact_days, 'schedule')}</div></div>
       </div>
       <div class="mb-4">
         <h3 class="text-xs uppercase text-zinc-500 mb-1">Question</h3>
@@ -1229,8 +1341,8 @@
     metaFields.push(writableField('Discipline', r.discipline));
     metaFields.push(writableField('From', r.received_from_company || r.from_party));
     metaFields.push(writableField('To / Assignee', (r.assignees || []).join(', ') || r.to_party));
-    metaFields.push(writableField('Cost Impact', r.cost_impact_amount ? '$' + Number(r.cost_impact_amount).toLocaleString() : ''));
-    metaFields.push(writableField('Schedule Impact', r.schedule_impact_days ? `${r.schedule_impact_days} days` : ''));
+    metaFields.push(writableField('Cost Impact', formatRfiImpactDisplay(r.cost_impact_label, r.cost_impact_amount, 'cost')));
+    metaFields.push(writableField('Schedule Impact', formatRfiImpactDisplay(r.schedule_impact_label, r.schedule_impact_days, 'schedule')));
 
     const attachmentNames = (r.attachments || []).map(att => att.original_name || att.filename || 'File');
     const linkedItems = [
@@ -1407,6 +1519,7 @@
     exportExcel,
     printLog,
     printDetail,
+    setImpactChoice,
     focusAttachments,
   };
 
