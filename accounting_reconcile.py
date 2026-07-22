@@ -520,10 +520,14 @@ def apply_sub_sov_reconcile(state, originals, changes, display_codes):
     sub_sov = state.get('subcontractorSOV') or {}
     if not isinstance(sub_sov, dict):
         sub_sov = {}
+    sub_status = state.get('subSOVStatus') or {}
 
     all_company_keys = set(sub_sov.keys()) | set(originals.keys()) | set(changes.keys())
     for company_key in all_company_keys:
         existing_lines = sub_sov.get(company_key) or []
+        status_entry = sub_status.get(company_key) or {}
+        status = (status_entry.get('status') or '').strip() if isinstance(status_entry, dict) else ''
+        is_approved_sov = status == 'Approved' or status.startswith('Approved')
         billing_by_norm = {}
         for line in existing_lines:
             norm = normalize_cost_code(line.get('cost_code'))
@@ -554,9 +558,9 @@ def apply_sub_sov_reconcile(state, originals, changes, display_codes):
             billing = billing_by_norm.get(norm, {})
             manual_orig = float(billing.get('original_commitment') or 0)
             manual_chg = float(billing.get('change_orders') or 0)
-            if orig_amt == 0 and manual_orig > 0:
+            if manual_orig > 0 and (orig_amt == 0 or is_approved_sov):
                 orig_amt = manual_orig
-            if chg_amt == 0 and manual_chg > 0:
+            if manual_chg > 0 and (chg_amt == 0 or is_approved_sov):
                 chg_amt = manual_chg
             if orig_amt == 0 and chg_amt == 0:
                 billed = (
@@ -723,6 +727,8 @@ def reconcile_project_accounting(
     budget_state = apply_budget_reconcile(budget_state, budget_targets)
 
     _, pay_state = get_pay_app_state(PayAppProjectState, project_id)
+    from pay_app_persistence import canonicalize_sub_sov_vendor_keys
+    pay_state = canonicalize_sub_sov_vendor_keys(pay_state, commitments)
     pay_state['subcontractorSOV'] = normalize_sub_sov_keys(pay_state.get('subcontractorSOV') or {})
 
     actual_targets = compute_budget_actual_targets(pay_state, commitments, com_alloc_map)

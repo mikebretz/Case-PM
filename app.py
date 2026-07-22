@@ -14558,6 +14558,7 @@ def api_save_pay_app_state():
         alloc_errors = []
         sov_errors = []
         commitment_errors = []
+        commitments = []
         try:
             from portal_sub_access import is_sub_vendor_portal_user
             from pay_app_persistence import (
@@ -14598,6 +14599,11 @@ def api_save_pay_app_state():
                 for field in ('contractorSOV', 'currentPayAppPeriod', 'payAppHistory', 'previousPayApps'):
                     if field in existing:
                         merged[field] = existing[field]
+        except Exception:
+            pass
+        try:
+            from pay_app_persistence import canonicalize_sub_sov_vendor_keys
+            merged = canonicalize_sub_sov_vendor_keys(merged, commitments or Commitment.query.filter_by(project_id=int(project_id)).all())
         except Exception:
             pass
         try:
@@ -14970,6 +14976,13 @@ def api_pay_app_workflow():
     except ValueError as exc:
         db.session.rollback()
         return jsonify({'error': str(exc)}), 400
+
+    try:
+        from pay_app_persistence import canonicalize_sub_sov_vendor_keys
+        commitments = Commitment.query.filter_by(project_id=project_id).all()
+        result['state'] = canonicalize_sub_sov_vendor_keys(result.get('state') or {}, commitments)
+    except Exception:
+        pass
 
     record = save_pay_app_state(PayAppProjectState, db, project_id, result['state'], current_user.id)
     db.session.commit()

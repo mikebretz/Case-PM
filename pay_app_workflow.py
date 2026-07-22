@@ -370,14 +370,8 @@ def g702_workflow_action(period, action, user, amount=0, cumulative_amount=0):
 
 
 def _resolve_sub_sov_status(state, company_key):
-    sub_sov_status = state.get('subSOVStatus') or {}
-    key = str(company_key)
-    entry = sub_sov_status.get(key) or sub_sov_status.get(company_key)
-    if isinstance(entry, str):
-        entry = {'status': entry}
-    if not isinstance(entry, dict):
-        entry = {'status': 'Draft'}
-    return sub_sov_status, key, entry
+    from pay_app_persistence import resolve_sub_sov_status_entry
+    return resolve_sub_sov_status_entry(state, company_key)
 
 
 def _clear_sub_sov_revision_fields(entry):

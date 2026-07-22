@@ -512,9 +512,12 @@ def prune_unregistered_sub_sov(state_data, commitments=None):
         if not isinstance(entry, dict) or not entry.get('status'):
             remove.add(key)
             continue
-        company_name = (entry.get('companyName') or entry.get('company_name') or '').strip()
+        lines = sub_sov.get(key) or sub_sov.get(sk) or []
+        has_scheduled_lines = any(_sub_sov_line_has_activity(line) for line in (lines or []))
+        has_vendor_activity = _sub_pay_state_has_vendor_activity(state_data, key)
         if commitments and get_vendor_commitment_cap_for_sov_entry(commitments, key, entry) is None:
-            remove.add(key)
+            if not has_scheduled_lines and not has_vendor_activity:
+                remove.add(key)
     if not remove:
         return state_data
     out = dict(state_data)
@@ -1067,6 +1070,131 @@ SUBCONTRACTOR_PAY_STATE_FIELDS = (
     'subPayAppNumbers', 'subSOVStatus', 'subLienWaivers', 'subLienWaiverArchive',
     'previousSubPayAppArchive',
 )
+
+
+def _canonical_sov_bucket_key(key, status_entry=None, commitments=None):
+    """Pick one stable dict key for a subcontractor SOV vendor."""
+    from accounting_reconcile import _canon_sub_sov_key
+
+    sk = str(key).strip() if key is not None else ''
+    entry = status_entry if isinstance(status_entry, dict) else {}
+    for field in ('companyId', 'company_id', 'commitmentCompanyId'):
+        raw = entry.get(field)
+        if raw is not None and str(raw).strip():
+            return str(raw).strip()
+    if commitments:
+        canon = _canon_sub_sov_key(sk, commitments)
+        if canon:
+            return canon
+    return sk
+
+
+def _sov_vendor_alias_keys(key, status_entry=None):
+    """All dict keys that may refer to the same subcontractor SOV vendor."""
+    aliases = set()
+    sk = str(key).strip() if key is not None else ''
+    if sk:
+        aliases.add(sk)
+    if isinstance(status_entry, dict):
+        aliases.update(_sov_status_vendor_ids(key, status_entry))
+        name = (status_entry.get('companyName') or status_entry.get('company_name') or '').strip()
+        if name:
+            aliases.add(name)
+    return {alias for alias in aliases if alias}
+
+
+def canonicalize_sub_sov_vendor_keys(state, commitments=None):
+    """Merge subcontractor pay-app buckets that share the same vendor identity."""
+    from accounting_reconcile import normalize_sub_sov_keys
+
+    state = state or {}
+    sub_status = state.get('subSOVStatus') or {}
+    if not isinstance(sub_status, dict):
+        sub_status = {}
+
+    alias_to_canon = {}
+    all_raw_keys = set(sub_status.keys())
+    for field in SUBCONTRACTOR_PAY_STATE_FIELDS:
+        block = state.get(field) or {}
+        if isinstance(block, dict):
+            all_raw_keys.update(block.keys())
+
+    for raw_key in all_raw_keys:
+        sk = str(raw_key).strip()
+        if not sk:
+            continue
+        entry = sub_status.get(raw_key) or sub_status.get(sk) or {}
+        canon = _canonical_sov_bucket_key(sk, entry, commitments)
+        aliases = _sov_vendor_alias_keys(sk, entry)
+        aliases.add(sk)
+        aliases.add(canon)
+        for alias in aliases:
+            if not alias:
+                continue
+            prior = alias_to_canon.get(alias)
+            if prior and prior != canon:
+                for other_alias, mapped in list(alias_to_canon.items()):
+                    if mapped == prior:
+                        alias_to_canon[other_alias] = canon
+            alias_to_canon[alias] = canon
+
+    def remap_dict(block):
+        if not isinstance(block, dict):
+            return block
+        out = {}
+        for raw_key, value in block.items():
+            sk = str(raw_key).strip()
+            if not sk:
+                continue
+            entry = sub_status.get(raw_key) or sub_status.get(sk) or {}
+            canon = alias_to_canon.get(sk) or _canonical_sov_bucket_key(sk, entry, commitments)
+            if canon in out and isinstance(out[canon], dict) and isinstance(value, dict):
+                merged = dict(out[canon])
+                merged.update(value)
+                out[canon] = merged
+            elif canon in out and isinstance(out[canon], list) and isinstance(value, list):
+                out[canon] = out[canon] + value
+            else:
+                out[canon] = value
+        return out
+
+    for field in SUBCONTRACTOR_PAY_STATE_FIELDS:
+        if field == 'previousSubPayAppArchive':
+            continue
+        block = state.get(field)
+        if isinstance(block, dict):
+            state[field] = remap_dict(block)
+
+    state['subcontractorSOV'] = normalize_sub_sov_keys(state.get('subcontractorSOV') or {})
+    return state
+
+
+def resolve_sub_sov_status_entry(state, company_key):
+    """Return (subSOVStatus dict, bucket key, entry dict) for a vendor id or alias."""
+    sub_sov_status = state.get('subSOVStatus') or {}
+    if not isinstance(sub_sov_status, dict):
+        sub_sov_status = {}
+
+    raw = str(company_key).strip() if company_key is not None else ''
+    if raw:
+        entry = sub_sov_status.get(raw) or sub_sov_status.get(company_key)
+        if isinstance(entry, str):
+            entry = {'status': entry}
+        if isinstance(entry, dict) and entry.get('status'):
+            return sub_sov_status, raw, entry
+
+    for key, entry in sub_sov_status.items():
+        if not isinstance(entry, dict) or not entry.get('status'):
+            continue
+        sk = str(key).strip()
+        if not sk:
+            continue
+        if raw and raw in _sov_vendor_alias_keys(sk, entry):
+            return sub_sov_status, sk, entry
+
+    entry = {'status': 'Draft'}
+    key = raw or str(company_key or '')
+    return sub_sov_status, key, entry
 
 
 def _sub_sov_line_has_activity(line):
