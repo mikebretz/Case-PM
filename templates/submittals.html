@@ -17,7 +17,8 @@ window.SUBMITTAL_PROJECT_CTX = {
 };
 window.SUBMITTAL_ACCESS = {
     userId: {{ current_user.id }},
-    companyId: {{ current_user.company_id if current_user.company_id else 'null' }},
+    companyId: {{ (resolved_vendor_company_id if resolved_vendor_company_id is not none else (current_user.company_id if current_user.company_id else none))|tojson }},
+    companyName: {{ (resolved_vendor_company_name or current_user.company or '')|tojson }},
     isSubPortal: {{ is_sub_portal|default(false)|tojson }},
 };
 function submittalAccessLevel() {
@@ -39,6 +40,9 @@ function submittalItemAssignedToMe(item) {
     if (item.assignedCompanyId && cid && String(item.assignedCompanyId) === String(cid)) return true;
     const userCo = (document.body?.dataset?.userCompanyId || '').trim();
     if (item.assignedCompanyId && userCo && String(item.assignedCompanyId) === String(userCo)) return true;
+    const cname = (SUBMITTAL_ACCESS.companyName || '').trim().toLowerCase();
+    const assignedName = (item.assignedCompanyName || '').trim().toLowerCase();
+    if (assignedName && cname && assignedName === cname) return true;
     return false;
 }
 function submittalCanModifyItem(item) {
@@ -109,7 +113,9 @@ function refreshSubmittalActionButtons() {
     const emptyCreateBtn = document.getElementById('submittalEmptyCreateBtn');
     if (emptyHint) {
         emptyHint.textContent = hideNew
-            ? 'No submittals are available for this project yet.'
+            ? (SUBMITTAL_ACCESS.isSubPortal
+                ? 'No submittals are assigned to your company yet.'
+                : 'No submittals are available for this project yet.')
             : 'Click "New Submittal", import an Excel log, or upload a Specifications Book PDF.';
     }
     if (emptyCreateBtn) emptyCreateBtn.classList.toggle('hidden', hideNew);
@@ -1182,6 +1188,42 @@ function saveData() {
     localStorage.setItem(getSpecSectionsStorageKey(), JSON.stringify(specSections));
 }
 
+async function loadSubmittalsFromServer() {
+    const pid = window.SUBMITTAL_PROJECT_CTX?.id;
+    if (!pid) return;
+    try {
+        const res = await fetch(`/api/submittals?project_id=${encodeURIComponent(pid)}`, { credentials: 'same-origin' });
+        const json = await res.json();
+        if (!res.ok || !json.ok) {
+            console.warn('Submittal server load failed:', json.error || res.status);
+            return;
+        }
+        const serverItems = Array.isArray(json.submittals) ? json.submittals : [];
+        if (SUBMITTAL_ACCESS.isSubPortal) {
+            submittals = serverItems;
+            saveData();
+            return;
+        }
+        const byServerId = new Map(serverItems.map(s => [String(s.serverId || s.id), s]));
+        const byNumber = new Map(serverItems.filter(s => s.number).map(s => [s.number, s]));
+        const localOnly = (submittals || []).filter(s => {
+            if (s.serverId && byServerId.has(String(s.serverId))) return false;
+            if (s.number && byNumber.has(s.number)) return false;
+            return true;
+        });
+        submittals = [...serverItems, ...localOnly];
+        saveData();
+    } catch (err) {
+        console.warn('Could not load submittals from server:', err);
+    }
+}
+
+function parseSubmittalId(value) {
+    if (value == null || value === '') return null;
+    const n = parseInt(value, 10);
+    return Number.isNaN(n) ? null : n;
+}
+
 // Update metrics
 function updateMetrics() {
     document.getElementById('metricTotal').textContent = submittals.length;
@@ -1199,6 +1241,7 @@ function getFilteredSubmittals() {
     const status = document.getElementById('statusFilter')?.value || '';
     const division = document.getElementById('divisionFilter')?.value || '';
     return submittals.filter(s => {
+        if (SUBMITTAL_ACCESS.isSubPortal && !submittalItemAssignedToMe(s)) return false;
         const hay = [
             s.number, s.subject, s.specSection, s.sectionName, s.paragraph, s.type, s.receivedFrom, s.referredTo
         ].filter(Boolean).join(' ').toLowerCase();
@@ -1413,9 +1456,9 @@ async function syncSubmittalToServer(item, opts = {}) {
         description: item.subject || item.description || 'Submittal',
         spec_section: item.specSection,
         priority: item.priority || 'Medium',
-        assigned_company_id: item.assignedCompanyId || null,
+        assigned_company_id: parseSubmittalId(item.assignedCompanyId),
         assigned_company_name: item.assignedCompanyName || null,
-        assigned_contact_user_id: item.assignedContactId || null,
+        assigned_contact_user_id: parseSubmittalId(item.assignedContactId),
         assigned_contact_name: item.assignedContactName || null,
         assigned_contact_email: item.assignedContactEmail || null,
         due_date: item.requiredBy || null,
@@ -1426,6 +1469,11 @@ async function syncSubmittalToServer(item, opts = {}) {
             type: item.type,
             receivedFrom: item.receivedFrom,
             referredTo: item.referredTo,
+            costImpactChoice: item.costImpactChoice,
+            scheduleImpactChoice: item.scheduleImpactChoice,
+            costImpact: item.costImpact,
+            scheduleDays: item.scheduleDays,
+            impactNotes: item.impactNotes,
         },
     };
     if (!item.serverId) {
@@ -4475,6 +4523,7 @@ async function initialize() {
     loadData();
     refreshSubmittalActionButtons();
     await ensureSubmittalCompaniesLoaded();
+    await loadSubmittalsFromServer();
     if (!submittalIsViewOnly()) {
         await loadSpecBookArchive();
         await syncSpecBookToServerIfNeeded();
@@ -4485,7 +4534,13 @@ async function initialize() {
     }
     renderSubmittalsTable();
     updateMetrics();
-    console.log('%c[Submittals] Initialized with Spec Book PDF import.', 'color:#22c55e');
+    const params = new URLSearchParams(window.location.search);
+    const openSubmittalId = params.get('submittal_id');
+    if (openSubmittalId) {
+        const item = submittals.find(s => String(s.serverId) === String(openSubmittalId) || String(s.id) === String(openSubmittalId));
+        if (item) openDetailModal(item.id);
+    }
+    console.log('%c[Submittals] Initialized with server sync.', 'color:#22c55e');
     if (typeof CasePMDevActions !== 'undefined') {
         CasePMDevActions.consume('submittals-clear-log', clearSubmittalLog);
     }
