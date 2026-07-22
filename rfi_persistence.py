@@ -41,6 +41,7 @@ def ensure_rfi_schema(engine, db):
         'answered_by_id': 'INTEGER',
         'notes': 'TEXT',
         'cost_impact_amount': 'FLOAT',
+        'cost_impact_label': 'VARCHAR(50)',
         'schedule_impact_days': 'INTEGER DEFAULT 0',
         'schedule_impact_label': 'VARCHAR(50)',
         'is_private': 'INTEGER DEFAULT 0',
@@ -103,6 +104,7 @@ def rfi_to_dict(rfi, linked_cos=None, linked_pcos=None):
         'answered_at': _iso(getattr(rfi, 'answered_at', None)),
         'notes': getattr(rfi, 'notes', None),
         'cost_impact_amount': getattr(rfi, 'cost_impact_amount', None) or 0,
+        'cost_impact_label': getattr(rfi, 'cost_impact_label', None),
         'schedule_impact_days': getattr(rfi, 'schedule_impact_days', None) or 0,
         'schedule_impact_label': getattr(rfi, 'schedule_impact_label', None),
         'is_private': bool(getattr(rfi, 'is_private', 0)),
@@ -140,7 +142,7 @@ def apply_rfi_fields(rfi, data, *, is_create=False):
         'subject', 'question', 'priority', 'drawing_reference', 'spec_reference',
         'from_party', 'to_party', 'received_from_company', 'received_from_contact',
         'responsible_contractor', 'rfi_manager_name', 'official_answer',
-        'notes', 'schedule_impact_label', 'location_description', 'discipline', 'linked_pco_id',
+        'notes', 'cost_impact_label', 'schedule_impact_label', 'location_description', 'discipline', 'linked_pco_id',
     )
     for key in simple:
         if data.get(key) is not None:
@@ -157,8 +159,12 @@ def apply_rfi_fields(rfi, data, *, is_create=False):
         rfi.due_date = _parse_date(data['due_date'])
     if data.get('cost_impact_amount') is not None:
         rfi.cost_impact_amount = float(data['cost_impact_amount'] or 0)
+    if data.get('cost_impact_label') is not None:
+        rfi.cost_impact_label = data['cost_impact_label']
     if data.get('schedule_impact_days') is not None:
         rfi.schedule_impact_days = int(data['schedule_impact_days'] or 0)
+    if data.get('schedule_impact_label') is not None:
+        rfi.schedule_impact_label = data['schedule_impact_label']
     if data.get('is_private') is not None:
         rfi.is_private = 1 if data['is_private'] else 0
     if data.get('assignees') is not None:

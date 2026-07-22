@@ -774,30 +774,17 @@ function refreshSubmittalActionButtons() {
                         </div>
                         
                         <div>
-                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Assigned Company</label>
+                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Assigned To — Company</label>
+                            <p class="text-[11px] text-zinc-500 mb-1">Subcontractor or vendor responsible for this submittal.</p>
                             <select id="modalAssignedCompany" onchange="onSubmittalCompanyChange()" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
                                 <option value="">— Select Company —</option>
                             </select>
                         </div>
 
                         <div>
-                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Assigned Contact</label>
+                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Assigned To — Contact</label>
                             <select id="modalAssignedContact" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
                                 <option value="">— Select Contact —</option>
-                            </select>
-                        </div>
-                        
-                        <div>
-                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Received From</label>
-                            <select id="modalReceivedFrom" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-                                <!-- Populated by JS -->
-                            </select>
-                        </div>
-                        
-                        <div>
-                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Referred To</label>
-                            <select id="modalReferredTo" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-                                <!-- Populated by JS -->
                             </select>
                         </div>
                         
@@ -818,22 +805,31 @@ function refreshSubmittalActionButtons() {
                     </div>
                 </div>
                 
-                <!-- New Fields -->
-                <div class="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <!-- Impact fields -->
+                <div class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div>
-                        <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Potential Cost Impact ($)</label>
-                        <input type="text" id="modalCostImpact" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm casepm-money-input" data-casepm-money>
+                        <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Cost Impact?</label>
+                        <div class="flex gap-2 mb-3">
+                            <button type="button" onclick="setSubmittalImpactChoice('cost', 'yes')" id="btnCostYes" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-emerald-600 rounded-lg text-sm">Yes</button>
+                            <button type="button" onclick="setSubmittalImpactChoice('cost', 'no')" id="btnCostNo" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm">No</button>
+                            <button type="button" onclick="setSubmittalImpactChoice('cost', 'tbd')" id="btnCostTbd" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-amber-600 rounded-lg text-sm">TBD</button>
+                        </div>
+                        <div id="costAmountContainer" class="hidden">
+                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Cost Estimate ($)</label>
+                            <input type="text" id="modalCostImpact" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm casepm-money-input" data-casepm-money>
+                        </div>
                     </div>
                     <div>
                         <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Schedule Impact?</label>
-                        <div class="flex gap-2">
-                            <button onclick="setScheduleImpact(true)" id="btnScheduleYes" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-emerald-600 rounded-lg text-sm">Yes</button>
-                            <button onclick="setScheduleImpact(false)" id="btnScheduleNo" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm">No</button>
+                        <div class="flex gap-2 mb-3">
+                            <button type="button" onclick="setSubmittalImpactChoice('schedule', 'yes')" id="btnScheduleYes" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-emerald-600 rounded-lg text-sm">Yes</button>
+                            <button type="button" onclick="setSubmittalImpactChoice('schedule', 'no')" id="btnScheduleNo" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm">No</button>
+                            <button type="button" onclick="setSubmittalImpactChoice('schedule', 'tbd')" id="btnScheduleTbd" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-amber-600 rounded-lg text-sm">TBD</button>
                         </div>
-                    </div>
-                    <div id="scheduleDaysContainer" class="hidden">
-                        <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Schedule Impact (Days)</label>
-                        <input type="number" id="modalScheduleDays" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
+                        <div id="scheduleDaysContainer" class="hidden">
+                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Schedule Impact (Days)</label>
+                            <input type="number" id="modalScheduleDays" min="0" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
+                        </div>
                     </div>
                 </div>
                 
@@ -1285,36 +1281,21 @@ function openDetailModal(id, isNew = false, newData = null) {
     document.getElementById('modalDateReceived').value = currentModalItem.dateReceived || '';
     document.getElementById('modalRequiredBy').value = currentModalItem.requiredBy || '';
     document.getElementById('modalStatus').value = currentModalItem.status || 'Draft';
-    
-    // New fields
-    const costEl = document.getElementById('modalCostImpact');
-    if (window.CasePMMoney) {
-        CasePMMoney.setMoneyInput(costEl, currentModalItem.costImpact || '');
-        CasePMMoney.setupMoneyInput(costEl);
-    } else if (costEl) {
-        costEl.value = currentModalItem.costImpact || '';
-    }
-    document.getElementById('modalScheduleDays').value = currentModalItem.scheduleDays || '';
     document.getElementById('modalImpactNotes').value = currentModalItem.impactNotes || '';
+    applySubmittalImpactFieldsToModal(currentModalItem);
     
-    // Populate dropdowns
+    populateContactDropdowns().then(() => {
+        if (!currentModalItem) return;
+        if (currentModalItem.specSection) {
+            document.getElementById('modalSpecSection').value = currentModalItem.specSection;
+        }
+        if (document.getElementById('modalAssignedCompany')) {
+            document.getElementById('modalAssignedCompany').value = currentModalItem.assignedCompanyId || '';
+            onSubmittalCompanyChange(currentModalItem.assignedContactId || '');
+        }
+    });
     populateSpecSectionDropdown();
-    populateContactDropdowns();
     
-    if (currentModalItem.specSection) {
-        document.getElementById('modalSpecSection').value = currentModalItem.specSection;
-    }
-    if (document.getElementById('modalAssignedCompany')) {
-        document.getElementById('modalAssignedCompany').value = currentModalItem.assignedCompanyId || '';
-        onSubmittalCompanyChange(currentModalItem.assignedContactId || '');
-    }
-    if (document.getElementById('modalReceivedFrom')) {
-        document.getElementById('modalReceivedFrom').value = currentModalItem.receivedFrom || '';
-    }
-    if (document.getElementById('modalReferredTo')) {
-        document.getElementById('modalReferredTo').value = currentModalItem.referredTo || '';
-    }
-
     if (!currentModalItem.specBookPage && specBookArchive && currentModalItem.specSection) {
         currentModalItem.specBookPage = resolveSpecBookPageForSubmittal(currentModalItem);
     }
@@ -1370,9 +1351,11 @@ function saveSubmittalFromModal() {
     currentModalItem.dateReceived = document.getElementById('modalDateReceived').value;
     currentModalItem.requiredBy = document.getElementById('modalRequiredBy').value;
     currentModalItem.status = document.getElementById('modalStatus').value;
-    const costEl = document.getElementById('modalCostImpact');
-    currentModalItem.costImpact = window.CasePMMoney ? (CasePMMoney.readMoneyInput(costEl) ?? '') : (costEl?.value || '');
-    currentModalItem.scheduleDays = document.getElementById('modalScheduleDays').value;
+    const impact = readSubmittalImpactFieldsFromModal();
+    currentModalItem.costImpactChoice = impact.costChoice;
+    currentModalItem.scheduleImpactChoice = impact.scheduleChoice;
+    currentModalItem.costImpact = impact.costImpact;
+    currentModalItem.scheduleDays = impact.scheduleDays;
     currentModalItem.impactNotes = document.getElementById('modalImpactNotes').value;
     const contactSel = document.getElementById('modalAssignedContact');
     const companySel = document.getElementById('modalAssignedCompany');
@@ -1387,8 +1370,9 @@ function saveSubmittalFromModal() {
         currentModalItem.assignedContactName = opt?.dataset?.name || opt?.text || '';
         currentModalItem.assignedContactEmail = opt?.dataset?.email || '';
     }
-    currentModalItem.receivedFrom = document.getElementById('modalReceivedFrom').value;
-    currentModalItem.referredTo = document.getElementById('modalReferredTo').value;
+    if (companySel && companySel.value) {
+        currentModalItem.receivedFrom = currentModalItem.assignedCompanyName || '';
+    }
     if (specBookArchive) {
         currentModalItem.specBookFilename = specBookArchive.filename;
         if (currentModalItem.specSection) {
@@ -1653,6 +1637,8 @@ function showNewSubmittalModal() {
         receivedFrom: '',
         referredTo: '',
         status: 'Draft',
+        costImpactChoice: 'tbd',
+        scheduleImpactChoice: 'tbd',
         costImpact: '',
         scheduleDays: '',
         impactNotes: '',
@@ -1805,68 +1791,119 @@ function loadSubmittalCompanies() {
     } catch { return []; }
 }
 
+let submittalCompaniesCache = null;
+
+async function ensureSubmittalCompaniesLoaded() {
+    if (submittalCompaniesCache) return submittalCompaniesCache;
+    try {
+        const res = await fetch('/api/companies', { credentials: 'same-origin' });
+        const json = await res.json();
+        if (json.ok && Array.isArray(json.companies) && json.companies.length) {
+            submittalCompaniesCache = json.companies;
+            return submittalCompaniesCache;
+        }
+    } catch (err) {
+        console.warn('Could not load companies from API:', err);
+    }
+    submittalCompaniesCache = loadSubmittalCompanies();
+    return submittalCompaniesCache;
+}
+
 function loadSubmittalUsers() {
     try {
         return JSON.parse(localStorage.getItem('casepm_users') || localStorage.getItem('users') || '[]');
     } catch { return []; }
 }
 
-function populateContactDropdowns() {
-    const companies = loadSubmittalCompanies();
-    const users = loadSubmittalUsers();
+function normalizeImpactChoice(value) {
+    const v = String(value || '').trim().toLowerCase();
+    if (v === 'yes' || v === 'y' || v === 'true') return 'yes';
+    if (v === 'no' || v === 'n' || v === 'false') return 'no';
+    if (v === 'tbd' || v === 'unknown' || v === 'to be determined') return 'tbd';
+    return '';
+}
+
+function inferImpactChoice(storedChoice, numericValue) {
+    const normalized = normalizeImpactChoice(storedChoice);
+    if (normalized) return normalized;
+    const n = parseFloat(numericValue);
+    if (!Number.isNaN(n) && n > 0) return 'yes';
+    return 'tbd';
+}
+
+function setSubmittalImpactChoice(type, choice) {
+    const normalized = normalizeImpactChoice(choice) || 'tbd';
+    const isCost = type === 'cost';
+    const yesBtn = document.getElementById(isCost ? 'btnCostYes' : 'btnScheduleYes');
+    const noBtn = document.getElementById(isCost ? 'btnCostNo' : 'btnScheduleNo');
+    const tbdBtn = document.getElementById(isCost ? 'btnCostTbd' : 'btnScheduleTbd');
+    const amountContainer = document.getElementById(isCost ? 'costAmountContainer' : 'scheduleDaysContainer');
+    [yesBtn, noBtn, tbdBtn].forEach((btn) => {
+        if (!btn) return;
+        btn.classList.remove('bg-emerald-600', 'bg-amber-600');
+        if (!btn.classList.contains('bg-zinc-700')) btn.classList.add('bg-zinc-700');
+    });
+    if (normalized === 'yes' && yesBtn) {
+        yesBtn.classList.add('bg-emerald-600');
+        yesBtn.classList.remove('bg-zinc-700');
+    } else if (normalized === 'no' && noBtn) {
+        noBtn.classList.add('bg-emerald-600');
+        noBtn.classList.remove('bg-zinc-700');
+    } else if (tbdBtn) {
+        tbdBtn.classList.add('bg-amber-600');
+        tbdBtn.classList.remove('bg-zinc-700');
+    }
+    if (amountContainer) amountContainer.classList.toggle('hidden', normalized !== 'yes');
+}
+
+async function populateContactDropdowns() {
+    const companies = await ensureSubmittalCompaniesLoaded();
     const companySel = document.getElementById('modalAssignedCompany');
-    const rec = document.getElementById('modalReceivedFrom');
-    const ref = document.getElementById('modalReferredTo');
 
     if (companySel) {
         const prev = companySel.value;
         companySel.innerHTML = '<option value="">— Select Company —</option>' +
             companies.map(c => {
                 const name = c.company_name || c.name || '';
-                const id = c.id || name;
+                const id = c.id || c.server_id || '';
+                if (!id) return '';
                 return `<option value="${escapeSubmittalHtml(String(id))}" data-name="${escapeSubmittalHtml(name)}">${escapeSubmittalHtml(name)}</option>`;
             }).join('');
         if (prev) companySel.value = prev;
     }
-
-    if (rec) {
-        rec.innerHTML = '<option value="">Select...</option>' +
-            companies.map(c => {
-                const name = c.company_name || c.name || '';
-                return `<option value="${escapeSubmittalHtml(name)}">${escapeSubmittalHtml(name)}</option>`;
-            }).join('');
-    }
-    if (ref) {
-        const architectUsers = users.filter(u => /architect|engineer|owner/i.test(u.role || ''));
-        const refNames = architectUsers.length
-            ? architectUsers.map(u => u.name || u.full_name || u.email)
-            : companies.map(c => c.company_name || c.name).filter(Boolean);
-        ref.innerHTML = '<option value="">Select...</option>' +
-            [...new Set(refNames)].map(n => `<option value="${escapeSubmittalHtml(n)}">${escapeSubmittalHtml(n)}</option>`).join('');
-    }
 }
 
-function onSubmittalCompanyChange(selectedContactId) {
+async function onSubmittalCompanyChange(selectedContactId) {
     const companySel = document.getElementById('modalAssignedCompany');
     const contactSel = document.getElementById('modalAssignedContact');
     if (!companySel || !contactSel) return;
-    const opt = companySel.options[companySel.selectedIndex];
+
     const companyId = companySel.value;
-    const companyName = opt?.dataset?.name || opt?.text || '';
-    const users = loadSubmittalUsers();
-    const contacts = users.filter(u => {
-        if (companyId && u.company_id && String(u.company_id) === String(companyId)) return true;
-        const cn = u.company || u.company_name || '';
-        return cn && companyName && cn.toLowerCase() === companyName.toLowerCase();
-    });
-    contactSel.innerHTML = '<option value="">— Select Contact —</option>' +
-        contacts.map(u => {
-            const name = u.name || u.full_name || u.email || 'Contact';
-            const id = u.id || u.email || name;
-            const email = u.email || '';
-            return `<option value="${escapeSubmittalHtml(String(id))}" data-name="${escapeSubmittalHtml(name)}" data-email="${escapeSubmittalHtml(email)}">${escapeSubmittalHtml(name)}${email ? ` (${escapeSubmittalHtml(email)})` : ''}</option>`;
-        }).join('');
-    if (selectedContactId) contactSel.value = String(selectedContactId);
+    contactSel.innerHTML = '<option value="">— Select Contact —</option>';
+    if (!companyId) return;
+
+    const numericId = parseInt(companyId, 10);
+    if (!numericId) return;
+
+    contactSel.disabled = true;
+    try {
+        const res = await fetch(`/api/companies/${numericId}/users`, { credentials: 'same-origin' });
+        const json = await res.json();
+        const users = json.ok && Array.isArray(json.users) ? json.users : [];
+        contactSel.innerHTML = '<option value="">— Select Contact —</option>' +
+            users.map(u => {
+                const name = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.name || u.full_name || u.email || 'Contact';
+                const id = u.id || u.email || name;
+                const email = u.email || '';
+                return `<option value="${escapeSubmittalHtml(String(id))}" data-name="${escapeSubmittalHtml(name)}" data-email="${escapeSubmittalHtml(email)}">${escapeSubmittalHtml(name)}${email ? ` (${escapeSubmittalHtml(email)})` : ''}</option>`;
+            }).join('');
+        if (selectedContactId) contactSel.value = String(selectedContactId);
+    } catch (err) {
+        console.warn('Could not load company contacts:', err);
+        showCenteredAlert('Could not load contacts for the selected company.', 'warning');
+    } finally {
+        contactSel.disabled = false;
+    }
 }
 
 function updateSectionNameFromSelect() {
@@ -1878,16 +1915,37 @@ function updateSectionNameFromSelect() {
 }
 
 function setScheduleImpact(isYes) {
-    const container = document.getElementById('scheduleDaysContainer');
-    if (isYes) {
-        container.classList.remove('hidden');
-        document.getElementById('btnScheduleYes').classList.add('bg-emerald-600');
-        document.getElementById('btnScheduleNo').classList.remove('bg-emerald-600');
-    } else {
-        container.classList.add('hidden');
-        document.getElementById('btnScheduleNo').classList.add('bg-emerald-600');
-        document.getElementById('btnScheduleYes').classList.remove('bg-emerald-600');
+    setSubmittalImpactChoice('schedule', isYes ? 'yes' : 'no');
+}
+
+function applySubmittalImpactFieldsToModal(item) {
+    const costChoice = inferImpactChoice(item?.costImpactChoice, item?.costImpact);
+    const scheduleChoice = inferImpactChoice(item?.scheduleImpactChoice, item?.scheduleDays);
+    setSubmittalImpactChoice('cost', costChoice);
+    setSubmittalImpactChoice('schedule', scheduleChoice);
+    const costEl = document.getElementById('modalCostImpact');
+    if (window.CasePMMoney) {
+        CasePMMoney.setMoneyInput(costEl, costChoice === 'yes' ? (item?.costImpact || '') : '');
+        CasePMMoney.setupMoneyInput(costEl);
+    } else if (costEl) {
+        costEl.value = costChoice === 'yes' ? (item?.costImpact || '') : '';
     }
+    document.getElementById('modalScheduleDays').value = scheduleChoice === 'yes' ? (item?.scheduleDays || '') : '';
+}
+
+function readSubmittalImpactFieldsFromModal() {
+    const costChoice = document.getElementById('btnCostYes')?.classList.contains('bg-emerald-600') ? 'yes'
+        : document.getElementById('btnCostNo')?.classList.contains('bg-emerald-600') ? 'no'
+        : 'tbd';
+    const scheduleChoice = document.getElementById('btnScheduleYes')?.classList.contains('bg-emerald-600') ? 'yes'
+        : document.getElementById('btnScheduleNo')?.classList.contains('bg-emerald-600') ? 'no'
+        : 'tbd';
+    const costEl = document.getElementById('modalCostImpact');
+    const costImpact = costChoice === 'yes'
+        ? (window.CasePMMoney ? (CasePMMoney.readMoneyInput(costEl) ?? '') : (costEl?.value || ''))
+        : '';
+    const scheduleDays = scheduleChoice === 'yes' ? (document.getElementById('modalScheduleDays')?.value || '') : '';
+    return { costChoice, scheduleChoice, costImpact, scheduleDays };
 }
 
 function handleStatusChangeInModal() {
@@ -4416,6 +4474,7 @@ async function syncSpecBookToServerIfNeeded() {
 async function initialize() {
     loadData();
     refreshSubmittalActionButtons();
+    await ensureSubmittalCompaniesLoaded();
     if (!submittalIsViewOnly()) {
         await loadSpecBookArchive();
         await syncSpecBookToServerIfNeeded();
