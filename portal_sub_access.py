@@ -76,7 +76,7 @@ def resolve_sub_vendor_company(user, Company=None, db=None, persist_link: bool =
     if cid is not None:
         try:
             company = Company.query.get(int(cid))
-        except (TypeError, ValueError):
+        except Exception:
             company = None
 
     if company is None and uid is not None:
@@ -374,60 +374,64 @@ def _filter_company_dict(data: dict | None, allowed: set[str], sov_keys: set[str
 
 def filter_pay_app_state_for_sub_vendor(user, data: dict | None) -> dict | None:
     """Return pay app state limited to the sub vendor's company."""
-    if not is_sub_vendor_portal_user(user):
-        return data
-    from pay_app_persistence import coerce_pay_app_state
-    data = coerce_pay_app_state(data)
-    if not data:
-        return data
-    allowed = sub_vendor_company_keys(user)
-    out = dict(data)
-    for field in ('subcontractorSOV', 'subSOVStatus', 'subPayAppHistory', 'subPendingSubmissions', 'subPayAppNumbers'):
-        if field in out:
-            out[field] = _normalize_company_map(out.get(field))
-    sov_keys = resolve_sub_vendor_sov_keys(user, out)
-    if not sov_keys:
-        cid, cname, _ = resolve_sub_vendor_company(user)
-        sov_keys = _discover_sov_keys_from_data(out, cid, cname, user)
-    if not sov_keys:
-        try:
-            from pay_app_persistence import _sov_status_vendor_ids
+    try:
+        if not is_sub_vendor_portal_user(user):
+            return data
+        from pay_app_persistence import coerce_pay_app_state
+        data = coerce_pay_app_state(data)
+        if not data:
+            return data
+        allowed = sub_vendor_company_keys(user)
+        out = dict(data)
+        for field in ('subcontractorSOV', 'subSOVStatus', 'subPayAppHistory', 'subPendingSubmissions', 'subPayAppNumbers'):
+            if field in out:
+                out[field] = _normalize_company_map(out.get(field))
+        sov_keys = resolve_sub_vendor_sov_keys(user, out)
+        if not sov_keys:
             cid, cname, _ = resolve_sub_vendor_company(user)
-            cid_s = str(cid) if cid is not None else ''
-            cname_l = (cname or '').strip().lower()
+            sov_keys = _discover_sov_keys_from_data(out, cid, cname, user)
+        if not sov_keys:
+            try:
+                from pay_app_persistence import _sov_status_vendor_ids
+                cid, cname, _ = resolve_sub_vendor_company(user)
+                cid_s = str(cid) if cid is not None else ''
+                cname_l = (cname or '').strip().lower()
+                sub_status = _normalize_company_map(out.get('subSOVStatus'))
+                for key, entry in sub_status.items():
+                    if not isinstance(entry, dict) or not entry.get('status'):
+                        continue
+                    sk = str(key).strip()
+                    if not sk:
+                        continue
+                    if cid_s and cid_s in _sov_status_vendor_ids(sk, entry):
+                        sov_keys.add(sk)
+                        continue
+                    st_name = (entry.get('companyName') or entry.get('company_name') or '').strip().lower()
+                    if cname_l and st_name and (st_name == cname_l or cname_l in st_name or st_name in cname_l):
+                        sov_keys.add(sk)
+            except Exception:
+                pass
+        if not sov_keys and pay_app_state_includes_user(user, out):
             sub_status = _normalize_company_map(out.get('subSOVStatus'))
             for key, entry in sub_status.items():
-                if not isinstance(entry, dict) or not entry.get('status'):
-                    continue
-                sk = str(key).strip()
-                if not sk:
-                    continue
-                if cid_s and cid_s in _sov_status_vendor_ids(sk, entry):
-                    sov_keys.add(sk)
-                    continue
-                st_name = (entry.get('companyName') or entry.get('company_name') or '').strip().lower()
-                if cname_l and st_name and (st_name == cname_l or cname_l in st_name or st_name in cname_l):
-                    sov_keys.add(sk)
-        except Exception:
-            pass
-    if not sov_keys and pay_app_state_includes_user(user, out):
-        sub_status = _normalize_company_map(out.get('subSOVStatus'))
-        for key, entry in sub_status.items():
-            if isinstance(entry, dict) and entry.get('status'):
-                sk = str(key).strip()
-                if sk:
-                    sov_keys.add(sk)
-    for field in (
-        'subcontractorSOV', 'subSOVStatus', 'subPayAppHistory',
-        'subPendingSubmissions', 'subPayAppNumbers',
-    ):
-        if field in out:
-            out[field] = _filter_company_dict(out.get(field), allowed, sov_keys)
-    out.pop('contractorSOV', None)
-    out.pop('currentPayAppPeriod', None)
-    out.pop('payAppHistory', None)
-    out.pop('previousPayApps', None)
-    return out
+                if isinstance(entry, dict) and entry.get('status'):
+                    sk = str(key).strip()
+                    if sk:
+                        sov_keys.add(sk)
+        for field in (
+            'subcontractorSOV', 'subSOVStatus', 'subPayAppHistory',
+            'subPendingSubmissions', 'subPayAppNumbers',
+        ):
+            if field in out:
+                out[field] = _filter_company_dict(out.get(field), allowed, sov_keys)
+        out.pop('contractorSOV', None)
+        out.pop('currentPayAppPeriod', None)
+        out.pop('payAppHistory', None)
+        out.pop('previousPayApps', None)
+        return out
+    except Exception:
+        from pay_app_persistence import coerce_pay_app_state
+        return coerce_pay_app_state(data)
 
 
 def get_company_job_project_ids(company, Commitment=None, PayAppProjectState=None) -> set[int]:
