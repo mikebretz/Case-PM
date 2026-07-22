@@ -52,6 +52,7 @@ function submittalIsSubAssignee(item) {
     return st === 'Sent to Subcontractor' || st === 'Revise & Resubmit';
 }
 function submittalCanModifyItem(item) {
+    if (submittalIsSubAssignee(item)) return true;
     const level = submittalAccessLevel();
     if (level === 'view') return false;
     if (!SUBMITTAL_ACCESS.isSubPortal || level === 'edit') return true;
@@ -59,24 +60,44 @@ function submittalCanModifyItem(item) {
     const st = item.status || '';
     return st === 'Sent to Subcontractor' || st === 'Revise & Resubmit';
 }
-function resetSubmittalModalEditable() {
-    const modal = document.getElementById('detailModal');
-    if (!modal) return;
-    modal.querySelectorAll('input, select, textarea, button').forEach(el => {
-        if (el.id === 'submittalDetailModalClose' || el.classList.contains('modal-close-btn')) return;
+function submittalCanCommentOn(item) {
+    if (!item) return false;
+    if (SUBMITTAL_ACCESS.isSubPortal) return submittalItemAssignedToMe(item);
+    return submittalAccessLevel() !== 'view' || true;
+}
+function enableSubmittalAssigneeEditableFields() {
+    ['modalImpactNotes', 'submittalAttachmentInput', 'reviewCommentInput'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
         el.disabled = false;
         el.readOnly = false;
-        if (el.id === 'submittalModalSaveBtn') el.classList.remove('hidden');
+        el.classList.remove('submittal-field-locked');
     });
-    const uploadInput = document.getElementById('submittalAttachmentInput');
-    if (uploadInput) uploadInput.disabled = false;
+    const postBtn = document.getElementById('submittalPostCommentBtn');
+    if (postBtn) postBtn.disabled = false;
+}
+function resetSubmittalModalEditable() {
+    const mainCol = document.getElementById('submittalDetailMainCol');
+    if (mainCol) {
+        mainCol.querySelectorAll('input, select, textarea, button').forEach(el => {
+            if (el.id === 'submittalModalSaveBtn') return;
+            el.disabled = false;
+            el.readOnly = false;
+            el.classList.remove('submittal-field-locked');
+        });
+    }
+    enableSubmittalAssigneeEditableFields();
+    const saveBtn = document.getElementById('submittalModalSaveBtn');
+    if (saveBtn) saveBtn.classList.remove('hidden');
 }
 function applySubmittalModalReadOnly(readOnly) {
-    const modal = document.getElementById('detailModal');
-    if (!modal) return;
-    modal.querySelectorAll('input, select, textarea, button').forEach(el => {
-        if (el.id === 'submittalDetailModalClose' || el.id === 'submittalDetailBackBtn' || el.classList.contains('modal-close-btn')) return;
-        if (el.id === 'submittalSubmitForApprovalBtn') return;
+    const mainCol = document.getElementById('submittalDetailMainCol');
+    if (!mainCol) return;
+    const isAssignee = submittalIsSubAssignee(currentModalItem);
+    const assigneeEditable = new Set(['modalImpactNotes', 'submittalAttachmentInput']);
+    mainCol.querySelectorAll('input, select, textarea, button').forEach(el => {
+        if (el.id === 'submittalModalSaveBtn') return;
+        if (isAssignee && assigneeEditable.has(el.id)) return;
         if (readOnly) {
             if (el.tagName === 'BUTTON' && (el.textContent || '').toLowerCase().includes('save')) {
                 el.classList.add('hidden');
@@ -85,17 +106,28 @@ function applySubmittalModalReadOnly(readOnly) {
             } else if (el.tagName !== 'BUTTON') {
                 el.readOnly = true;
                 el.disabled = true;
-            } else if (!el.classList.contains('modal-close-btn')) {
+            } else {
                 el.disabled = true;
             }
         }
     });
     const saveBtn = document.getElementById('submittalModalSaveBtn');
-    if (saveBtn) saveBtn.classList.toggle('hidden', !!readOnly);
+    if (saveBtn) saveBtn.classList.toggle('hidden', !!readOnly && !isAssignee);
     const uploadInput = document.getElementById('submittalAttachmentInput');
-    if (uploadInput) uploadInput.disabled = !!readOnly;
-    const submitBtn = document.getElementById('submittalSubmitForApprovalBtn');
-    if (submitBtn) submitBtn.classList.toggle('hidden', !!readOnly || !submittalIsSubAssignee(currentModalItem));
+    if (uploadInput && isAssignee) {
+        uploadInput.disabled = false;
+        uploadInput.readOnly = false;
+    } else if (uploadInput) {
+        uploadInput.disabled = !!readOnly;
+    }
+    if (isAssignee) enableSubmittalAssigneeEditableFields();
+    const submitBtn = document.getElementById('submittalSubmitForReviewBtn');
+    if (submitBtn) submitBtn.classList.toggle('hidden', !isAssignee);
+    const commentInput = document.getElementById('reviewCommentInput');
+    const postBtn = document.getElementById('submittalPostCommentBtn');
+    const canComment = submittalCanCommentOn(currentModalItem);
+    if (commentInput) commentInput.disabled = !canComment;
+    if (postBtn) postBtn.disabled = !canComment;
 }
 function applySubmittalAssigneeFieldLocks(isAssignee) {
     const lockIds = [
@@ -234,14 +266,30 @@ function refreshSubmittalActionButtons() {
   #submittalTableScroll { flex: 1; min-height: 0; overflow: auto; }
   #detailModal.submittal-detail-fullpage {
     display: none;
-    flex: 1;
+    flex: 1 1 auto;
     min-height: 0;
     overflow: hidden;
     background: #09090b;
+    width: 100%;
   }
   #detailModal.submittal-detail-fullpage.is-open {
     display: flex;
     flex-direction: column;
+  }
+  body.submittal-detail-active {
+    overflow: hidden !important;
+  }
+  body.submittal-detail-active #mainContent {
+    overflow: hidden !important;
+    padding: 0 !important;
+  }
+  body.submittal-detail-active .submittals-stack {
+    padding: 0 !important;
+    height: 100%;
+  }
+  body.submittal-detail-active .submittals-page {
+    height: 100%;
+    min-height: 0;
   }
   #detailModal .submittal-detail-body {
     display: flex;
@@ -252,6 +300,13 @@ function refreshSubmittalActionButtons() {
   #submittalDetailMainCol {
     flex: 1;
     min-width: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  #submittalDetailMainCol .tab-content {
+    flex: 1;
+    min-height: 0;
     overflow: auto;
   }
   #submittalReviewChatCol {
@@ -487,6 +542,86 @@ function refreshSubmittalActionButtons() {
     .submittal-print-footer .center { text-align: center; }
     .submittal-print-footer .right { text-align: right; }
   }
+
+  /* ─── Single submittal print (Bluebeam-style transmittal) ─── */
+  @media print {
+    body.printing-submittal-detail #appShell > #appHeaderBar,
+    body.printing-submittal-detail #appSidebar,
+    body.printing-submittal-detail #appFooterBar,
+    body.printing-submittal-detail #detailModal,
+    body.printing-submittal-detail #submittalChrome,
+    body.printing-submittal-detail .no-print {
+      display: none !important;
+    }
+    body.printing-submittal-detail #mainContent {
+      padding: 0 !important;
+      overflow: visible !important;
+    }
+    body.printing-submittal-detail #submittalDetailPrintSheet {
+      display: block !important;
+    }
+  }
+  .submittal-detail-print {
+    font-family: Arial, Helvetica, sans-serif;
+    color: #111;
+    font-size: 10pt;
+    padding: 0.4in;
+  }
+  .submittal-detail-print .print-title {
+    font-size: 16pt;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    border-bottom: 2px solid #111;
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+  }
+  .submittal-detail-print .print-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 24px;
+    margin-bottom: 16px;
+  }
+  .submittal-detail-print .print-field label {
+    display: block;
+    font-size: 7pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #555;
+    margin-bottom: 2px;
+  }
+  .submittal-detail-print .print-field .val {
+    border-bottom: 1px solid #999;
+    min-height: 18px;
+    padding: 2px 0 4px;
+  }
+  .submittal-detail-print .print-section-title {
+    font-size: 9pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    background: #eee;
+    padding: 4px 8px;
+    margin: 14px 0 8px;
+    border: 1px solid #ccc;
+  }
+  .submittal-detail-print .review-stamp-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+    margin-top: 20px;
+  }
+  .submittal-detail-print .review-stamp {
+    border: 1px solid #333;
+    min-height: 72px;
+    padding: 6px;
+    font-size: 8pt;
+  }
+  .submittal-detail-print .review-stamp .stamp-label {
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 7pt;
+    margin-bottom: 4px;
+  }
 </style>
 <div class="submittals-page"><div class="submittals-stack">
 <div id="submittalChrome" class="content-wrapper">
@@ -643,9 +778,201 @@ function refreshSubmittalActionButtons() {
         </div>
     </div>
 </div>
+
+<!-- Detail View (full-page, replaces log when open) -->
+<div id="detailModal" class="submittal-detail-fullpage">
+    <div class="submittal-modal-panel bg-zinc-900 flex flex-col flex-1 min-h-0 w-full h-full">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700 bg-zinc-950 flex-shrink-0">
+            <div class="flex items-center gap-3">
+                <button id="submittalDetailBackBtn" type="button" onclick="closeDetailModal()" class="px-3 py-2 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-lg flex items-center gap-2">
+                    <i class="fa-solid fa-arrow-left"></i> Back to Log
+                </button>
+                <div id="modalSubmittalNumber" class="font-mono text-xl font-bold text-emerald-400"></div>
+                <div id="modalStatusBadge" class="px-3 py-1 rounded-full text-xs font-semibold bg-zinc-700 text-zinc-200"></div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="submittalPrintBtn" type="button" onclick="printSubmittalDetail()" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg text-sm font-semibold flex items-center gap-2">
+                    <i class="fa-solid fa-print"></i> Print
+                </button>
+                <button id="viewInSpecBookBtn" type="button" onclick="viewSubmittalInSpecBook()"
+                        class="hidden px-4 py-2 bg-sky-700 hover:bg-sky-600 text-white rounded-lg text-sm font-semibold flex items-center gap-2"
+                        title="Open the full spec section in the uploaded specifications book">
+                    <i class="fa-solid fa-book-open"></i> View in Spec Book
+                </button>
+                <button id="submittalSubmitForReviewBtn" type="button" onclick="submitSubmittalForApproval()" class="hidden px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold flex items-center gap-2">
+                    <i class="fa-solid fa-paper-plane"></i> Submit for Review
+                </button>
+                <button id="submittalModalSaveBtn" onclick="saveSubmittalFromModal()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold flex items-center gap-2">
+                    <i class="fa-solid fa-save"></i> Save Draft
+                </button>
+                <button onclick="closeDetailModal()" class="w-10 h-10 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg">
+                    <i class="fa-solid fa-times text-xl"></i>
+                </button>
+            </div>
+        </div>
+        
+        <div class="flex border-b border-zinc-700 px-6 flex-shrink-0">
+            <button onclick="switchTab(0)" class="tab-button active px-5 py-3 text-sm font-medium border-b-2 border-emerald-500 text-white">Overview & Details</button>
+            <button onclick="switchTab(1)" class="tab-button px-5 py-3 text-sm font-medium text-zinc-400 hover:text-white">Workflow & History</button>
+        </div>
+        
+        <div class="submittal-detail-body">
+            <div id="submittalDetailMainCol" class="flex-1 overflow-hidden p-6">
+            <!-- Tab 0 -->
+            <div id="tab0" class="tab-content">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Spec Section</label>
+                            <select id="modalSpecSection" onchange="updateSectionNameFromSelect(); updateViewInSpecBookButton();" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
+                                <!-- Populated by JS -->
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Section Name</label>
+                            <input type="text" id="modalSectionName" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Paragraph</label>
+                                <input type="text" id="modalParagraph" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Revision</label>
+                                <input type="text" id="modalRev" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Subject / Description</label>
+                            <input type="text" id="modalSubject" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Submittal Type</label>
+                            <input type="text" id="modalType" placeholder="e.g. Product Data, Shop Drawings" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Date Received</label>
+                                <input type="date" id="modalDateReceived" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Required By</label>
+                                <input type="date" id="modalRequiredBy" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Assigned To — Company</label>
+                            <p class="text-[11px] text-zinc-500 mb-1">Subcontractor or vendor responsible for this submittal.</p>
+                            <select id="modalAssignedCompany" onchange="onSubmittalCompanyChange()" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
+                                <option value="">— Select Company —</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Assigned To — Contact</label>
+                            <select id="modalAssignedContact" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
+                                <option value="">— Select Contact —</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Current Status</label>
+                            <div id="modalStatusReadonlyWrap" class="hidden w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200"></div>
+                            <select id="modalStatus" onchange="handleStatusChangeInModal()" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
+                                <option value="Draft">Draft</option>
+                                <option value="Sent to Subcontractor">Sent to Subcontractor</option>
+                                <option value="Returned from Subcontractor">Returned from Subcontractor</option>
+                                <option value="Submitted to Architect">Submitted to Architect</option>
+                                <option value="No Exceptions Taken">No Exceptions Taken</option>
+                                <option value="Reviewed as Noted">Reviewed as Noted</option>
+                                <option value="Revise & Resubmit">Revise & Resubmit</option>
+                                <option value="Rejected">Rejected</option>
+                                <option value="Closed">Closed</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Impact fields -->
+                <div id="submittalImpactGrid" class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Cost Impact?</label>
+                        <div class="flex gap-2 mb-3">
+                            <button type="button" onclick="setSubmittalImpactChoice('cost', 'yes')" id="btnCostYes" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-emerald-600 rounded-lg text-sm">Yes</button>
+                            <button type="button" onclick="setSubmittalImpactChoice('cost', 'no')" id="btnCostNo" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm">No</button>
+                            <button type="button" onclick="setSubmittalImpactChoice('cost', 'tbd')" id="btnCostTbd" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-amber-600 rounded-lg text-sm">TBD</button>
+                        </div>
+                        <div id="costAmountContainer" class="hidden">
+                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Cost Estimate ($)</label>
+                            <input type="text" id="modalCostImpact" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm casepm-money-input" data-casepm-money>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Schedule Impact?</label>
+                        <div class="flex gap-2 mb-3">
+                            <button type="button" onclick="setSubmittalImpactChoice('schedule', 'yes')" id="btnScheduleYes" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-emerald-600 rounded-lg text-sm">Yes</button>
+                            <button type="button" onclick="setSubmittalImpactChoice('schedule', 'no')" id="btnScheduleNo" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm">No</button>
+                            <button type="button" onclick="setSubmittalImpactChoice('schedule', 'tbd')" id="btnScheduleTbd" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-amber-600 rounded-lg text-sm">TBD</button>
+                        </div>
+                        <div id="scheduleDaysContainer" class="hidden">
+                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Schedule Impact (Days)</label>
+                            <input type="number" id="modalScheduleDays" min="0" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-4">
+                    <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Impact Notes / Description</label>
+                    <textarea id="modalImpactNotes" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"></textarea>
+                </div>
+
+                <div class="mt-6 pt-4 border-t border-zinc-700">
+                    <h4 class="font-semibold text-white mb-2">Attachments</h4>
+                    <p class="text-xs text-zinc-500 mb-2">Upload files from your computer. Files are filed to Documents › Submittals automatically.</p>
+                    <div id="submittalAttachmentActions" class="flex flex-wrap items-center gap-2 mb-2">
+                        <input type="file" id="submittalAttachmentInput" multiple class="text-sm text-zinc-400 file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white">
+                    </div>
+                    <div id="submittalAttachmentList" class="space-y-1 text-xs text-zinc-400"></div>
+                </div>
+            </div>
+            
+            <!-- Tab 1: Workflow -->
+            <div id="tab1" class="tab-content hidden">
+                <div class="mb-4">
+                    <h4 class="font-semibold text-white mb-3">Status History & Audit Trail</h4>
+                    <div id="workflowHistory" class="space-y-3 text-sm"></div>
+                </div>
+                
+                <div class="mt-6 pt-4 border-t border-zinc-700">
+                    <h4 class="font-semibold text-white mb-3">Digital Signature</h4>
+                    <button onclick="applyDigitalSignature()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold">
+                        Apply Digital Signature (as Current User)
+                    </button>
+                    <p class="text-xs text-zinc-500 mt-2">In production, this pulls your digital signature from your User Profile.</p>
+                </div>
+            </div>
+            </div>
+
+            <aside id="submittalReviewChatCol">
+                <div class="px-4 py-3 border-b border-zinc-700 font-semibold text-white flex-shrink-0">Review Comments</div>
+                <div id="reviewCommentsList" class="flex-1 overflow-auto p-4 space-y-3"></div>
+                <div class="p-4 border-t border-zinc-700 flex-shrink-0">
+                    <textarea id="reviewCommentInput" rows="3" placeholder="Add a comment for the project team..." class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm mb-2"></textarea>
+                    <button type="button" id="submittalPostCommentBtn" onclick="postReviewComment()" class="w-full px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold">Post Comment</button>
+                </div>
+            </aside>
+        </div>
+    </div>
+</div>
+
 </div></div>
 
 <div id="submittalPrintSheet" aria-hidden="true"></div>
+<div id="submittalDetailPrintSheet" aria-hidden="true" class="hidden"></div>
 
 <!-- Upload Spec Book Modal -->
 <div id="uploadSpecBookModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4">
@@ -784,193 +1111,6 @@ function refreshSubmittalActionButtons() {
                     class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold flex items-center gap-2">
                 <i class="fa-solid fa-file-import"></i> Import to Submittal Log
             </button>
-        </div>
-    </div>
-</div>
-
-<!-- Detail View (full-page, replaces log when open) -->
-<div id="detailModal" class="submittal-detail-fullpage">
-    <div class="submittal-modal-panel bg-zinc-900 flex flex-col flex-1 min-h-0 w-full">
-        <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700 bg-zinc-950 flex-shrink-0">
-            <div class="flex items-center gap-3">
-                <button id="submittalDetailBackBtn" type="button" onclick="closeDetailModal()" class="px-3 py-2 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-lg flex items-center gap-2">
-                    <i class="fa-solid fa-arrow-left"></i> Back to Log
-                </button>
-                <div id="modalSubmittalNumber" class="font-mono text-xl font-bold text-emerald-400"></div>
-                <div id="modalStatusBadge" class="px-3 py-1 rounded-full text-xs font-semibold bg-zinc-700 text-zinc-200"></div>
-            </div>
-            <div class="flex items-center gap-2">
-                <button id="viewInSpecBookBtn" type="button" onclick="viewSubmittalInSpecBook()"
-                        class="hidden px-4 py-2 bg-sky-700 hover:bg-sky-600 text-white rounded-lg text-sm font-semibold flex items-center gap-2"
-                        title="Open the full spec section in the uploaded specifications book">
-                    <i class="fa-solid fa-book-open"></i> View in Spec Book
-                </button>
-                <button id="submittalSubmitForApprovalBtn" type="button" onclick="submitSubmittalForApproval()" class="hidden px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold flex items-center gap-2">
-                    <i class="fa-solid fa-paper-plane"></i> Submit for Approval
-                </button>
-                <button id="submittalModalSaveBtn" onclick="saveSubmittalFromModal()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold flex items-center gap-2">
-                    <i class="fa-solid fa-save"></i> Save Draft
-                </button>
-                <button onclick="closeDetailModal()" class="w-10 h-10 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg">
-                    <i class="fa-solid fa-times text-xl"></i>
-                </button>
-            </div>
-        </div>
-        
-        <div class="flex border-b border-zinc-700 px-6 flex-shrink-0">
-            <button onclick="switchTab(0)" class="tab-button active px-5 py-3 text-sm font-medium border-b-2 border-emerald-500 text-white">Overview & Details</button>
-            <button onclick="switchTab(1)" class="tab-button px-5 py-3 text-sm font-medium text-zinc-400 hover:text-white">Workflow & History</button>
-        </div>
-        
-        <div class="submittal-detail-body">
-            <div id="submittalDetailMainCol" class="flex-1 overflow-auto p-6">
-            <!-- Tab 0 -->
-            <div id="tab0" class="tab-content">
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Spec Section</label>
-                            <select id="modalSpecSection" onchange="updateSectionNameFromSelect(); updateViewInSpecBookButton();" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-                                <!-- Populated by JS -->
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Section Name</label>
-                            <input type="text" id="modalSectionName" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-                        </div>
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Paragraph</label>
-                                <input type="text" id="modalParagraph" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Revision</label>
-                                <input type="text" id="modalRev" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono">
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Subject / Description</label>
-                            <input type="text" id="modalSubject" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-                        </div>
-                        <div>
-                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Submittal Type</label>
-                            <input type="text" id="modalType" placeholder="e.g. Product Data, Shop Drawings" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-                        </div>
-                    </div>
-                    
-                    <div class="space-y-4">
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Date Received</label>
-                                <input type="date" id="modalDateReceived" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Required By</label>
-                                <input type="date" id="modalRequiredBy" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-                            </div>
-                        </div>
-                        
-                        <div>
-                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Assigned To — Company</label>
-                            <p class="text-[11px] text-zinc-500 mb-1">Subcontractor or vendor responsible for this submittal.</p>
-                            <select id="modalAssignedCompany" onchange="onSubmittalCompanyChange()" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-                                <option value="">— Select Company —</option>
-                            </select>
-                        </div>
-
-                        <div>
-                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Assigned To — Contact</label>
-                            <select id="modalAssignedContact" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-                                <option value="">— Select Contact —</option>
-                            </select>
-                        </div>
-                        
-                        <div>
-                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Current Status</label>
-                            <div id="modalStatusReadonlyWrap" class="hidden w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200"></div>
-                            <select id="modalStatus" onchange="handleStatusChangeInModal()" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-                                <option value="Draft">Draft</option>
-                                <option value="Sent to Subcontractor">Sent to Subcontractor</option>
-                                <option value="Returned from Subcontractor">Returned from Subcontractor</option>
-                                <option value="Submitted to Architect">Submitted to Architect</option>
-                                <option value="No Exceptions Taken">No Exceptions Taken</option>
-                                <option value="Reviewed as Noted">Reviewed as Noted</option>
-                                <option value="Revise & Resubmit">Revise & Resubmit</option>
-                                <option value="Rejected">Rejected</option>
-                                <option value="Closed">Closed</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Impact fields -->
-                <div id="submittalImpactGrid" class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div>
-                        <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Cost Impact?</label>
-                        <div class="flex gap-2 mb-3">
-                            <button type="button" onclick="setSubmittalImpactChoice('cost', 'yes')" id="btnCostYes" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-emerald-600 rounded-lg text-sm">Yes</button>
-                            <button type="button" onclick="setSubmittalImpactChoice('cost', 'no')" id="btnCostNo" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm">No</button>
-                            <button type="button" onclick="setSubmittalImpactChoice('cost', 'tbd')" id="btnCostTbd" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-amber-600 rounded-lg text-sm">TBD</button>
-                        </div>
-                        <div id="costAmountContainer" class="hidden">
-                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Cost Estimate ($)</label>
-                            <input type="text" id="modalCostImpact" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm casepm-money-input" data-casepm-money>
-                        </div>
-                    </div>
-                    <div>
-                        <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Schedule Impact?</label>
-                        <div class="flex gap-2 mb-3">
-                            <button type="button" onclick="setSubmittalImpactChoice('schedule', 'yes')" id="btnScheduleYes" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-emerald-600 rounded-lg text-sm">Yes</button>
-                            <button type="button" onclick="setSubmittalImpactChoice('schedule', 'no')" id="btnScheduleNo" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm">No</button>
-                            <button type="button" onclick="setSubmittalImpactChoice('schedule', 'tbd')" id="btnScheduleTbd" class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-amber-600 rounded-lg text-sm">TBD</button>
-                        </div>
-                        <div id="scheduleDaysContainer" class="hidden">
-                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Schedule Impact (Days)</label>
-                            <input type="number" id="modalScheduleDays" min="0" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="mt-4">
-                    <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Impact Notes / Description</label>
-                    <textarea id="modalImpactNotes" rows="2" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"></textarea>
-                </div>
-
-                <div class="mt-6 pt-4 border-t border-zinc-700">
-                    <h4 class="font-semibold text-white mb-2">Attachments</h4>
-                    <p class="text-xs text-zinc-500 mb-2">Upload files from your computer. Files are filed to Documents › Submittals automatically.</p>
-                    <div id="submittalAttachmentActions" class="flex flex-wrap items-center gap-2 mb-2">
-                        <input type="file" id="submittalAttachmentInput" multiple class="text-sm text-zinc-400 file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white">
-                    </div>
-                    <div id="submittalAttachmentList" class="space-y-1 text-xs text-zinc-400"></div>
-                </div>
-            </div>
-            
-            <!-- Tab 1: Workflow -->
-            <div id="tab1" class="tab-content hidden">
-                <div class="mb-4">
-                    <h4 class="font-semibold text-white mb-3">Status History & Audit Trail</h4>
-                    <div id="workflowHistory" class="space-y-3 text-sm"></div>
-                </div>
-                
-                <div class="mt-6 pt-4 border-t border-zinc-700">
-                    <h4 class="font-semibold text-white mb-3">Digital Signature</h4>
-                    <button onclick="applyDigitalSignature()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold">
-                        Apply Digital Signature (as Current User)
-                    </button>
-                    <p class="text-xs text-zinc-500 mt-2">In production, this pulls your digital signature from your User Profile.</p>
-                </div>
-            </div>
-            </div>
-
-            <aside id="submittalReviewChatCol">
-                <div class="px-4 py-3 border-b border-zinc-700 font-semibold text-white flex-shrink-0">Review Comments</div>
-                <div id="reviewCommentsList" class="flex-1 overflow-auto p-4 space-y-3"></div>
-                <div class="p-4 border-t border-zinc-700 flex-shrink-0">
-                    <textarea id="reviewCommentInput" rows="3" placeholder="Add a comment for the project team..." class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm mb-2"></textarea>
-                    <button type="button" onclick="postReviewComment()" class="w-full px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold">Post Comment</button>
-                </div>
-            </aside>
         </div>
     </div>
 </div>
@@ -1369,8 +1509,8 @@ function renderSubmittalsTable(list) {
         const row = document.createElement('tr');
         row.className = 'hover:bg-zinc-700/40 cursor-pointer border-b border-zinc-700';
         
-        // Double-click to open
-        row.ondblclick = () => openDetailModal(item.id);
+        // Click to open full-page detail view
+        row.onclick = () => openDetailModal(item.id);
         
         row.innerHTML = `
             <td class="px-4 py-2 font-mono text-emerald-400 font-semibold">${item.number || '<span class="text-zinc-500 italic">Draft</span>'}</td>
@@ -1401,7 +1541,7 @@ function openDetailModal(id, isNew = false, newData = null) {
     if (isNew && newData) {
         currentModalItem = newData;
     } else {
-        currentModalItem = submittals.find(s => s.id === id);
+        currentModalItem = submittals.find(s => String(s.id) === String(id) || String(s.serverId) === String(id));
     }
     if (!currentModalItem) return;
     currentModalPreviousStatus = currentModalItem.status || 'Draft';
@@ -1464,6 +1604,7 @@ function openDetailModal(id, isNew = false, newData = null) {
     const detail = document.getElementById('detailModal');
     if (chrome) chrome.classList.add('hidden');
     if (detail) detail.classList.add('is-open');
+    document.body.classList.add('submittal-detail-active');
     const statusText = currentModalItem.status || 'Draft';
     const badge = document.getElementById('modalStatusBadge');
     if (badge) badge.textContent = statusText;
@@ -1471,7 +1612,7 @@ function openDetailModal(id, isNew = false, newData = null) {
     if (statusReadonly) statusReadonly.textContent = statusText;
     const isAssignee = submittalIsSubAssignee(currentModalItem);
     applySubmittalAssigneeFieldLocks(isAssignee);
-    const submitBtn = document.getElementById('submittalSubmitForApprovalBtn');
+    const submitBtn = document.getElementById('submittalSubmitForReviewBtn');
     if (submitBtn) submitBtn.classList.toggle('hidden', !isAssignee);
     const saveBtn = document.getElementById('submittalModalSaveBtn');
     if (saveBtn) {
@@ -1489,6 +1630,7 @@ function closeDetailModal() {
     const detail = document.getElementById('detailModal');
     if (detail) detail.classList.remove('is-open');
     if (chrome) chrome.classList.remove('hidden');
+    document.body.classList.remove('submittal-detail-active');
     currentModalItem = null;
     applySubmittalAssigneeFieldLocks(false);
 }
@@ -3251,6 +3393,55 @@ function submittalPrintCellValue(item, key) {
             return typeof val === 'string' && val.length > 100 ? truncate(val, 100) : val;
         }
     }
+}
+
+async function printSubmittalDetail() {
+    if (!currentModalItem) return;
+    const ctx = window.SUBMITTAL_PROJECT_CTX || {};
+    const item = currentModalItem;
+    const attachmentsEl = document.getElementById('submittalAttachmentList');
+    const attachmentText = attachmentsEl ? attachmentsEl.innerText.trim() : '';
+    const comments = (item.comments || []).map(c =>
+        `${c.user_name || 'User'} (${(c.created_at || '').slice(0, 10)}): ${c.body || ''}`
+    ).join('\n');
+    const sheet = document.getElementById('submittalDetailPrintSheet');
+    if (!sheet) return;
+    const esc = (v) => escapeSubmittalHtml(v == null ? '' : String(v));
+    sheet.innerHTML = `
+      <div class="submittal-detail-print">
+        <div class="print-title">Submittal Transmittal</div>
+        <div class="print-grid">
+          <div class="print-field"><label>Project</label><div class="val">${esc(ctx.name)}</div></div>
+          <div class="print-field"><label>Project Number</label><div class="val">${esc(ctx.number)}</div></div>
+          <div class="print-field"><label>Submittal Number</label><div class="val">${esc(item.number)}</div></div>
+          <div class="print-field"><label>Revision</label><div class="val">${esc(item.rev || '0')}</div></div>
+          <div class="print-field"><label>Spec Section</label><div class="val">${esc(item.specSection)}</div></div>
+          <div class="print-field"><label>Paragraph</label><div class="val">${esc(item.paragraph)}</div></div>
+          <div class="print-field" style="grid-column:1/-1"><label>Section Name</label><div class="val">${esc(item.sectionName)}</div></div>
+          <div class="print-field" style="grid-column:1/-1"><label>Description / Subject</label><div class="val">${esc(item.subject)}</div></div>
+          <div class="print-field"><label>Submittal Type</label><div class="val">${esc(item.type)}</div></div>
+          <div class="print-field"><label>Status</label><div class="val">${esc(item.status)}</div></div>
+          <div class="print-field"><label>Subcontractor / Vendor</label><div class="val">${esc(item.assignedCompanyName || item.receivedFrom)}</div></div>
+          <div class="print-field"><label>Contact</label><div class="val">${esc(item.assignedContactName)}</div></div>
+          <div class="print-field"><label>Date Received</label><div class="val">${esc(item.dateReceived)}</div></div>
+          <div class="print-field"><label>Required By</label><div class="val">${esc(item.requiredBy)}</div></div>
+        </div>
+        <div class="print-section-title">Impact Notes / Description</div>
+        <div class="print-field"><div class="val" style="min-height:48px;white-space:pre-wrap">${esc(item.impactNotes)}</div></div>
+        <div class="print-section-title">Attachments</div>
+        <div class="print-field"><div class="val" style="min-height:36px;white-space:pre-wrap">${esc(attachmentText || 'None')}</div></div>
+        <div class="print-section-title">Review Comments</div>
+        <div class="print-field"><div class="val" style="min-height:60px;white-space:pre-wrap">${esc(comments || 'None')}</div></div>
+        <div class="review-stamp-row">
+          <div class="review-stamp"><div class="stamp-label">Subcontractor</div>Date / Signature</div>
+          <div class="review-stamp"><div class="stamp-label">Project Manager</div>Date / Signature</div>
+          <div class="review-stamp"><div class="stamp-label">Architect / Engineer</div>Date / Signature</div>
+        </div>
+      </div>`;
+    document.body.classList.add('printing-submittal-detail');
+    const cleanup = () => document.body.classList.remove('printing-submittal-detail');
+    window.addEventListener('afterprint', cleanup, { once: true });
+    window.print();
 }
 
 async function showPrintSubmittalLogPicker() {
