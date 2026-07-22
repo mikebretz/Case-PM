@@ -424,6 +424,11 @@ def filter_pay_app_state_for_sub_vendor(user, data: dict | None) -> dict | None:
         ):
             if field in out:
                 out[field] = _filter_company_dict(out.get(field), allowed, sov_keys)
+        try:
+            from pay_app_persistence import build_g703_cost_code_index
+            out['g703CostCodes'] = build_g703_cost_code_index(data)
+        except Exception:
+            out['g703CostCodes'] = []
         out.pop('contractorSOV', None)
         out.pop('currentPayAppPeriod', None)
         out.pop('payAppHistory', None)

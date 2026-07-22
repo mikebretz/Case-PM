@@ -102,7 +102,27 @@ def init_models(_db):
         archived = db.Column(db.Boolean, default=False)
         created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+        def _sender_display(self):
+            """Resolve sender name without generic Case PM email branding."""
+            if self.from_user_id and User is not None:
+                try:
+                    u = User.query.get(self.from_user_id)
+                    if u:
+                        name = (getattr(u, 'full_name', None) or '').strip()
+                        if not name:
+                            name = f'{getattr(u, "first_name", "")} {getattr(u, "last_name", "")}'.strip()
+                        if name:
+                            return name
+                except Exception:
+                    pass
+            label = (self.from_label or '').strip()
+            generic = {'case pm', 'case pm system', 'case pm admin', 'system'}
+            if label and label.lower() not in generic:
+                return label
+            return 'Project Team'
+
         def to_dict(self):
+            sender = self._sender_display()
             d = {
                 'id': self.id,
                 'folder': self.folder,
@@ -110,8 +130,8 @@ def init_models(_db):
                 'subject': self.subject,
                 'preview': self.preview or '',
                 'body': self.body or '',
-                'from': self.from_label or 'Case PM',
-                'fromUser': self.from_label or 'System',
+                'from': sender,
+                'fromUser': sender,
                 'project': self._project_name(),
                 'module': self.module or '',
                 'actionUrl': self.action_url or '',

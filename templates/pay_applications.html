@@ -5228,7 +5228,11 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         let sourceData = [];
         let title = 'Select Cost Code';
         if (source === 'contractor-sov') {
-            sourceData = JSON.parse(casepmStore.getItem('contractorSOV')) || [];
+            if (isSubVendorPayPortalUser()) {
+                sourceData = JSON.parse(casepmStore.getItem('g703CostCodes')) || [];
+            } else {
+                sourceData = JSON.parse(casepmStore.getItem('contractorSOV')) || [];
+            }
             title = 'Select from Contractor SOV (G703)';
         } else {
             sourceData = JSON.parse(casepmStore.getItem('budgetLines')) || [];
@@ -5242,8 +5246,13 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         const subModalOpen = document.getElementById('editSubSOVModal')?.open;
         const isSubPicker = Boolean(subModalOpen && currentEditingSubCompanyId);
         const isNewSubLine = isSubPicker && !currentEditingLineId;
+        const codesOnly = isSubPicker && isSubVendorPayPortalUser();
         const pickerCompanyId = isSubPicker ? currentEditingSubCompanyId : null;
         const pickerExcludeLineId = isSubPicker ? currentEditingLineId : null;
+
+        if (codesOnly) {
+            title = 'Select Cost Code from G703';
+        }
 
         const modal = document.createElement('dialog');
         modal.className = 'modal rounded-md p-0 text-white';
@@ -5260,7 +5269,8 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                         <i class="fa-solid fa-times text-lg"></i>
                     </button>
                 </div>
-                ${isSubPicker ? '<p class="text-[11px] text-zinc-500 mb-2">Fully allocated cost codes are hidden. Partially allocated codes show how much remains across all subcontractors.</p>' : ''}
+                ${isSubPicker && !codesOnly ? '<p class="text-[11px] text-zinc-500 mb-2">Fully allocated cost codes are hidden. Partially allocated codes show how much remains across all subcontractors.</p>' : ''}
+                ${codesOnly ? '<p class="text-[11px] text-zinc-500 mb-2">Choose a cost code from the contractor schedule of values. Dollar amounts are not shown — enter your line commitment below.</p>' : ''}
 
                 <input type="text" id="sovCodeSearch" placeholder="Search cost codes or descriptions..." 
                        class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm mb-3 focus:border-emerald-600"
@@ -5272,7 +5282,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                             <tr>
                                 <th class="px-3 py-1.5 text-left font-medium text-zinc-400 w-28">Code</th>
                                 <th class="px-3 py-1.5 text-left font-medium text-zinc-400">Description</th>
-                                ${isSubPicker ? '<th class="px-3 py-1.5 text-right font-medium text-zinc-400 w-36">Available</th>' : ''}
+                                ${isSubPicker && !codesOnly ? '<th class="px-3 py-1.5 text-right font-medium text-zinc-400 w-36">Available</th>' : ''}
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-zinc-800">
@@ -5288,7 +5298,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             seen.add(norm);
 
             let allocCell = '';
-            if (isSubPicker) {
+            if (isSubPicker && !codesOnly) {
                 const info = getCostCodeAllocationInfo(code, pickerCompanyId, pickerExcludeLineId);
                 if (isNewSubLine && info.fullyAllocated) {
                     return;
@@ -5299,6 +5309,13 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                     allocCell = `<td class="px-3 py-1.5 text-right text-[10px] text-red-400">100% allocated</td>`;
                 } else {
                     allocCell = `<td class="px-3 py-1.5 text-right text-[10px] text-emerald-400 font-mono">${formatCurrency(info.remaining)}<br><span class="text-zinc-500">${info.pctRemaining.toFixed(0)}% left</span></td>`;
+                }
+            } else if (isSubPicker && codesOnly && isNewSubLine) {
+                if (item.available === false) {
+                    return;
+                }
+                if (subAlreadyHasCostCode(pickerCompanyId, code, pickerExcludeLineId)) {
+                    return;
                 }
             }
 
@@ -5313,7 +5330,10 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         });
 
         if (!rowCount) {
-            html += `<tr><td colspan="${isSubPicker ? 3 : 2}" class="px-3 py-6 text-center text-zinc-500 text-sm">All cost codes are fully allocated to other subcontractors, or no G703 lines exist yet.</td></tr>`;
+            const emptyMsg = codesOnly
+                ? 'No G703 cost codes are available for your schedule of values yet, or all codes are already in use.'
+                : 'All cost codes are fully allocated to other subcontractors, or no G703 lines exist yet.';
+            html += `<tr><td colspan="${isSubPicker && !codesOnly ? 3 : 2}" class="px-3 py-6 text-center text-zinc-500 text-sm">${emptyMsg}</td></tr>`;
         }
 
         html += `
@@ -5377,8 +5397,8 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         if (codeInput) codeInput.value = code;
         if (descInput) descInput.value = desc;
 
-        // Auto-fill Original Commitment with remaining G703 allocation for this code (Sub SOV only)
-        if (originalInput && codeInput && codeInput.id === 'subCostCode') {
+        // Auto-fill Original Commitment with remaining G703 allocation (GC sub SOV entry only — not sub portal)
+        if (originalInput && codeInput && codeInput.id === 'subCostCode' && !isSubVendorPayPortalUser()) {
             const currentVal = (originalInput.value || '').replace(/[$,]/g, '');
             if (!currentVal || parseFloat(currentVal) === 0) {
                 const editingCid = currentEditingSubCompanyId;
@@ -6847,7 +6867,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                     <div>
                         <label class="block text-sm mb-1.5 text-zinc-300 flex items-center justify-between">
                             <span>Cost Code</span>
-                            ${(!hideG703Info && canEditStructure) ? `<button type="button" onclick="viewBudgetCostCodesForSOV('contractor-sov')" class="ml-2 px-2.5 py-0.5 text-[10px] bg-zinc-700 hover:bg-zinc-600 text-emerald-400 rounded">View Codes from G703</button>` : ''}
+                            ${canEditStructure ? `<button type="button" onclick="viewBudgetCostCodesForSOV('contractor-sov')" class="ml-2 px-2.5 py-0.5 text-[10px] bg-zinc-700 hover:bg-zinc-600 text-emerald-400 rounded">${hideG703Info ? 'Select Cost Code' : 'View Codes from G703'}</button>` : ''}
                         </label>
                         <input type="text" id="subCostCode" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? line.cost_code : ''}" ${!canEditStructure ? 'readonly' : ''} oninput="updateSubSOVEntryDisplay()" onblur="updateSubSOVEntryDisplay()">
                     </div>

@@ -256,6 +256,13 @@
   }
 
   function seedSignatures() {
+    if (emailInternalOnly()) {
+      const name = ctx.userName || 'Your Name';
+      const company = (global.CASEPM_CURRENT_USER && global.CASEPM_CURRENT_USER.company) || '';
+      return [
+        { id: 'default', name: 'Default', html: `<p>— ${name}${company ? `<br>${company}` : ''}</p>` },
+      ];
+    }
     return [
       { id: 'default', name: 'Default', html: `<p>Best regards,</p><p><strong>${ctx.userName}</strong><br>Case Construction<br>${ctx.userEmail || 'you@casepm.com'}</p>` },
       { id: 'short', name: 'Short', html: `<p>— ${ctx.userName}</p>` },
@@ -529,11 +536,12 @@
 
   function renderInternalMessageContent(m) {
     const snapshot = renderSubmissionSnapshot(m);
+    const fromLabel = (m.from || '').replace(/^(Case PM|Case PM System|Case PM Admin)$/i, m.fromUser || 'Project Team');
     return `
       <div class="flex items-start justify-between gap-4 mb-4">
         <div>
           <h2 class="text-lg font-semibold text-white">${esc(m.subject)}</h2>
-          <div class="text-sm text-zinc-400 mt-1">From <strong class="text-zinc-200">${esc(m.from)}</strong> · ${fmtDate(m.date)}</div>
+          <div class="text-sm text-zinc-400 mt-1">From <strong class="text-zinc-200">${esc(fromLabel)}</strong> · ${fmtDate(m.date)}</div>
           <div class="text-xs text-zinc-500 mt-1">${esc(m.module || '')} · ${esc(m.project || '')}</div>
         </div>
         ${renderInternalActions(m)}
@@ -1231,7 +1239,7 @@
           <i class="fa-solid fa-envelope mr-2"></i>Mail ${mailUnread ? `<span class="ml-1 text-xs bg-emerald-600 text-white px-1.5 py-0.5 rounded-full">${mailUnread}</span>` : ''}
         </button>`}
         <button type="button" class="px-5 py-2.5 text-sm font-medium border-b-2 ${state.workspace === 'internal' ? 'border-emerald-500 text-white' : 'border-transparent text-zinc-400'}" onclick="CasePMEmail.setWorkspace('internal')">
-          <i class="fa-solid fa-bell mr-2"></i>Internal ${internalUnread ? `<span class="ml-1 text-xs bg-amber-600 text-white px-1.5 py-0.5 rounded-full">${internalUnread}</span>` : ''}
+          <i class="fa-solid fa-comments mr-2"></i>${internalOnly ? 'Internal Communications' : 'Internal'} ${internalUnread ? `<span class="ml-1 text-xs bg-amber-600 text-white px-1.5 py-0.5 rounded-full">${internalUnread}</span>` : ''}
         </button>
         ${showMailboxPicker ? `
         <div class="ml-auto flex items-center gap-2 py-1">
@@ -1316,8 +1324,8 @@
       if (accountEl) {
         accountEl.innerHTML = `
           <div class="px-3 py-2 border-t border-zinc-800 text-xs text-zinc-400">
-            <div class="text-zinc-500 text-[9px] uppercase mb-1">Internal Comms</div>
-            Approvals, alerts, team messages, and @mentions from Case PM modules.
+            <div class="text-zinc-500 text-[9px] uppercase mb-1">Internal Communications</div>
+            Approvals, alerts, and team messages from your GC project team.
           </div>`;
       }
     }
@@ -1334,7 +1342,7 @@
   let composeSelectionEditor = null;
 
   function prepareComposeParts(opts) {
-    const sigHtml = normalizeComposeHtml(
+    const sigHtml = emailInternalOnly() ? '' : normalizeComposeHtml(
       signatures.find(s => s.id === settings.defaultSignatureId)?.html || ''
     );
     const rawBody = opts?.body || '';
@@ -1847,6 +1855,10 @@
   }
 
   function compose(opts) {
+    if (emailInternalOnly()) {
+      composeInternal();
+      return;
+    }
     if (!canEditViewedMailbox()) { toast('You have read-only access to this mailbox.', 'error'); return; }
     const inPopout = !!(opts?.inPopout || opts?.popoutId);
     const popoutId = inPopout ? (opts?.popoutId || state.selectedId) : null;

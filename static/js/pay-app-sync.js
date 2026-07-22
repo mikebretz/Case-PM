@@ -5,14 +5,14 @@
 (function (global) {
   'use strict';
 
-  const SYNC_KEYS = new Set([
+    const SYNC_KEYS = new Set([
     'contractorSOV', 'payAppBillingLines', 'currentPayAppPeriod', 'payAppHistory',
     'subcontractorSOV', 'subPayAppHistory', 'subPendingSubmissions', 'subPayAppNumbers',
     'subSOVStatus', 'subLienWaivers', 'subLienWaiverArchive', 'previousSubPayAppArchive',
     'mainLienWaiver', 'payAppRetainagePercent', 'requireLienWaiverOnSubPayApp',
     'requireSubmissionDeadline', 'submissionDeadlineDay', 'allowZeroDollarSubPayApps',
     'requireAllSubPayAppsBeforeG702Submit', 'payAppAuditLog', 'sageSyncAutoEnabled',
-    'contractorSOVLocked',
+    'contractorSOVLocked', 'g703CostCodes',
   ]);
 
   let saveTimer = null;
