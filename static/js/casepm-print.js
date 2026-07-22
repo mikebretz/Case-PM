@@ -1294,6 +1294,138 @@
     }, delay);
   }
 
+  function buildPortraitPreviewDocument(bodyHtml, docTitle, extraCss) {
+    const printedOn = new Date().toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
+    const portraitCss = `
+        @page { size: portrait; margin: 0.45in 0.5in; }
+        body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #111; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .casepm-print-page { page-break-after: always; break-after: page; page-break-inside: avoid; break-inside: avoid-page; }
+        .casepm-print-header { margin-bottom: 10px; border-bottom: 1.5px solid #222; padding-bottom: 10px; }
+        .casepm-print-title { font-size: 13pt; font-weight: 700; letter-spacing: 0.5px; color: #111; text-transform: uppercase; }
+        .casepm-print-footer { margin-top: 12px; padding-top: 6px; border-top: 1px solid #ccc; font-size: 7pt; color: #666; text-align: center; }
+        .casepm-rfi-detail, .casepm-submittal-detail { font-size: 9pt; line-height: 1.45; color: #111; }
+        .casepm-rfi-detail .rfi-detail-number, .casepm-submittal-detail .sub-detail-number { font-family: 'Courier New', Courier, monospace; font-size: 12pt; font-weight: 700; }
+        .casepm-rfi-detail .rfi-detail-subject, .casepm-submittal-detail .sub-detail-subject { font-size: 13pt; font-weight: 700; margin-bottom: 12px; }
+        .casepm-rfi-detail .rfi-detail-grid, .casepm-submittal-detail .sub-detail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px 16px; margin-bottom: 14px; font-size: 8pt; }
+        .casepm-rfi-detail .label, .casepm-submittal-detail .label { display: block; font-size: 6.5pt; text-transform: uppercase; color: #666; font-weight: 700; margin-bottom: 1px; }
+        .casepm-rfi-detail .rfi-detail-box, .casepm-submittal-detail .sub-detail-box { border: 1px solid #ccc; border-radius: 2px; padding: 10px 12px; margin-bottom: 10px; white-space: pre-wrap; min-height: 40px; }
+        .casepm-rfi-detail .rfi-detail-box h4, .casepm-submittal-detail .sub-detail-box h4 { margin: 0 0 6px; font-size: 7pt; text-transform: uppercase; color: #555; font-weight: 700; }
+        ${extraCss || ''}`;
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(docTitle || 'Document')}</title>
+      <style>${portraitCss}</style></head>
+      <body>${String(bodyHtml || '').replace('__PRINTED_ON__', esc(printedOn))}</body></html>`;
+  }
+
+  const DOC_VIEWER_STYLE_ID = 'casepm-doc-viewer-styles';
+
+  function ensureDocViewerStyles() {
+    if (document.getElementById(DOC_VIEWER_STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = DOC_VIEWER_STYLE_ID;
+    style.textContent = `
+      dialog.casepm-doc-viewer { border: none; padding: 0; background: transparent; max-width: min(920px, 96vw); width: 100%; }
+      dialog.casepm-doc-viewer::backdrop { background: rgba(0,0,0,0.72); }
+      .casepm-doc-viewer-panel { background: #18181b; border: 1px solid #3f3f46; border-radius: 1rem; overflow: hidden; box-shadow: 0 24px 64px rgba(0,0,0,0.45); display: flex; flex-direction: column; max-height: 88vh; }
+      .casepm-doc-viewer-header { padding: 1rem 1.25rem; border-bottom: 1px solid #27272a; background: #09090b; cursor: move; user-select: none; }
+      .casepm-doc-viewer-title { font-size: 1rem; font-weight: 600; color: #fafafa; }
+      .casepm-doc-viewer-subtitle { font-size: 0.8rem; color: #a1a1aa; margin-top: 0.15rem; }
+      .casepm-doc-viewer-body { flex: 1; min-height: 0; background: #52525b; padding: 1rem; overflow: auto; }
+      .casepm-doc-viewer-frame-wrap { background: #fff; border-radius: 0.5rem; box-shadow: 0 8px 32px rgba(0,0,0,0.35); min-height: min(70vh, 720px); }
+      .casepm-doc-viewer-frame { display: block; width: 100%; min-height: min(70vh, 720px); border: 0; border-radius: 0.5rem; background: #fff; }
+      .casepm-doc-viewer-footer { padding: 0.85rem 1.25rem; border-top: 1px solid #27272a; background: #18181b; display: flex; justify-content: flex-end; gap: 0.75rem; }
+      .casepm-doc-viewer-btn { padding: 0.5rem 1.1rem; border-radius: 0.6rem; font-size: 0.875rem; font-weight: 500; border: none; cursor: pointer; }
+      .casepm-doc-viewer-btn-primary { background: #059669; color: #fff; }
+      .casepm-doc-viewer-btn-primary:hover { background: #047857; }
+      .casepm-doc-viewer-btn-secondary { background: #3f3f46; color: #e4e4e7; }
+      .casepm-doc-viewer-btn-secondary:hover { background: #52525b; }`;
+    document.head.appendChild(style);
+  }
+
+  function makeDocViewerDraggable(dialog) {
+    const handle = dialog.querySelector('.casepm-doc-viewer-header');
+    if (!handle) return;
+    let pos1 = 0; let pos2 = 0; let pos3 = 0; let pos4 = 0;
+    handle.onmousedown = (e) => {
+      if (e.target.closest('button')) return;
+      e.preventDefault();
+      pos3 = e.clientX;
+      pos4 = e.clientY;
+      document.onmouseup = closeDrag;
+      document.onmousemove = drag;
+    };
+    function drag(e) {
+      e.preventDefault();
+      pos1 = pos3 - e.clientX;
+      pos2 = pos4 - e.clientY;
+      pos3 = e.clientX;
+      pos4 = e.clientY;
+      dialog.style.top = `${dialog.offsetTop - pos2}px`;
+      dialog.style.left = `${dialog.offsetLeft - pos1}px`;
+      dialog.style.transform = 'none';
+      dialog.style.margin = '0';
+    }
+    function closeDrag() {
+      document.onmouseup = null;
+      document.onmousemove = null;
+    }
+  }
+
+  /** In-app document viewer — print-formatted HTML in an iframe with Print + Close. */
+  function openHtmlDocumentViewer(opts) {
+    ensureDocViewerStyles();
+    const options = opts || {};
+    const bodyHtml = options.bodyHtml || '';
+    if (!bodyHtml) return null;
+
+    document.querySelectorAll('dialog.casepm-doc-viewer').forEach((d) => {
+      try { d.close(); } catch (_) { /* ignore */ }
+      d.remove();
+    });
+
+    const docTitle = options.docTitle || options.title || 'Document';
+    const fullHtml = buildPortraitPreviewDocument(bodyHtml, docTitle, options.extraCss);
+
+    const dialog = document.createElement('dialog');
+    dialog.className = 'casepm-doc-viewer';
+    dialog.style.cssText = 'position:fixed;top:6vh;left:50%;transform:translateX(-50%);margin:0;';
+
+    dialog.innerHTML = `
+      <div class="casepm-doc-viewer-panel">
+        <div class="casepm-doc-viewer-header">
+          <div class="casepm-doc-viewer-title">${esc(options.title || docTitle)}</div>
+          ${options.subtitle ? `<div class="casepm-doc-viewer-subtitle">${esc(options.subtitle)}</div>` : ''}
+        </div>
+        <div class="casepm-doc-viewer-body">
+          <div class="casepm-doc-viewer-frame-wrap">
+            <iframe class="casepm-doc-viewer-frame" title="${esc(docTitle)}"></iframe>
+          </div>
+        </div>
+        <div class="casepm-doc-viewer-footer">
+          <button type="button" class="casepm-doc-viewer-btn casepm-doc-viewer-btn-secondary" data-action="close">Close</button>
+          <button type="button" class="casepm-doc-viewer-btn casepm-doc-viewer-btn-primary" data-action="print">Print</button>
+        </div>
+      </div>`;
+
+    document.body.appendChild(dialog);
+    const frame = dialog.querySelector('.casepm-doc-viewer-frame');
+    if (frame) frame.srcdoc = fullHtml;
+
+    dialog.querySelector('[data-action="close"]')?.addEventListener('click', () => dialog.close());
+    dialog.querySelector('[data-action="print"]')?.addEventListener('click', () => {
+      try {
+        frame?.contentWindow?.focus();
+        frame?.contentWindow?.print();
+      } catch (_) {
+        printHtmlInIframe(fullHtml, { landscape: false, delay: 300 });
+      }
+    });
+    dialog.addEventListener('close', () => dialog.remove());
+    dialog.addEventListener('cancel', (e) => { e.preventDefault(); dialog.close(); });
+    dialog.showModal();
+    makeDocViewerDraggable(dialog);
+    return dialog;
+  }
+
   /** Opens the browser print preview directly — no new tab/window. */
   function triggerPrintPreview(bodyHtml, options) {
     ensureStyles();
@@ -1344,5 +1476,7 @@
     printPortraitDocument,
     triggerPrintPreview,
     openPrintWindow,
+    buildPortraitPreviewDocument,
+    openHtmlDocumentViewer,
   };
 })(window);

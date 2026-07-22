@@ -60,6 +60,13 @@
     return isStaffPortal();
   }
 
+  function canViewRfisOnly() {
+    if (typeof global.canAccessModule === 'function') {
+      return global.canAccessModule('rfis', 'view') && !canEnterRfis();
+    }
+    return false;
+  }
+
   async function openResponder(id) {
     if (!canEnterRfis()) {
       await view(id);
@@ -643,13 +650,17 @@
       tbody.innerHTML = '<tr><td colspan="12" class="px-6 py-12 text-center text-zinc-500">No RFIs found. Create your first RFI.</td></tr>';
       return;
     }
+    const viewOnly = canViewRfisOnly();
     tbody.innerHTML = rows.map(r => {
       const attCount = attachmentCount(r);
       const attCell = attCount
         ? `<span class="inline-flex items-center gap-1 text-emerald-400" title="${attCount} attachment(s)"><i class="fa-solid fa-paperclip"></i>${attCount}</span>`
         : '<span class="text-zinc-600">—</span>';
+      const rowClick = viewOnly
+        ? `CasePMRfis.viewDocument(${r.id})`
+        : `CasePMRfis.onRfiRowClick(event, ${r.id})`;
       return `
-      <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer ${r.is_overdue ? 'bg-red-950/10' : ''}" onclick="CasePMRfis.view(${r.id})">
+      <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer ${r.is_overdue ? 'bg-red-950/10' : ''}" onclick="${rowClick}" ondblclick="CasePMRfis.viewDocument(${r.id})">
         <td class="px-4 py-3 font-mono text-sky-400 whitespace-nowrap">${esc(r.number)}</td>
         <td class="px-4 py-3 max-w-[280px]">
           <div class="font-medium truncate">${esc(r.subject)}</div>
@@ -1284,19 +1295,74 @@
     </div>`;
   }
 
-  async function printDetail(id) {
-    if (typeof global.CasePMPrint === 'undefined') { alert('Print module not loaded'); return; }
+  let rfiRowClickTimer = null;
+
+  function onRfiRowClick(event, id) {
+    if (event?.detail > 1) return;
+    if (rfiRowClickTimer) clearTimeout(rfiRowClickTimer);
+    rfiRowClickTimer = setTimeout(() => {
+      rfiRowClickTimer = null;
+      view(id);
+    }, 220);
+  }
+
+  async function fetchRfiForPrint(id) {
     let r = state.drawerRecord;
     const targetId = id || r?.id;
-    if (!targetId) return;
+    if (!targetId) return null;
     if (!r || r.id !== targetId) {
-      try {
-        r = await api(`/api/rfis/${targetId}`);
-      } catch (e) {
-        alert(e.message);
-        return;
-      }
+      r = await api(`/api/rfis/${targetId}`);
     }
+    return r;
+  }
+
+  async function viewDocument(id) {
+    if (typeof global.CasePMPrint === 'undefined' || !global.CasePMPrint.openHtmlDocumentViewer) {
+      alert('Document viewer not available');
+      return;
+    }
+    if (rfiRowClickTimer) {
+      clearTimeout(rfiRowClickTimer);
+      rfiRowClickTimer = null;
+    }
+    let r;
+    try {
+      r = await fetchRfiForPrint(id);
+    } catch (e) {
+      alert(e.message);
+      return;
+    }
+    if (!r) return;
+    const printOpts = {
+      dates: true,
+      drawing: true,
+      spec: true,
+      discipline: true,
+      impacts: true,
+      attachments: true,
+      linked: true,
+      location: false,
+      printedDate: true,
+    };
+    const bodyHtml = buildRfiDetailPrintHtml(r, printOpts);
+    global.CasePMPrint.openHtmlDocumentViewer({
+      title: `RFI ${r.number}`,
+      subtitle: r.subject || '',
+      docTitle: `RFI ${r.number}`,
+      bodyHtml,
+    });
+  }
+
+  async function printDetail(id) {
+    if (typeof global.CasePMPrint === 'undefined') { alert('Print module not loaded'); return; }
+    let r;
+    try {
+      r = await fetchRfiForPrint(id);
+    } catch (e) {
+      alert(e.message);
+      return;
+    }
+    if (!r) return;
     const printOpts = {
       dates: true,
       drawing: true,
@@ -1407,6 +1473,8 @@
     exportExcel,
     printLog,
     printDetail,
+    viewDocument,
+    onRfiRowClick,
     focusAttachments,
   };
 
