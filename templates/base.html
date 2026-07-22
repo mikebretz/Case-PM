@@ -182,9 +182,7 @@
         .portal-sub-vendor .portal-banner-sub {
             display: none !important;
         }
-        .portal-sub-vendor .nav-link[data-nav-module="schedule"],
-        .portal-sub-vendor .nav-link[data-nav-module="rfis"],
-        .portal-sub-vendor .nav-link[data-nav-module="submittals"] {
+        .portal-sub-vendor .nav-link[data-nav-module="schedule"] {
             display: none !important;
         }
 
@@ -516,7 +514,7 @@
                     <span>Schedule</span>
                 </a>
 
-                <a href="{{ url_for('rfis_page', project_id=active_project.id) if active_project else url_for('rfis_page') }}" data-nav-module="rfis" class="nav-link nav-hide-sub-vendor flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'rfis_page' %}active{% endif %}">
+                <a href="{{ url_for('rfis_page', project_id=active_project.id) if active_project else url_for('rfis_page') }}" data-nav-module="rfis" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'rfis_page' %}active{% endif %}">
                     <i class="fa-solid fa-question-circle w-5"></i>
                     <span>RFIs</span>
                 </a>
@@ -531,7 +529,7 @@
                     <span>RFQ Portal</span>
                 </a>
 
-                <a href="{{ url_for('submittals_page', project_id=active_project.id) if active_project else url_for('submittals_page') }}" data-nav-module="submittals" class="nav-link nav-hide-sub-vendor flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'submittals_page' %}active{% endif %}">
+                <a href="{{ url_for('submittals_page', project_id=active_project.id) if active_project else url_for('submittals_page') }}" data-nav-module="submittals" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'submittals_page' %}active{% endif %}">
                     <i class="fa-solid fa-file-upload w-5"></i>
                     <span>Submittals</span>
                 </a>

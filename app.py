@@ -408,7 +408,7 @@ def _guard_module_route_access():
             flash('Client portal access only — module not available.', 'error')
             return redirect(url_for('dashboard'))
         try:
-            from portal_sub_access import is_sub_vendor_portal_user, SUB_VENDOR_ALLOWED_MODULES, portal_home_redirect
+            from portal_sub_access import is_sub_vendor_portal_user, sub_vendor_module_allowed, portal_home_redirect
             route_module = module_key
             if ep == 'email_page':
                 has_email = user_has_module_access(current_user, 'email', 'view')
@@ -417,7 +417,7 @@ def _guard_module_route_access():
                     flash('You do not have permission to access internal messages.', 'error')
                     return redirect(url_for('dashboard'))
                 route_module = 'email' if has_email else 'internal_messages'
-            if is_sub_vendor_portal_user(current_user) and route_module not in SUB_VENDOR_ALLOWED_MODULES:
+            if is_sub_vendor_portal_user(current_user) and not sub_vendor_module_allowed(current_user, route_module):
                 flash('This module is not available for subcontractor portal users.', 'error')
                 return portal_home_redirect(current_user)
         except Exception:
@@ -4026,6 +4026,41 @@ def api_update_rfi(rfi_id):
     db.session.commit()
     linked_cos, linked_pcos = get_linked_records(rfi.id, ChangeOrder, PotentialChangeOrder)
     return jsonify({'ok': True, 'rfi': rfi_to_dict(rfi, linked_cos, linked_pcos)})
+
+
+@app.route('/api/rfis/<int:rfi_id>', methods=['DELETE'])
+@login_required
+def api_delete_rfi(rfi_id):
+    from developer_tools import is_admin_or_developer
+    from rfi_persistence import delete_rfi_record
+    from case_workflow import ApprovalRequest
+
+    if not is_admin_or_developer(current_user):
+        return jsonify({'error': 'Only administrators or developers can delete RFIs'}), 403
+
+    rfi = RFI.query.get_or_404(rfi_id)
+    number = rfi.number
+    subject = rfi.subject or ''
+    project_id = rfi.project_id
+    try:
+        delete_rfi_record(
+            db, rfi, app.config.get('UPLOAD_FOLDER', 'uploads'),
+            DrawingMarkup=DrawingMarkup,
+            ChangeOrder=ChangeOrder,
+            PotentialChangeOrder=PotentialChangeOrder,
+            ApprovalRequest=ApprovalRequest,
+        )
+        write_audit(
+            'RFI Deleted',
+            f'{number or rfi_id}: {subject}',
+            module='rfis',
+            project_id=project_id,
+        )
+        db.session.commit()
+        return jsonify({'ok': True, 'deleted_id': rfi_id})
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 500
 
 
 @app.route('/api/rfis/<int:rfi_id>/workflow', methods=['POST'])
