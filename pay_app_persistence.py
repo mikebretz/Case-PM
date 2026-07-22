@@ -48,6 +48,16 @@ def ensure_pay_app_schema(engine, db):
     inspector = inspect(engine)
     tables = inspector.get_table_names()
 
+    pay_app_tables = ('pay_app_project_state', 'sage_sync_event', 'change_order_allocation')
+    if any(t not in tables for t in pay_app_tables):
+        try:
+            db.create_all()
+            db.session.commit()
+            inspector = inspect(engine)
+            tables = inspector.get_table_names()
+        except Exception:
+            db.session.rollback()
+
     if 'change_order' in tables:
         cols = {c['name'] for c in inspector.get_columns('change_order')}
         additions = {
@@ -117,8 +127,23 @@ def _parse_state(record):
         return {}
 
 
-def get_pay_app_state(PayAppProjectState, project_id):
-    record = PayAppProjectState.query.filter_by(project_id=project_id).first()
+def _is_db_schema_error(exc) -> bool:
+    err = str(exc).lower()
+    return 'no such table' in err or 'no such column' in err or 'has no column' in err
+
+
+def get_pay_app_state(PayAppProjectState, project_id, db=None):
+    try:
+        record = PayAppProjectState.query.filter_by(project_id=project_id).first()
+    except Exception as exc:
+        if db is not None and _is_db_schema_error(exc):
+            try:
+                ensure_pay_app_schema(db.engine, db)
+                record = PayAppProjectState.query.filter_by(project_id=project_id).first()
+            except Exception:
+                return None, {}
+        else:
+            raise
     if not record:
         return None, {}
     return record, _parse_state(record)
@@ -495,6 +520,7 @@ def validate_sub_vendor_pay_app_save(
             commitments = Commitment.query.filter_by(project_id=int(project_id)).all()
         except Exception:
             commitments = []
+    cid, cname, _ = resolve_sub_vendor_company(user)
     return validate_sub_sov_commitment_totals(
         merged,
         commitments,

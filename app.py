@@ -12917,6 +12917,7 @@ def _migrate_program_schemas():
         pass
     for hook in (
         ('pay_app_persistence', 'ensure_pay_app_schema'),
+        ('companies_persistence', 'ensure_company_schema'),
         ('co_persistence', 'ensure_co_schema'),
         ('rfi_persistence', 'ensure_rfi_schema'),
         ('drawing_persistence', 'ensure_drawing_schema'),
@@ -12925,7 +12926,11 @@ def _migrate_program_schemas():
     ):
         try:
             mod = __import__(hook[0], fromlist=[hook[1]])
-            getattr(mod, hook[1])(db.engine, db)
+            fn = getattr(mod, hook[1])
+            if hook[0] == 'companies_persistence':
+                fn(db)
+            else:
+                fn(db.engine, db)
         except Exception:
             pass
     try:
@@ -14458,6 +14463,13 @@ def _sync_sub_memberships_after_pay_app_save(project_id, state):
 @login_required
 def api_get_pay_app_state():
     try:
+        try:
+            from pay_app_persistence import ensure_pay_app_schema
+            from companies_persistence import ensure_company_schema
+            ensure_pay_app_schema(db.engine, db)
+            ensure_company_schema(db)
+        except Exception:
+            pass
         blocked = _require_linked_sub_vendor_company()
         if blocked:
             return blocked
@@ -14471,7 +14483,7 @@ def api_get_pay_app_state():
         except (ValueError, PermissionError) as exc:
             return jsonify({'error': str(exc)}), 403
         project_id = int(project_id)
-        record, data = load_state(PayAppProjectState, project_id)
+        record, data = load_state(PayAppProjectState, project_id, db=db)
         if not record:
             return jsonify({'project_id': project_id, 'data': None, 'version': 0})
         data = coerce_pay_app_state(data)
@@ -14509,6 +14521,13 @@ def api_get_pay_app_state():
 @login_required
 def api_save_pay_app_state():
     try:
+        try:
+            from pay_app_persistence import ensure_pay_app_schema
+            from companies_persistence import ensure_company_schema
+            ensure_pay_app_schema(db.engine, db)
+            ensure_company_schema(db)
+        except Exception:
+            pass
         blocked = _require_linked_sub_vendor_company()
         if blocked:
             return blocked
@@ -14526,7 +14545,7 @@ def api_save_pay_app_state():
             project_id = require_financial_project_access(current_user, project_id, Project)
         except (ValueError, PermissionError) as exc:
             return jsonify({'error': str(exc)}), 403
-        record, existing = load_state(PayAppProjectState, project_id)
+        record, existing = load_state(PayAppProjectState, project_id, db=db)
         existing = coerce_pay_app_state(existing)
         patch = filter_pay_app_patch_for_sub_vendor(
             current_user, body.get('data') or body.get('patch') or {}, existing,
@@ -15830,6 +15849,11 @@ with app.app_context():
             ensure_pay_app_schema(db.engine, db)
         except Exception as _pe:
             print('Pay app schema:', _pe)
+        try:
+            from companies_persistence import ensure_company_schema
+            ensure_company_schema(db)
+        except Exception as _co:
+            print('Company schema:', _co)
         try:
             from co_persistence import ensure_co_schema
             ensure_co_schema(db.engine, db)
