@@ -28,6 +28,9 @@ function submittalAccessLevel() {
     }
     return 'view';
 }
+function submittalIsViewOnly() {
+    return submittalAccessLevel() === 'view';
+}
 function submittalItemAssignedToMe(item) {
     if (!item || !SUBMITTAL_ACCESS.isSubPortal) return true;
     const uid = SUBMITTAL_ACCESS.userId;
@@ -83,8 +86,33 @@ function applySubmittalModalReadOnly(readOnly) {
 }
 function refreshSubmittalActionButtons() {
     const level = submittalAccessLevel();
+    const viewOnly = level === 'view';
+    const hideNew = viewOnly || (SUBMITTAL_ACCESS.isSubPortal && level !== 'edit');
+    const hideManage = viewOnly;
+
     const newBtn = document.getElementById('submittalNewBtn');
-    if (newBtn) newBtn.classList.toggle('hidden', level === 'view' || (SUBMITTAL_ACCESS.isSubPortal && level !== 'edit'));
+    if (newBtn) newBtn.classList.toggle('hidden', hideNew);
+
+    const uploadBtn = document.getElementById('submittalUploadSpecBookBtn');
+    if (uploadBtn) uploadBtn.classList.toggle('hidden', hideManage);
+
+    const importBtn = document.getElementById('submittalImportExcelBtn');
+    if (importBtn) importBtn.classList.toggle('hidden', hideManage);
+
+    const gearBtn = document.getElementById('submittalSpecSectionsGearBtn');
+    if (gearBtn) gearBtn.classList.toggle('hidden', hideManage);
+
+    const badge = document.getElementById('specBookLoadedBadge');
+    if (badge && hideManage) badge.classList.add('hidden');
+
+    const emptyHint = document.getElementById('submittalEmptyHint');
+    const emptyCreateBtn = document.getElementById('submittalEmptyCreateBtn');
+    if (emptyHint) {
+        emptyHint.textContent = hideNew
+            ? 'No submittals are available for this project yet.'
+            : 'Click "New Submittal", import an Excel log, or upload a Specifications Book PDF.';
+    }
+    if (emptyCreateBtn) emptyCreateBtn.classList.toggle('hidden', hideNew);
 }
 </script>
 <style>
@@ -385,13 +413,13 @@ function refreshSubmittalActionButtons() {
                 New Submittal
             </button>
             
-            <button onclick="showUploadSpecBookModal()" 
+            <button id="submittalUploadSpecBookBtn" onclick="showUploadSpecBookModal()" 
                     class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-sm font-medium transition-colors">
                 <i class="fa-solid fa-file-pdf mr-2 text-red-400"></i>
                 Upload Specs Book (PDF)
             </button>
 
-            <button onclick="showImportExcelLogModal()"
+            <button id="submittalImportExcelBtn" onclick="showImportExcelLogModal()"
                     class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-sm font-medium transition-colors">
                 <i class="fa-solid fa-file-excel mr-2 text-emerald-400"></i>
                 Import Excel Log
@@ -407,8 +435,8 @@ function refreshSubmittalActionButtons() {
                 Print / Export Log
             </button>
             
-            <!-- THE GEAR BUTTON - This must work -->
-            <button onclick="showSpecSectionsManagement()" 
+            <!-- Spec sections settings (hidden for view-only) -->
+            <button id="submittalSpecSectionsGearBtn" onclick="showSpecSectionsManagement()" 
                     class="w-10 h-10 flex items-center justify-center bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-colors"
                     title="Program Settings > Spec Sections">
                 <i class="fa-solid fa-cog text-zinc-400"></i>
@@ -517,8 +545,8 @@ function refreshSubmittalActionButtons() {
         <div id="emptyState" class="hidden p-12 text-center">
             <i class="fa-solid fa-inbox text-5xl text-zinc-600 mb-4"></i>
             <h3 class="text-xl font-semibold text-white mb-2">No Submittals Yet</h3>
-            <p class="text-zinc-400 mb-6">Click "New Submittal", import an Excel log, or upload a Specifications Book PDF.</p>
-            <button onclick="showNewSubmittalModal()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold">
+            <p id="submittalEmptyHint" class="text-zinc-400 mb-6">Click "New Submittal", import an Excel log, or upload a Specifications Book PDF.</p>
+            <button id="submittalEmptyCreateBtn" onclick="showNewSubmittalModal()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold">
                 Create First Submittal
             </button>
         </div>
@@ -1215,7 +1243,7 @@ function renderSubmittalsTable(list) {
         row.innerHTML = `
             <td class="px-4 py-2 font-mono text-emerald-400 font-semibold">${item.number || '<span class="text-zinc-500 italic">Draft</span>'}</td>
             <td class="px-3 py-2 text-center font-mono">${item.rev}</td>
-            <td class="px-3 py-2 font-mono text-sky-400 hover:underline cursor-pointer" title="View full spec section in specifications book" onclick="event.stopPropagation(); openSpecSectionFromSubmittal(${item.id})">${item.specSection}</td>
+            <td class="px-3 py-2 font-mono ${submittalIsViewOnly() ? 'text-sky-400' : 'text-sky-400 hover:underline cursor-pointer'}" ${submittalIsViewOnly() ? '' : `title="View full spec section in specifications book" onclick="event.stopPropagation(); openSpecSectionFromSubmittal(${item.id})"`}>${item.specSection}</td>
             <td class="px-3 py-2 text-xs text-zinc-400">${item.paragraph || '-'}</td>
             <td class="px-4 py-2"><div class="font-medium">${item.subject}</div>${item.sectionName ? `<div class="text-xs text-zinc-500 mt-0.5">${item.sectionName}</div>` : ''}</td>
             <td class="px-3 py-2 text-xs">${item.type || '-'}</td>
@@ -1530,7 +1558,7 @@ function bindSubmittalDocumentPickers() {
         });
     }
     const specWrap = document.getElementById('specBookDocPickerWrap');
-    if (specWrap && window.CasePMDocPicker) {
+    if (specWrap && window.CasePMDocPicker && !submittalIsViewOnly()) {
         window.CasePMDocPicker.addBrowseButton(specWrap, {
             title: 'Select Specifications PDF from Documents',
             multiple: false,
@@ -1548,6 +1576,10 @@ function bindSubmittalDocumentPickers() {
 }
 
 async function setSpecBookFromDocument(documentId, displayName) {
+    if (submittalIsViewOnly()) {
+        showCenteredAlert('You do not have permission to upload specifications books.', 'warning');
+        return;
+    }
     const pid = resolveSubmittalProjectId();
     if (!pid) {
         showCenteredAlert('Select a project first, then choose a specifications PDF from Documents.', 'warning');
@@ -1631,6 +1663,10 @@ function showNewSubmittalModal() {
 
 // Spec Sections - THE GEAR FUNCTION
 function showSpecSectionsManagement() {
+    if (submittalIsViewOnly()) {
+        showCenteredAlert('You do not have permission to manage spec sections.', 'warning');
+        return;
+    }
     console.log('[GEAR] showSpecSectionsManagement called');
     const modal = document.getElementById('specSectionsModal');
     if (!modal) {
@@ -1889,6 +1925,10 @@ function clearFilters() {
 // ==================== SPEC BOOK PDF UPLOAD & PARSING ====================
 
 function showUploadSpecBookModal() {
+    if (submittalIsViewOnly()) {
+        showCenteredAlert('You do not have permission to upload specifications books.', 'warning');
+        return;
+    }
     parsedSpecBookEntries = [];
     selectedSpecBookFile = null;
     document.getElementById('specBookFileInput').value = '';
@@ -3210,6 +3250,10 @@ function parseExcelLogRow(cells, mapping) {
 }
 
 function showImportExcelLogModal() {
+    if (submittalIsViewOnly()) {
+        showCenteredAlert('You do not have permission to import submittal logs.', 'warning');
+        return;
+    }
     parsedExcelLogRows = [];
     selectedExcelLogFile = null;
     document.getElementById('excelLogFileInput').value = '';
@@ -3689,6 +3733,10 @@ function updateSpecBookLoadedBadge() {
     const badge = document.getElementById('specBookLoadedBadge');
     const nameEl = document.getElementById('specBookLoadedName');
     if (!badge) return;
+    if (submittalIsViewOnly()) {
+        badge.classList.add('hidden');
+        return;
+    }
     if (specBookArchive && specBookArchive.filename) {
         badge.classList.remove('hidden');
         if (nameEl) {
@@ -4038,7 +4086,7 @@ function formatSpecBookPageLabel({ specSection, paragraph, safePage, maxPage, se
 function updateViewInSpecBookButton() {
     const btn = document.getElementById('viewInSpecBookBtn');
     if (!btn) return;
-    const canView = !!(specBookArchive && currentModalItem && currentModalItem.specSection);
+    const canView = !submittalIsViewOnly() && !!(specBookArchive && currentModalItem && currentModalItem.specSection);
     btn.classList.toggle('hidden', !canView);
     if (canView) {
         const range = resolveSpecBookPageRangeForSection(currentModalItem.specSection);
@@ -4072,12 +4120,14 @@ async function ensureSpecBookReadyForViewer() {
 }
 
 async function openSpecSectionFromSubmittal(id) {
+    if (submittalIsViewOnly()) return;
     const item = submittals.find(s => s.id === id);
     if (!item?.specSection) return;
     await viewSpecSectionInSpecBook(item);
 }
 
 async function viewSpecSectionInSpecBook(item) {
+    if (submittalIsViewOnly()) return;
     if (!item?.specSection) return;
     if (!(await ensureSpecBookReadyForViewer())) return;
     await ensureSpecBookFooterMaps();
@@ -4121,6 +4171,7 @@ function closeSpecBookViewer(trigger) {
 }
 
 async function openSpecBookViewer({ page, title, subtitle, specSection, paragraph, sectionPageRange }) {
+    if (submittalIsViewOnly()) return;
     if (!specBookArchive) {
         showCenteredAlert('Specifications book file is not available.', 'error');
         return;
@@ -4365,12 +4416,14 @@ async function syncSpecBookToServerIfNeeded() {
 async function initialize() {
     loadData();
     refreshSubmittalActionButtons();
-    await loadSpecBookArchive();
-    await syncSpecBookToServerIfNeeded();
-    if (!specBookArchive && localStorage.getItem(getSpecBookMetaKey())) {
-        localStorage.removeItem(getSpecBookMetaKey());
+    if (!submittalIsViewOnly()) {
+        await loadSpecBookArchive();
+        await syncSpecBookToServerIfNeeded();
+        if (!specBookArchive && localStorage.getItem(getSpecBookMetaKey())) {
+            localStorage.removeItem(getSpecBookMetaKey());
+        }
+        updateSpecBookLoadedBadge();
     }
-    updateSpecBookLoadedBadge();
     renderSubmittalsTable();
     updateMetrics();
     console.log('%c[Submittals] Initialized with Spec Book PDF import.', 'color:#22c55e');

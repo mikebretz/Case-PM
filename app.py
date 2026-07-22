@@ -4745,6 +4745,11 @@ def _save_spec_book_bytes(project_id, file_bytes, display_name, original_filenam
 @app.route('/api/submittals/spec-book', methods=['GET'])
 @login_required
 def api_get_spec_book():
+    from document_module_security import assert_submittal_log_manage_allowed
+    try:
+        assert_submittal_log_manage_allowed(current_user)
+    except PermissionError as exc:
+        return jsonify({'error': str(exc)}), 403
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
@@ -4766,6 +4771,11 @@ def api_get_spec_book():
 @app.route('/api/submittals/spec-book', methods=['POST'])
 @login_required
 def api_upload_spec_book():
+    from document_module_security import assert_submittal_log_manage_allowed
+    try:
+        assert_submittal_log_manage_allowed(current_user)
+    except PermissionError as exc:
+        return jsonify({'error': str(exc)}), 403
     project_id = request.form.get('project_id', type=int) or get_current_project_id()
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
@@ -4800,6 +4810,11 @@ def api_upload_spec_book():
 @login_required
 def api_set_spec_book_from_document():
     """Copy a PDF from project Documents to the specifications book slot."""
+    from document_module_security import assert_submittal_log_manage_allowed
+    try:
+        assert_submittal_log_manage_allowed(current_user)
+    except PermissionError as exc:
+        return jsonify({'error': str(exc)}), 403
     body = request.get_json(silent=True) or {}
     try:
         project_id = int(body.get('project_id')) if body.get('project_id') is not None else None
@@ -5142,6 +5157,11 @@ def serve_project_logo(project_id):
 @app.route('/uploads/spec_books/<int:project_id>/spec_book.pdf')
 @login_required
 def serve_spec_book_pdf(project_id):
+    from document_module_security import assert_submittal_log_manage_allowed
+    try:
+        assert_submittal_log_manage_allowed(current_user)
+    except PermissionError:
+        abort(403)
     directory = os.path.join(app.config['UPLOAD_FOLDER'], 'spec_books', str(project_id))
     return send_from_directory(directory, 'spec_book.pdf', mimetype='application/pdf')
 
