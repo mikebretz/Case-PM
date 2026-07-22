@@ -9853,6 +9853,45 @@ def api_submittal_workflow(submittal_id):
     return jsonify({'ok': True, 'new_status': new_status, 'submittal_id': submittal.id})
 
 
+@app.route('/api/submittals/<int:submittal_id>/print-form', methods=['GET'])
+@login_required
+def api_submittal_print_form(submittal_id):
+    from document_module_security import assert_submittal_read_allowed, submittal_visible_to_user
+    from financial_security import require_financial_project_access
+    from program_settings_persistence import load_company_info
+    from submittal_form_pdf import fill_submittal_form_pdf
+    import io
+
+    submittal = Submittal.query.get_or_404(submittal_id)
+    try:
+        assert_submittal_read_allowed(current_user)
+        require_financial_project_access(current_user, submittal.project_id, Project)
+        if not submittal_visible_to_user(submittal, current_user, Company=Company, db=db):
+            return jsonify({'error': 'Permission denied'}), 403
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    project = Project.query.get(submittal.project_id)
+    template_path = os.path.join(app.static_folder, 'forms', 'Submittal_Form.pdf')
+    try:
+        pdf_bytes = fill_submittal_form_pdf(
+            submittal,
+            project=project,
+            company_info=load_company_info(),
+            template_path=template_path,
+        )
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 500
+    except Exception as exc:
+        return jsonify({'error': f'Could not generate submittal form: {exc}'}), 500
+    filename = f'Submittal_{submittal.number or submittal_id}.pdf'
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype='application/pdf',
+        as_attachment=False,
+        download_name=filename,
+    )
+
+
 @app.route('/api/submittals/<int:submittal_id>/comments', methods=['GET'])
 @login_required
 def api_submittal_list_comments(submittal_id):

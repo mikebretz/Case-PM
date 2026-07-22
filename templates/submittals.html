@@ -3485,51 +3485,48 @@ function submittalPrintCellValue(item, key) {
 
 async function printSubmittalDetail() {
     if (!currentModalItem) return;
-    const ctx = window.SUBMITTAL_PROJECT_CTX || {};
-    const item = currentModalItem;
-    const attachmentsEl = document.getElementById('submittalAttachmentList');
-    const attachmentText = attachmentsEl ? attachmentsEl.innerText.trim() : '';
-    const comments = (item.comments || []).map(c =>
-        `${c.user_name || 'User'} (${(c.created_at || '').slice(0, 10)}): ${c.body || ''}`
-    ).join('\n');
-    const sheet = document.getElementById('submittalDetailPrintSheet');
-    if (!sheet) return;
-    const esc = (v) => escapeSubmittalHtml(v == null ? '' : String(v));
-    sheet.innerHTML = `
-      <div class="submittal-detail-print">
-        <div class="print-title">Submittal Transmittal</div>
-        <div class="print-grid">
-          <div class="print-field"><label>Project</label><div class="val">${esc(ctx.name)}</div></div>
-          <div class="print-field"><label>Project Number</label><div class="val">${esc(ctx.number)}</div></div>
-          <div class="print-field"><label>Submittal Number</label><div class="val">${esc(item.number)}</div></div>
-          <div class="print-field"><label>Revision</label><div class="val">${esc(item.rev || '0')}</div></div>
-          <div class="print-field"><label>Spec Section</label><div class="val">${esc(item.specSection)}</div></div>
-          <div class="print-field"><label>Paragraph</label><div class="val">${esc(item.paragraph)}</div></div>
-          <div class="print-field" style="grid-column:1/-1"><label>Section Name</label><div class="val">${esc(item.sectionName)}</div></div>
-          <div class="print-field" style="grid-column:1/-1"><label>Description / Subject</label><div class="val">${esc(item.subject)}</div></div>
-          <div class="print-field"><label>Submittal Type</label><div class="val">${esc(item.type)}</div></div>
-          <div class="print-field"><label>Status</label><div class="val">${esc(item.status)}</div></div>
-          <div class="print-field"><label>Subcontractor / Vendor</label><div class="val">${esc(item.assignedCompanyName || item.receivedFrom)}</div></div>
-          <div class="print-field"><label>Contact</label><div class="val">${esc(item.assignedContactName)}</div></div>
-          <div class="print-field"><label>Date Received</label><div class="val">${esc(item.dateReceived)}</div></div>
-          <div class="print-field"><label>Required By</label><div class="val">${esc(item.requiredBy)}</div></div>
-        </div>
-        <div class="print-section-title">Impact Notes / Description</div>
-        <div class="print-field"><div class="val" style="min-height:48px;white-space:pre-wrap">${esc(item.impactNotes)}</div></div>
-        <div class="print-section-title">Attachments</div>
-        <div class="print-field"><div class="val" style="min-height:36px;white-space:pre-wrap">${esc(attachmentText || 'None')}</div></div>
-        <div class="print-section-title">Review Comments</div>
-        <div class="print-field"><div class="val" style="min-height:60px;white-space:pre-wrap">${esc(comments || 'None')}</div></div>
-        <div class="review-stamp-row">
-          <div class="review-stamp"><div class="stamp-label">Subcontractor</div>Date / Signature</div>
-          <div class="review-stamp"><div class="stamp-label">Project Manager</div>Date / Signature</div>
-          <div class="review-stamp"><div class="stamp-label">Architect / Engineer</div>Date / Signature</div>
-        </div>
-      </div>`;
-    document.body.classList.add('printing-submittal-detail');
-    const cleanup = () => document.body.classList.remove('printing-submittal-detail');
-    window.addEventListener('afterprint', cleanup, { once: true });
-    window.print();
+    let sid = currentModalItem.serverId;
+    if (!sid) {
+        await syncSubmittalToServer(currentModalItem);
+        sid = currentModalItem.serverId;
+    }
+    if (!sid) {
+        showCenteredAlert('Save the submittal before printing.', 'warning');
+        return;
+    }
+    try {
+        const res = await fetch(`/api/submittals/${sid}/print-form`, { credentials: 'same-origin' });
+        if (!res.ok) {
+            const json = await res.json().catch(() => ({}));
+            throw new Error(json.error || 'Could not generate submittal form');
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const frame = document.createElement('iframe');
+        frame.style.position = 'fixed';
+        frame.style.right = '0';
+        frame.style.bottom = '0';
+        frame.style.width = '0';
+        frame.style.height = '0';
+        frame.style.border = '0';
+        frame.src = url;
+        document.body.appendChild(frame);
+        const cleanup = () => {
+            URL.revokeObjectURL(url);
+            frame.remove();
+        };
+        frame.onload = () => {
+            try {
+                frame.contentWindow?.focus();
+                frame.contentWindow?.print();
+            } catch (e) {
+                window.open(url, '_blank');
+            }
+            setTimeout(cleanup, 1000);
+        };
+    } catch (err) {
+        showCenteredAlert(err.message || 'Could not print submittal form', 'error');
+    }
 }
 
 async function showPrintSubmittalLogPicker() {
