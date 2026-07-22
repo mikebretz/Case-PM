@@ -68,6 +68,7 @@ API_PREFIX_MODULE = [
     ('/api/projects', 'projects'),
     ('/api/dashboard', 'dashboard'),
     ('/api/email', 'email'),
+    ('/api/internal-messages', 'internal_messages'),
     ('/api/permissions', 'users'),
     ('/api/users', 'users'),
     ('/api/audit', 'audit_log'),
@@ -180,6 +181,31 @@ def user_global_flags(user) -> dict:
         }
 
 
+def user_can_internal_messages(user) -> bool:
+    try:
+        from case_workflow import user_has_module_access
+        return user_has_module_access(user, 'internal_messages', 'view')
+    except Exception:
+        return False
+
+
+def user_can_external_email(user) -> bool:
+    try:
+        from case_workflow import user_has_module_access
+        return user_has_module_access(user, 'email', 'view')
+    except Exception:
+        return False
+
+
+def user_email_internal_only(user) -> bool:
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    flags = user_global_flags(user)
+    if flags.get('email_internal_only'):
+        return True
+    return user_can_internal_messages(user) and not user_can_external_email(user)
+
+
 def user_is_privileged(user) -> bool:
     if not user or not getattr(user, 'is_authenticated', False):
         return False
@@ -282,7 +308,7 @@ def guard_api_request(current_user):
         flags = user_global_flags(current_user)
         if flags.get('client_portal_only') and module_key not in (
             'dashboard', 'projects', 'documents', 'drawings', 'rfis', 'submittals',
-            'change_orders', 'pay_applications', 'schedule', 'email', 'notifications',
+            'change_orders', 'pay_applications', 'schedule', 'email', 'internal_messages', 'notifications',
         ):
             return jsonify({'error': 'Client portal access only — module not available.'}), 403
 

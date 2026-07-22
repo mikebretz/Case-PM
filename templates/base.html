@@ -484,11 +484,12 @@
                     <span>Projects</span>
                 </a>
 
-                <!-- NEW: Email -->
-                <a href="{{ url_for('email_page') }}{% if is_sub_vendor_portal %}?tab=internal{% endif %}" data-nav-module="email" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'email_page' %}active{% endif %}">
-                    <i class="fa-solid {% if is_sub_vendor_portal %}fa-comments{% else %}fa-envelope{% endif %} w-5"></i>
-                    <span>{% if is_sub_vendor_portal %}Internal Communications{% else %}Email{% endif %}</span>
+                {% if messaging_nav_visible|default(true) %}
+                <a href="{{ url_for('email_page') }}{% if messaging_internal_only|default(is_sub_vendor_portal) %}?tab=internal{% endif %}" data-nav-module="{% if messaging_internal_only|default(is_sub_vendor_portal) %}internal_messages{% else %}email{% endif %}" data-nav-module-alt="internal_messages" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'email_page' %}active{% endif %}">
+                    <i class="fa-solid {% if messaging_internal_only|default(is_sub_vendor_portal) %}fa-comments{% else %}fa-envelope{% endif %} w-5"></i>
+                    <span>{% if messaging_internal_only|default(is_sub_vendor_portal) %}Internal Communications{% else %}Email{% endif %}</span>
                 </a>
+                {% endif %}
 
                 <a href="{{ url_for('safety_page', project_id=active_project.id) if active_project else url_for('safety_page') }}" data-nav-module="safety" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'safety_page' %}active{% endif %}">
                     <i class="fa-solid fa-shield-alt w-5"></i>
@@ -996,7 +997,10 @@
         if (!allowed || Object.keys(allowed).length === 0) return;
         document.querySelectorAll('[data-nav-module]').forEach(el => {
             const mod = el.getAttribute('data-nav-module');
-            if (mod && allowed[mod] === false) el.classList.add('hidden');
+            const alt = el.getAttribute('data-nav-module-alt');
+            const primaryOk = !mod || allowed[mod] !== false;
+            const altOk = alt && allowed[alt] !== false;
+            if (mod && !primaryOk && !altOk) el.classList.add('hidden');
         });
     })();
     </script>

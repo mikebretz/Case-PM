@@ -78,6 +78,7 @@ MODULE_GROUPS = [
             ('projects', 'Projects'),
             ('schedule', 'Schedule'),
             ('email', 'Email'),
+            ('internal_messages', 'Internal Messages'),
             ('safety', 'Safety'),
             ('notifications', 'Notifications'),
         ],
@@ -171,6 +172,7 @@ LEGACY_MODULE_MAP = {
     'Program Settings': 'program_settings',
     'Logs': 'audit_log',
     'Email': 'email',
+    'Internal Messages': 'internal_messages',
     'Forecast': 'forecast',
     'Deliveries': 'deliveries',
     'Inspections': 'inspections',
@@ -190,6 +192,7 @@ WORKFLOW_MODULE_MAP = {
     'Safety': 'safety',
     'Documents': 'documents',
     'Email': 'email',
+    'Internal Messages': 'internal_messages',
     'Schedule': 'schedule',
     'Drawings': 'drawings',
 }
@@ -220,6 +223,53 @@ def all_module_keys():
 
 def default_module_perms(access='view', approve='none'):
     return {k: {'access': access, 'approve': approve} for k in all_module_keys()}
+
+
+SUB_PORTAL_ROLES = frozenset({
+    'Subcontractor Accountant',
+    'Subcontractor Contact',
+    'Subcontractor',
+    'Company User',
+})
+
+
+def ensure_messaging_modules(perms: dict, role: str | None = None) -> dict:
+    """
+    Split internal messaging from external email for sub portal roles.
+    Migrates legacy email-only grants to internal_messages when appropriate.
+    """
+    if not isinstance(perms, dict):
+        return perms
+    modules = perms.setdefault('modules', {})
+    global_opts = perms.get('global') or {}
+    role_name = (role or '').strip()
+
+    def rank_of(mod_key: str) -> int:
+        return ACCESS_RANK.get((modules.get(mod_key) or {}).get('access', 'none'), 0)
+
+    def access_for_rank(rank: int) -> str:
+        for key, _ in ACCESS_LEVELS:
+            if ACCESS_RANK[key] == rank:
+                return key
+        return 'view'
+
+    email_rank = rank_of('email')
+    internal_rank = rank_of('internal_messages')
+    internal_only = bool(global_opts.get('email_internal_only')) or role_name in SUB_PORTAL_ROLES
+
+    if internal_only:
+        target_rank = max(internal_rank, email_rank, ACCESS_RANK['view'])
+        if rank_of('internal_messages') < target_rank:
+            modules['internal_messages'] = {'access': access_for_rank(target_rank), 'approve': 'none'}
+        elif internal_rank == 0:
+            modules['internal_messages'] = {'access': 'view', 'approve': 'none'}
+        modules['email'] = {'access': 'none', 'approve': 'none'}
+    elif email_rank > 0 and internal_rank == 0:
+        modules['internal_messages'] = {
+            'access': access_for_rank(max(email_rank, ACCESS_RANK['view'])),
+            'approve': 'none',
+        }
+    return perms
 
 
 def inherit_submodule_defaults(modules: dict) -> dict:
@@ -414,7 +464,8 @@ ROLE_TEMPLATES = {
             'change_orders_rfq': ('entry', 'submit'),
             'estimating': ('view', 'none'),
             'documents': ('view', 'none'),
-            'email': ('view', 'none'),
+            'internal_messages': ('view', 'none'),
+            'email': ('none', 'none'),
         }),
     },
     'Subcontractor Contact': {
@@ -429,7 +480,8 @@ ROLE_TEMPLATES = {
             'change_orders_rfq': ('entry', 'submit'),
             'estimating': ('view', 'none'),
             'documents': ('view', 'none'),
-            'email': ('edit', 'none'),
+            'internal_messages': ('edit', 'none'),
+            'email': ('none', 'none'),
             'pay_applications': ('none', 'none'),
             'pay_applications_gc': ('none', 'none'),
             'pay_applications_sub': ('none', 'none'),
@@ -439,6 +491,9 @@ ROLE_TEMPLATES = {
     'Subcontractor': {
         'portal': 'sub',
         'description': 'Subcontractor PM — RFIs, submittals, project info; no GC financials',
+        'global': {
+            'email_internal_only': True,
+        },
         'modules': _set_modules(default_module_perms('none', 'none'), **{
             'dashboard': ('view', 'none'),
             'projects': ('client_view', 'none'),
@@ -449,7 +504,8 @@ ROLE_TEMPLATES = {
             'documents': ('view', 'none'),
             'drawings': ('view', 'none'),
             'punch_list': ('view', 'none'),
-            'email': ('edit', 'none'),
+            'internal_messages': ('edit', 'none'),
+            'email': ('none', 'none'),
             'pay_applications': ('none', 'none'),
             'pay_applications_gc': ('none', 'none'),
             'pay_applications_sub': ('none', 'none'),
@@ -459,6 +515,9 @@ ROLE_TEMPLATES = {
     'Company User': {
         'portal': 'sub',
         'description': 'Subcontractor PM — RFIs, submittals, project info; no GC financials',
+        'global': {
+            'email_internal_only': True,
+        },
         'modules': _set_modules(default_module_perms('none', 'none'), **{
             'dashboard': ('view', 'none'),
             'projects': ('client_view', 'none'),
@@ -469,7 +528,8 @@ ROLE_TEMPLATES = {
             'documents': ('view', 'none'),
             'drawings': ('view', 'none'),
             'punch_list': ('view', 'none'),
-            'email': ('edit', 'none'),
+            'internal_messages': ('edit', 'none'),
+            'email': ('none', 'none'),
             'pay_applications': ('none', 'none'),
             'pay_applications_gc': ('none', 'none'),
             'pay_applications_sub': ('none', 'none'),
@@ -559,12 +619,13 @@ def permissions_from_role(role):
     modules = inherit_submodule_defaults({k: dict(v) for k, v in tpl['modules'].items()})
     global_opts = dict(tpl.get('global') or {})
     global_opts['from_role'] = role
-    return {
+    perms = {
         'version': 2,
         'portal': tpl['portal'],
         'modules': modules,
         'global': global_opts,
     }
+    return ensure_messaging_modules(perms, role)
 
 
 def merge_permissions(role, stored_json):
@@ -574,7 +635,7 @@ def merge_permissions(role, stored_json):
             raw = json.loads(stored_json) if isinstance(stored_json, str) else stored_json
             normalized = normalize_legacy_permissions(raw)
             if normalized and normalized.get('version') == 2:
-                return normalized
+                return ensure_messaging_modules(normalized, role)
         except (TypeError, ValueError):
             pass
     return permissions_from_role(role)

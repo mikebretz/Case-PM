@@ -528,7 +528,7 @@ def register_workflow(app, _db, models):
             import traceback
             traceback.print_exc()
             role = getattr(current_user, 'role', None) or ''
-            sub_roles = ('Subcontractor Accountant', 'Subcontractor Contact', 'Subcontractor')
+            sub_roles = ('Subcontractor Accountant', 'Subcontractor Contact', 'Subcontractor', 'Company User')
             return jsonify({
                 'userId': getattr(current_user, 'id', None),
                 'userName': getattr(current_user, 'full_name', None) or '',
@@ -545,7 +545,9 @@ def register_workflow(app, _db, models):
                 'isSub': role in sub_roles,
                 'isArchitect': role == 'Architect',
                 'isSubVendorPayPortal': role in ('Subcontractor Accountant', 'Subcontractor Contact'),
-                'emailInternalOnly': role in ('Subcontractor Accountant', 'Subcontractor Contact'),
+                'emailInternalOnly': role in sub_roles,
+                'canInternalMessages': role in sub_roles,
+                'canExternalEmail': role not in sub_roles,
                 '_fallback': True,
                 '_detail': str(exc),
             })

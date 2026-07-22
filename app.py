@@ -409,11 +409,21 @@ def _guard_module_route_access():
             return redirect(url_for('dashboard'))
         try:
             from portal_sub_access import is_sub_vendor_portal_user, SUB_VENDOR_ALLOWED_MODULES, portal_home_redirect
-            if is_sub_vendor_portal_user(current_user) and module_key not in SUB_VENDOR_ALLOWED_MODULES:
+            route_module = module_key
+            if ep == 'email_page':
+                has_email = user_has_module_access(current_user, 'email', 'view')
+                has_internal = user_has_module_access(current_user, 'internal_messages', 'view')
+                if not has_email and not has_internal:
+                    flash('You do not have permission to access internal messages.', 'error')
+                    return redirect(url_for('dashboard'))
+                route_module = 'email' if has_email else 'internal_messages'
+            if is_sub_vendor_portal_user(current_user) and route_module not in SUB_VENDOR_ALLOWED_MODULES:
                 flash('This module is not available for subcontractor portal users.', 'error')
                 return portal_home_redirect(current_user)
         except Exception:
             pass
+        if ep == 'email_page':
+            return
         if not user_has_module_access(current_user, module_key, 'view'):
             if request.path.startswith('/api/'):
                 return jsonify({'error': 'You do not have permission to access this module.'}), 403
@@ -956,6 +966,13 @@ def inject_developer_flag():
             return True
         allowed_modules = {}
         module_access_levels = {}
+    messaging_internal_only = False
+    try:
+        from access_control import user_email_internal_only, user_can_external_email, user_can_internal_messages
+        messaging_internal_only = user_email_internal_only(current_user)
+        messaging_nav_visible = user_can_internal_messages(current_user) or user_can_external_email(current_user)
+    except Exception:
+        messaging_nav_visible = True
     return {
         'is_developer': dev,
         'developer_unlock_mode': unlock,
@@ -966,6 +983,8 @@ def inject_developer_flag():
         'module_access_levels': module_access_levels,
         'user_security_flags': flags,
         'security_settings': security_settings,
+        'messaging_internal_only': messaging_internal_only,
+        'messaging_nav_visible': messaging_nav_visible,
     }
 
 
