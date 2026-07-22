@@ -62,11 +62,15 @@
   function applyBundleToLocal(bundle) {
     const store = global.casepmStore;
     if (!store || !bundle) return;
+    const keys = activeSyncKeys();
     Object.keys(bundle).forEach(key => {
-      if (!SYNC_KEYS.has(key)) return;
+      if (!keys.has(key)) return;
       const val = bundle[key];
       store.setItem(key, typeof val === 'string' ? val : JSON.stringify(val));
     });
+    if (bundle.payPeriodDisplay) {
+      store.setItem('payPeriodDisplay', JSON.stringify(bundle.payPeriodDisplay));
+    }
     const portal = global.CASEPM_PORTAL || {};
     if (portal.is_sub_vendor_portal || portal.isSubVendorPayPortal) {
       ['contractorSOV', 'payAppHistory', 'previousPayApps', 'currentPayAppPeriod', 'payAppBillingLines'].forEach((key) => {
@@ -154,7 +158,10 @@
     if (saveInFlight) {
       try { await saveInFlight; } catch { /* ignore */ }
     }
-    saveInFlight = saveToServer(null, true);
+    const subPortal = isSubVendorPortal();
+    saveInFlight = subPortal
+      ? saveToServer(collectLocalBundle(), false)
+      : saveToServer(null, true);
     try {
       return await saveInFlight;
     } finally {
@@ -168,7 +175,7 @@
     const original = store.setItem.bind(store);
     store.setItem = function (key, value) {
       original(key, value);
-      if (SYNC_KEYS.has(key)) {
+      if (activeSyncKeys().has(key)) {
         let parsed;
         try { parsed = JSON.parse(value); } catch { parsed = value; }
         scheduleSave({ [key]: parsed });

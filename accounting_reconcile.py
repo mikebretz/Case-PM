@@ -521,8 +521,18 @@ def apply_sub_sov_reconcile(state, originals, changes, display_codes):
     if not isinstance(sub_sov, dict):
         sub_sov = {}
     sub_status = state.get('subSOVStatus') or {}
+    registered_keys = {
+        str(k).strip()
+        for k, entry in (sub_status or {}).items()
+        if isinstance(entry, dict) and entry.get('status')
+    }
 
     all_company_keys = set(sub_sov.keys()) | set(originals.keys()) | set(changes.keys())
+    all_company_keys = {
+        k for k in all_company_keys
+        if str(k).strip() in registered_keys
+        or (sub_sov.get(k) and any(_sub_sov_line_has_activity(line) for line in (sub_sov.get(k) or [])))
+    }
     for company_key in all_company_keys:
         existing_lines = sub_sov.get(company_key) or []
         status_entry = sub_status.get(company_key) or {}
@@ -572,8 +582,13 @@ def apply_sub_sov_reconcile(state, originals, changes, display_codes):
                 if billed <= 0:
                     continue
             code = display_codes.get(company_key, {}).get(norm) or billing.get('cost_code') or norm
+            existing_id = billing.get('id')
+            if existing_id is not None and str(existing_id).strip() != '':
+                line_id = existing_id
+            else:
+                line_id = int(datetime.utcnow().timestamp() * 1000) + (abs(hash(f'{company_key}:{norm}')) % 100000)
             line = {
-                'id': billing.get('id') or f'recon-{company_key}-{norm}-{int(datetime.utcnow().timestamp())}',
+                'id': line_id,
                 'cost_code': code,
                 'description': billing.get('description') or chg_info.get('description') or f'SOV {code}',
                 'original_commitment': orig_amt,

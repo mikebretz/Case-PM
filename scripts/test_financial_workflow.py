@@ -150,6 +150,30 @@ class ReconcileCanonicalKeyTests(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         self.assertEqual(lines[0]['original_commitment'], 50_000)
 
+    def test_reconcile_new_line_ids_are_numeric(self):
+        from accounting_reconcile import apply_sub_sov_reconcile, compute_sub_sov_derivatives
+        from types import SimpleNamespace
+
+        Commitment = SimpleNamespace
+        com = Commitment(
+            id=1, commitment_type='Subcontract', status='Approved',
+            company_id='42', company_name='Acme', number='SC-1',
+            original_amount=100_000, current_amount=100_000,
+        )
+        state = {
+            'subcontractorSOV': {'42': []},
+            'subSOVStatus': {'42': {'status': 'Approved', 'companyName': 'Acme', 'companyId': '42'}},
+        }
+        originals = {'42': {'03300': 25_000}}
+        changes = {}
+        display = {'42': {'03300': '03-300'}}
+        state = apply_sub_sov_reconcile(dict(state), originals, changes, display)
+        lines = state['subcontractorSOV'].get('42') or []
+        self.assertEqual(len(lines), 1)
+        line_id = lines[0]['id']
+        self.assertIsInstance(line_id, int)
+        self.assertNotIn('recon-', str(line_id))
+
 
 class CommitmentValidationTests(unittest.TestCase):
     def test_validate_commitment_allocations_requires_cost_code(self):

@@ -733,10 +733,17 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         return undefined;
     }
 
-    function setSubCompanyMapEntry(map, companyId, value) {
-        if (!map || companyId == null) return;
+    function findSubSOVLine(companyId, lineId) {
+        const lines = getSubCompanyMapEntry(subcontractorSOV, companyId) || [];
+        if (lineId == null) return null;
+        return lines.find((l) => String(l.id) === String(lineId)) || null;
+    }
+
+    function setSubSOVLinesForCompany(companyId, lines) {
+        if (companyId == null) return;
         const primary = canonicalSubCompanyId(companyId);
-        if (primary != null) map[primary] = value;
+        if (primary == null) return;
+        subcontractorSOV[primary] = lines;
     }
 
     function deleteSubCompanyMapKeys(map, companyId) {
@@ -752,15 +759,48 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             ...Object.keys(subSOVData || {}),
             ...Object.keys(statusData || {}),
         ]);
+        const subMode = isSubVendorPayPortalUser();
+        const myId = subMode ? getSubVendorCompanyId() : null;
         allKeys.forEach((key) => {
             const st = statusData[key] || {};
             if (!st || !st.status) return;
+            if (!subMode && !statusHasCommitmentOnProject(st, key)) return;
             const cid = canonicalSubCompanyId(key);
             if (cid == null || seen.has(String(cid))) return;
+            if (subMode && myId != null) {
+                const mine = subCompanyAliasKeys(myId).some((k) => String(k) === String(key) || String(k) === String(cid));
+                if (!mine) return;
+            }
             seen.add(String(cid));
             ids.push(cid);
         });
         return ids;
+    }
+
+    function formatPayPeriodLabel(period) {
+        if (!period) return '';
+        const start = period.periodStart ? new Date(period.periodStart + 'T12:00:00') : null;
+        const end = period.periodEnd ? new Date(period.periodEnd + 'T12:00:00') : null;
+        const monthFmt = (d) => d ? d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '';
+        if (start && end) {
+            const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
+            if (sameMonth) {
+                return `${monthFmt(start)} · Period #${period.periodNumber || '—'} (${formatDateMDY(period.periodStart)} – ${formatDateMDY(period.periodEnd)})`;
+            }
+        }
+        const range = period.periodStart && period.periodEnd
+            ? `${formatDateMDY(period.periodStart)} – ${formatDateMDY(period.periodEnd)}`
+            : '';
+        return `Pay Period #${period.periodNumber || '—'}${range ? ` · ${range}` : ''}`;
+    }
+
+    function getSubPortalPayPeriod() {
+        if (currentPayAppPeriod && currentPayAppPeriod.periodNumber) return currentPayAppPeriod;
+        try {
+            const raw = casepmStore.getItem('payPeriodDisplay');
+            if (raw) return JSON.parse(raw);
+        } catch (_) { /* ignore */ }
+        return null;
     }
 
     function soleSubVendorServerKey(...maps) {
@@ -2359,18 +2399,19 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         function addSub(companyId) {
             const cid = String(companyId);
             if (seen.has(cid)) return;
-            const lines = subcontractorSOV[cid] || subcontractorSOV[companyId];
-            if (!lines || !lines.length) return;
-            if (!isSubSOVApproved(cid)) return;
+            const lines = getSubCompanyMapEntry(subcontractorSOV, companyId) || [];
+            if (!lines.length) return;
+            if (!isSubSOVApproved(companyId)) return;
+            const st = getSubSOVStatusEntry(companyId);
+            if (!statusHasCommitmentOnProject(st, companyId)) return;
             seen.add(cid);
             const fromList = (companies || []).find(c => String(c.id) === cid);
             result.push(fromList || { id: cid, name: getCompanyName(cid) });
         }
 
-        Object.keys(subcontractorSOV || {}).forEach(addSub);
-        (companies || []).forEach(c => {
-            const isSub = c.type === 'Subcontractor' || c.company_type === 'Subcontractor';
-            if (isSub) addSub(c.id);
+        Object.keys(subSOVStatus || {}).forEach((key) => {
+            const st = subSOVStatus[key] || {};
+            if (st && st.status) addSub(key);
         });
 
         return result.sort((a, b) => getCompanyName(a.id).localeCompare(getCompanyName(b.id)));
@@ -3461,8 +3502,10 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         if (result && result.ok !== false) {
             hideUnsavedIndicator();
             if (!silent) showPayAppSaveStatus('Saved to server');
-        } else if (!silent) {
-            showPayAppSaveStatus(result?.error || 'Save failed', true);
+        } else {
+            const errMsg = result?.error || 'Save failed';
+            if (!silent) showPayAppSaveStatus(errMsg, true);
+            throw new Error(errMsg);
         }
         return result;
     }
@@ -5250,8 +5293,8 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 <td class="px-4 py-2 text-right font-mono text-amber-400 text-[15px]">${formatCurrency(variance)}</td>
                 <td class="px-4 py-2 text-[15px] text-zinc-400 notes-cell" title="${(line.notes || '').replace(/"/g, '&quot;')}">${line.notes || ''}</td>
                 <td class="px-3 py-2 text-center">
-                    <button onclick="event.stopImmediatePropagation(); showSOVLineAudit(${line.id}, 'contractor')" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
-                    ${!isLocked ? `<button onclick="event.stopImmediatePropagation(); deleteContractorSOVLine(${line.id})" class="text-red-400 hover:text-red-300 p-1 ml-1" title="Delete"><i class="fa-solid fa-trash"></i></button>` : ''}
+                    <button onclick="event.stopImmediatePropagation(); showSOVLineAudit(${jsArg(line.id)}, 'contractor')" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
+                    ${!isLocked ? `<button onclick="event.stopImmediatePropagation(); deleteContractorSOVLine(${jsArg(line.id)})" class="text-red-400 hover:text-red-300 p-1 ml-1" title="Delete"><i class="fa-solid fa-trash"></i></button>` : ''}
                 </td>
             `;
             tbody.appendChild(row);
@@ -6076,6 +6119,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                     <div class="text-xs text-zinc-400">Subcontractor</div>
                     <div class="text-lg font-semibold text-white mt-2">${myCompanyName}</div>
                     <div class="text-[10px] text-zinc-500 mt-1">Your company — contact an administrator to change assignment.</div>
+                    <div class="mt-2 text-xs text-purple-300 font-medium" id="subPortalPayPeriodLabel">${formatPayPeriodLabel(getSubPortalPayPeriod()) || 'Pay period not set — contact your GC'}</div>
                     <div id="subStatusBadgeContainer" class="mt-2 flex items-center gap-2 min-h-[22px]"></div>
                     <div id="subSovAdminActionsHost" class="hidden mt-2 pt-2 border-t border-zinc-700"></div>
                 </div>` : `
@@ -6660,8 +6704,8 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 <td class="px-3 py-2 text-right text-red-400 font-mono text-sm">${formatCurrency(retainageAmount)}</td>
                 <td class="px-4 py-2 text-[15px] text-zinc-400 notes-cell" title="${(line.notes || '').replace(/"/g, '&quot;')}">${line.notes || ''}</td>
                 <td class="px-3 py-2 text-center">
-                    <button onclick="event.stopImmediatePropagation(); showSOVLineAudit(${line.id}, 'sub', ${jsArg(selectedSubCompanyId)})" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
-                    ${!isSubApprovedLocked && !lineDeleteBlocked ? `<button onclick="event.stopImmediatePropagation(); deleteSubSOVLine(${jsArg(selectedSubCompanyId)}, ${line.id})" class="text-red-400 hover:text-red-300 p-1 ml-1" title="Delete"><i class="fa-solid fa-trash"></i></button>` : ''}
+                    <button onclick="event.stopImmediatePropagation(); showSOVLineAudit(${jsArg(line.id)}, 'sub', ${jsArg(selectedSubCompanyId)})" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
+                    ${!isSubApprovedLocked && !lineDeleteBlocked ? `<button onclick="event.stopImmediatePropagation(); deleteSubSOVLine(${jsArg(selectedSubCompanyId)}, ${jsArg(line.id)})" class="text-red-400 hover:text-red-300 p-1 ml-1" title="Delete"><i class="fa-solid fa-trash"></i></button>` : ''}
                 </td>
             `;
             tbody.appendChild(row);
@@ -6901,8 +6945,8 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         const hideG703Info = isSubVendorDraftSOVSetup(companyId);
 
         let line = null;
-        if (lineId && subcontractorSOV[companyId]) {
-            line = subcontractorSOV[companyId].find(l => l.id === lineId);
+        if (lineId != null) {
+            line = findSubSOVLine(companyId, lineId);
         }
 
         content.innerHTML = `
@@ -6961,7 +7005,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
             <div class="flex justify-end gap-3 mt-6">
                 <button onclick="document.getElementById('editSubSOVModal').close()" class="px-6 py-2.5 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Cancel</button>
-                <button onclick="saveSubSOVLine(${jsArg(companyId)}, ${lineId || 'null'}, this)" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Save Line</button>
+                <button onclick="saveSubSOVLine(${jsArg(companyId)}, ${lineId != null ? jsArg(lineId) : 'null'}, this)" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Save Line</button>
             </div>
         `;
         modal.showModal();
@@ -7082,7 +7126,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
     // NEW: Billing modal for Approved/Locked Sub SOV (same as G702 Pay Application edit billing)
     function editSubSOVBillingLine(companyId, lineId) {
-        const line = (subcontractorSOV[companyId] || []).find(l => l.id === lineId);
+        const line = findSubSOVLine(companyId, lineId);
         if (!line) return;
 
         const modal = document.getElementById('editBillingModal');
@@ -7125,7 +7169,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                         <label class="block text-xs text-amber-300 mb-1">Change Order Work This Period</label>
                         <input type="text" id="subCoWorkThisPeriodInput" value="${moneyInputValue(line.co_billed_this_period || 0)}"
                                class="w-full bg-zinc-800 border border-amber-500 rounded-md px-4 py-2 text-sm font-mono casepm-money-input text-right"
-                               oninput="updateSubCOLiveCalculations(${jsArg(companyId)}, ${lineId}, this.value)">
+                               oninput="updateSubCOLiveCalculations(${jsArg(companyId)}, ${jsArg(lineId)}, this.value)">
                         <div class="text-[10px] text-amber-400 mt-0.5">Affects CO remaining only. Does not affect Original Contract remaining.</div>
                         
                         <div class="grid grid-cols-2 gap-3 mt-2">
@@ -7145,7 +7189,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
             <div class="flex justify-end gap-3 mt-6">
                 <button onclick="document.getElementById('editBillingModal').close()" class="px-6 py-2.5 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Cancel</button>
-                <button onclick="saveSubSOVBillingLine(${jsArg(companyId)}, ${lineId}, this)" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Save Billing</button>
+                <button onclick="saveSubSOVBillingLine(${jsArg(companyId)}, ${jsArg(lineId)}, this)" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Save Billing</button>
             </div>
         `;
 
@@ -7188,8 +7232,8 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
     // Live calculation for Subcontractor CO Previously Billed + Remaining (mirrors G702 CO behavior)
     function updateSubCOLiveCalculations(companyId, lineId, newCoWorkValue) {
-        const lines = subcontractorSOV[companyId] || [];
-        const line = lines.find(l => l.id === lineId);
+        const lines = getSubCompanyMapEntry(subcontractorSOV, companyId) || [];
+        const line = lines.find((l) => String(l.id) === String(lineId));
         if (!line) return;
 
         const coTotal = line.change_orders || 0;
@@ -7230,8 +7274,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         const mats = parseMoneyInput(matInput);
         const coWork = coWorkInput ? parseMoneyInput(coWorkInput) : 0;
 
-        const lines = subcontractorSOV[companyId] || subcontractorSOV[String(companyId)] || [];
-        const line = lines.find(l => l.id === lineId);
+        const line = findSubSOVLine(companyId, lineId);
         if (!line) return;
 
         const previousBilled = line.billed_to_date || 0;
@@ -7276,7 +7319,11 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     }
 
     function saveSubSOVLine(companyId, lineId, btn) {
-        if (!subcontractorSOV[companyId]) subcontractorSOV[companyId] = [];
+        let lines = getSubCompanyMapEntry(subcontractorSOV, companyId);
+        if (!lines) {
+            lines = [];
+            setSubSOVLinesForCompany(companyId, lines);
+        }
 
         const costCode = document.getElementById('subCostCode').value.trim();
         const desc = document.getElementById('subDescription').value.trim();
@@ -7371,7 +7418,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 showCenteredAlert('This line has billed-to-date amounts and cannot be modified.', 'warning');
                 return;
             }
-            const line = subcontractorSOV[companyId].find(l => l.id === lineId);
+            const line = findSubSOVLine(companyId, lineId);
             if (line) {
                 const prevBilled = line.billed_to_date || 0;
                 const prevCoBilled = line.co_billed_to_date || 0;
@@ -7389,7 +7436,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                 // except in revision mode where billed_to_date is frozen to the approved snapshot.
             }
         } else {
-            subcontractorSOV[companyId].push({
+            lines.push({
                 id: Date.now(),
                 cost_code: costCode,
                 description: desc,
@@ -7418,7 +7465,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         let changed = false;
         subCompanyKeyVariants(companyId).forEach((key) => {
             if (!subcontractorSOV[key]) return;
-            const next = subcontractorSOV[key].filter((l) => l.id !== lineId);
+            const next = subcontractorSOV[key].filter((l) => String(l.id) !== String(lineId));
             if (next.length !== subcontractorSOV[key].length) {
                 subcontractorSOV[key] = next;
                 changed = true;
@@ -7432,68 +7479,32 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         }
     }
 
+    // ==================== SUB SOV APPROVAL WORKFLOW ====================
     function submitSubSOVForApproval(companyId) {
-        const company = companies.find(c => c.id == companyId);
-        if (!company) return;
-
-        const currentStatus = getSubSOVStatus(companyId);
-        const subLines = subcontractorSOV[companyId] || [];
-
-        // If the SOV is already Approved, this "Submit Application" is for the current period billing (like G702)
-        if (currentStatus === 'Approved' || currentStatus === 'Approved — Lien Waiver Received' || currentStatus.startsWith('Approved')) {
-            // Commit billing to billed_to_date and clear drafts (like main G702 on Approve)
-            subLines.forEach(line => {
-                const work = line.work_this_period || 0;
-                const mats = line.materials_stored || 0;
-                const coWork = line.co_work_this_period || 0; // if CO field exists on line
-
-                line.billed_to_date = (line.billed_to_date || 0) + work + mats + coWork;
-                
-                // Clear draft fields for next period
-                line.work_this_period = 0;
-                line.materials_stored = 0;
-                line.co_work_this_period = 0;
-            });
-
-            // Clear lien waiver for this period (ready for next cycle)
-            if (lienWaivers[companyId]) {
-                delete lienWaivers[companyId];
-                casepmStore.setItem('lienWaivers', JSON.stringify(lienWaivers));
-            }
-
-            // Create historical snapshot for this sub's pay app
-            const subHistoryKey = `subPayAppHistory_${companyId}`;
-            let subHistory = JSON.parse(casepmStore.getItem(subHistoryKey) || '[]');
-            
-            const snapshot = {
-                period: JSON.parse(JSON.stringify(currentPayAppPeriod || {})),
-                lines: JSON.parse(JSON.stringify(subLines)),
-                approvedAt: new Date().toISOString(),
-                submittedBy: "Michael Bretz"
-            };
-            
-            subHistory.unshift(snapshot);
-            if (subHistory.length > 12) subHistory.length = 12; // keep last 12 periods
-            casepmStore.setItem(subHistoryKey, JSON.stringify(subHistory));
-
-            logPayAppAudit('SUB_PAY_APP_SUBMITTED', { 
-                company: company.name || company.company_name, 
-                period: currentPayAppPeriod ? currentPayAppPeriod.periodNumber : '' 
-            });
-
-            // Success feedback removed per user request (Tracker + status pill update)
-            renderPayAppContent();
+        const cid = canonicalSubCompanyId(companyId) || selectedSubCompanyId;
+        if (!cid) {
+            showErrorModal("Please select a subcontractor from the dropdown first. A subcontractor must be in charge of the Schedule of Values before you can submit it for approval.");
             return;
         }
-
-        // Original flow: First time submitting the SOV setup for approval
-        logPayAppAudit('SUB_SOV_SUBMITTED', { company: company.name || company.company_name, lines: subLines.length });
-        updateSubSOVStatus(companyId, 'Pending Approval', { submittedDate: new Date().toISOString() });
-        // Success feedback removed per user request (status change visible)
-        renderPayAppContent();
+        const lines = getSubCompanyMapEntry(subcontractorSOV, cid) || [];
+        if (!lines.length) {
+            showCenteredAlert('Add at least one schedule line before submitting for approval.', 'warning');
+            return;
+        }
+        const currentStatus = getSubSOVStatus(cid);
+        if (isSubSOVApprovedStatus(currentStatus)) {
+            showCenteredAlert("This SOV is already approved. No need to submit again.");
+            return;
+        }
+        persistPayAppStateNow({ silent: true })
+            .then(() => CasePMPayAppWorkflow.workflow('sub_sov', 'submit', { entity_key: cid, company_id: cid }))
+            .then(() => {
+                reloadPayAppStateFromStorage();
+                logPayAppAudit('SUB_SOV_SUBMITTED_FOR_APPROVAL', { companyId: cid });
+                renderPayAppContent();
+            })
+            .catch(err => showCenteredAlert(err.message || 'Submit failed', 'error'));
     }
-
-    function rejectApprovedSubSOVToDraft(companyId) {
         if (!isSubSOVApproved(companyId)) {
             showCenteredAlert('Only an approved subcontractor SOV can be pushed back to draft.', 'warning');
             return;
@@ -7891,27 +7902,6 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             if (!storageKey) return;
             selectSubcontractorForSOV(storageKey);
         });
-    }
-
-    // ==================== SUB SOV APPROVAL WORKFLOW ====================
-    function submitSubSOVForApproval() {
-        if (!selectedSubCompanyId) {
-            showErrorModal("Please select a subcontractor from the dropdown first. A subcontractor must be in charge of the Schedule of Values before you can submit it for approval.");
-            return;
-        }
-        const currentStatus = getSubSOVStatus(selectedSubCompanyId);
-        if (isSubSOVApprovedStatus(currentStatus)) {
-            showCenteredAlert("This SOV is already approved. No need to submit again.");
-            return;
-        }
-        persistPayAppStateNow({ silent: true })
-            .then(() => CasePMPayAppWorkflow.workflow('sub_sov', 'submit', { entity_key: selectedSubCompanyId, company_id: selectedSubCompanyId }))
-            .then(() => {
-                reloadPayAppStateFromStorage();
-                logPayAppAudit('SUB_SOV_SUBMITTED_FOR_APPROVAL', { companyId: selectedSubCompanyId });
-                renderPayAppContent();
-            })
-            .catch(err => showCenteredAlert(err.message || 'Submit failed', 'error'));
     }
 
     function approveSubSOVSetup() {
