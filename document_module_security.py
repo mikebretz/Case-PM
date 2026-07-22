@@ -144,6 +144,16 @@ def assert_submittal_edit_allowed(user, submittal=None, *, Company=None, db=None
             )
 
 
+def assert_submittal_comment_allowed(user, submittal, *, Company=None, db=None) -> None:
+    """Anyone who can read a visible submittal may post review comments."""
+    if _is_privileged(user):
+        return
+    assert_submittal_read_allowed(user)
+    if is_sub_portal_user(user) and not is_staff_portal_user(user):
+        if not submittal_assigned_to_user(submittal, user, Company=Company, db=db):
+            raise PermissionError('This submittal is not assigned to your company or contact.')
+
+
 def assert_submittal_workflow_allowed(user, submittal, action: str, *, Company=None, db=None) -> None:
     if _is_privileged(user):
         return

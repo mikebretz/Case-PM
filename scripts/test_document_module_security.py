@@ -118,6 +118,21 @@ class DocumentModuleSecurityTests(unittest.TestCase):
         )
         self.assertTrue(submittal_visible_to_user(submittal, user))
 
+    def test_assigned_sub_can_comment(self):
+        from document_module_security import assert_submittal_comment_allowed
+
+        user = self._user('Subcontractor Contact', {
+            'submittals': {'access': 'entry', 'approve': 'submit'},
+        }, portal='sub')
+        user.id = 100
+        user.company_id = 42
+        submittal = SimpleNamespace(
+            assigned_company_id=42,
+            assigned_contact_user_id=100,
+            assigned_company_name='My Co',
+        )
+        assert_submittal_comment_allowed(user, submittal)
+
 
 if __name__ == '__main__':
     unittest.main()

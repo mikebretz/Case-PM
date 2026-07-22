@@ -429,6 +429,73 @@ def notify_submittal_ball_in_court(submittal, User, title=None, description=None
     notify_submittal_update(submittal, User, title=title, description=description, event='ball')
 
 
+def _submittal_comment_notify_targets(submittal, User, actor):
+    """PM comments notify architect+sub; architect notifies PM+sub; sub notifies PM+architect."""
+    actor_role = (getattr(actor, 'role', None) or '').strip()
+    pm_roles = ('Project Manager', 'Admin', 'Contractor Accounting', 'Developer')
+    arch_roles = ('Architect',)
+    sub_roles = (
+        'Subcontractor', 'Subcontractor Contact', 'Subcontractor Accountant', 'Company User',
+    )
+    target_ids = set()
+    assigned_uid = getattr(submittal, 'assigned_contact_user_id', None)
+    if assigned_uid:
+        target_ids.add(int(assigned_uid))
+
+    def _add_roles(roles):
+        for role in roles:
+            for u in User.query.filter_by(role=role, status='Active').all():
+                target_ids.add(u.id)
+
+    if actor_role in pm_roles:
+        _add_roles(arch_roles)
+    elif actor_role in arch_roles:
+        _add_roles(pm_roles)
+    elif actor_role in sub_roles:
+        _add_roles(pm_roles + arch_roles)
+    else:
+        try:
+            from document_module_security import is_sub_portal_user
+            if is_sub_portal_user(actor):
+                _add_roles(pm_roles + arch_roles)
+            else:
+                _add_roles(pm_roles + arch_roles + sub_roles)
+        except Exception:
+            _add_roles(pm_roles + arch_roles)
+
+    actor_id = getattr(actor, 'id', None)
+    if actor_id is not None:
+        target_ids.discard(int(actor_id))
+    return [User.query.get(uid) for uid in target_ids if User.query.get(uid)]
+
+
+def notify_submittal_comment(submittal, User, actor, body_text):
+    preview = (body_text or '').strip()
+    if len(preview) > 180:
+        preview = preview[:177] + '...'
+    actor_name = f'{getattr(actor, "first_name", "")} {getattr(actor, "last_name", "")}'.strip() or getattr(actor, 'email', 'User')
+    title = f'{submittal.number} — new review comment'
+    description = f'{actor_name}: {preview or "New comment on submittal."}'
+    action_url = submittal_deep_link(submittal.project_id, submittal.id)
+    for u in _submittal_comment_notify_targets(submittal, User, actor):
+        cw.notify_user(u.id, title, description, action_url)
+        cw.create_internal_message(
+            u.id,
+            folder='team',
+            msg_type='alert',
+            subject=title,
+            preview=description[:500],
+            body=f'<p>{description}</p>',
+            project_id=submittal.project_id,
+            from_label='Submittals',
+            module='Submittals',
+            action_url=action_url,
+            action_label='Open Submittal',
+            priority='normal',
+            requires_action=False,
+        )
+
+
 def execute_co_action(co, action, user, User, body=None, ChangeOrderAllocation=None, workflow_deps=None):
     """Execute CO approve/reject via the unified workflow path (same as main CO API)."""
     from co_persistence import co_to_dict, user_can_act_on_ball_in_court, process_change_order_workflow

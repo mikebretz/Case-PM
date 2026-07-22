@@ -31,6 +31,7 @@ def ensure_submittal_schema(engine, db):
         'assigned_contact_name': 'VARCHAR(150)',
         'assigned_contact_email': 'VARCHAR(200)',
         'details_json': 'TEXT',
+        'comments_json': 'TEXT',
         'updated_at': 'DATETIME',
     }
     for name, col_type in additions.items():
@@ -63,6 +64,7 @@ def submittal_to_dict(submittal):
         'due_date': submittal.due_date.isoformat() if submittal.due_date else None,
         'ball_in_court': submittal.ball_in_court,
         'review_comments': submittal.review_comments,
+        'comments': _parse_json(getattr(submittal, 'comments_json', None), []),
         'assigned_company_id': getattr(submittal, 'assigned_company_id', None),
         'assigned_company_name': getattr(submittal, 'assigned_company_name', None),
         'assigned_contact_user_id': getattr(submittal, 'assigned_contact_user_id', None),
@@ -105,7 +107,57 @@ def submittal_to_ui_item(submittal):
         'scheduleDays': details.get('scheduleDays') or '',
         'impactNotes': details.get('impactNotes') or '',
         'history': details.get('history') or [],
+        'comments': d.get('comments') or [],
     }
+
+
+def add_submittal_comment(submittal, body, user_id, user_name, user_role=None):
+    """Append a review comment to the submittal thread."""
+    comments = _parse_json(getattr(submittal, 'comments_json', None), [])
+    entry = {
+        'id': len(comments) + 1,
+        'body': (body.get('body') or '').strip(),
+        'user_id': user_id,
+        'user_name': user_name,
+        'user_role': user_role or '',
+        'created_at': datetime.utcnow().isoformat(),
+    }
+    if not entry['body']:
+        raise ValueError('Comment body required')
+    comments.append(entry)
+    submittal.comments_json = json.dumps(comments)
+    submittal.updated_at = datetime.utcnow()
+    return entry
+
+
+def _bump_submittal_revision(submittal):
+    details = _parse_json(getattr(submittal, 'details_json', None), {})
+    try:
+        rev = int(str(details.get('rev') or '0').strip() or '0')
+    except (TypeError, ValueError):
+        rev = 0
+    details['rev'] = str(rev + 1)
+    submittal.details_json = json.dumps(details)
+    return details['rev']
+
+
+SUB_ASSIGNEE_DETAIL_KEYS = frozenset({
+    'impactNotes', 'costImpactChoice', 'scheduleImpactChoice', 'costImpact', 'scheduleDays',
+})
+
+
+def apply_submittal_sub_sync_fields(submittal, data):
+    """Apply only fields a subcontractor assignee may update via sync."""
+    details_in = data.get('details') or {}
+    if not isinstance(details_in, dict):
+        details_in = {}
+    existing = _parse_json(getattr(submittal, 'details_json', None), {})
+    for key in SUB_ASSIGNEE_DETAIL_KEYS:
+        if key in details_in:
+            existing[key] = details_in[key]
+    submittal.details_json = json.dumps(existing)
+    submittal.date = datetime.utcnow().date()
+    submittal.updated_at = datetime.utcnow()
 
 
 def _user_can_act(user, role):
@@ -167,10 +219,11 @@ def submittal_workflow_action(submittal, action, user, body=None, *, Company=Non
         return submittal.status
 
     if action == 'return_from_sub':
-        if status != 'Sent to Subcontractor':
+        if status not in ('Sent to Subcontractor', 'Revise & Resubmit'):
             raise ValueError('Submittal is not with subcontractor')
         if not _user_can_act(user, ball):
             raise ValueError('Cannot return submittal from subcontractor')
+        _bump_submittal_revision(submittal)
         submittal.status = 'Returned from Subcontractor'
         submittal.ball_in_court = SUBMITTAL_BALL['Returned from Subcontractor']
         return submittal.status
