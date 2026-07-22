@@ -4572,7 +4572,23 @@ def update_change_order_status(co_id):
 def submittals_page():
     submittals = query_for_active_project(Submittal).order_by(Submittal.created_at.desc()).all()
     projects = Project.query.order_by(Project.name).all()
-    return render_template('submittals.html', submittals=submittals, projects=projects)
+    resolved_vendor_company_id = None
+    resolved_vendor_company_name = ''
+    try:
+        from portal_sub_access import is_sub_vendor_portal_user, resolve_sub_vendor_company
+        if is_sub_vendor_portal_user(current_user):
+            cid, cname, _ = resolve_sub_vendor_company(current_user, Company, db, persist_link=False)
+            resolved_vendor_company_id = cid
+            resolved_vendor_company_name = cname or ''
+    except Exception:
+        pass
+    return render_template(
+        'submittals.html',
+        submittals=submittals,
+        projects=projects,
+        resolved_vendor_company_id=resolved_vendor_company_id,
+        resolved_vendor_company_name=resolved_vendor_company_name,
+    )
 
 
 @app.route('/submittals/create', methods=['POST'])
@@ -9689,6 +9705,33 @@ def api_share_link_approve(link_kind, link_id):
     link.approved_at = datetime.utcnow()
     db.session.commit()
     return jsonify({'ok': True, 'approval_status': link.approval_status})
+
+
+@app.route('/api/submittals', methods=['GET'])
+@login_required
+def api_list_submittals():
+    """List submittals for the active project. Sub portal users only see assigned items."""
+    from submittal_persistence import submittal_to_ui_item
+    from document_module_security import assert_submittal_read_allowed, submittal_visible_to_user
+    from financial_security import require_financial_project_access
+    try:
+        assert_submittal_read_allowed(current_user)
+    except PermissionError as exc:
+        return jsonify({'error': str(exc)}), 403
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    try:
+        require_financial_project_access(current_user, int(project_id), Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    rows = Submittal.query.filter_by(project_id=int(project_id)).order_by(Submittal.created_at.desc()).all()
+    items = []
+    for row in rows:
+        if not submittal_visible_to_user(row, current_user, Company=Company, db=db):
+            continue
+        items.append(submittal_to_ui_item(row))
+    return jsonify({'ok': True, 'submittals': items})
 
 
 @app.route('/api/submittals/sync', methods=['POST'])

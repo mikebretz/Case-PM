@@ -72,6 +72,42 @@ def submittal_to_dict(submittal):
     }
 
 
+def submittal_to_ui_item(submittal):
+    """Map a Submittal model row to the submittal log UI shape (camelCase)."""
+    d = submittal_to_dict(submittal)
+    details = d.get('details') or {}
+    sid = d.get('id')
+    return {
+        'id': sid,
+        'serverId': sid,
+        'number': d.get('number') or '',
+        'subject': d.get('description') or '',
+        'description': d.get('description') or '',
+        'specSection': d.get('spec_section') or '',
+        'status': d.get('status') or 'Draft',
+        'priority': d.get('priority') or 'Medium',
+        'assignedCompanyId': d.get('assigned_company_id'),
+        'assignedCompanyName': d.get('assigned_company_name') or '',
+        'assignedContactId': d.get('assigned_contact_user_id'),
+        'assignedContactName': d.get('assigned_contact_name') or '',
+        'assignedContactEmail': d.get('assigned_contact_email') or '',
+        'requiredBy': (d.get('due_date') or '')[:10] if d.get('due_date') else '',
+        'dateReceived': (d.get('date') or '')[:10] if d.get('date') else '',
+        'sectionName': details.get('sectionName') or '',
+        'paragraph': details.get('paragraph') or '',
+        'rev': details.get('rev') or '0',
+        'type': details.get('type') or '',
+        'receivedFrom': details.get('receivedFrom') or d.get('assigned_company_name') or '',
+        'referredTo': details.get('referredTo') or '',
+        'costImpactChoice': details.get('costImpactChoice') or '',
+        'scheduleImpactChoice': details.get('scheduleImpactChoice') or '',
+        'costImpact': details.get('costImpact') or '',
+        'scheduleDays': details.get('scheduleDays') or '',
+        'impactNotes': details.get('impactNotes') or '',
+        'history': details.get('history') or [],
+    }
+
+
 def _user_can_act(user, role):
     from co_persistence import user_can_act_on_ball_in_court
     return user_can_act_on_ball_in_court(user, role)
@@ -87,7 +123,13 @@ def apply_submittal_fields(submittal, data, *, is_create=False):
         'assigned_contact_user_id', 'assigned_contact_name', 'assigned_contact_email',
     ):
         if field in data and data.get(field) is not None:
-            setattr(submittal, field, data[field])
+            val = data[field]
+            if field.endswith('_id') and val not in ('', None):
+                try:
+                    val = int(val)
+                except (TypeError, ValueError):
+                    val = None
+            setattr(submittal, field, val)
     if data.get('due_date') is not None and data['due_date']:
         try:
             submittal.due_date = datetime.strptime(str(data['due_date'])[:10], '%Y-%m-%d').date()

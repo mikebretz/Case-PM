@@ -79,6 +79,19 @@ def submittal_assigned_to_user(submittal, user, Company=None, db=None) -> bool:
     return False
 
 
+def submittal_visible_to_user(submittal, user, Company=None, db=None) -> bool:
+    """Staff see all readable submittals; subs/vendors only see items assigned to them."""
+    if _is_privileged(user):
+        return True
+    try:
+        assert_submittal_read_allowed(user)
+    except PermissionError:
+        return False
+    if is_sub_portal_user(user) and not is_staff_portal_user(user):
+        return submittal_assigned_to_user(submittal, user, Company=Company, db=db)
+    return True
+
+
 def assert_rfi_read_allowed(user) -> None:
     require_module_access(user, 'rfis', 'view')
 

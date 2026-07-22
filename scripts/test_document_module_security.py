@@ -70,6 +70,54 @@ class DocumentModuleSecurityTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             assert_submittal_log_manage_allowed(user)
 
+    def test_sub_only_sees_assigned_submittals(self):
+        from document_module_security import submittal_visible_to_user
+
+        user = self._user('Subcontractor', {
+            'submittals': {'access': 'entry', 'approve': 'submit'},
+        }, portal='sub')
+        user.company_id = 42
+        assigned = SimpleNamespace(
+            assigned_company_id=42,
+            assigned_contact_user_id=None,
+            assigned_company_name='My Co',
+        )
+        other = SimpleNamespace(
+            assigned_company_id=99,
+            assigned_contact_user_id=None,
+            assigned_company_name='Other Co',
+        )
+        self.assertTrue(submittal_visible_to_user(assigned, user))
+        self.assertFalse(submittal_visible_to_user(other, user))
+
+    def test_sub_sees_submittal_assigned_to_contact(self):
+        from document_module_security import submittal_visible_to_user
+
+        user = self._user('Subcontractor Contact', {
+            'submittals': {'access': 'entry', 'approve': 'submit'},
+        }, portal='sub')
+        user.id = 100
+        user.company_id = None
+        submittal = SimpleNamespace(
+            assigned_company_id=42,
+            assigned_contact_user_id=100,
+            assigned_company_name='My Co',
+        )
+        self.assertTrue(submittal_visible_to_user(submittal, user))
+
+    def test_staff_sees_all_submittals(self):
+        from document_module_security import submittal_visible_to_user
+
+        user = self._user('Project Manager', {
+            'submittals': {'access': 'edit', 'approve': 'none'},
+        }, portal='staff')
+        submittal = SimpleNamespace(
+            assigned_company_id=99,
+            assigned_contact_user_id=None,
+            assigned_company_name='Other Co',
+        )
+        self.assertTrue(submittal_visible_to_user(submittal, user))
+
 
 if __name__ == '__main__':
     unittest.main()
