@@ -1053,6 +1053,7 @@ class RFI(db.Model):
     is_private = db.Column(db.Integer, default=0)
     attachments_json = db.Column(db.Text)
     responses_json = db.Column(db.Text)
+    comments_json = db.Column(db.Text)
     plan_pins_json = db.Column(db.Text)
     linked_pco_id = db.Column(db.Integer)
     updated_at = db.Column(db.DateTime)
@@ -4190,6 +4191,79 @@ def api_rfi_upload_attachment(rfi_id):
     except Exception:
         db.session.rollback()
     return jsonify({'ok': True, 'attachments': _enrich_rfi_attachments(rfi_id, attachments)})
+
+
+@app.route('/api/rfis/<int:rfi_id>/comments', methods=['GET'])
+@login_required
+def api_rfi_list_comments(rfi_id):
+    from rfi_persistence import _parse_json
+    from document_module_security import assert_rfi_read_allowed
+    from financial_security import require_financial_project_access
+    rfi = RFI.query.get_or_404(rfi_id)
+    try:
+        assert_rfi_read_allowed(current_user)
+        require_financial_project_access(current_user, rfi.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    comments = _parse_json(getattr(rfi, 'comments_json', None), [])
+    return jsonify({'ok': True, 'comments': comments})
+
+
+@app.route('/api/rfis/<int:rfi_id>/comments', methods=['POST'])
+@login_required
+def api_rfi_add_comment(rfi_id):
+    from rfi_persistence import _parse_json, add_rfi_comment
+    from document_module_security import assert_rfi_comment_allowed
+    from financial_security import require_financial_project_access
+    from workflow_responder import notify_rfi_comment
+    rfi = RFI.query.get_or_404(rfi_id)
+    try:
+        require_financial_project_access(current_user, rfi.project_id, Project)
+        assert_rfi_comment_allowed(current_user, rfi)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    body = request.get_json(silent=True) or {}
+    actor_name = _user_display_name(current_user.id)
+    try:
+        entry = add_rfi_comment(
+            rfi,
+            body,
+            current_user.id,
+            actor_name,
+            user_role=getattr(current_user, 'role', None),
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    db.session.commit()
+    try:
+        notify_rfi_comment(rfi, User, current_user, entry.get('body'))
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'comment': entry, 'comments': _parse_json(rfi.comments_json, [])})
+
+
+@app.route('/api/rfis/<int:rfi_id>/comments', methods=['DELETE'])
+@login_required
+def api_rfi_clear_comments(rfi_id):
+    from rfi_persistence import _parse_json, clear_rfi_comments
+    from financial_security import require_financial_project_access
+    from document_module_security import assert_rfi_read_allowed
+    try:
+        from developer_tools import is_developer
+        if not is_developer(current_user) and getattr(current_user, 'role', None) != 'Admin':
+            return jsonify({'error': 'Developer access required'}), 403
+    except Exception:
+        if getattr(current_user, 'role', None) != 'Admin':
+            return jsonify({'error': 'Developer access required'}), 403
+    rfi = RFI.query.get_or_404(rfi_id)
+    try:
+        assert_rfi_read_allowed(current_user)
+        require_financial_project_access(current_user, rfi.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    clear_rfi_comments(rfi)
+    db.session.commit()
+    return jsonify({'ok': True, 'comments': _parse_json(rfi.comments_json, [])})
 
 
 @app.route('/api/rfis/<int:rfi_id>/attachments/link', methods=['POST'])

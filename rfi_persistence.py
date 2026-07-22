@@ -47,6 +47,7 @@ def ensure_rfi_schema(engine, db):
         'is_private': 'INTEGER DEFAULT 0',
         'attachments_json': 'TEXT',
         'responses_json': 'TEXT',
+        'comments_json': 'TEXT',
         'plan_pins_json': 'TEXT',
         'linked_pco_id': 'INTEGER',
         'updated_at': 'DATETIME',
@@ -110,6 +111,7 @@ def rfi_to_dict(rfi, linked_cos=None, linked_pcos=None):
         'is_private': bool(getattr(rfi, 'is_private', 0)),
         'attachments': _parse_json(getattr(rfi, 'attachments_json', None), []),
         'responses': _parse_json(getattr(rfi, 'responses_json', None), []),
+        'comments': _parse_json(getattr(rfi, 'comments_json', None), []),
         'plan_pins': _parse_json(getattr(rfi, 'plan_pins_json', None), []),
         'linked_pco_id': getattr(rfi, 'linked_pco_id', None),
         'location_description': getattr(rfi, 'location_description', None),
@@ -312,3 +314,27 @@ def delete_rfi_record(db, rfi, upload_root, *, DrawingMarkup=None, ChangeOrder=N
 
     db.session.delete(rfi)
     return rfi_id
+
+
+def add_rfi_comment(rfi, body, user_id, user_name, user_role=None):
+    """Append a review discussion comment (separate from official workflow responses)."""
+    comments = _parse_json(getattr(rfi, 'comments_json', None), [])
+    entry = {
+        'id': len(comments) + 1,
+        'body': (body.get('body') or '').strip(),
+        'user_id': user_id,
+        'user_name': user_name,
+        'user_role': user_role or '',
+        'created_at': datetime.utcnow().isoformat(),
+    }
+    if not entry['body']:
+        raise ValueError('Comment body required')
+    comments.append(entry)
+    rfi.comments_json = json.dumps(comments)
+    rfi.updated_at = datetime.utcnow()
+    return entry
+
+
+def clear_rfi_comments(rfi):
+    rfi.comments_json = json.dumps([])
+    rfi.updated_at = datetime.utcnow()

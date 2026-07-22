@@ -64,7 +64,7 @@ def user_can_access_documents(user):
 
 
 def rfi_deep_link(project_id, rfi_id):
-    return f'/rfis?project_id={project_id}&open=1&respond=1&rfi_id={rfi_id}'
+    return f'/rfis?project_id={project_id}&open=1&rfi_id={rfi_id}'
 
 
 def co_deep_link(project_id, co_id):
@@ -491,6 +491,52 @@ def notify_submittal_comment(submittal, User, actor, body_text):
             module='Submittals',
             action_url=action_url,
             action_label='Open Submittal',
+            priority='normal',
+            requires_action=False,
+        )
+
+
+def notify_rfi_comment(rfi, User, actor, body_text):
+    preview = (body_text or '').strip()
+    if len(preview) > 180:
+        preview = preview[:177] + '...'
+    actor_name = f'{getattr(actor, "first_name", "")} {getattr(actor, "last_name", "")}'.strip() or getattr(actor, 'email', 'User')
+    title = f'{rfi.number} — new review comment'
+    description = f'{actor_name}: {preview or "New comment on RFI."}'
+    action_url = rfi_deep_link(rfi.project_id, rfi.id)
+    import case_workflow as cw
+    manager = (getattr(rfi, 'rfi_manager_name', None) or '').strip()
+    assignees = []
+    try:
+        from rfi_persistence import _parse_json
+        assignees = _parse_json(getattr(rfi, 'assignees_json', None), [])
+    except Exception:
+        pass
+    target_ids = set()
+    if getattr(rfi, 'created_by_id', None):
+        target_ids.add(int(rfi.created_by_id))
+    for u in User.query.filter(User.role.in_(('Project Manager', 'Admin', 'Developer'))).all():
+        if u.id:
+            target_ids.add(int(u.id))
+    if actor.id:
+        target_ids.discard(int(actor.id))
+    for uid in target_ids:
+        u = User.query.get(uid)
+        if not u:
+            continue
+        cw.notify_user(u.id, title, description, action_url)
+        cw.create_internal_message(
+            u.id,
+            folder='team',
+            msg_type='alert',
+            subject=title,
+            preview=description[:500],
+            body=f'<p>{description}</p>',
+            project_id=rfi.project_id,
+            from_label='RFIs',
+            module='RFIs',
+            action_url=action_url,
+            action_label='Open RFI',
             priority='normal',
             requires_action=False,
         )
