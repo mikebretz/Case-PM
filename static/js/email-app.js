@@ -1213,13 +1213,16 @@
 
   function emailInternalOnly() {
     if (global.CASEPM_EMAIL_INTERNAL_ONLY) return true;
-    if (document.body && document.body.classList.contains('portal-sub-vendor')) return true;
     const p = global.CASEPM_PORTAL || {};
+    if (p.canExternalEmail === false && p.canInternalMessages) return true;
+    if (document.body && document.body.classList.contains('portal-sub-vendor') && !p.canExternalEmail) return true;
     return !!(
       p.emailInternalOnly
-      || p.isSubVendorPayPortal
       || (p.permissions && p.permissions.global && p.permissions.global.email_internal_only)
-      || (p.permissions && p.permissions.global && p.permissions.global.sub_vendor_portal_only)
+      || (
+        (p.permissions && p.permissions.global && p.permissions.global.sub_vendor_portal_only)
+        && !p.canExternalEmail
+      )
     );
   }
 

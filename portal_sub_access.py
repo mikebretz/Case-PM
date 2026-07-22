@@ -8,6 +8,7 @@ SUB_VENDOR_ALLOWED_MODULES = frozenset({
     'pay_applications_lien_waivers',
     'change_orders_rfq',
     'estimating',
+    'internal_messages',
     'email',
     'notifications',
 })
@@ -1018,6 +1019,22 @@ def _portal_user_is_privileged(user) -> bool:
         return getattr(user, 'role', None) in ('Admin', 'Developer')
 
 
+def _portal_user_can_internal_messages(user) -> bool:
+    try:
+        from access_control import user_can_internal_messages
+        return user_can_internal_messages(user)
+    except Exception:
+        return False
+
+
+def _portal_user_has_external_email(user) -> bool:
+    try:
+        from access_control import user_can_external_email
+        return user_can_external_email(user)
+    except Exception:
+        return False
+
+
 def build_portal_context_payload(user, Company, db, helpers: dict) -> dict:
     """Assemble JSON-safe payload for GET /api/portal/context."""
     import json
@@ -1108,6 +1125,9 @@ def build_portal_context_payload(user, Company, db, helpers: dict) -> dict:
         'isArchitect': is_arch,
         'isSubVendorPayPortal': sub_vendor,
         'emailInternalOnly': bool(
-            (global_flags or {}).get('email_internal_only') or sub_vendor
+            (global_flags or {}).get('email_internal_only')
+            or (sub_vendor and not _portal_user_has_external_email(user))
         ),
+        'canInternalMessages': _portal_user_can_internal_messages(user),
+        'canExternalEmail': _portal_user_has_external_email(user),
     }
