@@ -45,6 +45,12 @@ function submittalItemAssignedToMe(item) {
     if (assignedName && cname && assignedName === cname) return true;
     return false;
 }
+function submittalIsSubAssignee(item) {
+    if (!item || !SUBMITTAL_ACCESS.isSubPortal) return false;
+    if (!submittalItemAssignedToMe(item)) return false;
+    const st = item.status || '';
+    return st === 'Sent to Subcontractor' || st === 'Revise & Resubmit';
+}
 function submittalCanModifyItem(item) {
     const level = submittalAccessLevel();
     if (level === 'view') return false;
@@ -66,10 +72,11 @@ function resetSubmittalModalEditable() {
     if (uploadInput) uploadInput.disabled = false;
 }
 function applySubmittalModalReadOnly(readOnly) {
-    const modal = document.getElementById('submittalDetailModal');
+    const modal = document.getElementById('detailModal');
     if (!modal) return;
     modal.querySelectorAll('input, select, textarea, button').forEach(el => {
-        if (el.id === 'submittalDetailModalClose' || el.classList.contains('modal-close-btn')) return;
+        if (el.id === 'submittalDetailModalClose' || el.id === 'submittalDetailBackBtn' || el.classList.contains('modal-close-btn')) return;
+        if (el.id === 'submittalSubmitForApprovalBtn') return;
         if (readOnly) {
             if (el.tagName === 'BUTTON' && (el.textContent || '').toLowerCase().includes('save')) {
                 el.classList.add('hidden');
@@ -87,6 +94,43 @@ function applySubmittalModalReadOnly(readOnly) {
     if (saveBtn) saveBtn.classList.toggle('hidden', !!readOnly);
     const uploadInput = document.getElementById('submittalAttachmentInput');
     if (uploadInput) uploadInput.disabled = !!readOnly;
+    const submitBtn = document.getElementById('submittalSubmitForApprovalBtn');
+    if (submitBtn) submitBtn.classList.toggle('hidden', !!readOnly || !submittalIsSubAssignee(currentModalItem));
+}
+function applySubmittalAssigneeFieldLocks(isAssignee) {
+    const lockIds = [
+        'modalSpecSection', 'modalSectionName', 'modalParagraph', 'modalRev',
+        'modalSubject', 'modalType', 'modalDateReceived', 'modalRequiredBy',
+        'modalAssignedCompany', 'modalAssignedContact', 'modalStatus',
+        'modalCostImpact', 'modalScheduleDays',
+    ];
+    lockIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (isAssignee) {
+            el.disabled = true;
+            el.readOnly = true;
+            el.classList.add('submittal-field-locked');
+        } else {
+            el.disabled = false;
+            el.readOnly = false;
+            el.classList.remove('submittal-field-locked');
+        }
+    });
+    ['btnCostYes', 'btnCostNo', 'btnCostTbd', 'btnScheduleYes', 'btnScheduleNo', 'btnScheduleTbd'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (isAssignee) el.disabled = true;
+        else el.disabled = false;
+    });
+    const statusWrap = document.getElementById('modalStatusReadonlyWrap');
+    const statusSel = document.getElementById('modalStatus');
+    if (statusWrap && statusSel) {
+        statusWrap.classList.toggle('hidden', !isAssignee);
+        statusSel.classList.toggle('hidden', isAssignee);
+    }
+    const impactGrid = document.getElementById('submittalImpactGrid');
+    if (impactGrid) impactGrid.classList.toggle('hidden', isAssignee);
 }
 function refreshSubmittalActionButtons() {
     const level = submittalAccessLevel();
@@ -188,6 +232,47 @@ function refreshSubmittalActionButtons() {
   }
   #submittalChrome { flex-shrink: 0; display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; padding: 0; }
   #submittalTableScroll { flex: 1; min-height: 0; overflow: auto; }
+  #detailModal.submittal-detail-fullpage {
+    display: none;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    background: #09090b;
+  }
+  #detailModal.submittal-detail-fullpage.is-open {
+    display: flex;
+    flex-direction: column;
+  }
+  #detailModal .submittal-detail-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  #submittalDetailMainCol {
+    flex: 1;
+    min-width: 0;
+    overflow: auto;
+  }
+  #submittalReviewChatCol {
+    width: 380px;
+    min-width: 320px;
+    border-left: 1px solid #3f3f46;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: #0c0c0e;
+  }
+  #reviewCommentsList .review-comment-entry {
+    border: 1px solid #3f3f46;
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    font-size: 0.875rem;
+  }
+  .submittal-field-locked {
+    opacity: 0.85;
+    pointer-events: none;
+  }
 
   /* ─── Submittal Log print (ALDI-style register, not screen capture) ─── */
   @media print {
@@ -703,13 +788,16 @@ function refreshSubmittalActionButtons() {
     </div>
 </div>
 
-<!-- Detail Modal -->
-<div id="detailModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-    <div class="submittal-modal-panel bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-[1100px] max-h-[92vh] flex flex-col">
-        <div class="drag-handle flex items-center justify-between px-6 py-4 border-b border-zinc-700 bg-zinc-950">
+<!-- Detail View (full-page, replaces log when open) -->
+<div id="detailModal" class="submittal-detail-fullpage">
+    <div class="submittal-modal-panel bg-zinc-900 flex flex-col flex-1 min-h-0 w-full">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700 bg-zinc-950 flex-shrink-0">
             <div class="flex items-center gap-3">
+                <button id="submittalDetailBackBtn" type="button" onclick="closeDetailModal()" class="px-3 py-2 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-lg flex items-center gap-2">
+                    <i class="fa-solid fa-arrow-left"></i> Back to Log
+                </button>
                 <div id="modalSubmittalNumber" class="font-mono text-xl font-bold text-emerald-400"></div>
-                <div id="modalStatusBadge" class="px-3 py-1 rounded-full text-xs font-semibold"></div>
+                <div id="modalStatusBadge" class="px-3 py-1 rounded-full text-xs font-semibold bg-zinc-700 text-zinc-200"></div>
             </div>
             <div class="flex items-center gap-2">
                 <button id="viewInSpecBookBtn" type="button" onclick="viewSubmittalInSpecBook()"
@@ -717,8 +805,11 @@ function refreshSubmittalActionButtons() {
                         title="Open the full spec section in the uploaded specifications book">
                     <i class="fa-solid fa-book-open"></i> View in Spec Book
                 </button>
+                <button id="submittalSubmitForApprovalBtn" type="button" onclick="submitSubmittalForApproval()" class="hidden px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold flex items-center gap-2">
+                    <i class="fa-solid fa-paper-plane"></i> Submit for Approval
+                </button>
                 <button id="submittalModalSaveBtn" onclick="saveSubmittalFromModal()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold flex items-center gap-2">
-                    <i class="fa-solid fa-save"></i> Save Changes
+                    <i class="fa-solid fa-save"></i> Save Draft
                 </button>
                 <button onclick="closeDetailModal()" class="w-10 h-10 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg">
                     <i class="fa-solid fa-times text-xl"></i>
@@ -726,13 +817,13 @@ function refreshSubmittalActionButtons() {
             </div>
         </div>
         
-        <div class="flex border-b border-zinc-700 px-6">
+        <div class="flex border-b border-zinc-700 px-6 flex-shrink-0">
             <button onclick="switchTab(0)" class="tab-button active px-5 py-3 text-sm font-medium border-b-2 border-emerald-500 text-white">Overview & Details</button>
             <button onclick="switchTab(1)" class="tab-button px-5 py-3 text-sm font-medium text-zinc-400 hover:text-white">Workflow & History</button>
-            <button onclick="switchTab(2)" class="tab-button px-5 py-3 text-sm font-medium text-zinc-400 hover:text-white">Review Comments</button>
         </div>
         
-        <div class="flex-1 overflow-auto p-6">
+        <div class="submittal-detail-body">
+            <div id="submittalDetailMainCol" class="flex-1 overflow-auto p-6">
             <!-- Tab 0 -->
             <div id="tab0" class="tab-content">
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -796,6 +887,7 @@ function refreshSubmittalActionButtons() {
                         
                         <div>
                             <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Current Status</label>
+                            <div id="modalStatusReadonlyWrap" class="hidden w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200"></div>
                             <select id="modalStatus" onchange="handleStatusChangeInModal()" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
                                 <option value="Draft">Draft</option>
                                 <option value="Sent to Subcontractor">Sent to Subcontractor</option>
@@ -812,7 +904,7 @@ function refreshSubmittalActionButtons() {
                 </div>
                 
                 <!-- Impact fields -->
-                <div class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div id="submittalImpactGrid" class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div>
                         <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Cost Impact?</label>
                         <div class="flex gap-2 mb-3">
@@ -846,7 +938,7 @@ function refreshSubmittalActionButtons() {
 
                 <div class="mt-6 pt-4 border-t border-zinc-700">
                     <h4 class="font-semibold text-white mb-2">Attachments</h4>
-                    <p class="text-xs text-zinc-500 mb-2">Files are filed to Documents › Submittals automatically.</p>
+                    <p class="text-xs text-zinc-500 mb-2">Upload files from your computer. Files are filed to Documents › Submittals automatically.</p>
                     <div id="submittalAttachmentActions" class="flex flex-wrap items-center gap-2 mb-2">
                         <input type="file" id="submittalAttachmentInput" multiple class="text-sm text-zinc-400 file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white">
                     </div>
@@ -869,15 +961,16 @@ function refreshSubmittalActionButtons() {
                     <p class="text-xs text-zinc-500 mt-2">In production, this pulls your digital signature from your User Profile.</p>
                 </div>
             </div>
-            
-            <!-- Tab 2 -->
-            <div id="tab2" class="tab-content hidden">
-                <div class="mb-4 flex justify-between items-center">
-                    <h4 class="font-semibold text-white">Review Comments</h4>
-                    <button onclick="addReviewComment()" class="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-xs font-medium">Add Comment</button>
-                </div>
-                <div id="reviewCommentsList" class="space-y-3"></div>
             </div>
+
+            <aside id="submittalReviewChatCol">
+                <div class="px-4 py-3 border-b border-zinc-700 font-semibold text-white flex-shrink-0">Review Comments</div>
+                <div id="reviewCommentsList" class="flex-1 overflow-auto p-4 space-y-3"></div>
+                <div class="p-4 border-t border-zinc-700 flex-shrink-0">
+                    <textarea id="reviewCommentInput" rows="3" placeholder="Add a comment for the project team..." class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm mb-2"></textarea>
+                    <button type="button" onclick="postReviewComment()" class="w-full px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold">Post Comment</button>
+                </div>
+            </aside>
         </div>
     </div>
 </div>
@@ -1366,16 +1459,38 @@ function openDetailModal(id, isNew = false, newData = null) {
         updateViewInSpecBookButton();
     });
     
-    // Show modal
-    document.getElementById('detailModal').classList.remove('hidden');
+    // Show full-page detail view (hide log chrome)
+    const chrome = document.getElementById('submittalChrome');
+    const detail = document.getElementById('detailModal');
+    if (chrome) chrome.classList.add('hidden');
+    if (detail) detail.classList.add('is-open');
+    const statusText = currentModalItem.status || 'Draft';
+    const badge = document.getElementById('modalStatusBadge');
+    if (badge) badge.textContent = statusText;
+    const statusReadonly = document.getElementById('modalStatusReadonlyWrap');
+    if (statusReadonly) statusReadonly.textContent = statusText;
+    const isAssignee = submittalIsSubAssignee(currentModalItem);
+    applySubmittalAssigneeFieldLocks(isAssignee);
+    const submitBtn = document.getElementById('submittalSubmitForApprovalBtn');
+    if (submitBtn) submitBtn.classList.toggle('hidden', !isAssignee);
+    const saveBtn = document.getElementById('submittalModalSaveBtn');
+    if (saveBtn) {
+        saveBtn.innerHTML = isAssignee
+            ? '<i class="fa-solid fa-save"></i> Save Draft'
+            : '<i class="fa-solid fa-save"></i> Save Changes';
+    }
     applySubmittalModalReadOnly(!submittalCanModifyItem(currentModalItem));
-    initDraggableSubmittalPanel('detailModal');
+    loadReviewComments(currentModalItem.serverId);
     switchTab(0);
 }
 
 function closeDetailModal() {
-    document.getElementById('detailModal').classList.add('hidden');
+    const chrome = document.getElementById('submittalChrome');
+    const detail = document.getElementById('detailModal');
+    if (detail) detail.classList.remove('is-open');
+    if (chrome) chrome.classList.remove('hidden');
     currentModalItem = null;
+    applySubmittalAssigneeFieldLocks(false);
 }
 
 function saveSubmittalFromModal() {
@@ -1384,37 +1499,50 @@ function saveSubmittalFromModal() {
         showCenteredAlert('You do not have permission to edit this submittal.', 'warning');
         return;
     }
-    
-    currentModalItem.specSection = document.getElementById('modalSpecSection').value;
-    currentModalItem.sectionName = document.getElementById('modalSectionName').value;
-    currentModalItem.paragraph = document.getElementById('modalParagraph').value;
-    currentModalItem.rev = document.getElementById('modalRev').value || '0';
-    currentModalItem.subject = document.getElementById('modalSubject').value;
-    currentModalItem.type = document.getElementById('modalType').value;
-    currentModalItem.dateReceived = document.getElementById('modalDateReceived').value;
-    currentModalItem.requiredBy = document.getElementById('modalRequiredBy').value;
-    currentModalItem.status = document.getElementById('modalStatus').value;
-    const impact = readSubmittalImpactFieldsFromModal();
-    currentModalItem.costImpactChoice = impact.costChoice;
-    currentModalItem.scheduleImpactChoice = impact.scheduleChoice;
-    currentModalItem.costImpact = impact.costImpact;
-    currentModalItem.scheduleDays = impact.scheduleDays;
-    currentModalItem.impactNotes = document.getElementById('modalImpactNotes').value;
-    const contactSel = document.getElementById('modalAssignedContact');
-    const companySel = document.getElementById('modalAssignedCompany');
-    if (companySel) {
-        const opt = companySel.options[companySel.selectedIndex];
-        currentModalItem.assignedCompanyId = companySel.value || '';
-        currentModalItem.assignedCompanyName = opt?.dataset?.name || opt?.text || '';
-    }
-    if (contactSel) {
-        const opt = contactSel.options[contactSel.selectedIndex];
-        currentModalItem.assignedContactId = contactSel.value || '';
-        currentModalItem.assignedContactName = opt?.dataset?.name || opt?.text || '';
-        currentModalItem.assignedContactEmail = opt?.dataset?.email || '';
-    }
-    if (companySel && companySel.value) {
-        currentModalItem.receivedFrom = currentModalItem.assignedCompanyName || '';
+
+    const isAssignee = submittalIsSubAssignee(currentModalItem);
+    if (isAssignee) {
+        const impact = readSubmittalImpactFieldsFromModal();
+        currentModalItem.costImpactChoice = impact.costChoice;
+        currentModalItem.scheduleImpactChoice = impact.scheduleChoice;
+        currentModalItem.costImpact = impact.costImpact;
+        currentModalItem.scheduleDays = impact.scheduleDays;
+        currentModalItem.impactNotes = document.getElementById('modalImpactNotes').value;
+        const today = new Date().toISOString().slice(0, 10);
+        currentModalItem.dateReceived = today;
+        document.getElementById('modalDateReceived').value = today;
+    } else {
+        currentModalItem.specSection = document.getElementById('modalSpecSection').value;
+        currentModalItem.sectionName = document.getElementById('modalSectionName').value;
+        currentModalItem.paragraph = document.getElementById('modalParagraph').value;
+        currentModalItem.rev = document.getElementById('modalRev').value || '0';
+        currentModalItem.subject = document.getElementById('modalSubject').value;
+        currentModalItem.type = document.getElementById('modalType').value;
+        currentModalItem.dateReceived = document.getElementById('modalDateReceived').value;
+        currentModalItem.requiredBy = document.getElementById('modalRequiredBy').value;
+        currentModalItem.status = document.getElementById('modalStatus').value;
+        const impact = readSubmittalImpactFieldsFromModal();
+        currentModalItem.costImpactChoice = impact.costChoice;
+        currentModalItem.scheduleImpactChoice = impact.scheduleChoice;
+        currentModalItem.costImpact = impact.costImpact;
+        currentModalItem.scheduleDays = impact.scheduleDays;
+        currentModalItem.impactNotes = document.getElementById('modalImpactNotes').value;
+        const contactSel = document.getElementById('modalAssignedContact');
+        const companySel = document.getElementById('modalAssignedCompany');
+        if (companySel) {
+            const opt = companySel.options[companySel.selectedIndex];
+            currentModalItem.assignedCompanyId = companySel.value || '';
+            currentModalItem.assignedCompanyName = opt?.dataset?.name || opt?.text || '';
+        }
+        if (contactSel) {
+            const opt = contactSel.options[contactSel.selectedIndex];
+            currentModalItem.assignedContactId = contactSel.value || '';
+            currentModalItem.assignedContactName = opt?.dataset?.name || opt?.text || '';
+            currentModalItem.assignedContactEmail = opt?.dataset?.email || '';
+        }
+        if (companySel && companySel.value) {
+            currentModalItem.receivedFrom = currentModalItem.assignedCompanyName || '';
+        }
     }
     if (specBookArchive) {
         currentModalItem.specBookFilename = specBookArchive.filename;
@@ -1433,18 +1561,120 @@ function saveSubmittalFromModal() {
     
     saveData();
     const newStatus = currentModalItem.status;
-    const wf = submittalWorkflowActionForTransition(currentModalPreviousStatus, newStatus);
+    const wf = isAssignee ? null : submittalWorkflowActionForTransition(currentModalPreviousStatus, newStatus);
     syncSubmittalToServer(currentModalItem, { statusWorkflow: wf }).then(() => {
         if (wf && currentModalItem.serverId) {
             currentModalItem.status = newStatus;
             saveData();
         }
-        closeDetailModal();
+        if (!isAssignee) {
+            closeDetailModal();
+        } else {
+            showCenteredAlert('Draft saved.', 'success');
+        }
         renderSubmittalsTable();
         updateMetrics();
     }).catch(err => {
         showCenteredAlert(err.message || 'Could not save submittal', 'error');
     });
+}
+
+async function submitSubmittalForApproval() {
+    if (!currentModalItem || !submittalIsSubAssignee(currentModalItem)) return;
+    const impact = readSubmittalImpactFieldsFromModal();
+    currentModalItem.costImpactChoice = impact.costChoice;
+    currentModalItem.scheduleImpactChoice = impact.scheduleChoice;
+    currentModalItem.costImpact = impact.costImpact;
+    currentModalItem.scheduleDays = impact.scheduleDays;
+    currentModalItem.impactNotes = document.getElementById('modalImpactNotes').value;
+    const today = new Date().toISOString().slice(0, 10);
+    currentModalItem.dateReceived = today;
+    saveData();
+    await syncSubmittalToServer(currentModalItem);
+    if (!currentModalItem.serverId) {
+        showCenteredAlert('Save the submittal before submitting for approval.', 'warning');
+        return;
+    }
+    try {
+        const json = await applySubmittalStatusWorkflow(currentModalItem.serverId, { action: 'return_from_sub' });
+        if (json?.new_status) {
+            currentModalItem.status = json.new_status;
+            saveData();
+        }
+        showCenteredAlert('Submittal submitted for approval.', 'success');
+        closeDetailModal();
+        renderSubmittalsTable();
+        updateMetrics();
+    } catch (err) {
+        showCenteredAlert(err.message || 'Could not submit for approval', 'error');
+    }
+}
+
+function renderReviewComments(comments) {
+    const el = document.getElementById('reviewCommentsList');
+    if (!el) return;
+    const list = comments || [];
+    if (!list.length) {
+        el.innerHTML = '<p class="text-sm text-zinc-500">No comments yet. Start the discussion here.</p>';
+        return;
+    }
+    el.innerHTML = list.map(c => `
+        <div class="review-comment-entry">
+            <div class="flex justify-between text-xs text-zinc-500 mb-1">
+                <span>${escapeSubmittalHtml(c.user_name || 'User')}${c.user_role ? ` · ${escapeSubmittalHtml(c.user_role)}` : ''}</span>
+                <span>${escapeSubmittalHtml((c.created_at || '').replace('T', ' ').slice(0, 16))}</span>
+            </div>
+            <div class="whitespace-pre-wrap text-zinc-200">${escapeSubmittalHtml(c.body || '')}</div>
+        </div>
+    `).join('');
+    el.scrollTop = el.scrollHeight;
+}
+
+async function loadReviewComments(serverId) {
+    if (!serverId) {
+        renderReviewComments(currentModalItem?.comments || []);
+        return;
+    }
+    try {
+        const res = await fetch(`/api/submittals/${serverId}/comments`, { credentials: 'same-origin' });
+        const json = await res.json();
+        const comments = json.comments || [];
+        if (currentModalItem) currentModalItem.comments = comments;
+        renderReviewComments(comments);
+    } catch (e) {
+        renderReviewComments(currentModalItem?.comments || []);
+    }
+}
+
+async function postReviewComment() {
+    if (!currentModalItem) return;
+    const input = document.getElementById('reviewCommentInput');
+    const body = (input?.value || '').trim();
+    if (!body) return;
+    let sid = currentModalItem.serverId;
+    if (!sid) {
+        await syncSubmittalToServer(currentModalItem);
+        sid = currentModalItem.serverId;
+    }
+    if (!sid) {
+        showCenteredAlert('Save the submittal before posting comments.', 'warning');
+        return;
+    }
+    try {
+        const res = await fetch(`/api/submittals/${sid}/comments`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ body }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Could not post comment');
+        if (input) input.value = '';
+        currentModalItem.comments = json.comments || [];
+        renderReviewComments(currentModalItem.comments);
+    } catch (err) {
+        showCenteredAlert(err.message || 'Could not post comment', 'error');
+    }
 }
 
 async function syncSubmittalToServer(item, opts = {}) {
@@ -1504,7 +1734,7 @@ async function syncSubmittalToServer(item, opts = {}) {
 function submittalWorkflowActionForTransition(oldStatus, newStatus) {
     if (!oldStatus || oldStatus === newStatus) return null;
     if (oldStatus === 'Draft' && newStatus === 'Sent to Subcontractor') return { action: 'send_to_sub' };
-    if (oldStatus === 'Sent to Subcontractor' && newStatus === 'Returned from Subcontractor') return { action: 'return_from_sub' };
+    if (['Sent to Subcontractor', 'Revise & Resubmit'].includes(oldStatus) && newStatus === 'Returned from Subcontractor') return { action: 'return_from_sub' };
     if (oldStatus === 'Returned from Subcontractor' && newStatus === 'Submitted to Architect') return { action: 'submit_to_architect' };
     if (oldStatus === 'Submitted to Architect' && ['No Exceptions Taken', 'Reviewed as Noted', 'Revise & Resubmit', 'Rejected'].includes(newStatus)) {
         return { action: 'architect_decision', decision: newStatus };
@@ -1569,7 +1799,7 @@ document.getElementById('submittalAttachmentInput')?.addEventListener('change', 
 
 function bindSubmittalDocumentPickers() {
     const attContainer = document.getElementById('submittalAttachmentActions');
-    if (attContainer && window.CasePMDocPicker) {
+    if (attContainer && window.CasePMDocPicker && !SUBMITTAL_ACCESS.isSubPortal) {
         window.CasePMDocPicker.addBrowseButton(attContainer, {
             title: 'Attach from Documents',
             getProjectId: () => resolveSubmittalProjectId(),

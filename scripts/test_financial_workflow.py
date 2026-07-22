@@ -360,6 +360,32 @@ class SubmittalSecurityTests(unittest.TestCase):
         apply_submittal_fields(sub, {'status': 'Draft'}, is_create=False)
         self.assertEqual(sub.status, 'Closed')
 
+    def test_return_from_sub_accepts_revise_resubmit(self):
+        from unittest import mock
+        from submittal_persistence import submittal_workflow_action
+        from types import SimpleNamespace
+
+        sub = SimpleNamespace(
+            status='Revise & Resubmit',
+            ball_in_court='Subcontractor',
+            details_json='{"rev":"1"}',
+        )
+        user = SimpleNamespace(role='Subcontractor')
+        with mock.patch('submittal_persistence._user_can_act', return_value=True):
+            with mock.patch('document_module_security.assert_submittal_workflow_allowed'):
+                new_status = submittal_workflow_action(sub, 'return_from_sub', user, {})
+        self.assertEqual(new_status, 'Returned from Subcontractor')
+        self.assertEqual(sub.status, 'Returned from Subcontractor')
+
+    def test_add_submittal_comment_appends_thread(self):
+        from submittal_persistence import add_submittal_comment
+        from types import SimpleNamespace
+
+        sub = SimpleNamespace(comments_json=None, updated_at=None)
+        entry = add_submittal_comment(sub, {'body': 'Please clarify spec.'}, 5, 'Jane Sub', 'Subcontractor')
+        self.assertEqual(entry['body'], 'Please clarify spec.')
+        self.assertIn('comments_json', vars(sub))
+
 
 if __name__ == '__main__':
     unittest.main()

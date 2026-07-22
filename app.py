@@ -1657,6 +1657,7 @@ class Submittal(db.Model):
     due_date = db.Column(db.Date)
     ball_in_court = db.Column(db.String(50))
     review_comments = db.Column(db.Text)
+    comments_json = db.Column(db.Text)
     attachments_json = db.Column(db.Text)
     assigned_company_id = db.Column(db.Integer, db.ForeignKey('company.id'), nullable=True)
     assigned_company_name = db.Column(db.String(200))
@@ -9781,12 +9782,10 @@ def api_submittal_sync():
             return jsonify({'error': str(exc)}), 400 if isinstance(exc, ValueError) else 403
         patch = dict(body)
         if not is_staff_portal_user(current_user):
-            for key in (
-                'assigned_company_id', 'assigned_company_name',
-                'assigned_contact_user_id', 'assigned_contact_name', 'assigned_contact_email',
-            ):
-                patch.pop(key, None)
-        apply_submittal_fields(submittal, patch, is_create=False)
+            from submittal_persistence import apply_submittal_sub_sync_fields
+            apply_submittal_sub_sync_fields(submittal, patch)
+        else:
+            apply_submittal_fields(submittal, patch, is_create=False)
     db.session.commit()
     from rfi_persistence import _parse_json
     attachments = _parse_json(submittal.attachments_json, [])
@@ -9847,6 +9846,60 @@ def api_submittal_workflow(submittal_id):
     except Exception:
         pass
     return jsonify({'ok': True, 'new_status': new_status, 'submittal_id': submittal.id})
+
+
+@app.route('/api/submittals/<int:submittal_id>/comments', methods=['GET'])
+@login_required
+def api_submittal_list_comments(submittal_id):
+    from rfi_persistence import _parse_json
+    from document_module_security import assert_submittal_read_allowed, submittal_visible_to_user
+    from financial_security import require_financial_project_access
+    submittal = Submittal.query.get_or_404(submittal_id)
+    try:
+        assert_submittal_read_allowed(current_user)
+        require_financial_project_access(current_user, submittal.project_id, Project)
+        if not submittal_visible_to_user(submittal, current_user, Company=Company, db=db):
+            return jsonify({'error': 'Permission denied'}), 403
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    comments = _parse_json(getattr(submittal, 'comments_json', None), [])
+    return jsonify({'ok': True, 'comments': comments})
+
+
+@app.route('/api/submittals/<int:submittal_id>/comments', methods=['POST'])
+@login_required
+def api_submittal_add_comment(submittal_id):
+    from rfi_persistence import _parse_json
+    from submittal_persistence import add_submittal_comment
+    from document_module_security import assert_submittal_comment_allowed, submittal_visible_to_user
+    from financial_security import require_financial_project_access
+    from workflow_responder import notify_submittal_comment
+    submittal = Submittal.query.get_or_404(submittal_id)
+    try:
+        require_financial_project_access(current_user, submittal.project_id, Project)
+        if not submittal_visible_to_user(submittal, current_user, Company=Company, db=db):
+            return jsonify({'error': 'Permission denied'}), 403
+        assert_submittal_comment_allowed(current_user, submittal, Company=Company, db=db)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    body = request.get_json(silent=True) or {}
+    actor_name = _user_display_name(current_user.id)
+    try:
+        entry = add_submittal_comment(
+            submittal,
+            body,
+            current_user.id,
+            actor_name,
+            user_role=getattr(current_user, 'role', None),
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    db.session.commit()
+    try:
+        notify_submittal_comment(submittal, User, current_user, entry.get('body'))
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'comment': entry, 'comments': _parse_json(submittal.comments_json, [])})
 
 
 @app.route('/api/submittals/<int:submittal_id>/attachments', methods=['GET'])
