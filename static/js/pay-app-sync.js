@@ -19,6 +19,7 @@
   let serverVersion = 0;
   let enabled = true;
   let saveInFlight = null;
+  let autoSaveEnabled = false;
 
   function projectId() {
     if (typeof CasePMWorkflow !== 'undefined' && CasePMWorkflow.projectId) {
@@ -114,6 +115,7 @@
   }
 
   function scheduleSave(patch) {
+    if (!autoSaveEnabled) return;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       saveTimer = null;
@@ -258,12 +260,12 @@
   }
 
   async function init() {
-    patchSafeSetLocalStorage();
     if (typeof CasePMWorkflow !== 'undefined') {
       try { await CasePMWorkflow.loadPortal(); } catch { /* ignore */ }
     }
     await importLocalIfServerEmpty();
     await loadFromServer();
+    patchSafeSetLocalStorage();
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden' && (saveTimer || saveInFlight)) {
@@ -293,6 +295,8 @@
     refreshIfNewer,
     queueSageEvent,
     fetchSageEvents,
+    enableAutoSave() { autoSaveEnabled = true; },
+    disableAutoSave() { autoSaveEnabled = false; },
     SYNC_KEYS,
   };
 })(window);

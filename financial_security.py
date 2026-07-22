@@ -286,11 +286,12 @@ def filter_pay_app_patch_for_sub_vendor(user, patch: dict, existing: dict | None
         _filter_company_dict,
         resolve_sub_vendor_sov_keys,
     )
+    from pay_app_persistence import coerce_pay_app_state
     if not is_sub_vendor_portal_user(user) or not isinstance(patch, dict):
         return patch
     allowed = sub_vendor_company_keys(user)
-    merged = dict(existing or {})
-    merged.update(patch)
+    merged = dict(coerce_pay_app_state(existing))
+    merged.update(patch if isinstance(patch, dict) else {})
     sov_keys = resolve_sub_vendor_sov_keys(user, merged)
     out = {}
     for field in (

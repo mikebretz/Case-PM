@@ -14457,149 +14457,162 @@ def _sync_sub_memberships_after_pay_app_save(project_id, state):
 @app.route('/api/pay-applications/state', methods=['GET'])
 @login_required
 def api_get_pay_app_state():
-    blocked = _require_linked_sub_vendor_company()
-    if blocked:
-        return blocked
-    from pay_app_persistence import get_pay_app_state as load_state
-    from financial_security import require_financial_project_access
-    project_id = request.args.get('project_id', type=int) or get_current_project_id()
-    if not project_id:
-        return jsonify({'error': 'project_id required'}), 400
     try:
-        project_id = require_financial_project_access(current_user, project_id, Project)
-    except (ValueError, PermissionError) as exc:
-        return jsonify({'error': str(exc)}), 403
-    project_id = int(project_id)
-    record, data = load_state(PayAppProjectState, project_id)
-    if not record:
-        return jsonify({'project_id': project_id, 'data': None, 'version': 0})
-    from financial_security import filter_pay_app_state_for_sub_vendor
-    try:
-        data = filter_pay_app_state_for_sub_vendor(current_user, data)
+        blocked = _require_linked_sub_vendor_company()
+        if blocked:
+            return blocked
+        from pay_app_persistence import get_pay_app_state as load_state, coerce_pay_app_state
+        from financial_security import require_financial_project_access
+        project_id = request.args.get('project_id', type=int) or get_current_project_id()
+        if not project_id:
+            return jsonify({'error': 'project_id required'}), 400
         try:
-            from portal_sub_access import is_sub_vendor_portal_user, ensure_sub_vendor_project_memberships
-            from case_workflow import ProjectMembership
-            if is_sub_vendor_portal_user(current_user):
-                ensure_sub_vendor_project_memberships(
-                    current_user, db, ProjectMembership=ProjectMembership,
-                )
-        except Exception:
-            pass
+            project_id = require_financial_project_access(current_user, project_id, Project)
+        except (ValueError, PermissionError) as exc:
+            return jsonify({'error': str(exc)}), 403
+        project_id = int(project_id)
+        record, data = load_state(PayAppProjectState, project_id)
+        if not record:
+            return jsonify({'project_id': project_id, 'data': None, 'version': 0})
+        data = coerce_pay_app_state(data)
+        from financial_security import filter_pay_app_state_for_sub_vendor
+        try:
+            data = filter_pay_app_state_for_sub_vendor(current_user, data)
+            try:
+                from portal_sub_access import is_sub_vendor_portal_user, ensure_sub_vendor_project_memberships
+                from case_workflow import ProjectMembership
+                if is_sub_vendor_portal_user(current_user):
+                    ensure_sub_vendor_project_memberships(
+                        current_user, db, ProjectMembership=ProjectMembership,
+                    )
+            except Exception:
+                pass
+        except Exception as exc:
+            app.logger.exception('pay app state filter failed for project %s', project_id)
+            return jsonify({'error': 'Could not load pay application state.', 'detail': str(exc)}), 500
+        try:
+            return jsonify({
+                'project_id': project_id,
+                'data': data,
+                'version': record.version,
+                'updated_at': record.updated_at.isoformat() if record.updated_at else None,
+            })
+        except Exception as exc:
+            app.logger.exception('pay app state response failed for project %s', project_id)
+            return jsonify({'error': 'Could not serialize pay application state.', 'detail': str(exc)}), 500
     except Exception as exc:
-        app.logger.exception('pay app state filter failed for project %s', project_id)
+        app.logger.exception('pay app state GET failed')
         return jsonify({'error': 'Could not load pay application state.', 'detail': str(exc)}), 500
-    try:
-        return jsonify({
-            'project_id': project_id,
-            'data': data,
-            'version': record.version,
-            'updated_at': record.updated_at.isoformat() if record.updated_at else None,
-        })
-    except Exception as exc:
-        app.logger.exception('pay app state response failed for project %s', project_id)
-        return jsonify({'error': 'Could not serialize pay application state.', 'detail': str(exc)}), 500
 
 
 @app.route('/api/pay-applications/state', methods=['PUT'])
 @login_required
 def api_save_pay_app_state():
-    blocked = _require_linked_sub_vendor_company()
-    if blocked:
-        return blocked
-    from pay_app_persistence import get_pay_app_state as load_state, save_pay_app_state as persist_state
-    from financial_security import require_financial_project_access, sanitize_pay_app_state, filter_pay_app_patch_for_sub_vendor
-    body = request.get_json(silent=True) or {}
-    project_id = body.get('project_id') or get_current_project_id()
-    if not project_id:
-        return jsonify({'error': 'project_id required'}), 400
     try:
-        project_id = require_financial_project_access(current_user, project_id, Project)
-    except (ValueError, PermissionError) as exc:
-        return jsonify({'error': str(exc)}), 403
-    record, existing = load_state(PayAppProjectState, project_id)
-    existing = dict(existing or {})
-    patch = filter_pay_app_patch_for_sub_vendor(
-        current_user, body.get('data') or body.get('patch') or {}, existing,
-    )
-    full_replace = bool(body.get('full_replace'))
-    if full_replace:
-        merged = sanitize_pay_app_state(existing, patch)
-    else:
-        merged = sanitize_pay_app_state(existing, patch)
-    alloc_errors = []
-    sov_errors = []
-    commitment_errors = []
-    try:
-        from portal_sub_access import is_sub_vendor_portal_user
+        blocked = _require_linked_sub_vendor_company()
+        if blocked:
+            return blocked
         from pay_app_persistence import (
-            validate_sub_sov_cost_code_allocations,
-            validate_sub_vendor_pay_app_save,
-            validate_sub_sov_requires_commitments,
+            get_pay_app_state as load_state,
+            save_pay_app_state as persist_state,
+            coerce_pay_app_state,
         )
-        commitments = Commitment.query.filter_by(project_id=int(project_id)).all()
-        if is_sub_vendor_portal_user(current_user):
-            sov_errors = validate_sub_vendor_pay_app_save(
-                existing, merged, current_user, Commitment=Commitment, project_id=project_id,
-            )
+        from financial_security import require_financial_project_access, sanitize_pay_app_state, filter_pay_app_patch_for_sub_vendor
+        body = request.get_json(silent=True) or {}
+        project_id = body.get('project_id') or get_current_project_id()
+        if not project_id:
+            return jsonify({'error': 'project_id required'}), 400
+        try:
+            project_id = require_financial_project_access(current_user, project_id, Project)
+        except (ValueError, PermissionError) as exc:
+            return jsonify({'error': str(exc)}), 403
+        record, existing = load_state(PayAppProjectState, project_id)
+        existing = coerce_pay_app_state(existing)
+        patch = filter_pay_app_patch_for_sub_vendor(
+            current_user, body.get('data') or body.get('patch') or {}, existing,
+        )
+        full_replace = bool(body.get('full_replace'))
+        if full_replace:
+            merged = sanitize_pay_app_state(existing, patch)
         else:
-            alloc_errors = validate_sub_sov_cost_code_allocations(merged)
-            from pay_app_persistence import prune_unregistered_sub_sov
-            merged = prune_unregistered_sub_sov(merged, commitments)
-            commitment_errors = validate_sub_sov_requires_commitments(merged, commitments)
-    except Exception:
-        pass
-    if sov_errors:
-        return jsonify({'error': sov_errors[0], 'sov_errors': sov_errors}), 400
-    if commitment_errors:
-        return jsonify({'error': commitment_errors[0], 'commitment_errors': commitment_errors}), 400
-    if alloc_errors:
-        return jsonify({'error': alloc_errors[0], 'allocation_errors': alloc_errors}), 400
-    try:
-        from portal_sub_access import is_sub_vendor_portal_user, sub_vendor_company_keys, resolve_sub_vendor_sov_keys
-        if is_sub_vendor_portal_user(current_user):
-            sov_keys = resolve_sub_vendor_sov_keys(current_user, existing) | resolve_sub_vendor_sov_keys(current_user, merged)
-            if not sov_keys:
-                sov_keys = {str(k) for k in sub_vendor_company_keys(current_user) if k}
-            for field in ('subcontractorSOV', 'subSOVStatus', 'subPayAppHistory', 'subPendingSubmissions', 'subPayAppNumbers'):
-                prev = existing.get(field) if isinstance(existing.get(field), dict) else {}
-                new = merged.get(field) if isinstance(merged.get(field), dict) else {}
-                other = {k: v for k, v in prev.items() if str(k) not in sov_keys}
-                owned = {k: v for k, v in new.items() if str(k) in sov_keys}
-                merged[field] = {**other, **owned}
-            for field in ('contractorSOV', 'currentPayAppPeriod', 'payAppHistory', 'previousPayApps'):
-                if field in existing:
-                    merged[field] = existing[field]
-    except Exception:
-        pass
-    try:
-        record = persist_state(PayAppProjectState, db, project_id, merged, current_user.id)
+            merged = sanitize_pay_app_state(existing, patch)
+        alloc_errors = []
+        sov_errors = []
+        commitment_errors = []
+        try:
+            from portal_sub_access import is_sub_vendor_portal_user
+            from pay_app_persistence import (
+                validate_sub_sov_cost_code_allocations,
+                validate_sub_vendor_pay_app_save,
+                validate_sub_sov_requires_commitments,
+            )
+            commitments = Commitment.query.filter_by(project_id=int(project_id)).all()
+            if is_sub_vendor_portal_user(current_user):
+                sov_errors = validate_sub_vendor_pay_app_save(
+                    existing, merged, current_user, Commitment=Commitment, project_id=project_id,
+                )
+            else:
+                alloc_errors = validate_sub_sov_cost_code_allocations(merged)
+                from pay_app_persistence import prune_unregistered_sub_sov
+                merged = prune_unregistered_sub_sov(merged, commitments)
+                commitment_errors = validate_sub_sov_requires_commitments(merged, commitments)
+        except Exception:
+            pass
+        if sov_errors:
+            return jsonify({'error': sov_errors[0], 'sov_errors': sov_errors}), 400
+        if commitment_errors:
+            return jsonify({'error': commitment_errors[0], 'commitment_errors': commitment_errors}), 400
+        if alloc_errors:
+            return jsonify({'error': alloc_errors[0], 'allocation_errors': alloc_errors}), 400
+        try:
+            from portal_sub_access import is_sub_vendor_portal_user, sub_vendor_company_keys, resolve_sub_vendor_sov_keys
+            if is_sub_vendor_portal_user(current_user):
+                sov_keys = resolve_sub_vendor_sov_keys(current_user, existing) | resolve_sub_vendor_sov_keys(current_user, merged)
+                if not sov_keys:
+                    sov_keys = {str(k) for k in sub_vendor_company_keys(current_user) if k}
+                for field in ('subcontractorSOV', 'subSOVStatus', 'subPayAppHistory', 'subPendingSubmissions', 'subPayAppNumbers'):
+                    prev = existing.get(field) if isinstance(existing.get(field), dict) else {}
+                    new = merged.get(field) if isinstance(merged.get(field), dict) else {}
+                    other = {k: v for k, v in prev.items() if str(k) not in sov_keys}
+                    owned = {k: v for k, v in new.items() if str(k) in sov_keys}
+                    merged[field] = {**other, **owned}
+                for field in ('contractorSOV', 'currentPayAppPeriod', 'payAppHistory', 'previousPayApps'):
+                    if field in existing:
+                        merged[field] = existing[field]
+        except Exception:
+            pass
+        try:
+            record = persist_state(PayAppProjectState, db, project_id, merged, current_user.id)
+        except Exception as exc:
+            app.logger.exception('pay app state save failed for project %s', project_id)
+            return jsonify({'error': 'Could not save pay application state.', 'detail': str(exc)}), 500
+        _sync_sub_memberships_after_pay_app_save(project_id, merged)
+        reconcile_result = None
+        try:
+            from accounting_reconcile import reconcile_project_accounting
+            reconcile_result = reconcile_project_accounting(
+                project_id,
+                current_user.id,
+                ChangeOrder=ChangeOrder,
+                ChangeOrderAllocation=ChangeOrderAllocation,
+                Commitment=Commitment,
+                CommitmentAllocation=CommitmentAllocation,
+                BudgetProjectState=BudgetProjectState,
+                PayAppProjectState=PayAppProjectState,
+                db=db,
+            )
+        except Exception as exc:
+            reconcile_result = {'error': str(exc)}
+        return jsonify({
+            'ok': True,
+            'project_id': project_id,
+            'version': record.version,
+            'updated_at': record.updated_at.isoformat() if record.updated_at else None,
+            'reconcile_result': reconcile_result,
+        })
     except Exception as exc:
-        app.logger.exception('pay app state save failed for project %s', project_id)
+        app.logger.exception('pay app state PUT failed')
         return jsonify({'error': 'Could not save pay application state.', 'detail': str(exc)}), 500
-    _sync_sub_memberships_after_pay_app_save(project_id, merged)
-    reconcile_result = None
-    try:
-        from accounting_reconcile import reconcile_project_accounting
-        reconcile_result = reconcile_project_accounting(
-            project_id,
-            current_user.id,
-            ChangeOrder=ChangeOrder,
-            ChangeOrderAllocation=ChangeOrderAllocation,
-            Commitment=Commitment,
-            CommitmentAllocation=CommitmentAllocation,
-            BudgetProjectState=BudgetProjectState,
-            PayAppProjectState=PayAppProjectState,
-            db=db,
-        )
-    except Exception as exc:
-        reconcile_result = {'error': str(exc)}
-    return jsonify({
-        'ok': True,
-        'project_id': project_id,
-        'version': record.version,
-        'updated_at': record.updated_at.isoformat() if record.updated_at else None,
-        'reconcile_result': reconcile_result,
-    })
 
 
 @app.route('/api/pay-applications/import-local', methods=['POST'])

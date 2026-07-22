@@ -10590,6 +10590,9 @@ function printSubcontractorG703(companyId) {
             renderPayAppContent();
             renderSageSyncStatus();
             bindPayAppNavigationGuards();
+            if (typeof CasePMPayAppSync !== 'undefined' && CasePMPayAppSync.enableAutoSave) {
+                CasePMPayAppSync.enableAutoSave();
+            }
             if (isSubVendorPayPortalUser() && document.body) {
                 document.body.classList.add('pay-app-sub-ready');
             }
