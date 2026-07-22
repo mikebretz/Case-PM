@@ -1015,7 +1015,17 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
     function resolveSubLienWaiverFile(companyId, metaOrPeriod) {
         if (!companyId) return null;
-        const cid = String(companyId);
+        const keysToTry = [];
+        const seen = new Set();
+        function addKey(k) {
+            const sk = k == null ? '' : String(k).trim();
+            if (!sk || seen.has(sk)) return;
+            seen.add(sk);
+            keysToTry.push(sk);
+        }
+        subCompanyAliasKeys(companyId).forEach(addKey);
+        addKey(companyId);
+
         let storagePeriod = metaOrPeriod;
         let meta = null;
         if (metaOrPeriod && typeof metaOrPeriod === 'object') {
@@ -1030,18 +1040,36 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             storagePeriod = meta.storagePeriod ?? meta.periodNumber;
         }
         if (storagePeriod == null) {
-            storagePeriod = subPayAppNumbers[cid] || subPayAppNumbers[companyId] || (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1);
+            for (const k of keysToTry) {
+                const n = subPayAppNumbers[k];
+                if (n != null) { storagePeriod = n; break; }
+            }
+            if (storagePeriod == null) {
+                storagePeriod = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+            }
         }
-        const live = (subLienWaivers[cid] && subLienWaivers[cid][storagePeriod])
-            || (subLienWaivers[companyId] && subLienWaivers[companyId][storagePeriod]);
-        if (live && live.dataUrl) return live;
-        const archived = (subLienWaiverArchive[cid] && subLienWaiverArchive[cid][storagePeriod])
-            || (subLienWaiverArchive[companyId] && subLienWaiverArchive[companyId][storagePeriod]);
-        if (archived && archived.dataUrl) return archived;
+        const periodKeys = new Set([String(storagePeriod)]);
+        periodKeys.add(`pending_${storagePeriod}`);
+        if (meta && meta.storagePeriod != null) periodKeys.add(String(meta.storagePeriod));
+
+        for (const companyKey of keysToTry) {
+            for (const pkey of periodKeys) {
+                const live = subLienWaivers[companyKey] && subLienWaivers[companyKey][pkey];
+                if (live && live.dataUrl) return live;
+                const archived = subLienWaiverArchive[companyKey] && subLienWaiverArchive[companyKey][pkey];
+                if (archived && archived.dataUrl) return archived;
+            }
+            const archiveBucket = subLienWaiverArchive[companyKey] || {};
+            for (const [pkey, archived] of Object.entries(archiveBucket)) {
+                if (archived && archived.dataUrl && (periodKeys.has(String(pkey)) || (meta && meta.filename && archived.filename === meta.filename))) {
+                    return archived;
+                }
+            }
+        }
         if (meta && meta.filename) {
             return { filename: meta.filename, dataUrl: null, uploadedDate: meta.uploadedDate };
         }
-        return live || archived || null;
+        return null;
     }
 
     function archiveSubLienWaiverFile(companyId, fromPeriod, toStorageKey) {
@@ -1927,24 +1955,25 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     }
 
     function findActiveSubPayAppForG702Period(companyId, g702PeriodNum) {
-        const cid = String(companyId);
         g702PeriodNum = g702PeriodNum != null ? Number(g702PeriodNum) : getCurrentG702PeriodNum();
         const currentOpen = getCurrentG702PeriodNum();
-        const hist = subPayAppHistory[cid] || subPayAppHistory[companyId] || {};
-
         let approvedMatch = null;
         let pendingHistoryMatch = null;
 
-        for (const key of Object.keys(hist)) {
-            const entry = hist[key];
-            if (!entryMatchesG702Period(key, entry, g702PeriodNum, currentOpen)) continue;
-            if (entry.status === 'Approved' && entry.archived !== true) {
-                approvedMatch = { source: 'history', entry, historyKey: key };
-                break;
+        for (const cid of subCompanyAliasKeys(companyId)) {
+            const hist = subPayAppHistory[cid] || {};
+            for (const key of Object.keys(hist)) {
+                const entry = hist[key];
+                if (!entryMatchesG702Period(key, entry, g702PeriodNum, currentOpen)) continue;
+                if (entry.status === 'Approved' && entry.archived !== true) {
+                    approvedMatch = { source: 'history', entry, historyKey: key, companyKey: cid };
+                    break;
+                }
+                if (entry.status === 'Pending Approval' && !pendingHistoryMatch) {
+                    pendingHistoryMatch = { source: 'history', entry, historyKey: key, companyKey: cid };
+                }
             }
-            if (entry.status === 'Pending Approval' && !pendingHistoryMatch) {
-                pendingHistoryMatch = { source: 'history', entry, historyKey: key };
-            }
+            if (approvedMatch) break;
         }
 
         if (approvedMatch) {
@@ -1952,19 +1981,20 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             return approvedMatch;
         }
 
-        const pending = subPendingSubmissions[cid] || subPendingSubmissions[companyId];
-        if (pending) {
+        for (const cid of subCompanyAliasKeys(companyId)) {
+            const pending = subPendingSubmissions[cid];
+            if (!pending) continue;
             const pendMain = pending.mainG702Period != null ? Number(pending.mainG702Period) : null;
             const pendingMatches = pending.isCompliance
                 ? (pendMain == null || pendMain === g702PeriodNum)
                 : (pendMain === g702PeriodNum || (pendMain == null && g702PeriodNum === currentOpen));
             if (pendingMatches) {
                 const payAppNum = pending.isCompliance
-                    ? (subPayAppNumbers[cid] || subPayAppNumbers[companyId] || 1)
+                    ? (subPayAppNumbers[cid] || 1)
                     : pending.periodNumber;
                 const historyKey = resolvePayAppHistoryStorageKey(pending, payAppNum, pendMain || g702PeriodNum);
                 if (pendingHistoryMatch) return pendingHistoryMatch;
-                return { source: 'pending', entry: pending, historyKey };
+                return { source: 'pending', entry: pending, historyKey, companyKey: cid };
             }
         }
 
@@ -2861,7 +2891,8 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         let waiver = null;
 
         if (paper) {
-            waiver = getSubLienWaiverForEntry(cid, {
+            const paperCompanyKey = paper.companyKey || cid;
+            waiver = getSubLienWaiverForEntry(paperCompanyKey, {
                 ...resolveSubPayAppPaperEntry(companyId, paper),
                 historyKey: paper.historyKey
             }, paper.historyKey);

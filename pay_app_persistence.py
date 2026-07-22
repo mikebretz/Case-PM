@@ -416,6 +416,9 @@ def validate_sub_sov_commitment_totals(
         vendor_keys = _sov_keys_for_vendor(state_data, company_id, company_name)
 
     errors = []
+    sub_status = state_data.get('subSOVStatus') or {}
+    if not isinstance(sub_status, dict):
+        sub_status = {}
     for key, lines in sub_sov.items():
         sk = str(key).strip()
         if vendor_keys is not None and sk not in vendor_keys:
@@ -423,16 +426,25 @@ def validate_sub_sov_commitment_totals(
         total = _sum_sub_sov_line_commitments(lines)
         if total <= tolerance:
             continue
-        cap = get_vendor_commitment_cap(commitments, company_id, company_name)
+        status_entry = sub_status.get(key) or sub_status.get(sk) or {}
+        cap = get_vendor_commitment_cap_for_sov_entry(commitments, key, status_entry)
         if cap is None:
-            label = company_name or sk
+            label = (
+                (status_entry.get('companyName') or status_entry.get('company_name') or '').strip()
+                or (company_name or '').strip()
+                or sk
+            )
             errors.append(
                 f'No subcontract commitment on file for {label}. '
                 'Enter the PO/subcontract amount before building the Schedule of Values.'
             )
             continue
         if total > float(cap) + tolerance:
-            label = company_name or sk
+            label = (
+                (status_entry.get('companyName') or status_entry.get('company_name') or '').strip()
+                or (company_name or '').strip()
+                or sk
+            )
             errors.append(
                 f'Schedule of Values for {label} totals ${total:,.2f}, '
                 f'which exceeds the original contract amount of ${float(cap):,.2f}.'

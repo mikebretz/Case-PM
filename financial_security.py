@@ -296,7 +296,7 @@ def filter_pay_app_patch_for_sub_vendor(user, patch: dict, existing: dict | None
     out = {}
     for field in (
         'subcontractorSOV', 'subSOVStatus', 'subPayAppHistory',
-        'subPendingSubmissions', 'subPayAppNumbers',
+        'subPendingSubmissions', 'subPayAppNumbers', 'subLienWaivers', 'subLienWaiverArchive',
     ):
         if field in patch:
             out[field] = _filter_company_dict(patch.get(field), allowed, sov_keys)
