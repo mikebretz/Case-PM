@@ -524,11 +524,15 @@ def sub_pay_app_workflow_action(state, company_key, action, user, body=None):
         pend.pop(cid, None)
         pend.pop(str(company_key), None)
         state['subPendingSubmissions'] = pend
-        for hk, ent in list(company_hist.items()):
-            if (ent or {}).get('status') == 'Pending Approval':
-                ent['status'] = 'Rejected'
-                ent['ball_in_court_role'] = 'Subcontractor'
-                company_hist[hk] = ent
+        hist_key = body.get('history_key')
+        if hist_key is not None:
+            hk = str(hist_key)
+            if hk in company_hist and (company_hist[hk] or {}).get('status') == 'Pending Approval':
+                company_hist.pop(hk, None)
+        else:
+            for hk, ent in list(company_hist.items()):
+                if (ent or {}).get('status') == 'Pending Approval':
+                    company_hist.pop(hk, None)
         history[cid] = company_hist
         state['subPayAppHistory'] = history
         return 'Rejected', False
