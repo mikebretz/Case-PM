@@ -1,14 +1,6 @@
 {% extends "base.html" %}
 
 {% block content %}
-<script>
-window.CASEPM_PROJECT_DIRECTORY_CTX = {
-  projectId: {{ active_project.id if active_project else 'null' }},
-  projectName: {{ (active_project.name if active_project else '')|tojson }},
-};
-</script>
-<script src="{{ url_for('static', filename='js/project-directory-app.js') }}"></script>
-
 <style>
 .pd-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 1rem 1rem 0; box-sizing: border-box; }
 .pd-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
@@ -74,4 +66,12 @@ window.CASEPM_PROJECT_DIRECTORY_CTX = {
 
 </div>
 </div>
+
+<script>
+window.CASEPM_PROJECT_DIRECTORY_CTX = {
+  projectId: {{ (active_project.id if active_project else none)|tojson }},
+  projectName: {{ (active_project.name if active_project else '')|tojson }},
+};
+</script>
+<script src="{{ url_for('static', filename='js/project-directory-app.js') }}"></script>
 {% endblock %}
