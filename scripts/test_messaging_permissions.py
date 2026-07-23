@@ -69,6 +69,25 @@ class MessagingPermissionTests(unittest.TestCase):
         self.assertFalse(user_can_external_email(user))
         self.assertTrue(user_email_internal_only(user))
 
+    def test_architect_stored_permissions_backfill_internal_messages(self):
+        import json
+        from permissions_catalog import merge_permissions
+        from case_workflow import user_has_module_access
+
+        stale = {
+            'version': 2,
+            'portal': 'consultant',
+            'modules': {
+                'email': {'access': 'none', 'approve': 'none'},
+                'rfis': {'access': 'view', 'approve': 'approve_reject'},
+            },
+            'global': {'from_role': 'Architect'},
+        }
+        user = self._user('Architect', permissions_json=json.dumps(stale))
+        merged = merge_permissions('Architect', user.permissions_json)
+        self.assertEqual(merged['modules']['internal_messages']['access'], 'edit')
+        self.assertTrue(user_has_module_access(user, 'internal_messages', 'entry'))
+
 
 if __name__ == '__main__':
     unittest.main()

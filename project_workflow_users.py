@@ -894,11 +894,14 @@ def validate_internal_message_recipients(sender, recipient_users, project, User,
         exclude_user_id=None,
     )
     allowed_emails = {(c.get('email') or '').strip().lower() for c in allowed if c.get('email')}
-    allowed_ids = {
-        int(c.get('user_id') or c.get('id'))
-        for c in allowed
-        if c.get('user_id') or c.get('id')
-    }
+    allowed_ids = set()
+    for c in allowed:
+        raw_id = c.get('user_id') if c.get('user_id') is not None else c.get('id')
+        try:
+            if raw_id is not None:
+                allowed_ids.add(int(raw_id))
+        except (TypeError, ValueError):
+            continue
     for user in recipient_users:
         if int(user.id) == int(sender.id):
             continue
