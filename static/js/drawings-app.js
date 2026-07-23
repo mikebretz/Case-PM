@@ -742,6 +742,7 @@
     openDocument: null,
     documentViewerPage: false,
     embeddedViewer: false,
+    markupReadonly: false,
     pendingDrag: null,
     lastPinTap: { key: '', t: 0 },
     textDialogCtx: null,
@@ -1053,7 +1054,7 @@
   }
 
   async function persistMarkup(m, payload) {
-    if (!m?.id) return;
+    if (!m?.id || state.markupReadonly) return;
     try {
       const json = await api(markupItemUrl(m.id), {
         method: 'PUT',
@@ -1236,6 +1237,11 @@
     const isContinuous = state.pdfViewMode === 'continuous' && state.pdfNumPages > 1;
 
     if (isDocumentViewer() && !isDocumentDrawingPdf()) {
+      if (state.embeddedViewer) {
+        const floor = isContinuous ? 1.2 : 1.45;
+        const cap = isContinuous ? 2.1 : 2.6;
+        return Math.min(cap, Math.max(floor, fitScale * dpr * 1.15));
+      }
       const floor = isContinuous ? 0.85 : 1.0;
       const cap = isContinuous ? 1.35 : 1.65;
       return Math.min(cap, Math.max(floor, fitScale * 0.9));
@@ -2616,6 +2622,7 @@
     }
     state.documentViewerPage = true;
     state.embeddedViewer = params.get('embedded') === '1';
+    state.markupReadonly = params.get('readonly') === '1';
     state.viewerContext = 'document';
     document.getElementById('mainContent')?.classList.add('main-content-doc-viewer');
     document.body.classList.add('doc-viewer-active');
@@ -2625,6 +2632,7 @@
     if (backBtn && state.embeddedViewer) {
       backBtn.querySelector('i')?.classList.replace('fa-arrow-left', 'fa-times');
     }
+    applyMarkupReadonlyMode();
     if (global.pdfjsLib) {
       pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
@@ -2641,6 +2649,27 @@
       }
     });
     await openDocumentViewer(docId);
+  }
+
+  function applyMarkupReadonlyMode() {
+    const readonly = !!state.markupReadonly;
+    document.body.classList.toggle('doc-markup-readonly', readonly);
+    if (readonly) {
+      state.tool = 'pan';
+      highlightActiveTool();
+    }
+    const hideSel = '.draw-tool-rail, #markupPropertiesPanel, #markupListPanel, #btnDeleteMarkup';
+    document.querySelectorAll(hideSel).forEach(el => {
+      if (el) el.classList.toggle('hidden', readonly);
+    });
+    document.querySelectorAll('.draw-viewer-toolbar button').forEach(btn => {
+      const label = (btn.textContent || '').toLowerCase();
+      const isNav = btn.id === 'viewerBackBtn' || label.includes('fit') || btn.id === 'btnFullscreen';
+      if (!isNav && readonly) btn.classList.add('hidden');
+      else if (isNav) btn.classList.remove('hidden');
+    });
+    const readonlyBanner = document.getElementById('docMarkupReadonlyBanner');
+    if (readonlyBanner) readonlyBanner.classList.toggle('hidden', !readonly);
   }
 
   function renderViewerChrome() {
@@ -4064,6 +4093,7 @@
   }
 
   function setTool(tool) {
+    if (state.markupReadonly && !['pan', 'select'].includes(tool)) return;
     if (state.tool !== tool) {
       clearMarkupSelection();
       state.draggingMarkup = null;
@@ -4127,6 +4157,7 @@
   }
 
   async function deleteSelectedMarkup() {
+    if (state.markupReadonly) return;
     const ids = state.selectedMarkupIds.size
       ? [...state.selectedMarkupIds]
       : (state.selectedMarkupId ? [state.selectedMarkupId] : []);
@@ -4970,7 +5001,7 @@
   }
 
   async function saveMarkup(payload) {
-    if (!viewerIsOpen()) return;
+    if (!viewerIsOpen() || state.markupReadonly) return;
     const geometry = normalizeGeometry(payload.geometry || {});
     const style = payload.style || { ...state.markupStyle };
     const body = {

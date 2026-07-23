@@ -43,7 +43,9 @@ IMMUTABLE_CHANGE_EVENT_STATUSES = frozenset({'Approved', 'Void'})
 
 IMMUTABLE_RFI_STATUSES = frozenset({'Closed', 'Void'})
 
-IMMUTABLE_SUBMITTAL_STATUSES = frozenset({'Closed', 'Rejected'})
+IMMUTABLE_SUBMITTAL_STATUSES = frozenset({
+    'Closed', 'Rejected', 'No Exceptions Taken', 'Reviewed as Noted',
+})
 
 IMMUTABLE_RFQ_STATUSES = frozenset({'Accepted', 'Rejected'})
 
