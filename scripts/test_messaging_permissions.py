@@ -88,6 +88,35 @@ class MessagingPermissionTests(unittest.TestCase):
         self.assertEqual(merged['modules']['internal_messages']['access'], 'edit')
         self.assertTrue(user_has_module_access(user, 'internal_messages', 'entry'))
 
+    def test_workflow_models_rebind_when_sqlalchemy_instance_changes(self):
+        from flask import Flask
+        from flask_sqlalchemy import SQLAlchemy
+        import case_workflow as cw
+
+        app1 = Flask('workflow-test-stale')
+        app1.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+        app1.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+        db1 = SQLAlchemy(app1)
+        cw.init_models(db1)
+
+        app2 = Flask('workflow-test-live')
+        app2.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+        app2.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+        db2 = SQLAlchemy(app2)
+
+        with app2.app_context():
+            cw.register_workflow(app2, db2, {
+                'User': None,
+                'Project': None,
+                'Company': None,
+                'Notification': None,
+                'login_required': lambda view: view,
+                'get_current_project_id': lambda: None,
+            })
+            self.assertIs(cw.InternalMessage.__fsa__, db2)
+            session = cw._workflow_session()
+            self.assertIs(session, db2.session)
+
 
 if __name__ == '__main__':
     unittest.main()
