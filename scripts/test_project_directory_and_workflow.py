@@ -112,12 +112,32 @@ def test_build_project_directory_merges_membership_and_contacts() -> None:
     class UserModel:
         query = _UserQuery(users)
 
-    directory = build_project_directory(_Project(), UserModel, Company=None, ProjectMembership=pm)
+    class ProjectObj:
+        id = 7
+        project_manager = 'Pat Manager'
+        client = 'Owner LLC'
+        client_company_id = None
+
+        def get_details(self):
+            return {
+                'team_contacts': [
+                    {
+                        'role': 'owner',
+                        'name': 'Owner Contact',
+                        'email': 'owner@example.com',
+                        'phone': '555-0100',
+                        'firm': 'Owner LLC',
+                    }
+                ]
+            }
+
+    directory = build_project_directory(ProjectObj(), UserModel, Company=None, ProjectMembership=pm)
     assert len(directory) >= 3
     names = {entry['name'] for entry in directory}
     assert 'Brett Architect' in names
     assert 'Pat Manager' in names
     assert 'Owner Contact' in names
+    assert 'Pat Manager' in names or any('Pat' in n for n in names)
     arch = next(entry for entry in directory if entry['name'] == 'Brett Architect')
     assert arch['email'] == 'arch@firm.com'
     assert arch['role_label'] == 'Architect'
