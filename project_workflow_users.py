@@ -715,3 +715,115 @@ def resolve_project_consultant_users(project_id, User, ProjectMembership=None, *
         ProjectMembership,
         exclude_user_id=exclude_user_id,
     )
+
+
+def _staff_portal_users(User):
+    """Active users on the main company (staff portal), excluding vendor/sub portals."""
+    from document_module_security import is_staff_portal_user
+
+    users = []
+    for user in User.query.filter_by(status='Active').all():
+        try:
+            if is_staff_portal_user(user):
+                users.append(user)
+        except Exception:
+            continue
+    return sorted(
+        users,
+        key=lambda user: (
+            (getattr(user, 'first_name', '') or '').lower(),
+            (getattr(user, 'last_name', '') or '').lower(),
+            (getattr(user, 'email', '') or '').lower(),
+        ),
+    )
+
+
+def _contact_sort_key(contact):
+    group_order = {'project': 0, 'staff': 1}
+    company = (contact.get('company') or '').lower()
+    name = (contact.get('name') or '').lower()
+    return (group_order.get(contact.get('group') or 'project', 0), company, name)
+
+
+def build_internal_message_contacts(
+    project,
+    User,
+    Company=None,
+    ProjectMembership=None,
+    *,
+    exclude_user_id=None,
+):
+    """
+    Internal messaging contacts for non-staff users:
+    everyone attached to the project plus main-company staff.
+    """
+    contacts_by_key = {}
+
+    def add_contact(
+        *,
+        user_id=None,
+        name='',
+        email='',
+        company='',
+        phone='',
+        position='',
+        group='project',
+    ):
+        email_key = (email or '').strip().lower()
+        if not email_key:
+            return
+        if exclude_user_id and user_id is not None and int(user_id) == int(exclude_user_id):
+            return
+        key = f'user:{user_id}' if user_id is not None else f'email:{email_key}'
+        row = {
+            'id': user_id,
+            'user_id': user_id,
+            'name': (name or email_key).strip(),
+            'email': email_key,
+            'company': (company or '').strip(),
+            'phone': (phone or '').strip(),
+            'position': (position or '').strip(),
+            'group': group,
+        }
+        existing = contacts_by_key.get(key)
+        if existing:
+            for field in ('name', 'company', 'phone', 'position'):
+                if not existing.get(field) and row.get(field):
+                    existing[field] = row[field]
+            if existing.get('group') != 'staff' and row.get('group') == 'staff':
+                existing['group'] = 'staff'
+            return
+        contacts_by_key[key] = row
+
+    if project is not None:
+        directory = build_project_directory(project, User, Company=Company, ProjectMembership=ProjectMembership)
+        for entry in directory:
+            uid = entry.get('user_id')
+            email = (entry.get('email') or '').strip()
+            if not email:
+                continue
+            add_contact(
+                user_id=uid,
+                name=entry.get('name') or '',
+                email=email,
+                company=entry.get('company') or entry.get('firm') or '',
+                phone=entry.get('phone') or '',
+                position=entry.get('position') or '',
+                group='project',
+            )
+
+    for user in _staff_portal_users(User):
+        name = f'{getattr(user, "first_name", "")} {getattr(user, "last_name", "")}'.strip()
+        if not name:
+            name = (getattr(user, 'full_name', None) or getattr(user, 'email', None) or '').strip()
+        add_contact(
+            user_id=getattr(user, 'id', None),
+            name=name,
+            email=(getattr(user, 'email', None) or '').strip(),
+            company=(getattr(user, 'company', None) or '').strip(),
+            phone=(getattr(user, 'phone', None) or '').strip(),
+            position=_user_job_title(user),
+            group='staff',
+        )
+
+    return sorted(contacts_by_key.values(), key=_contact_sort_key)
