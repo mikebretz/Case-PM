@@ -135,6 +135,29 @@ class SubmittalFormPdfTests(unittest.TestCase):
         finally:
             doc.close()
 
+    def test_review_sheet_shows_architect_decision_banner(self):
+        from datetime import date
+        from submittal_form_pdf import build_submittal_review_sheet_pdf
+        import fitz
+
+        submittal = SimpleNamespace(
+            number='260500-1',
+            spec_section='26 05 00',
+            description='PRODUCT DATA',
+            status='No Exceptions Taken',
+            date=date(2026, 5, 21),
+            review_comments='',
+            details_json=json.dumps({'rev': '0', 'type': 'PRODUCT DATA'}),
+        )
+        pdf = build_submittal_review_sheet_pdf(submittal, project=SimpleNamespace(name='Test'), company_info={})
+        doc = fitz.open(stream=pdf, filetype='pdf')
+        try:
+            text = doc[0].get_text()
+            self.assertIn('ARCHITECT / ENGINEER DECISION', text)
+            self.assertIn('NO EXCEPTIONS TAKEN', text)
+        finally:
+            doc.close()
+
     def test_stamp_boxes_are_on_right_column(self):
         from submittal_form_pdf import SUBMITTAL_STAMP_BOXES
         for key, rect in SUBMITTAL_STAMP_BOXES.items():

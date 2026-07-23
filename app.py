@@ -7674,9 +7674,25 @@ def _document_checkout_fields(doc, actor_id=None):
 
 
 def _document_edit_lock_error(doc):
-    """Return (response, status_code) if edits are blocked by checkout, else None."""
+    """Return (response, status_code) if edits are blocked by checkout or submittal lock, else None."""
     if doc.is_system_locked:
         return None
+    try:
+        from submittal_persistence import document_linked_to_locked_submittal
+        locked_sub = document_linked_to_locked_submittal(
+            doc.id, Submittal=Submittal, project_id=getattr(doc, 'project_id', None),
+        )
+        if locked_sub:
+            return jsonify({
+                'error': (
+                    f'This document is attached to approved submittal '
+                    f'{locked_sub.number or locked_sub.id} and cannot be marked up.'
+                ),
+                'submittal_id': locked_sub.id,
+                'submittal_status': locked_sub.status,
+            }), 423
+    except Exception:
+        pass
     co_id = getattr(doc, 'checked_out_by_id', None)
     if co_id and co_id != current_user.id:
         name = _user_display_name(co_id)
@@ -10056,6 +10072,7 @@ def api_submittal_print_form(submittal_id):
             attachments=attachments,
             upload_folder=app.config['UPLOAD_FOLDER'],
             Document=Document,
+            DocumentMarkup=DocumentMarkup,
             template_path=template_path,
         )
     except FileNotFoundError as exc:
@@ -10268,6 +10285,8 @@ def api_submittal_print_review_sheet(submittal_id):
     from financial_security import require_financial_project_access
     from program_settings_persistence import load_company_info
     from submittal_form_pdf import build_submittal_review_sheet_pdf
+    import io
+
     submittal = Submittal.query.get_or_404(submittal_id)
     try:
         assert_submittal_read_allowed(current_user)

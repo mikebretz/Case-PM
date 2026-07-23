@@ -14,6 +14,15 @@ SUBMITTAL_STAMP_BOXES = {
     'engineer': fitz.Rect(309.567, 603.832, 557.567, 755.493),
 }
 
+SUBMITTAL_DECISION_STATUSES = frozenset({
+    'No Exceptions Taken',
+    'Reviewed as Noted',
+    'Revise & Resubmit',
+    'Rejected',
+    'Submitted to Architect',
+    'Closed',
+})
+
 
 def _format_spec_digits(spec_section: str) -> str:
     digits = ''.join(ch for ch in str(spec_section or '') if ch.isdigit())
@@ -226,6 +235,43 @@ def _draw_contractor_review_stamp(page, rect, stamp: dict, *, upload_folder: str
     )
 
 
+def _draw_submittal_status_banner(page, status: str) -> None:
+    """Draw architect decision status above the stamp boxes on the cover page."""
+    label = (status or '').strip()
+    if not label or label not in SUBMITTAL_DECISION_STATUSES:
+        return
+    banner = fitz.Rect(309.567, 232.0, 557.567, 256.0)
+    colors = {
+        'No Exceptions Taken': ((0.05, 0.45, 0.28), (0.88, 0.98, 0.93)),
+        'Reviewed as Noted': ((0.05, 0.42, 0.45), (0.88, 0.97, 0.97)),
+        'Revise & Resubmit': ((0.55, 0.28, 0.05), (1.0, 0.96, 0.9)),
+        'Rejected': ((0.55, 0.1, 0.1), (1.0, 0.94, 0.94)),
+        'Submitted to Architect': ((0.35, 0.2, 0.55), (0.95, 0.92, 0.99)),
+        'Closed': ((0.25, 0.25, 0.25), (0.94, 0.94, 0.94)),
+    }
+    border, fill = colors.get(label, ((0.2, 0.2, 0.2), (0.95, 0.95, 0.95)))
+    shape = page.new_shape()
+    shape.draw_rect(banner)
+    shape.finish(color=border, width=1.5, fill=fill)
+    shape.commit()
+    text_x = banner.x0 + 8
+    text_y = banner.y0 + 15
+    page.insert_text(
+        (text_x, text_y),
+        'ARCHITECT / ENGINEER DECISION:',
+        fontsize=7,
+        fontname='helv',
+        color=(0.35, 0.35, 0.35),
+    )
+    page.insert_text(
+        (text_x, text_y + 12),
+        label.upper(),
+        fontsize=10,
+        fontname='helv',
+        color=border,
+    )
+
+
 def _draw_uploaded_approval_stamp(page, rect, stamp: dict, *, upload_folder: str | None = None, fallback_label: str = 'APPROVED') -> None:
     """Draw a user's uploaded approval stamp image in a stamp field area."""
     if not rect:
@@ -342,6 +388,9 @@ def _fill_submittal_cover_page(
             page, SUBMITTAL_STAMP_BOXES['engineer'], engineer_stamp,
             upload_folder=upload_folder, fallback_label='ENGINEER',
         )
+    status = (getattr(submittal, 'status', None) or '').strip()
+    if status in SUBMITTAL_DECISION_STATUSES:
+        _draw_submittal_status_banner(page, status)
     return SUBMITTAL_STAMP_BOXES['contractor']
 
 
@@ -465,12 +514,20 @@ def _read_attachment_bytes(attachment: dict, *, submittal_id: int, project_id: i
         return fh.read()
 
 
-def _append_bytes_to_pdf(merged: fitz.Document, data: bytes) -> None:
+def _append_bytes_to_pdf(
+    merged: fitz.Document,
+    data: bytes,
+    *,
+    markups=None,
+) -> None:
     if not data:
         return
     if _is_pdf_bytes(data):
         src = fitz.open(stream=data, filetype='pdf')
         try:
+            if markups:
+                from document_markup_pdf import burn_markups_onto_pdf_doc
+                burn_markups_onto_pdf_doc(src, markups)
             merged.insert_pdf(src)
         finally:
             src.close()
@@ -480,6 +537,9 @@ def _append_bytes_to_pdf(merged: fitz.Document, data: bytes) -> None:
         img_pdf = image_bytes_to_pdf(data)
         src = fitz.open(stream=img_pdf, filetype='pdf')
         try:
+            if markups:
+                from document_markup_pdf import burn_markups_onto_pdf_doc
+                burn_markups_onto_pdf_doc(src, markups)
             merged.insert_pdf(src)
         finally:
             src.close()
@@ -493,6 +553,7 @@ def build_submittal_print_pdf(
     *,
     upload_folder: str,
     Document=None,
+    DocumentMarkup=None,
     template_path: str | None = None,
 ) -> bytes:
     """Filled submittal cover (with review stamp when applicable), comments page, then attachments."""
@@ -541,7 +602,11 @@ def build_submittal_print_pdf(
                     upload_folder=upload_folder,
                     Document=Document,
                 )
-                _append_bytes_to_pdf(doc, data)
+                markups = None
+                doc_id = attachment.get('document_id')
+                if doc_id and DocumentMarkup is not None:
+                    markups = DocumentMarkup.query.filter_by(document_id=int(doc_id)).all()
+                _append_bytes_to_pdf(doc, data, markups=markups)
             except Exception:
                 continue
         return doc.tobytes()

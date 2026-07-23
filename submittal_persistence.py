@@ -16,6 +16,8 @@ SUBMITTAL_BALL = {
     'Reviewed as Noted': 'Project Manager',
 }
 
+APPROVED_SUBMITTAL_STATUSES = frozenset({'No Exceptions Taken', 'Reviewed as Noted'})
+
 
 def ensure_submittal_schema(engine, db):
     from sqlalchemy import inspect, text
@@ -47,6 +49,39 @@ def _parse_json(raw, default):
         return json.loads(raw)
     except (TypeError, json.JSONDecodeError):
         return default
+
+
+def submittal_is_approved_locked(submittal) -> bool:
+    """True when architect has approved and the submittal must not be edited."""
+    status = (getattr(submittal, 'status', None) or '').strip()
+    if status in APPROVED_SUBMITTAL_STATUSES or status == 'Closed':
+        return True
+    details = _parse_json(getattr(submittal, 'details_json', None), {})
+    return bool(details.get('approvedLocked'))
+
+
+def submittal_links_document(submittal, document_id) -> bool:
+    if not submittal or document_id is None:
+        return False
+    attachments = _parse_json(getattr(submittal, 'attachments_json', None), [])
+    target = int(document_id)
+    return any(
+        isinstance(att, dict) and att.get('document_id') == target
+        for att in attachments
+    )
+
+
+def document_linked_to_locked_submittal(document_id, Submittal=None, *, project_id=None):
+    """Return the locked submittal that references this document, if any."""
+    if not document_id or Submittal is None:
+        return None
+    q = Submittal.query
+    if project_id:
+        q = q.filter_by(project_id=int(project_id))
+    for row in q.all():
+        if submittal_links_document(row, document_id) and submittal_is_approved_locked(row):
+            return row
+    return None
 
 
 def submittal_to_dict(submittal):
@@ -114,6 +149,7 @@ def submittal_to_ui_item(submittal):
         'notifiedDate': details.get('notifiedDate') or '',
         'baseNumber': details.get('baseNumber') or d.get('number') or '',
         'parentSubmittalId': details.get('parentSubmittalId'),
+        'approvedLocked': bool(details.get('approvedLocked')) or (d.get('status') in APPROVED_SUBMITTAL_STATUSES),
     }
 
 
@@ -201,6 +237,10 @@ def _record_design_review_stamp(submittal, user, decision):
         details['engineerReviewStamp'] = stamp
     else:
         details['architectReviewStamp'] = stamp
+    if decision in APPROVED_SUBMITTAL_STATUSES:
+        details['approvedLocked'] = True
+        details['approvedLockedAt'] = datetime.utcnow().isoformat()
+        details['approvedDecision'] = decision
     submittal.details_json = json.dumps(details)
 
 
@@ -507,6 +547,11 @@ def submittal_workflow_action(submittal, action, user, body=None, *, Company=Non
             raise ValueError('Only closed or rejected submittals can be reopened')
         if not _user_can_act(user, 'Project Manager'):
             raise ValueError('Project Manager role required to reopen submittal')
+        details = _parse_json(getattr(submittal, 'details_json', None), {})
+        details.pop('approvedLocked', None)
+        details.pop('approvedLockedAt', None)
+        details.pop('approvedDecision', None)
+        submittal.details_json = json.dumps(details)
         submittal.status = 'Draft'
         submittal.ball_in_court = SUBMITTAL_BALL['Draft']
         return submittal.status, None
