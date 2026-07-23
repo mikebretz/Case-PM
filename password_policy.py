@@ -39,8 +39,11 @@ def validate_password(password: str, *, email: str = '', names: tuple[str, ...] 
     lower = pwd.lower()
     if lower in COMMON_PASSWORDS:
         return False, 'That password is too common. Choose a stronger password.'
-    if email and email.split('@')[0].lower() in lower:
-        return False, 'Password must not contain your email address.'
+    if email:
+        local = email.split('@')[0].strip().lower()
+        # Skip very short local parts (e.g. m@domain.com) — a single letter matches too many passwords.
+        if len(local) >= 3 and local in lower:
+            return False, 'Password must not contain your email address.'
     for name in names:
         n = (name or '').strip().lower()
         if len(n) >= 3 and n in lower:
