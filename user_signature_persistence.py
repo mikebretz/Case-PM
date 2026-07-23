@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import uuid
 from datetime import datetime
 
 SIGNATURE_UPLOAD_DIR = os.path.join('uploads', 'signatures')
@@ -32,6 +33,7 @@ def ensure_user_signature_schema(db):
         'stamp_path': 'VARCHAR(300)',
         'stamp_hash': 'VARCHAR(64)',
         'stamp_set_at': 'DATETIME',
+        'user_stamps_json': 'TEXT',
     }
     for col, typedef in additions.items():
         if col not in existing:
@@ -92,6 +94,57 @@ def signature_public_view(user):
     }
 
 
+def _user_stamps_list(user) -> list[dict]:
+    raw = getattr(user, 'user_stamps_json', None)
+    stamps = _parse_json(raw, [])
+    if stamps:
+        return stamps
+    if getattr(user, 'stamp_path', None):
+        return [{
+            'id': 'primary',
+            'label': 'Approval Stamp',
+            'path': user.stamp_path,
+            'hash': user.stamp_hash,
+            'set_at': user.stamp_set_at.isoformat() if getattr(user, 'stamp_set_at', None) else None,
+            'is_primary': True,
+        }]
+    return []
+
+
+def _persist_user_stamps(user, stamps: list[dict]) -> None:
+    user.user_stamps_json = json.dumps(stamps[:20])
+    primary = next((s for s in stamps if s.get('is_primary')), stamps[0] if stamps else None)
+    if primary:
+        user.stamp_path = primary.get('path')
+        user.stamp_hash = primary.get('hash')
+        user.stamp_set_at = datetime.utcnow()
+    else:
+        user.stamp_path = None
+        user.stamp_hash = None
+        user.stamp_set_at = None
+
+
+def stamps_public_view(user):
+    uid = getattr(user, 'id', None)
+    stamps = []
+    for s in _user_stamps_list(user):
+        sid = s.get('id')
+        stamps.append({
+            'id': sid,
+            'label': s.get('label') or 'Stamp',
+            'hash': s.get('hash'),
+            'set_at': s.get('set_at'),
+            'is_primary': bool(s.get('is_primary')),
+            'image_url': f'/api/users/{uid}/stamps/{sid}/image' if sid and s.get('path') else None,
+        })
+    primary = next((s for s in stamps if s.get('is_primary')), stamps[0] if stamps else None)
+    return {
+        'stamps': stamps,
+        'has_stamp': bool(stamps),
+        'stamp': primary or stamp_public_view(user),
+    }
+
+
 def stamp_public_view(user):
     """Safe approval-stamp metadata for document stamping."""
     if not user or not getattr(user, 'stamp_hash', None):
@@ -112,19 +165,68 @@ def stamp_public_view(user):
     }
 
 
-def save_user_stamp(user, data_url):
+def save_user_stamp(user, data_url, *, label=None, stamp_id=None, make_primary=False):
     """Persist PNG/JPEG approval stamp — only the user may update their own."""
     png_bytes = _decode_png_data_url(data_url)
     stamp_hash = _sha256_bytes(png_bytes)
     os.makedirs(STAMP_UPLOAD_DIR, exist_ok=True)
-    path = os.path.join(STAMP_UPLOAD_DIR, f'user_{user.id}.png')
+    sid = (stamp_id or str(uuid.uuid4()))[:36]
+    path = os.path.join(STAMP_UPLOAD_DIR, f'user_{user.id}_{sid}.png')
     with open(path, 'wb') as fh:
         fh.write(png_bytes)
-    user.stamp_path = path
-    user.stamp_hash = stamp_hash
-    user.stamp_set_at = datetime.utcnow()
-    append_signature_audit(user, 'stamp_saved', {'hash': stamp_hash})
-    return stamp_public_view(user)
+    stamps = _user_stamps_list(user)
+    entry = {
+        'id': sid,
+        'label': (label or 'Approval Stamp').strip()[:80] or 'Approval Stamp',
+        'path': path,
+        'hash': stamp_hash,
+        'set_at': datetime.utcnow().isoformat(),
+        'is_primary': make_primary or not stamps,
+    }
+    replaced = False
+    for i, s in enumerate(stamps):
+        if s.get('id') == sid:
+            stamps[i] = entry
+            replaced = True
+            break
+    if not replaced:
+        stamps.append(entry)
+    if make_primary:
+        for s in stamps:
+            s['is_primary'] = s.get('id') == sid
+    elif not any(s.get('is_primary') for s in stamps) and stamps:
+        stamps[0]['is_primary'] = True
+    _persist_user_stamps(user, stamps)
+    append_signature_audit(user, 'stamp_saved', {'hash': stamp_hash, 'stamp_id': sid})
+    return stamps_public_view(user)
+
+
+def delete_user_stamp(user, stamp_id):
+    stamps = [s for s in _user_stamps_list(user) if s.get('id') != stamp_id]
+    if not stamps:
+        _persist_user_stamps(user, [])
+    else:
+        if not any(s.get('is_primary') for s in stamps):
+            stamps[0]['is_primary'] = True
+        _persist_user_stamps(user, stamps)
+    append_signature_audit(user, 'stamp_deleted', {'stamp_id': stamp_id})
+    return stamps_public_view(user)
+
+
+def stamp_file_path(user, stamp_id=None):
+    stamps = _user_stamps_list(user)
+    if stamp_id:
+        match = next((s for s in stamps if s.get('id') == stamp_id), None)
+        return match.get('path') if match else None
+    primary = next((s for s in stamps if s.get('is_primary')), stamps[0] if stamps else None)
+    if primary:
+        return primary.get('path')
+    return getattr(user, 'stamp_path', None)
+
+
+def save_user_stamp_legacy(user, data_url):
+    """Backward-compatible single-stamp save."""
+    return save_user_stamp(user, data_url, make_primary=True)
 
 
 def append_signature_audit(user, event_type, details=None):

@@ -84,6 +84,24 @@ def document_linked_to_locked_submittal(document_id, Submittal=None, *, project_
     return None
 
 
+def save_physical_print_upload(submittal, kind: str, entry: dict) -> dict:
+    """Persist a physically scanned cover page or marked-up document for print override."""
+    details = _parse_json(getattr(submittal, 'details_json', None), {})
+    pkg = details.get('physicalPrintPackage') or {}
+    if kind == 'cover':
+        pkg['cover'] = entry
+    elif kind == 'marked_document':
+        docs = list(pkg.get('marked_documents') or [])
+        docs.append(entry)
+        pkg['marked_documents'] = docs
+    else:
+        raise ValueError('kind must be cover or marked_document')
+    details['physicalPrintPackage'] = pkg
+    submittal.details_json = json.dumps(details)
+    submittal.updated_at = datetime.utcnow()
+    return pkg
+
+
 def submittal_to_dict(submittal):
     details = _parse_json(getattr(submittal, 'details_json', None), {})
     return {
@@ -150,6 +168,7 @@ def submittal_to_ui_item(submittal):
         'baseNumber': details.get('baseNumber') or d.get('number') or '',
         'parentSubmittalId': details.get('parentSubmittalId'),
         'approvedLocked': bool(details.get('approvedLocked')) or (d.get('status') in APPROVED_SUBMITTAL_STATUSES),
+        'physicalPrintPackage': details.get('physicalPrintPackage') or {},
     }
 
 

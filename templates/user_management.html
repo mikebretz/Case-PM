@@ -709,13 +709,15 @@
                         <i class="fa-solid fa-stamp text-violet-400"></i>
                         <label class="block text-sm text-zinc-300 font-medium">Approval stamp</label>
                     </div>
-                    <p class="text-[11px] text-zinc-500 mb-3">Upload a round or rectangular approval stamp image (PNG/JPG). Used on submittal cover sheets for Architect, Engineer, and similar formal reviews.</p>
+                    <p class="text-[11px] text-zinc-500 mb-3">Upload one or more approval stamp images (PNG/JPG). Only you can add or change your stamps — admins cannot override.</p>
+                    <div id="stampList" class="space-y-2 mb-3"></div>
                     <div id="stampPreview" class="mb-3 min-h-[96px] bg-white rounded-md border border-zinc-700 p-3 flex items-center justify-center">
-                        <span class="text-xs text-zinc-500">No stamp uploaded</span>
+                        <span class="text-xs text-zinc-500">Select a stamp below or upload a new one</span>
                     </div>
+                    <input type="text" id="stampLabelInput" placeholder="Stamp label (e.g. Approved, Reviewed)" class="w-full mb-2 bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm">
                     <input type="file" id="stampUpload" accept="image/*" onchange="previewStampUpload(this)" class="text-sm file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white hover:file:bg-zinc-600">
                     <div class="flex flex-wrap gap-2 mt-3" id="stampEditControls">
-                        <button type="button" onclick="saveStampToServer()" class="px-4 py-1.5 text-xs bg-violet-600 hover:bg-violet-500 rounded font-medium">Save My Stamp</button>
+                        <button type="button" onclick="saveStampToServer()" class="px-4 py-1.5 text-xs bg-violet-600 hover:bg-violet-500 rounded font-medium">Add / Update Stamp</button>
                     </div>
                     <div id="stampUploadStatus" class="text-xs text-emerald-400 mt-2"></div>
                     <div id="stampHashDisplay" class="text-[10px] font-mono text-zinc-500 mt-1"></div>
@@ -787,6 +789,8 @@
     let companies = [];
     let currentSignatureDataURL = null;
     let currentStampDataURL = null;
+    let currentStampEditId = null;
+    let myStampsCache = [];
     let currentCertificateFileName = null;
     let currentEditingUserId = null;
     let phoneNumbers = [];
@@ -1606,24 +1610,55 @@
         preview.innerHTML = `<img src="${src}" alt="Approval stamp" class="max-h-28 max-w-full object-contain">`;
     }
 
+    function renderStampList(stamps) {
+        const list = document.getElementById('stampList');
+        if (!list) return;
+        myStampsCache = stamps || [];
+        if (!myStampsCache.length) {
+            list.innerHTML = '<p class="text-xs text-zinc-500">No stamps uploaded yet.</p>';
+            return;
+        }
+        list.innerHTML = myStampsCache.map(s => `
+            <div class="flex items-center gap-2 p-2 rounded border border-zinc-700 bg-zinc-800/50">
+                ${s.image_url ? `<img src="${s.image_url}?t=${Date.now()}" class="h-10 w-10 object-contain bg-white rounded" alt="">` : ''}
+                <div class="flex-1 min-w-0">
+                    <div class="text-xs font-medium text-zinc-200">${(s.label || 'Stamp').replace(/</g,'&lt;')}${s.is_primary ? ' <span class="text-violet-400">(primary)</span>' : ''}</div>
+                    <div class="text-[10px] text-zinc-500 font-mono truncate">${(s.hash || '').slice(0, 16)}…</div>
+                </div>
+                <button type="button" class="text-[10px] px-2 py-1 bg-zinc-700 rounded" onclick="previewExistingStamp('${s.id}')">View</button>
+                <button type="button" class="text-[10px] px-2 py-1 bg-red-900/50 text-red-300 rounded" onclick="deleteStampFromServer('${s.id}')">Remove</button>
+            </div>`).join('');
+    }
+
+    function previewExistingStamp(stampId) {
+        const s = myStampsCache.find(x => x.id === stampId);
+        if (!s?.image_url) return;
+        currentStampEditId = stampId;
+        document.getElementById('stampLabelInput').value = s.label || '';
+        renderStampPreview(s.image_url + '?t=' + Date.now());
+    }
+
     async function loadServerStampForUser(userId) {
         const localUser = users.find(u => u.id == userId);
         const serverId = resolveServerUserId(localUser);
-        if (!serverId || typeof CasePMEsign === 'undefined' || !CasePMEsign.fetchUserStamp) return null;
+        if (!serverId || typeof CasePMEsign === 'undefined') return null;
         try {
-            const stamp = await CasePMEsign.fetchUserStamp(serverId);
-            const hashEl = document.getElementById('stampHashDisplay');
-            if (stamp?.has_stamp && stamp.image_url) {
-                currentStampDataURL = stamp.image_url;
-                renderStampPreview(stamp.image_url + '?t=' + Date.now());
-                if (hashEl && stamp.hash) hashEl.textContent = `Stamp hash: ${stamp.hash}`;
+            const data = CasePMEsign.fetchMyStamps
+                ? await CasePMEsign.fetchMyStamps()
+                : { stamps: [(await CasePMEsign.fetchUserStamp(serverId))].filter(s => s?.has_stamp) };
+            const stamps = data.stamps || [];
+            renderStampList(stamps);
+            const primary = stamps.find(s => s.is_primary) || stamps[0];
+            if (primary?.image_url) {
+                currentStampDataURL = primary.image_url;
+                renderStampPreview(primary.image_url + '?t=' + Date.now());
             } else {
                 currentStampDataURL = null;
                 renderStampPreview(null);
-                if (hashEl) hashEl.textContent = '';
             }
-            return stamp;
+            return data;
         } catch (_) {
+            renderStampList([]);
             renderStampPreview(null);
             return null;
         }
@@ -1642,18 +1677,41 @@
             return;
         }
         const status = document.getElementById('stampUploadStatus');
+        const label = document.getElementById('stampLabelInput')?.value?.trim() || 'Approval Stamp';
         try {
-            const saved = await CasePMEsign.saveMyStamp({ stamp_png: currentStampDataURL });
+            const saved = CasePMEsign.saveStampEntry
+                ? await CasePMEsign.saveStampEntry({ stamp_png: currentStampDataURL, label, stamp_id: currentStampEditId, make_primary: !myStampsCache.length })
+                : await CasePMEsign.saveMyStamp({ stamp_png: currentStampDataURL });
             if (status) {
                 status.textContent = 'Approval stamp saved to your profile.';
                 setTimeout(() => { if (status.textContent.includes('saved')) status.textContent = ''; }, 3000);
             }
-            const hashEl = document.getElementById('stampHashDisplay');
-            if (hashEl && saved.hash) hashEl.textContent = `Stamp hash: ${saved.hash}`;
-            logUserAudit('STAMP_SAVED', editingId, { hash: saved.hash });
+            renderStampList(saved.stamps || []);
+            currentStampEditId = null;
+            document.getElementById('stampUpload').value = '';
+            logUserAudit('STAMP_SAVED', editingId, { label });
         } catch (err) {
             if (status) status.textContent = '';
             showCenteredAlert(err.message || 'Could not save stamp', 'error');
+        }
+    }
+
+    async function deleteStampFromServer(stampId) {
+        const editingId = parseInt(document.getElementById('userId')?.value || '0');
+        const editingUser = users.find(u => u.id === editingId);
+        if ((editingUser?.email || '').toLowerCase() !== currentUserEmail.toLowerCase()) {
+            showCenteredAlert('Only the user themselves can remove a stamp.', 'warning');
+            return;
+        }
+        if (!confirm('Remove this stamp from your profile?')) return;
+        try {
+            const saved = await CasePMEsign.deleteStampEntry(stampId);
+            renderStampList(saved.stamps || []);
+            currentStampEditId = null;
+            currentStampDataURL = null;
+            renderStampPreview(null);
+        } catch (err) {
+            showCenteredAlert(err.message || 'Could not remove stamp', 'error');
         }
     }
 

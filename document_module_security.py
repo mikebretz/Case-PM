@@ -157,9 +157,6 @@ def assert_submittal_edit_allowed(user, submittal=None, *, Company=None, db=None
 
 def assert_submittal_comment_allowed(user, submittal, *, Company=None, db=None) -> None:
     """Anyone who can read a visible submittal may post review comments."""
-    from submittal_persistence import submittal_is_approved_locked
-    if submittal_is_approved_locked(submittal):
-        raise PermissionError('This submittal is approved and locked; comments cannot be added.')
     if _is_privileged(user):
         return
     assert_submittal_read_allowed(user)

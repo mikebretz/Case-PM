@@ -104,7 +104,7 @@ APPROVAL_PATH_RE = re.compile(r'^/api/approvals/\d+/(decide|approve|reject)', re
 USERS_ADMIN_PATH_RE = re.compile(r'^/api/users(?:/\d+)?(?:/permissions|/reset-password)?$', re.I)
 # Assigned subs with view-only module access may use assignee write routes.
 SUBMITTAL_ASSIGNEE_WRITE_RE = re.compile(
-    r'^/api/submittals(?:/sync|/\d+/(?:comments|attachments|workflow|signature|review-submissions))$',
+    r'^/api/submittals(?:/sync|/\d+/(?:comments|attachments(?:/viewer-doc|/document/\d+(?:/file|/markups)?)?|workflow|signature|review-submissions|physical-print))$',
     re.I,
 )
 RFI_COMMENT_WRITE_RE = re.compile(r'^/api/rfis/\d+/comments$', re.I)

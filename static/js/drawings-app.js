@@ -743,6 +743,7 @@
     documentViewerPage: false,
     embeddedViewer: false,
     markupReadonly: false,
+    submittalViewerId: null,
     pendingDrag: null,
     lastPinTap: { key: '', t: 0 },
     textDialogCtx: null,
@@ -1027,12 +1028,20 @@
   }
 
   function markupCollectionUrl() {
-    if (state.openDocument) return `/api/documents/${state.openDocument.id}/markups`;
+    if (state.openDocument) {
+      if (state.submittalViewerId) {
+        return `/api/submittals/${state.submittalViewerId}/attachments/document/${state.openDocument.id}/markups`;
+      }
+      return `/api/documents/${state.openDocument.id}/markups`;
+    }
     if (state.openDrawing) return `/api/drawings/${state.openDrawing.id}/markups`;
     return null;
   }
 
   function markupItemUrl(markupId) {
+    if (state.openDocument && state.submittalViewerId) {
+      return `/api/documents/markups/${markupId}`;
+    }
     if (state.openDocument) return `/api/documents/markups/${markupId}`;
     return `/api/drawings/markups/${markupId}`;
   }
@@ -1041,7 +1050,10 @@
     if (!viewerIsOpen()) return;
     try {
       if (state.openDocument) {
-        const json = await api(`/api/documents/${state.openDocument.id}/markups`);
+        const url = state.submittalViewerId
+          ? `/api/submittals/${state.submittalViewerId}/attachments/document/${state.openDocument.id}/markups`
+          : `/api/documents/${state.openDocument.id}/markups`;
+        const json = await api(url);
         state.markups = json.markups || [];
       } else {
         const detail = await api(`/api/drawings/${state.openDrawing.id}`);
@@ -2581,7 +2593,11 @@
   async function openDocumentViewer(docId) {
     try {
       state.viewerContext = 'document';
-      const json = await api(`/api/documents/${docId}?markups=1`);
+      const sid = state.submittalViewerId;
+      const endpoint = sid
+        ? `/api/submittals/${sid}/attachments/document/${docId}`
+        : `/api/documents/${docId}?markups=1`;
+      const json = await api(endpoint);
       const doc = json.document;
       if (!doc) throw new Error('Document not found');
       state.openDocument = doc;
@@ -2623,6 +2639,8 @@
     state.documentViewerPage = true;
     state.embeddedViewer = params.get('embedded') === '1';
     state.markupReadonly = params.get('readonly') === '1';
+    const submittalId = parseInt(params.get('submittal_id'), 10);
+    state.submittalViewerId = Number.isFinite(submittalId) ? submittalId : null;
     state.viewerContext = 'document';
     document.getElementById('mainContent')?.classList.add('main-content-doc-viewer');
     document.body.classList.add('doc-viewer-active');

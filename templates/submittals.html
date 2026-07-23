@@ -114,18 +114,28 @@ function submittalReviewPartyLabel() {
 }
 function submittalCanCommentOn(item) {
     if (!item) return false;
-    if (submittalIsApprovedLocked(item)) return false;
     if (SUBMITTAL_ACCESS.isSubPortal) return submittalItemAssignedToMe(item);
     return true;
 }
+function submittalCanUploadAttachment(item) {
+    if (!item || submittalIsApprovedLocked(item)) return false;
+    if (SUBMITTAL_ACCESS.isSubPortal) return submittalCanFillAsAssignee(item);
+    return submittalCanModifyItem(item);
+}
 function enableSubmittalAssigneeEditableFields() {
-    ['modalImpactNotes', 'submittalAttachmentInput', 'reviewCommentInput'].forEach(id => {
+    ['modalImpactNotes', 'reviewCommentInput'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         el.disabled = false;
         el.readOnly = false;
         el.classList.remove('submittal-field-locked');
     });
+    const attachInput = document.getElementById('submittalAttachmentInput');
+    if (attachInput) {
+        const canUpload = submittalCanUploadAttachment(currentModalItem);
+        attachInput.disabled = !canUpload;
+        attachInput.classList.toggle('hidden', !canUpload);
+    }
     const postBtn = document.getElementById('submittalPostCommentBtn');
     if (postBtn) postBtn.disabled = false;
 }
@@ -148,9 +158,12 @@ function applySubmittalModalReadOnly(readOnly) {
     const mainCol = document.getElementById('submittalDetailMainCol');
     if (!mainCol) return;
     const canFill = submittalCanFillAsAssignee(currentModalItem);
-    const assigneeEditable = new Set(['modalImpactNotes', 'submittalAttachmentInput']);
+    const assigneeEditable = new Set(['modalImpactNotes']);
+    if (submittalCanUploadAttachment(currentModalItem)) assigneeEditable.add('submittalAttachmentInput');
+    const alwaysEditable = new Set(['reviewCommentInput', 'submittalPostCommentBtn', 'submittalReviewSubmissionInput']);
     mainCol.querySelectorAll('input, select, textarea, button').forEach(el => {
         if (el.id === 'submittalModalSaveBtn') return;
+        if (alwaysEditable.has(el.id)) return;
         if (canFill && assigneeEditable.has(el.id)) return;
         if (readOnly && !canFill) {
             if (el.tagName === 'BUTTON' && (el.textContent || '').toLowerCase().includes('save')) {
@@ -268,9 +281,11 @@ function updateSubmittalAssigneeAssignmentDisplay(isAssignee) {
 }
 function submittalCanDeleteAttachment(att) {
     if (!att || !currentModalItem) return false;
+    if (SUBMITTAL_ACCESS.isSubPortal) return false;
+    if (submittalIsApprovedLocked(currentModalItem)) return false;
     const uid = SUBMITTAL_ACCESS.userId;
     if (att.uploaded_by_id != null && String(att.uploaded_by_id) === String(uid)) return true;
-    if (!SUBMITTAL_ACCESS.isSubPortal && submittalCanModifyItem(currentModalItem)) return true;
+    if (submittalCanModifyItem(currentModalItem)) return true;
     return false;
 }
 function refreshSubmittalActionButtons() {
@@ -1095,6 +1110,20 @@ function refreshSubmittalActionButtons() {
                         <button type="button" onclick="recordArchitectDecision('Rejected')" class="px-3 py-2 bg-red-800 hover:bg-red-700 rounded-lg text-sm font-semibold">Rejected</button>
                     </div>
                     <textarea id="submittalOfficialReviewInput" rows="3" placeholder="Official review comments for the review sheet (Architect / Engineer / Owner)…" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm mb-2"></textarea>
+                    <div id="submittalPhysicalPrintUploads" class="hidden mt-3 p-3 rounded-lg border border-violet-800/50 bg-violet-950/20">
+                        <div class="text-xs font-semibold text-violet-300 mb-2">Physical stamp &amp; scan (supersedes auto-generated print)</div>
+                        <p class="text-[11px] text-zinc-500 mb-3">Print the package, stamp physically, then upload the scanned cover page and marked-up documents. Uploaded files replace the system-generated print.</p>
+                        <div class="flex flex-wrap gap-3 items-end">
+                            <label class="text-xs text-zinc-400">Cover page (PDF/image)
+                                <input type="file" id="submittalPhysicalCoverInput" accept=".pdf,image/*" class="block mt-1 text-xs text-zinc-400 file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-zinc-700 file:text-white">
+                            </label>
+                            <label class="text-xs text-zinc-400">Marked-up document(s)
+                                <input type="file" id="submittalPhysicalMarkedInput" accept=".pdf,image/*" multiple class="block mt-1 text-xs text-zinc-400 file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-zinc-700 file:text-white">
+                            </label>
+                            <button type="button" onclick="uploadSubmittalPhysicalPrintFiles()" class="px-3 py-1.5 bg-violet-700 hover:bg-violet-600 rounded text-xs font-semibold">Upload Scans</button>
+                        </div>
+                        <div id="submittalPhysicalPrintStatus" class="text-[11px] text-zinc-500 mt-2"></div>
+                    </div>
                 </div>
 
                 <div class="mt-6 pt-4 border-t border-zinc-700">
@@ -2253,7 +2282,7 @@ function updateSubmittalWorkflowActions() {
         submitDesignBtn.classList.toggle('hidden', !(status === 'Returned from Subcontractor' && canAct && !SUBMITTAL_ACCESS.isSubPortal));
     }
     if (printReviewBtn) {
-        printReviewBtn.classList.toggle('hidden', !item.serverId);
+        printReviewBtn.classList.toggle('hidden', !item.serverId || SUBMITTAL_ACCESS.isSubPortal);
     }
     if (panel) {
         const showPanel = canAct && (
@@ -2266,6 +2295,19 @@ function updateSubmittalWorkflowActions() {
     if (architectBtns) {
         architectBtns.classList.toggle('hidden', !(status === 'Submitted to Architect' && canAct));
     }
+    const physicalUploads = document.getElementById('submittalPhysicalPrintUploads');
+    if (physicalUploads) {
+        const role = (SUBMITTAL_ACCESS.userRole || '').toLowerCase();
+        const isDesign = role.includes('architect') || role.includes('engineer');
+        const showPhysical = (status === 'Submitted to Architect' && (canAct || isDesign)) || (item.physicalPrintPackage && (item.physicalPrintPackage.cover || (item.physicalPrintPackage.marked_documents || []).length));
+        physicalUploads.classList.toggle('hidden', !showPhysical);
+    }
+    renderPhysicalPrintStatus(item);
+    const attachActions = document.getElementById('submittalAttachmentActions');
+    const attachInput = document.getElementById('submittalAttachmentInput');
+    const canUpload = submittalCanUploadAttachment(item);
+    if (attachActions) attachActions.classList.toggle('hidden', !canUpload);
+    if (attachInput) attachInput.disabled = !canUpload;
     if (hint) {
         if (submittalIsApprovedLocked(item)) {
             hint.textContent = 'This submittal is approved and locked. No further edits or markups are allowed.';
@@ -2424,12 +2466,63 @@ async function postReviewSubmission() {
 }
 
 async function printSubmittalReviewSheet() {
+    if (SUBMITTAL_ACCESS.isSubPortal) {
+        showCenteredAlert('Use Print to generate the full submittal package.', 'info');
+        return;
+    }
     if (!currentModalItem?.serverId) {
         showCenteredAlert('Save the submittal before printing the review sheet.', 'warning');
         return;
     }
     const url = `/api/submittals/${currentModalItem.serverId}/print-review-sheet`;
     window.open(url, '_blank');
+}
+
+async function uploadSubmittalPhysicalPrintFiles() {
+    if (!currentModalItem?.serverId) return;
+    const sid = currentModalItem.serverId;
+    const statusEl = document.getElementById('submittalPhysicalPrintStatus');
+    const coverInput = document.getElementById('submittalPhysicalCoverInput');
+    const markedInput = document.getElementById('submittalPhysicalMarkedInput');
+    try {
+        if (coverInput?.files?.length) {
+            const fd = new FormData();
+            fd.append('file', coverInput.files[0]);
+            const res = await fetch(`/api/submittals/${sid}/physical-print/cover`, { method: 'POST', body: fd, credentials: 'same-origin' });
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.error || 'Cover upload failed');
+            currentModalItem.physicalPrintPackage = json.physical_print_package;
+        }
+        if (markedInput?.files?.length) {
+            for (const file of markedInput.files) {
+                const fd = new FormData();
+                fd.append('file', file);
+                const res = await fetch(`/api/submittals/${sid}/physical-print/marked-document`, { method: 'POST', body: fd, credentials: 'same-origin' });
+                const json = await res.json();
+                if (!res.ok) throw new Error(json.error || 'Marked document upload failed');
+                currentModalItem.physicalPrintPackage = json.physical_print_package;
+            }
+        }
+        saveData();
+        renderPhysicalPrintStatus(currentModalItem);
+        if (statusEl) statusEl.textContent = 'Physical print files uploaded. They will be used when anyone prints this submittal.';
+        showCenteredAlert('Physical print uploads saved.', 'success');
+        if (coverInput) coverInput.value = '';
+        if (markedInput) markedInput.value = '';
+    } catch (err) {
+        showCenteredAlert(err.message || 'Upload failed', 'error');
+    }
+}
+
+function renderPhysicalPrintStatus(item) {
+    const el = document.getElementById('submittalPhysicalPrintStatus');
+    if (!el || !item) return;
+    const pkg = item.physicalPrintPackage || {};
+    const parts = [];
+    if (pkg.cover) parts.push(`Cover: ${pkg.cover.original_name || pkg.cover.filename}`);
+    const marked = pkg.marked_documents || [];
+    if (marked.length) parts.push(`Marked docs: ${marked.map(m => m.original_name || m.filename).join(', ')}`);
+    el.textContent = parts.length ? `On file — ${parts.join(' · ')}` : '';
 }
 
 let submittalAttachmentCache = [];
@@ -2462,7 +2555,7 @@ async function openSubmittalAttachmentMarkup(serverId, idx) {
         const json = await res.json();
         if (!res.ok) throw new Error(json.error || 'Could not open attachment viewer');
         const pid = getSubmittalProjectId();
-        const params = new URLSearchParams({ doc_id: String(json.document_id), embedded: '1' });
+        const params = new URLSearchParams({ doc_id: String(json.document_id), embedded: '1', submittal_id: String(serverId) });
         if (pid) params.set('project_id', String(pid));
         if (submittalIsApprovedLocked(currentModalItem)) params.set('readonly', '1');
         if (titleEl) titleEl.textContent = json.name || att.original_name || att.filename || 'Attachment';
