@@ -84,6 +84,7 @@ API_PREFIX_MODULE = [
 API_AUTH_ONLY_PREFIXES = (
     '/api/users/me/',
     '/api/users/list',
+    '/api/internal-messages/contacts',
     '/api/current-project',
     '/api/notifications',
     '/api/stats',

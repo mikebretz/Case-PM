@@ -552,6 +552,58 @@ def register_workflow(app, _db, models):
                 '_detail': str(exc),
             })
 
+    @app.route('/api/internal-messages/contacts')
+    @login_required
+    def api_internal_message_contacts():
+        from access_control import user_email_internal_only
+        from document_module_security import is_staff_portal_user
+        from project_workflow_users import build_internal_message_contacts
+
+        project_id = request.args.get('project_id', type=int)
+        if not project_id:
+            try:
+                from app import get_current_project_id
+                project_id = get_current_project_id()
+            except Exception:
+                project_id = None
+
+        if is_staff_portal_user(current_user) and not user_email_internal_only(current_user):
+            users = User.query.filter_by(status='Active').order_by(User.first_name, User.last_name).limit(500).all()
+            contacts = []
+            for user in users:
+                if user.id == current_user.id:
+                    continue
+                name = f'{getattr(user, "first_name", "")} {getattr(user, "last_name", "")}'.strip()
+                if not name:
+                    name = (getattr(user, 'full_name', None) or getattr(user, 'email', None) or '').strip()
+                contacts.append({
+                    'id': user.id,
+                    'user_id': user.id,
+                    'name': name,
+                    'email': (getattr(user, 'email', None) or '').strip(),
+                    'company': (getattr(user, 'company', None) or '').strip(),
+                    'phone': (getattr(user, 'phone', None) or '').strip(),
+                    'position': (getattr(user, 'job_title', None) or '').strip(),
+                    'group': 'staff',
+                })
+            return jsonify({'ok': True, 'scoped': False, 'project_id': project_id, 'contacts': contacts})
+
+        project = Project.query.get(project_id) if project_id else None
+        if project_id and project is None:
+            return jsonify({'error': 'Invalid project_id'}), 404
+        if project_id:
+            from project_access import user_can_access_project
+            if not user_can_access_project(current_user, project_id, Project):
+                return jsonify({'error': 'You do not have access to this project.'}), 403
+
+        contacts = build_internal_message_contacts(
+            project,
+            User,
+            Company=Company,
+            exclude_user_id=current_user.id,
+        )
+        return jsonify({'ok': True, 'scoped': True, 'project_id': project_id, 'contacts': contacts})
+
     @app.route('/api/internal-messages')
     @login_required
     def api_internal_messages():

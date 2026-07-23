@@ -276,9 +276,25 @@
     ];
   }
 
+  function syncContactsFromUsers() {
+    contacts = (ctx.users || []).map((u, idx) => ({
+      id: u.id || `contact_${idx}`,
+      name: u.name || u.full_name || u.email || '',
+      email: u.email || '',
+      company: u.company || '',
+      phone: u.phone || '',
+      position: u.position || '',
+      group: u.group || 'project',
+    }));
+  }
+
   function loadAll() {
     settings = { ...DEFAULT_SETTINGS, ...loadJson(STORAGE.settings, {}) };
-    contacts = loadJson(STORAGE.contacts, null) || seedContacts();
+    if (emailInternalOnly()) {
+      syncContactsFromUsers();
+    } else {
+      contacts = loadJson(STORAGE.contacts, null) || seedContacts();
+    }
     rules = loadJson(STORAGE.rules, []);
     signatures = loadJson(STORAGE.signatures, null) || seedSignatures();
     templates = loadJson(STORAGE.templates, null) || seedTemplates();
@@ -313,7 +329,9 @@
       const data = await res.json();
       mailMessages = Array.isArray(data.messages) ? data.messages : [];
       const meta = data.meta || {};
-      if (Array.isArray(meta.contacts) && meta.contacts.length) contacts = meta.contacts;
+      if (!emailInternalOnly()) {
+        if (Array.isArray(meta.contacts) && meta.contacts.length) contacts = meta.contacts;
+      }
       if (Array.isArray(meta.rules)) rules = meta.rules;
       if (Array.isArray(meta.signatures) && meta.signatures.length) signatures = meta.signatures;
       if (Array.isArray(meta.templates) && meta.templates.length) templates = meta.templates;
@@ -1037,18 +1055,60 @@
       if (!map.has(key)) map.set(key, { name: (name || '').trim() || email, email: key });
     }
     (ctx.users || []).forEach(u => add(u.name || u.full_name, u.email));
-    try {
-      const umUsers = loadJson('users', []);
-      if (Array.isArray(umUsers)) umUsers.forEach(u => add(u.name || u.full_name, u.email));
-    } catch { /* ignore */ }
-    contacts.forEach(c => add(c.name, c.email));
-    mailMessages.forEach(m => {
-      add(m.from, m.fromEmail);
-      (m.to || []).forEach(e => add('', e));
-      (m.cc || []).forEach(e => add('', e));
-      (m.bcc || []).forEach(e => add('', e));
-    });
+    if (!emailInternalOnly()) {
+      try {
+        const umUsers = loadJson('users', []);
+        if (Array.isArray(umUsers)) umUsers.forEach(u => add(u.name || u.full_name, u.email));
+      } catch { /* ignore */ }
+      contacts.forEach(c => add(c.name, c.email));
+      mailMessages.forEach(m => {
+        add(m.from, m.fromEmail);
+        (m.to || []).forEach(e => add('', e));
+        (m.cc || []).forEach(e => add('', e));
+        (m.bcc || []).forEach(e => add('', e));
+      });
+    } else {
+      contacts.forEach(c => add(c.name, c.email));
+    }
     return [...map.values()];
+  }
+
+  function activeProjectId() {
+    const raw = global.CASEPM_ACTIVE_PROJECT_ID || localStorage.getItem('casepm_current_project_id');
+    const id = parseInt(raw, 10);
+    return id > 0 ? id : null;
+  }
+
+  async function loadInternalContacts() {
+    if (!emailInternalOnly()) return;
+    const projectId = activeProjectId();
+    const query = projectId ? `?project_id=${projectId}` : '';
+    try {
+      const res = await fetch(`/api/internal-messages/contacts${query}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const rows = Array.isArray(data.contacts) ? data.contacts : [];
+      ctx.users = rows.map(c => ({
+        id: c.user_id || c.id,
+        name: c.name || c.email,
+        email: c.email,
+        company: c.company || '',
+        position: c.position || '',
+        group: c.group || 'project',
+      }));
+      contacts = rows.map((c, idx) => ({
+        id: c.user_id || c.id || `contact_${idx}`,
+        name: c.name || c.email,
+        email: c.email,
+        company: c.company || '',
+        phone: c.phone || '',
+        position: c.position || '',
+        group: c.group || 'project',
+      }));
+    } catch (e) {
+      console.warn('Internal contacts unavailable', e);
+      syncContactsFromUsers();
+    }
   }
 
   function filterContacts(query) {
@@ -2229,14 +2289,17 @@
     await refreshInternalFromServer();
   }
 
-  function composeInternal() {
-    const to = prompt('Send internal message to (name):', 'Tom Bradley');
+  function composeInternal(prefill) {
+    const defaultTo = (prefill && prefill.to) || '';
+    const to = prompt('Send internal message to (email):', defaultTo);
+    if (!to) return;
     const subject = prompt('Subject:', 'Quick note');
     if (!subject) return;
     internalMessages.unshift({
       id: uid(), folder: 'team', type: 'message', from: ctx.userName, fromUser: ctx.userName,
       subject, preview: '', body: `<p>${esc(subject)}</p>`, date: new Date().toISOString(),
       unread: false, priority: 'normal', project: ctx.projectName, module: 'Internal', requiresAction: false,
+      to: [to],
     });
     persistInternal();
     toast('Internal message sent.', 'success');
@@ -2346,11 +2409,19 @@
 
   function showContacts() {
     document.getElementById('emailContactsModal')?.classList.remove('hidden');
-    document.getElementById('emailContactsBody').innerHTML = contacts.map(c => `
+    const rows = emailInternalOnly() ? (contacts.length ? contacts : (ctx.users || [])) : contacts;
+    const actionLabel = emailInternalOnly() ? 'Message' : 'Email';
+    const actionFn = emailInternalOnly()
+      ? (email => `CasePMEmail.composeInternal({to:'${esc(email)}'})`)
+      : (email => `CasePMEmail.compose({to:'${esc(email)}'})`);
+    document.getElementById('emailContactsBody').innerHTML = rows.length ? rows.map(c => `
       <div class="flex items-center justify-between py-2 border-b border-zinc-800 text-sm">
-        <div><div class="font-medium">${esc(c.name)}</div><div class="text-xs text-zinc-400">${esc(c.email)} · ${esc(c.company || '')}</div></div>
-        <button class="text-xs text-emerald-400" onclick="CasePMEmail.compose({to:'${esc(c.email)}'})">Email</button>
-      </div>`).join('');
+        <div>
+          <div class="font-medium">${esc(c.name)}</div>
+          <div class="text-xs text-zinc-400">${esc(c.email)}${c.company ? ` · ${esc(c.company)}` : ''}${c.position ? ` · ${esc(c.position)}` : ''}</div>
+        </div>
+        <button class="text-xs text-emerald-400" onclick="${actionFn(c.email)}">${actionLabel}</button>
+      </div>`).join('') : '<p class="text-zinc-400 text-sm">No contacts for this project yet. Select a project to see project team members and main company staff.</p>';
   }
 
   function showAdvancedSearch() {
@@ -2379,6 +2450,9 @@
       state.folder = 'internal-inbox';
     }
     await loadAll();
+    if (emailInternalOnly()) {
+      await loadInternalContacts();
+    }
     global.CasePMEmailSettings = settings;
     if (typeof CasePMWorkflow !== 'undefined') {
       await CasePMWorkflow.loadPortal();
@@ -2387,6 +2461,12 @@
       state.workspace = 'internal';
       state.folder = 'internal-inbox';
     }
+    global.onCasePmProjectChanged = async function(projectId, project) {
+      if (!emailInternalOnly()) return;
+      ctx.projectName = (project && project.name) || ctx.projectName || '';
+      await loadInternalContacts();
+      render();
+    };
     render();
     document.getElementById('emailSearchInput')?.addEventListener('input', e => setSearch(e.target.value));
     const searchEl = document.getElementById('emailSearchInput');

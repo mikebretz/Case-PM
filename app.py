@@ -14941,13 +14941,40 @@ def api_audit_log_modules():
 def email_page():
     from developer_tools import is_admin_or_developer, is_developer
     from email_mailbox_persistence import list_mailbox_owners_for_actor
-    users = User.query.filter_by(status='Active').order_by(User.last_name, User.first_name).all()
+    from access_control import user_email_internal_only
+    from document_module_security import is_staff_portal_user
+    from project_workflow_users import build_internal_message_contacts
+
+    active = get_active_project()
+    if user_email_internal_only(current_user) or not is_staff_portal_user(current_user):
+        contact_rows = build_internal_message_contacts(
+            active,
+            User,
+            Company=Company,
+            exclude_user_id=current_user.id,
+        )
+        users = [
+            {
+                'id': c.get('user_id') or c.get('id'),
+                'name': c.get('name') or '',
+                'email': c.get('email') or '',
+                'company': c.get('company') or '',
+                'position': c.get('position') or '',
+                'group': c.get('group') or 'project',
+            }
+            for c in contact_rows
+        ]
+    else:
+        users = [
+            {'id': u.id, 'name': u.full_name, 'email': u.email, 'company': u.company or ''}
+            for u in User.query.filter_by(status='Active').order_by(User.last_name, User.first_name).all()
+        ]
     mailbox_owners = list_mailbox_owners_for_actor(
         current_user, User=User, EmailMailboxAccess=EmailMailboxAccess,
     )
     return render_template(
         'email.html',
-        users=[{'name': u.full_name, 'email': u.email} for u in users],
+        users=users,
         email_mailbox_ctx={
             'current_user_id': current_user.id,
             'can_browse_other_mailboxes': is_admin_or_developer(current_user),
