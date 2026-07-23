@@ -59,6 +59,13 @@
     return json;
   }
 
+  async function fetchUserStamps(userId) {
+    const res = await fetch(`/api/users/${userId}/stamps`, { credentials: 'same-origin' });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || 'Could not load stamps');
+    return json;
+  }
+
   async function saveStampEntry(payload) {
     const res = await fetch('/api/users/me/stamps', {
       method: 'PUT',
@@ -194,6 +201,7 @@
     saveMySignature,
     fetchMyStamp,
     fetchMyStamps,
+    fetchUserStamps,
     fetchUserStamp,
     saveMyStamp,
     saveStampEntry,
