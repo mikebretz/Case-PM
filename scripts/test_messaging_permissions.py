@@ -144,6 +144,8 @@ class MessagingPermissionTests(unittest.TestCase):
                 self.assertTrue(received, 'recipient should see message in inbox list')
                 sent_row = sent_rows[0]
                 self.assertTrue(sent_row.get('to'), 'sent copy should include recipient metadata')
+                self.assertTrue(sent_row.get('replyTo'), 'inbox copy should include replyTo sender metadata')
+                self.assertEqual(sent_row['replyTo'].get('email'), 'test@arch.com')
                 _login_client(client, arch, app)
                 client.get('/email?tab=internal')
                 with client.session_transaction() as sess:
