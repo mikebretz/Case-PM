@@ -101,6 +101,39 @@ def _runtime_model(name, fallback=None):
     return fallback
 
 
+def _lookup_user_by_id(user_id):
+    if not user_id:
+        return None
+    user_model = _runtime_model('User', User)
+    if user_model is None:
+        return None
+    try:
+        return model_query(user_model).get(int(user_id))
+    except Exception:
+        return None
+
+
+def _lookup_project_by_id(project_id):
+    if not project_id:
+        return None
+    project_model = _runtime_model('Project', Project)
+    if project_model is None:
+        return None
+    try:
+        return model_query(project_model).get(int(project_id))
+    except Exception:
+        return None
+
+
+def _lookup_approval_by_id(approval_id):
+    if not approval_id or ApprovalRequest is None:
+        return None
+    try:
+        return model_query(ApprovalRequest).get(int(approval_id))
+    except Exception:
+        return None
+
+
 def init_models(_db):
     """Define SQLAlchemy models once db is available."""
     global db, ApprovalRequest, InternalMessage, ModuleState, ProjectMembership
@@ -189,17 +222,14 @@ def init_models(_db):
 
         def _sender_display(self):
             """Resolve sender name without generic Case PM email branding."""
-            if self.from_user_id and User is not None:
-                try:
-                    u = User.query.get(self.from_user_id)
-                    if u:
-                        name = (getattr(u, 'full_name', None) or '').strip()
-                        if not name:
-                            name = f'{getattr(u, "first_name", "")} {getattr(u, "last_name", "")}'.strip()
-                        if name:
-                            return name
-                except Exception:
-                    pass
+            if self.from_user_id:
+                u = _lookup_user_by_id(self.from_user_id)
+                if u:
+                    name = (getattr(u, 'full_name', None) or '').strip()
+                    if not name:
+                        name = f'{getattr(u, "first_name", "")} {getattr(u, "last_name", "")}'.strip()
+                    if name:
+                        return name
             label = (self.from_label or '').strip()
             generic = {'case pm', 'case pm system', 'case pm admin', 'system'}
             if label and label.lower() not in generic:
@@ -207,13 +237,10 @@ def init_models(_db):
             return 'Project Team'
 
         def _sender_email(self):
-            if self.from_user_id and User is not None:
-                try:
-                    u = User.query.get(self.from_user_id)
-                    if u:
-                        return (getattr(u, 'email', None) or '').strip()
-                except Exception:
-                    pass
+            if self.from_user_id:
+                u = _lookup_user_by_id(self.from_user_id)
+                if u:
+                    return (getattr(u, 'email', None) or '').strip()
             return ''
 
         def to_dict(self):
@@ -243,7 +270,7 @@ def init_models(_db):
                 'entityId': '',
             }
             if self.approval_id:
-                approval = ApprovalRequest.query.get(self.approval_id)
+                approval = _lookup_approval_by_id(self.approval_id)
                 if approval:
                     d['payload'] = approval.get_payload()
                     d['entityType'] = approval.entity_type or ''
@@ -251,9 +278,9 @@ def init_models(_db):
             return d
 
         def _project_name(self):
-            if not self.project_id or not Project:
+            if not self.project_id:
                 return ''
-            p = Project.query.get(self.project_id)
+            p = _lookup_project_by_id(self.project_id)
             return p.name if p else ''
 
     class _ModuleState(db.Model):
@@ -846,23 +873,29 @@ def register_workflow(app, _db, models):
 
         from email_mailbox_persistence import resolve_mailbox_user_id
         from app import EmailMailboxAccess
-        ensure_workflow_models_bound()
-        folder = request.args.get('folder')
-        archived = request.args.get('archived') == '1'
         try:
-            mailbox_user_id = resolve_mailbox_user_id(
-                current_user,
-                request.args.get('user_id', type=int),
-                User=User,
-                EmailMailboxAccess=EmailMailboxAccess,
-            )
-        except PermissionError:
-            return jsonify({'error': 'Mailbox access denied'}), 403
-        q = model_query(InternalMessage).filter_by(user_id=mailbox_user_id, archived=archived)
-        if folder and folder not in ('internal-inbox', ''):
-            q = q.filter_by(folder=folder)
-        messages = q.order_by(InternalMessage.created_at.desc()).limit(200).all()
-        return jsonify([m.to_dict() for m in messages])
+            ensure_workflow_models_bound()
+            folder = request.args.get('folder')
+            archived = request.args.get('archived') == '1'
+            try:
+                mailbox_user_id = resolve_mailbox_user_id(
+                    current_user,
+                    request.args.get('user_id', type=int),
+                    User=_runtime_model('User', User),
+                    EmailMailboxAccess=EmailMailboxAccess,
+                )
+            except PermissionError:
+                return jsonify({'error': 'Mailbox access denied'}), 403
+            q = model_query(InternalMessage).filter_by(user_id=mailbox_user_id, archived=archived)
+            if folder and folder not in ('internal-inbox', ''):
+                q = q.filter_by(folder=folder)
+            messages = q.order_by(InternalMessage.created_at.desc()).limit(200).all()
+            return jsonify([m.to_dict() for m in messages])
+        except Exception as exc:
+            _workflow_session().rollback()
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': f'Unable to load messages: {exc}'}), 500
 
     def _internal_message_for_actor(msg_id):
         from email_mailbox_persistence import resolve_mailbox_user_id
@@ -873,7 +906,10 @@ def register_workflow(app, _db, models):
             requested = body.get('user_id')
         try:
             mailbox_user_id = resolve_mailbox_user_id(
-                current_user, requested, User=User, EmailMailboxAccess=EmailMailboxAccess,
+                current_user,
+                requested,
+                User=_runtime_model('User', User),
+                EmailMailboxAccess=EmailMailboxAccess,
             )
         except PermissionError:
             return None, (jsonify({'error': 'Mailbox access denied'}), 403)

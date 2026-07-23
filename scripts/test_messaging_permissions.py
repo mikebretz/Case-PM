@@ -130,6 +130,18 @@ class MessagingPermissionTests(unittest.TestCase):
                     'project_id': 1,
                 }, headers=headers)
                 self.assertEqual(sent.status_code, 200, sent.get_json())
+                listed = client.get('/api/internal-messages')
+                self.assertEqual(listed.status_code, 200, listed.get_json())
+                rows = listed.get_json()
+                self.assertIsInstance(rows, list)
+                sent_rows = [r for r in rows if r.get('folder') == 'sent' and r.get('subject') == 'bind test']
+                self.assertTrue(sent_rows, 'sent copy should appear in GET /api/internal-messages')
+                _login_client(client, admin, app)
+                inbox = client.get('/api/internal-messages')
+                self.assertEqual(inbox.status_code, 200, inbox.get_json())
+                inbox_rows = inbox.get_json()
+                received = [r for r in inbox_rows if r.get('subject') == 'bind test' and r.get('folder') != 'sent']
+                self.assertTrue(received, 'recipient should see message in inbox list')
 
 
 if __name__ == '__main__':
