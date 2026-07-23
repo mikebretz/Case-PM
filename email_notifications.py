@@ -112,8 +112,13 @@ def notify_user_workflow(
     module_key = _module_notify_key(module)
     try:
         from user_extended_prefs import user_should_receive_notification
+        from access_control import user_can_receive_workflow_email
         allow_in_app = user_should_receive_notification(user, module_key, 'in_app')
-        allow_email = send_email and user_should_receive_notification(user, module_key, 'email')
+        allow_email = bool(
+            send_email
+            and user_can_receive_workflow_email(user)
+            and user_should_receive_notification(user, module_key, 'email')
+        )
     except Exception:
         allow_in_app = True
         allow_email = bool(send_email)

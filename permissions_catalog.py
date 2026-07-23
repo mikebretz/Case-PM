@@ -373,7 +373,7 @@ ROLE_TEMPLATES = {
     'Architect': {
         'portal': 'consultant',
         'description': 'Consultant review — submittals, RFIs, drawings, documents, project directory',
-        'global': {'hide_financials': True},
+        'global': {'hide_financials': True, 'email_internal_only': True},
         'modules': _set_modules(default_module_perms('none', 'none'), **{
             'dashboard': ('client_view', 'none'),
             'project_directory': ('view', 'none'),
@@ -389,7 +389,8 @@ ROLE_TEMPLATES = {
             'punch_list': ('view', 'none'),
             'inspections': ('view', 'none'),
             'meeting_minutes': ('view', 'none'),
-            'email': ('edit', 'none'),
+            'internal_messages': ('edit', 'none'),
+            'email': ('none', 'none'),
             'schedule': ('none', 'none'),
             'estimating': ('none', 'none'),
             'change_orders_rfq': ('none', 'none'),
