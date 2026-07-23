@@ -117,6 +117,41 @@ class MessagingPermissionTests(unittest.TestCase):
             session = cw._workflow_session()
             self.assertIs(session, db2.session)
 
+    def test_internal_message_send_after_stale_model_init(self):
+        from flask import Flask
+        from flask_sqlalchemy import SQLAlchemy
+        import case_workflow as cw
+
+        app1 = Flask('stale-msg')
+        app1.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+        app1.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+        db1 = SQLAlchemy(app1)
+        cw.init_models(db1)
+
+        from app import app, User
+        from scripts.simulate_security_harness import _login_client
+
+        with app.app_context():
+            arch = User.query.filter_by(email='test@arch.com').first()
+            admin = User.query.filter_by(email='admin@casepm.local').first()
+            self.assertIsNotNone(arch)
+            self.assertIsNotNone(admin)
+            with app.test_client() as client:
+                _login_client(client, arch, app)
+                client.get('/email?tab=internal')
+                with client.session_transaction() as sess:
+                    token = sess.get('casepm_csrf_token')
+                headers = {'X-CSRF-Token': token, 'Content-Type': 'application/json'}
+                contacts = client.get('/api/internal-messages/contacts?project_id=1')
+                self.assertEqual(contacts.status_code, 200, contacts.get_json())
+                sent = client.post('/api/internal-messages', json={
+                    'to': ['admin@casepm.local'],
+                    'subject': 'bind test',
+                    'body': '<p>hello</p>',
+                    'project_id': 1,
+                }, headers=headers)
+                self.assertEqual(sent.status_code, 200, sent.get_json())
+
 
 if __name__ == '__main__':
     unittest.main()

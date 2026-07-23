@@ -5,6 +5,32 @@ from project_team_persistence import ROLE_LABELS, migrate_legacy_team_contacts
 
 import re
 
+
+def _db_session():
+    try:
+        from case_workflow import _workflow_session
+        return _workflow_session()
+    except Exception:
+        pass
+    try:
+        import sys
+        app_mod = sys.modules.get('app')
+        if app_mod is not None and getattr(app_mod, 'db', None) is not None:
+            return app_mod.db.session
+    except Exception:
+        pass
+    return None
+
+
+def _model_query(model):
+    query = getattr(model, 'query', None)
+    if query is not None and getattr(model, '__fsa__', None) is None:
+        return query
+    session = _db_session()
+    if session is None:
+        raise RuntimeError('Database session not available')
+    return session.query(model)
+
 CONSULTANT_WORKFLOW_ROLES = frozenset({
     'Architect',
     'Owner',
@@ -98,7 +124,7 @@ def _company_name(company_id, Company):
     if not company_id or Company is None:
         return ''
     try:
-        row = Company.query.get(int(company_id))
+        row = _model_query(Company).get(int(company_id))
         return (row.name if row else '') or ''
     except Exception:
         return ''
@@ -256,8 +282,8 @@ def _collect_membership_and_team(project, User, Company, ProjectMembership, entr
 
     PM = ProjectMembership or _membership_model()
     if PM is not None:
-        for row in PM.query.filter_by(project_id=int(project.id)).all():
-            user = User.query.get(row.user_id)
+        for row in _model_query(PM).filter_by(project_id=int(project.id)).all():
+            user = _model_query(User).get(row.user_id)
             if not user or (getattr(user, 'status', 'Active') or 'Active') != 'Active':
                 continue
             company = _company_name(getattr(row, 'company_id', None), Company)
@@ -276,7 +302,7 @@ def _collect_membership_and_team(project, User, Company, ProjectMembership, entr
     for contact in migrate_legacy_team_contacts(details if isinstance(details, dict) else {}):
         entry = _contact_directory_row(contact)
         if contact.get('user_id'):
-            user = User.query.get(int(contact['user_id']))
+            user = _model_query(User).get(int(contact['user_id']))
             if user and (getattr(user, 'status', 'Active') or 'Active') == 'Active':
                 company = entry.get('firm') or _company_name(getattr(user, 'company_id', None), Company) or (getattr(user, 'company', None) or '')
                 entry = _user_directory_row(
@@ -304,7 +330,7 @@ def _collect_membership_and_team(project, User, Company, ProjectMembership, entr
 
     client_company_id = getattr(project, 'client_company_id', None)
     if client_company_id and Company is not None:
-        client_company = Company.query.get(int(client_company_id))
+        client_company = _model_query(Company).get(int(client_company_id))
         if client_company:
             contact_name = f'{client_company.contact_first_name or ""} {client_company.contact_last_name or ""}'.strip()
             _add_entry(entries_by_key, _person_directory_row(
@@ -330,7 +356,7 @@ def _collect_membership_and_team(project, User, Company, ProjectMembership, entr
 def _collect_commitments(project_id, entries_by_key, Company, Commitment):
     if Commitment is None:
         return
-    for commitment in Commitment.query.filter_by(project_id=int(project_id)).all():
+    for commitment in _model_query(Commitment).filter_by(project_id=int(project_id)).all():
         company_name = (getattr(commitment, 'company_name', None) or '').strip()
         if not company_name:
             continue
@@ -372,17 +398,15 @@ def _collect_pay_app_sov(project_id, entries_by_key, User, Company, PayAppProjec
     except Exception:
         return
 
-    db = None
+    db_ext = None
     try:
-        from flask import has_app_context
-        if has_app_context():
-            from app import db as app_db
-            db = app_db
+        from case_workflow import _workflow_db
+        db_ext = _workflow_db()
     except Exception:
         pass
 
     try:
-        _record, state = get_pay_app_state(PayAppProjectState, int(project_id), db=db)
+        _record, state = get_pay_app_state(PayAppProjectState, int(project_id), db=db_ext)
     except Exception:
         return
     if not state:
@@ -390,7 +414,7 @@ def _collect_pay_app_sov(project_id, entries_by_key, User, Company, PayAppProjec
     sub_status = state.get('subSOVStatus') or {}
     if not isinstance(sub_status, dict):
         return
-    commitments = Commitment.query.filter_by(project_id=int(project_id)).all() if Commitment is not None else []
+    commitments = _model_query(Commitment).filter_by(project_id=int(project_id)).all() if Commitment is not None else []
 
     for key, status_entry in sub_status.items():
         if not isinstance(status_entry, dict):
@@ -467,7 +491,7 @@ def _collect_submittals(project_id, entries_by_key, User, Submittal):
     if Submittal is None:
         return
     seen = set()
-    for submittal in Submittal.query.filter_by(project_id=int(project_id)).all():
+    for submittal in _model_query(Submittal).filter_by(project_id=int(project_id)).all():
         company_name = (getattr(submittal, 'assigned_company_name', None) or '').strip()
         contact_uid = getattr(submittal, 'assigned_contact_user_id', None)
         contact_email = (getattr(submittal, 'assigned_contact_email', None) or '').strip()
@@ -479,7 +503,7 @@ def _collect_submittals(project_id, entries_by_key, User, Submittal):
             continue
         seen.add(dedupe)
         if contact_uid:
-            user = User.query.get(int(contact_uid))
+            user = _model_query(User).get(int(contact_uid))
             if user and (getattr(user, 'status', 'Active') or 'Active') == 'Active':
                 _add_entry(entries_by_key, _user_directory_row(
                     user,
@@ -503,7 +527,7 @@ def _collect_change_orders(project_id, entries_by_key, ChangeOrder):
     if ChangeOrder is None:
         return
     seen = set()
-    for co in ChangeOrder.query.filter_by(project_id=int(project_id)).all():
+    for co in _model_query(ChangeOrder).filter_by(project_id=int(project_id)).all():
         company_name = (getattr(co, 'company_name', None) or '').strip()
         contact_name = (getattr(co, 'contact_name', None) or '').strip()
         contact_email = (getattr(co, 'contact_email', None) or '').strip()
@@ -532,7 +556,7 @@ def _collect_rfqs(project_id, entries_by_key, SubcontractorRFQ, Company):
     if SubcontractorRFQ is None:
         return
     seen = set()
-    for rfq in SubcontractorRFQ.query.filter_by(project_id=int(project_id)).all():
+    for rfq in _model_query(SubcontractorRFQ).filter_by(project_id=int(project_id)).all():
         company_name = (getattr(rfq, 'company_name', None) or '').strip()
         company_id = getattr(rfq, 'company_id', None)
         if company_id and Company is not None and not company_name:
@@ -557,11 +581,11 @@ def _collect_rfqs(project_id, entries_by_key, SubcontractorRFQ, Company):
 def _collect_bid_invitations(project_id, entries_by_key, BidPackage, BidInvitation):
     if BidPackage is None or BidInvitation is None:
         return
-    package_ids = [p.id for p in BidPackage.query.filter_by(project_id=int(project_id)).all()]
+    package_ids = [p.id for p in _model_query(BidPackage).filter_by(project_id=int(project_id)).all()]
     if not package_ids:
         return
     seen = set()
-    for invite in BidInvitation.query.filter(BidInvitation.bid_package_id.in_(package_ids)).all():
+    for invite in _model_query(BidInvitation).filter(BidInvitation.bid_package_id.in_(package_ids)).all():
         company_name = (getattr(invite, 'company_name', None) or '').strip()
         contact_name = (getattr(invite, 'contact_name', None) or '').strip()
         contact_email = (getattr(invite, 'contact_email', None) or '').strip()
@@ -628,8 +652,8 @@ def _active_project_users(project_id, User, ProjectMembership=None):
     users = []
     seen = set()
     if PM is not None:
-        for row in PM.query.filter_by(project_id=int(project_id)).all():
-            user = User.query.get(row.user_id)
+        for row in _model_query(PM).filter_by(project_id=int(project_id)).all():
+            user = _model_query(User).get(row.user_id)
             if not user or user.id in seen:
                 continue
             if (getattr(user, 'status', 'Active') or 'Active') != 'Active':
@@ -642,14 +666,14 @@ def _active_project_users(project_id, User, ProjectMembership=None):
         from flask import has_app_context
         if has_app_context():
             from app import Project as ProjectModel
-            project = ProjectModel.query.get(int(project_id))
+            project = _model_query(ProjectModel).get(int(project_id))
         if project is not None:
             details = project.get_details()
             for contact in migrate_legacy_team_contacts(details):
                 uid = contact.get('user_id')
                 if not uid or uid in seen:
                     continue
-                user = User.query.get(int(uid))
+                user = _model_query(User).get(int(uid))
                 if not user or (getattr(user, 'status', 'Active') or 'Active') != 'Active':
                     continue
                 seen.add(user.id)
@@ -724,7 +748,7 @@ def _staff_portal_users(User):
     from document_module_security import is_staff_portal_user
 
     users = []
-    for user in User.query.filter_by(status='Active').all():
+    for user in _model_query(User).filter_by(status='Active').all():
         try:
             if is_staff_portal_user(user):
                 users.append(user)
@@ -864,11 +888,11 @@ def resolve_users_by_emails(emails, User):
             continue
         user = None
         try:
-            user = User.query.filter_by(status='Active').filter(
+            user = _model_query(User).filter_by(status='Active').filter(
                 User.email.ilike(email_key),
             ).first()
         except Exception:
-            for row in User.query.filter_by(status='Active').all():
+            for row in _model_query(User).filter_by(status='Active').all():
                 if (getattr(row, 'email', None) or '').strip().lower() == email_key:
                     user = row
                     break
