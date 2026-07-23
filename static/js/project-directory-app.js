@@ -32,7 +32,7 @@
   function renderContacts(contacts) {
     const rows = Array.isArray(contacts) ? contacts : [];
     if (!rows.length) {
-      els.contactsBody.innerHTML = '<tr><td colspan="5" class="pd-empty">No project team members are assigned yet.</td></tr>';
+      els.contactsBody.innerHTML = '<tr><td colspan="5" class="pd-empty">No people or companies are linked to this project yet. Add team contacts on the project, assign users, register subcontractors on Pay Applications, or create commitments.</td></tr>';
       setText(els.contactCount, '0 contacts');
       return;
     }
