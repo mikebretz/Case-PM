@@ -42,6 +42,8 @@
 
   const INTERNAL_FOLDERS = [
     { id: 'internal-inbox', label: 'Inbox', icon: 'fa-inbox' },
+    { id: 'sent', label: 'Sent', icon: 'fa-paper-plane' },
+    { id: 'drafts', label: 'Drafts', icon: 'fa-file-pen' },
     { id: 'approvals', label: 'Approvals', icon: 'fa-circle-check' },
     { id: 'alerts', label: 'Alerts', icon: 'fa-triangle-exclamation' },
     { id: 'team', label: 'Team Messages', icon: 'fa-people-group' },
@@ -158,6 +160,32 @@
     canBrowseOtherMailboxes: false,
     mailboxOwners: [],
   };
+
+  function isInternalWorkspace() {
+    return state.workspace === 'internal' || emailInternalOnly();
+  }
+
+  function emailPrompt(message, defaultValue = '', options = {}) {
+    if (global.CasePMDialog?.prompt) {
+      return global.CasePMDialog.prompt(message, defaultValue, options);
+    }
+    return Promise.resolve(prompt(message, defaultValue));
+  }
+
+  async function emailConfirm(message, options = {}) {
+    if (global.CasePMDialog?.confirm) {
+      return global.CasePMDialog.confirm(message, options);
+    }
+    return Promise.resolve(confirm(message));
+  }
+
+  async function emailSelect(options = {}) {
+    if (global.CasePMDialog?.select) {
+      return global.CasePMDialog.select(options);
+    }
+    const picked = prompt(options.message || 'Choose an option:', (options.options || [])[0]?.value || '');
+    return picked;
+  }
 
   function effectiveUserId() {
     return state.viewUserId || ctx.currentUserId || null;
@@ -380,6 +408,7 @@
           type: m.type,
           from: m.from,
           fromUser: m.fromUser,
+          fromEmail: m.fromEmail || '',
           subject: m.subject,
           preview: m.preview,
           body: m.body,
@@ -541,31 +570,42 @@
     return '';
   }
 
-  function renderInternalActions(m, prefix) {
+  function renderInternalActions(m, prefix, opts) {
     prefix = prefix || 'CasePMEmail';
+    const inPopout = opts?.inPopout;
+    const popoutId = opts?.popoutId || m.id;
+    const popoutArg = inPopout ? `{inPopout:true, popoutId:'${popoutId}'}` : '';
+    const replyExtra = inPopout ? `, false, ${popoutArg}` : '';
+    const optsExtra = inPopout ? `, ${popoutArg}` : '';
     return `
-      <div class="flex gap-2 flex-shrink-0 flex-wrap">
-        ${m.actionUrl ? `<a href="${esc(m.actionUrl)}" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium text-white">${esc(m.actionLabel || 'Open')}</a>` : ''}
-        ${m.requiresAction ? `<button type="button" onclick="${prefix}.approveInternal('${m.id}')" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 rounded-md text-sm">Approve</button>` : ''}
-        <button type="button" onclick="${prefix}.dismissInternal('${m.id}')" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Dismiss</button>
-        <button type="button" onclick="${prefix}.printMessage('${m.id}')" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm" title="Print"><i class="fa-solid fa-print"></i></button>
+      <div class="border-b border-zinc-800 px-4 py-2 flex flex-wrap gap-1 flex-shrink-0">
+        <button type="button" class="email-toolbar-btn" onclick="${prefix}.reply('${m.id}'${replyExtra})"><i class="fa-solid fa-reply"></i> Reply</button>
+        <button type="button" class="email-toolbar-btn" onclick="${prefix}.replyAll('${m.id}'${optsExtra})"><i class="fa-solid fa-reply-all"></i> Reply All</button>
+        <button type="button" class="email-toolbar-btn" onclick="${prefix}.forward('${m.id}'${optsExtra})"><i class="fa-solid fa-share"></i> Forward</button>
+        ${m.actionUrl ? `<a href="${esc(m.actionUrl)}" class="email-toolbar-btn"><i class="fa-solid fa-arrow-up-right-from-square"></i> ${esc(m.actionLabel || 'Open')}</a>` : ''}
+        ${m.requiresAction ? `<button type="button" class="email-toolbar-btn" onclick="${prefix}.approveInternal('${m.id}')"><i class="fa-solid fa-circle-check"></i> Approve</button>` : ''}
+        <button type="button" class="email-toolbar-btn" onclick="${prefix}.dismissInternal('${m.id}')"><i class="fa-solid fa-box-archive"></i> Archive</button>
+        <button type="button" class="email-toolbar-btn" onclick="${prefix}.printMessage('${m.id}')"><i class="fa-solid fa-print"></i> Print</button>
       </div>`;
   }
 
-  function renderInternalMessageContent(m) {
+  function renderInternalMessageContent(m, opts) {
     const snapshot = renderSubmissionSnapshot(m);
     const fromLabel = (m.from || '').replace(/^(Case PM|Case PM System|Case PM Admin)$/i, m.fromUser || 'Project Team');
+    const toolbar = opts?.skipToolbar ? '' : renderInternalActions(m, 'CasePMEmail', opts);
     return `
-      <div class="flex items-start justify-between gap-4 mb-4">
-        <div>
-          <h2 class="text-lg font-semibold text-white">${esc(m.subject)}</h2>
-          <div class="text-sm text-zinc-400 mt-1">From <strong class="text-zinc-200">${esc(fromLabel)}</strong> · ${fmtDate(m.date)}</div>
-          <div class="text-xs text-zinc-500 mt-1">${esc(m.module || '')} · ${esc(m.project || '')}</div>
+      ${toolbar}
+      <div class="email-reading-message overflow-auto p-6">
+        <div class="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <h2 class="text-lg font-semibold text-white">${esc(m.subject)}</h2>
+            <div class="text-sm text-zinc-400 mt-1">From <strong class="text-zinc-200">${esc(fromLabel)}</strong>${m.fromEmail ? ` &lt;${esc(m.fromEmail)}&gt;` : ''} · ${fmtDate(m.date)}</div>
+            <div class="text-xs text-zinc-500 mt-1">${esc(m.module || '')}${m.project ? ` · ${esc(m.project)}` : ''}</div>
+          </div>
         </div>
-        ${renderInternalActions(m)}
-      </div>
-      ${snapshot}
-      <div class="prose prose-invert max-w-none text-sm text-zinc-300">${m.body || esc(m.preview)}</div>`;
+        ${snapshot}
+        <div class="prose prose-invert max-w-none text-sm text-zinc-300">${m.body || esc(m.preview)}</div>
+      </div>`;
   }
 
   function renderMailMessageContent(m, opts) {
@@ -887,7 +927,14 @@
   }
 
   function renderPopoutHeaderActions(m, inCompose) {
-    if (inCompose || state.workspace !== 'mail') return '';
+    if (inCompose) return '';
+    if (state.workspace === 'internal') {
+      return `
+      <button type="button" class="text-zinc-400 hover:text-white w-8 h-8 rounded hover:bg-zinc-800" onclick="CasePMEmail.reply('${m.id}', false, {inPopout:true, popoutId:'${m.id}'})" title="Reply"><i class="fa-solid fa-reply text-sm"></i></button>
+      <button type="button" class="text-zinc-400 hover:text-white w-8 h-8 rounded hover:bg-zinc-800" onclick="CasePMEmail.replyAll('${m.id}', {inPopout:true, popoutId:'${m.id}'})" title="Reply All"><i class="fa-solid fa-reply-all text-sm"></i></button>
+      <button type="button" class="text-zinc-400 hover:text-white w-8 h-8 rounded hover:bg-zinc-800" onclick="CasePMEmail.forward('${m.id}', {inPopout:true, popoutId:'${m.id}'})" title="Forward"><i class="fa-solid fa-share text-sm"></i></button>`;
+    }
+    if (state.workspace !== 'mail') return '';
     return `
       <button type="button" class="text-zinc-400 hover:text-white w-8 h-8 rounded hover:bg-zinc-800" onclick="CasePMEmail.reply('${m.id}', false, {inPopout:true, popoutId:'${m.id}'})" title="Reply"><i class="fa-solid fa-reply text-sm"></i></button>
       <button type="button" class="text-zinc-400 hover:text-white w-8 h-8 rounded hover:bg-zinc-800" onclick="CasePMEmail.replyAll('${m.id}', {inPopout:true, popoutId:'${m.id}'})" title="Reply All"><i class="fa-solid fa-reply-all text-sm"></i></button>
@@ -939,7 +986,7 @@
     if (bodyEl) {
       bodyEl.classList.remove('email-popout-compose-body');
       if (state.workspace === 'internal') {
-        bodyEl.innerHTML = `<div class="p-6">${renderInternalMessageContent(m)}</div>`;
+        bodyEl.innerHTML = renderInternalMessageContent(m, { inPopout: true, popoutId });
       } else {
         bodyEl.innerHTML = renderMailMessageContent(m, { inPopout: true, popoutId });
       }
@@ -963,7 +1010,7 @@
       return;
     }
 
-    const isDraft = state.workspace === 'mail' && (m.folder === 'drafts' || m.isDraft);
+    const isDraft = (state.workspace === 'mail' || state.workspace === 'internal') && (m.folder === 'drafts' || m.isDraft);
     if (isDraft) {
       const parts = prepareComposeParts({ body: m.body || '', draftId: m.id, mode: 'draft' });
       state.inlineCompose = {
@@ -998,7 +1045,7 @@
     if (isDraft) {
       bodyHtml = renderInlineComposeHTML({ popout: true });
     } else if (state.workspace === 'internal') {
-      bodyHtml = `<div class="p-6">${renderInternalMessageContent(m)}</div>`;
+      bodyHtml = renderInternalMessageContent(m, { inPopout: true, popoutId: id });
     } else {
       bodyHtml = renderMailMessageContent(m, { inPopout: true, popoutId: id });
     }
@@ -1122,7 +1169,9 @@
 
   function folderCount(folderId, workspace) {
     if (workspace === 'internal') {
-      if (folderId === 'internal-inbox') return internalMessages.filter(m => !m.archived && m.unread).length;
+      if (folderId === 'internal-inbox') {
+        return internalMessages.filter(m => !m.archived && m.unread && !['sent', 'drafts'].includes(m.folder)).length;
+      }
       return internalMessages.filter(m => m.folder === folderId && !m.archived && m.unread).length;
     }
     if (folderId === 'starred') return mailMessages.filter(m => m.starred && m.folder !== 'trash').length;
@@ -1166,7 +1215,9 @@
         return applyInternalListFilters(internalMessages.filter(m => m.archived));
       }
       let list = internalMessages.filter(m => !m.archived);
-      if (state.folder !== 'internal-inbox') {
+      if (state.folder === 'internal-inbox') {
+        list = list.filter(m => !['sent', 'drafts'].includes(m.folder));
+      } else {
         list = list.filter(m => m.folder === state.folder);
       }
       return applyInternalListFilters(list);
@@ -1244,7 +1295,7 @@
     const hasSel = state.selectedId || state.selectedIds.size > 0;
     return `
       <div class="flex items-center gap-1 flex-wrap">
-        ${isMail ? `<button type="button" class="email-toolbar-btn" onclick="CasePMEmail.compose()"><i class="fa-solid fa-pen"></i> New</button>` : ''}
+        ${isMail || state.workspace === 'internal' ? `<button type="button" class="email-toolbar-btn" onclick="CasePMEmail.compose()"><i class="fa-solid fa-pen"></i> New</button>` : ''}
         <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.refresh()" title="Refresh"><i class="fa-solid fa-rotate"></i></button>
         ${isMail ? `
         <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.archiveSelected()"><i class="fa-solid fa-box-archive"></i> Archive</button>
@@ -1257,10 +1308,9 @@
         <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.labelSelected()"><i class="fa-solid fa-tag"></i> Label</button>
         <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.reportPhishing()"><i class="fa-solid fa-shield"></i> Report</button>
         ` : `
-        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.markInternalRead()"><i class="fa-solid fa-check"></i> Mark Read</button>
+        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.markReadToggle()"><i class="fa-solid fa-envelope-open"></i> Read/Unread</button>
+        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.dismissInternal()"><i class="fa-solid fa-box-archive"></i> Archive</button>
         <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.approveInternal()"><i class="fa-solid fa-circle-check"></i> Approve</button>
-        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.dismissInternal()"><i class="fa-solid fa-xmark"></i> Dismiss</button>
-        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.composeInternal()"><i class="fa-solid fa-paper-plane"></i> New Message</button>
         `}
         <span class="w-px h-5 bg-zinc-700 mx-1"></span>
         <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.toggleFilter('unread')"><i class="fa-solid fa-filter"></i> Unread</button>
@@ -1597,6 +1647,7 @@
     const closeFn = inPopout && c.popoutId ? `CasePMEmail.closeMessagePopout('${c.popoutId}')` : 'CasePMEmail.closeCompose()';
     const expandedClass = inPopout || c.mode === 'new' || c.mode === 'draft' || c.mode === 'reply' || c.mode === 'replyAll' || c.mode === 'forward'
       ? ' email-compose-expanded' : '';
+    const internalCompose = isInternalWorkspace();
     return `
       <div class="email-inline-compose${expandedClass}" id="emailInlineCompose">
         ${inPopout ? '' : `<div class="email-inline-compose-header">
@@ -1643,13 +1694,13 @@
         <div class="email-inline-compose-footer">
           <div class="flex items-center gap-1 flex-wrap flex-1 min-w-0">
             <button type="button" class="email-toolbar-btn" title="Attach file" onclick="document.getElementById('inlineComposeFileInput')?.click()"><i class="fa-solid fa-paperclip"></i></button>
-            <button type="button" class="email-toolbar-btn" title="Schedule send" onclick="document.getElementById('inlineComposeScheduleRow').classList.toggle('hidden')"><i class="fa-solid fa-clock"></i></button>
+            ${internalCompose ? '' : `<button type="button" class="email-toolbar-btn" title="Schedule send" onclick="document.getElementById('inlineComposeScheduleRow').classList.toggle('hidden')"><i class="fa-solid fa-clock"></i></button>`}
             <button type="button" class="email-toolbar-btn" title="Save draft" onclick="CasePMEmail.saveDraft()"><i class="fa-solid fa-file-pen"></i></button>
             ${renderComposeToolbarHTML()}
           </div>
           <div class="flex gap-2">
-            <button type="button" onclick="CasePMEmail.undoSend()" class="text-xs text-zinc-400 hover:text-white">Undo</button>
-            <button type="button" onclick="CasePMEmail.sendMail(true)" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-xs">Schedule</button>
+            ${internalCompose ? '' : `<button type="button" onclick="CasePMEmail.undoSend()" class="text-xs text-zinc-400 hover:text-white">Undo</button>
+            <button type="button" onclick="CasePMEmail.sendMail(true)" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-xs">Schedule</button>`}
             <button type="button" onclick="CasePMEmail.sendMail()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold text-white">Send</button>
           </div>
         </div>
@@ -1804,10 +1855,7 @@
     const composeHtml = showMainCompose ? renderInlineComposeHTML() : '';
 
     if (state.workspace === 'internal' && m) {
-      el.innerHTML = composeHtml + `
-        <div class="email-reading-message overflow-auto p-6">
-          ${renderInternalMessageContent(m)}
-        </div>`;
+      el.innerHTML = composeHtml + renderInternalMessageContent(m);
       if (showMainCompose) {
         attachRecipientAutocomplete();
         initComposeSurface(el);
@@ -1918,9 +1966,9 @@
   }
 
   function compose(opts) {
-    if (emailInternalOnly()) {
-      composeInternal();
-      return;
+    if (isInternalWorkspace() && state.workspace !== 'internal') {
+      state.workspace = 'internal';
+      state.folder = 'internal-inbox';
     }
     if (!canEditViewedMailbox()) { toast('You have read-only access to this mailbox.', 'error'); return; }
     const inPopout = !!(opts?.inPopout || opts?.popoutId);
@@ -2019,6 +2067,51 @@
     if (!state.inlineCompose) return null;
     const v = getComposeFieldValues();
     const atts = serializeAttachments(state.inlineCompose.attachments || []);
+
+    if (isInternalWorkspace()) {
+      const draft = {
+        id: state.inlineCompose.draftId || uid(),
+        folder: 'drafts',
+        type: 'message',
+        from: ctx.userName,
+        fromUser: ctx.userName,
+        fromEmail: ctx.userEmail || '',
+        to: v.to.split(/[,;]/).map(s => s.trim()).filter(Boolean),
+        cc: v.cc.split(/[,;]/).map(s => s.trim()).filter(Boolean),
+        bcc: v.bcc.split(/[,;]/).map(s => s.trim()).filter(Boolean),
+        subject: v.subject || '(No subject)',
+        preview: v.body.replace(/<[^>]+>/g, '').slice(0, 120),
+        body: v.body,
+        date: new Date().toISOString(),
+        unread: true,
+        priority: 'normal',
+        project: ctx.projectName,
+        module: 'Internal',
+        requiresAction: false,
+        archived: false,
+        hasAttachments: atts.length > 0,
+        attachments: atts,
+        isDraft: true,
+      };
+      const idx = internalMessages.findIndex(m => m.id === draft.id);
+      if (idx >= 0) internalMessages[idx] = draft;
+      else internalMessages.unshift(draft);
+      persistInternal();
+      const savedPopoutId = state.inlineCompose.popoutId;
+      state.inlineCompose = null;
+      state.selectedId = draft.id;
+      if (notify) toast('Saved as draft.', 'success');
+      if (closePopout && savedPopoutId) {
+        const popoutEl = document.getElementById('emailPopout-' + savedPopoutId);
+        if (popoutEl) {
+          if (popoutEl._popoutCleanup) popoutEl._popoutCleanup();
+          popoutEl.remove();
+        }
+      }
+      render();
+      return draft;
+    }
+
     const draft = {
       id: state.inlineCompose.draftId || uid(),
       folder: 'drafts', category: 'primary', focused: true,
@@ -2054,7 +2147,59 @@
     saveDraftFromCompose({ notify: true, closePopout: true });
   }
 
+  async function sendInternalMail() {
+    if (!canEditViewedMailbox()) { toast('You have read-only access to this mailbox.', 'error'); return; }
+    const to = document.getElementById('inlineComposeTo')?.value.trim();
+    const subject = document.getElementById('inlineComposeSubject')?.value.trim();
+    const body = getComposeFullHtml();
+    if (!to) { toast('Add at least one recipient.', 'error'); return; }
+
+    const draftId = state.inlineCompose?.draftId;
+    const payload = {
+      to: to.split(/[,;]/).map(s => s.trim()).filter(Boolean),
+      cc: (document.getElementById('inlineComposeCc')?.value || '').split(/[,;]/).map(s => s.trim()).filter(Boolean),
+      bcc: (document.getElementById('inlineComposeBcc')?.value || '').split(/[,;]/).map(s => s.trim()).filter(Boolean),
+      subject: subject || '(No subject)',
+      body,
+      preview: body.replace(/<[^>]+>/g, '').slice(0, 500),
+      project_id: activeProjectId(),
+    };
+
+    try {
+      const res = await fetch('/api/internal-messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast(data.error || 'Could not send message.', 'error');
+        return;
+      }
+      if (draftId) {
+        const di = internalMessages.findIndex(m => m.id === draftId);
+        if (di >= 0) internalMessages.splice(di, 1);
+        persistInternal();
+      }
+      finishComposeAfterSend();
+      await refreshInternalFromServer();
+      state.folder = 'sent';
+      toast('Message sent.', 'success');
+      render();
+    } catch (e) {
+      toast('Could not send message.', 'error');
+    }
+  }
+
   function sendMail(scheduled) {
+    if (isInternalWorkspace()) {
+      if (scheduled) {
+        toast('Scheduled send is not available for internal messages.', 'info');
+        return;
+      }
+      sendInternalMail();
+      return;
+    }
     if (!canEditViewedMailbox()) { toast('You have read-only access to this mailbox.', 'error'); return; }
     const viewed = viewedMailboxOwner();
     const to = document.getElementById('inlineComposeTo')?.value.trim();
@@ -2114,15 +2259,24 @@
   function reply(id, all, opts) {
     const m = getMessage(id);
     if (!m) return;
-    const to = all
-      ? [m.fromEmail, ...(m.to || []).filter(e => e !== (settings.emailAddress || ctx.userEmail))].join(', ')
-      : m.fromEmail;
+    let to;
+    if (state.workspace === 'internal') {
+      const senderEmail = m.fromEmail || '';
+      const senderName = m.from || m.fromUser || '';
+      to = senderEmail
+        ? (senderName ? `"${senderName}" <${senderEmail}>` : senderEmail)
+        : senderName;
+    } else {
+      to = all
+        ? [m.fromEmail, ...(m.to || []).filter(e => e !== (settings.emailAddress || ctx.userEmail))].join(', ')
+        : m.fromEmail;
+    }
     const inPopout = !!(opts?.inPopout || opts?.popoutId);
     compose({
       mode: all ? 'replyAll' : 'reply',
       to,
       subject: 'RE: ' + m.subject.replace(/^RE:\s*/i, ''),
-      body: `<br><br><hr><p>On ${fmtDate(m.date)}, ${esc(m.from)} wrote:</p>${m.body || ''}`,
+      body: `<br><br><hr><p>On ${fmtDate(m.date)}, ${esc(m.from || m.fromUser || 'sender')} wrote:</p>${m.body || ''}`,
       replyToId: id,
       inPopout,
       popoutId: inPopout ? (opts?.popoutId || id) : null,
@@ -2154,7 +2308,21 @@
   }
 
   function deleteSelected(id) {
-    if (settings.confirmPermanentDelete && state.folder === 'trash' && !confirm('Permanently delete?')) return;
+    if (state.workspace === 'internal') {
+      dismissInternal(id || state.selectedId);
+      return;
+    }
+    if (settings.confirmPermanentDelete && state.folder === 'trash') {
+      emailConfirm('Permanently delete?', { title: 'Delete message', danger: true, confirmText: 'Delete' }).then(ok => {
+        if (!ok) return;
+        performDeleteSelected(id);
+      });
+      return;
+    }
+    performDeleteSelected(id);
+  }
+
+  function performDeleteSelected(id) {
     const ids = id ? [id] : state.selectedId ? [state.selectedId] : [...state.selectedIds];
     ids.forEach(i => { const m = getMessage(i); if (m) m.folder = state.folder === 'trash' ? '_deleted' : 'trash'; });
     mailMessages = mailMessages.filter(m => m.folder !== '_deleted');
@@ -2166,6 +2334,16 @@
 
   function markReadToggle() {
     const m = getMessage(state.selectedId);
+    if (!m) return;
+    if (state.workspace === 'internal') {
+      m.unread = !m.unread;
+      persistInternal();
+      if (!m.unread && (typeof m.id === 'number' || String(m.id).match(/^\d+$/))) {
+        fetch(`/api/internal-messages/${m.id}/read`, internalApiOpts()).catch(() => {});
+      }
+      render();
+      return;
+    }
     if (m) { m.unread = !m.unread; persistMail(); render(); }
   }
 
@@ -2180,67 +2358,80 @@
     const target = id || state.selectedId;
     const m = getMessage(target);
     if (!m) return;
-    const hours = prompt('Snooze for how many hours?', '4');
-    if (!hours) return;
-    m.snoozedUntil = new Date(Date.now() + Number(hours) * 3600000).toISOString();
-    m.folder = 'snoozed';
-    persistMail();
-    toast(`Snoozed for ${hours} hours.`, 'success');
-    render();
+    emailPrompt('Snooze for how many hours?', '4', { title: 'Snooze message', label: 'Hours' }).then(hours => {
+      if (!hours) return;
+      m.snoozedUntil = new Date(Date.now() + Number(hours) * 3600000).toISOString();
+      m.folder = 'snoozed';
+      persistMail();
+      toast(`Snoozed for ${hours} hours.`, 'success');
+      render();
+    });
   }
 
-  function moveSelected(id) {
-    const systemFolders = MAIL_FOLDERS.map(f => f.id).join(', ');
-    const customList = customFolders.map(f => `custom_${f.id} (${f.name})`).join(', ');
-    const hint = customList ? `${systemFolders}, ${customList}` : systemFolders;
-    const folder = prompt(`Move to folder:\n${hint}`, 'archive');
-    if (!folder) return;
+  async function moveSelected(id) {
+    const systemFolders = MAIL_FOLDERS.map(f => ({ value: f.id, label: f.label }));
+    const customList = customFolders.map(f => ({ value: `custom_${f.id}`, label: f.name }));
+    const picked = await emailSelect({
+      title: 'Move to folder',
+      message: 'Choose a destination folder',
+      options: [...systemFolders, ...customList],
+    });
+    if (!picked) return;
     const target = id || state.selectedId;
     const m = getMessage(target);
     if (!m) return;
-    const normalized = folder.includes('(') ? folder.split('(')[0].trim() : folder.trim();
+    const normalized = String(picked).includes('(') ? String(picked).split('(')[0].trim() : String(picked).trim();
     const valid = MAIL_FOLDERS.some(f => f.id === normalized) || normalized.startsWith('custom_');
     if (valid) { m.folder = normalized; persistMail(); toast('Moved.', 'success'); render(); }
     else toast('Unknown folder.', 'error');
   }
 
   function addCustomFolder() {
-    const name = prompt('New folder name:', 'Projects');
-    if (!name || !name.trim()) return;
-    const id = 'cf_' + Date.now().toString(36);
-    customFolders.push({ id, name: name.trim() });
-    persistCustomFolders();
-    renderSidebar();
-    toast(`Folder "${name.trim()}" created.`, 'success');
+    emailPrompt('Folder name', 'Projects', { title: 'New folder', label: 'Folder name' }).then(name => {
+      if (!name || !name.trim()) return;
+      const id = 'cf_' + Date.now().toString(36);
+      customFolders.push({ id, name: name.trim() });
+      persistCustomFolders();
+      renderSidebar();
+      toast(`Folder "${name.trim()}" created.`, 'success');
+    });
   }
 
   function renameCustomFolder(id) {
     const f = customFolders.find(x => x.id === id);
     if (!f) return;
-    const name = prompt('Rename folder:', f.name);
-    if (!name || !name.trim()) return;
-    f.name = name.trim();
-    persistCustomFolders();
-    renderSidebar();
+    emailPrompt('Folder name', f.name, { title: 'Rename folder', label: 'Folder name' }).then(name => {
+      if (!name || !name.trim()) return;
+      f.name = name.trim();
+      persistCustomFolders();
+      renderSidebar();
+    });
   }
 
   function deleteCustomFolder(id) {
     const f = customFolders.find(x => x.id === id);
     if (!f) return;
-    if (!confirm(`Delete folder "${f.name}"? Messages will move to Inbox.`)) return;
-    mailMessages.forEach(m => { if (m.folder === 'custom_' + id) m.folder = 'inbox'; });
-    customFolders = customFolders.filter(x => x.id !== id);
-    if (state.folder === 'custom_' + id) state.folder = 'inbox';
-    persistCustomFolders();
-    persistMail();
-    render();
+    emailConfirm(`Delete folder "${f.name}"? Messages will move to Inbox.`, {
+      title: 'Delete folder',
+      danger: true,
+      confirmText: 'Delete',
+    }).then(ok => {
+      if (!ok) return;
+      mailMessages.forEach(m => { if (m.folder === 'custom_' + id) m.folder = 'inbox'; });
+      customFolders = customFolders.filter(x => x.id !== id);
+      if (state.folder === 'custom_' + id) state.folder = 'inbox';
+      persistCustomFolders();
+      persistMail();
+      render();
+    });
   }
 
   function labelSelected() {
-    const label = prompt('Add label:', 'Projects');
-    if (!label) return;
-    const m = getMessage(state.selectedId);
-    if (m) { m.labels = m.labels || []; if (!m.labels.includes(label)) m.labels.push(label); persistMail(); render(); }
+    emailPrompt('Label name', 'Projects', { title: 'Add label', label: 'Label' }).then(label => {
+      if (!label) return;
+      const m = getMessage(state.selectedId);
+      if (m) { m.labels = m.labels || []; if (!m.labels.includes(label)) m.labels.push(label); persistMail(); render(); }
+    });
   }
 
   function reportPhishing() { toast('Message reported. Sender blocked and IT notified.', 'success'); }
@@ -2289,22 +2480,8 @@
     await refreshInternalFromServer();
   }
 
-  function composeInternal(prefill) {
-    const defaultTo = (prefill && prefill.to) || '';
-    const to = prompt('Send internal message to (email):', defaultTo);
-    if (!to) return;
-    const subject = prompt('Subject:', 'Quick note');
-    if (!subject) return;
-    internalMessages.unshift({
-      id: uid(), folder: 'team', type: 'message', from: ctx.userName, fromUser: ctx.userName,
-      subject, preview: '', body: `<p>${esc(subject)}</p>`, date: new Date().toISOString(),
-      unread: false, priority: 'normal', project: ctx.projectName, module: 'Internal', requiresAction: false,
-      to: [to],
-    });
-    persistInternal();
-    toast('Internal message sent.', 'success');
-    setWorkspace('internal');
-    setFolder('team');
+  function composeInternal(opts) {
+    return compose({ ...(opts || {}), mode: 'new' });
   }
 
   function refresh() {
@@ -2399,10 +2576,22 @@
   }
 
   function addRule() {
-    const name = prompt('Rule name:', 'Move notifications to Updates');
-    const condition = prompt('When (contains in from/subject):', 'notifications');
-    const action = prompt('Action (move:updates, label:Projects, delete, forward:email):', 'move:updates');
-    if (name && condition && action) { rules.push({ name, condition, action }); saveJson(STORAGE.rules, rules); showRules(); }
+    emailPrompt('Rule name', 'Move notifications to Updates', { title: 'New inbox rule', label: 'Rule name' }).then(name => {
+      if (!name) return;
+      emailPrompt('When message contains', 'notifications', { title: 'New inbox rule', label: 'Condition' }).then(condition => {
+        if (!condition) return;
+        emailPrompt('Action', 'move:updates', {
+          title: 'New inbox rule',
+          label: 'Action (move:updates, label:Projects, delete, forward:email)',
+        }).then(action => {
+          if (name && condition && action) {
+            rules.push({ name, condition, action });
+            saveJson(STORAGE.rules, rules);
+            showRules();
+          }
+        });
+      });
+    });
   }
 
   function deleteRule(i) { rules.splice(i, 1); saveJson(STORAGE.rules, rules); showRules(); }
@@ -2411,9 +2600,7 @@
     document.getElementById('emailContactsModal')?.classList.remove('hidden');
     const rows = emailInternalOnly() ? (contacts.length ? contacts : (ctx.users || [])) : contacts;
     const actionLabel = emailInternalOnly() ? 'Message' : 'Email';
-    const actionFn = emailInternalOnly()
-      ? (email => `CasePMEmail.composeInternal({to:'${esc(email)}'})`)
-      : (email => `CasePMEmail.compose({to:'${esc(email)}'})`);
+    const actionFn = (email => `CasePMEmail.compose({to:'${esc(email)}'})`);
     document.getElementById('emailContactsBody').innerHTML = rows.length ? rows.map(c => `
       <div class="flex items-center justify-between py-2 border-b border-zinc-800 text-sm">
         <div>
