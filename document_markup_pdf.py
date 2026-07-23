@@ -63,32 +63,50 @@ def _resolve_geom(geom: dict, page_w: float, page_h: float) -> dict:
     return out
 
 
-def _revision_cloud_path(x: float, y: float, w: float, h: float, scallop: float = 18) -> list[tuple[float, float]]:
-    r = max(6.0, min(scallop, w / 4, h / 4))
+def _revision_cloud_points(x: float, y: float, w: float, h: float, scallop: float = 18) -> list[fitz.Point]:
+    """Match drawings-app revisionCloudPath scalloped rectangle."""
+    r = max(6.0, min(float(scallop or 18), w / 4, h / 4))
     if w < r * 2 or h < r * 2:
-        return [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
+        return [
+            fitz.Point(x, y),
+            fitz.Point(x + w, y),
+            fitz.Point(x + w, y + h),
+            fitz.Point(x, y + h),
+            fitz.Point(x, y),
+        ]
 
-    def edge(x1, y1, x2, y2):
-        pts = [(x1, y1)]
+    def scallop_edge(x1, y1, x2, y2, ox, oy):
         length = math.hypot(x2 - x1, y2 - y1)
         if length < 1:
-            return pts
-        ux, uy = (x2 - x1) / length, (y2 - y1) / length
+            return [fitz.Point(x1, y1)]
+        ux = (x2 - x1) / length
+        uy = (y2 - y1) / length
+        pts = [fitz.Point(x1, y1)]
         dist = 0.0
         cx, cy = x1, y1
         while dist + 0.25 < length:
             step = min(r * 2, length - dist)
-            pts.append((cx + ux * step, cy + uy * step))
-            cx += ux * step
-            cy += uy * step
+            mx = cx + ux * step * 0.5
+            my = cy + uy * step * 0.5
+            ex = cx + ux * step
+            ey = cy + uy * step
+            # Quadratic bezier: current -> (mx+ox*r, my+oy*r) control -> end
+            qx = mx + ox * r
+            qy = my + oy * r
+            for t in (0.25, 0.5, 0.75, 1.0):
+                t1 = 1 - t
+                px = t1 * t1 * cx + 2 * t1 * t * qx + t * t * ex
+                py = t1 * t1 * cy + 2 * t1 * t * qy + t * t * ey
+                pts.append(fitz.Point(px, py))
+            cx, cy = ex, ey
             dist += step
-        pts.append((x2, y2))
         return pts
 
-    path = edge(x, y + h, x, y)
-    path.extend(edge(x, y, x + w, y)[1:])
-    path.extend(edge(x + w, y, x + w, y + h)[1:])
-    path.extend(edge(x + w, y + h, x, y + h)[1:])
+    path = scallop_edge(x, y + h, x, y, -1, 0)
+    path.extend(scallop_edge(x, y, x + w, y, 0, -1)[1:])
+    path.extend(scallop_edge(x + w, y, x + w, y + h, 1, 0)[1:])
+    path.extend(scallop_edge(x + w, y + h, x, y + h, 0, 1)[1:])
+    path.append(fitz.Point(x, y + h))
     return path
 
 
@@ -123,14 +141,12 @@ def _draw_markup_on_page(page, markup_data: dict) -> None:
     opacity = float(style.get('opacity') if style.get('opacity') is not None else 1.0)
     fill_op = float(style.get('fillOpacity') if style.get('fillOpacity') is not None else 0.25)
     scallop = float(style.get('cloudScallop') or 18)
-    shape = page.new_shape()
 
     if mtype in ('line', 'arrow', 'measure') and geom.get('points'):
         pts = geom['points']
         if len(pts) >= 4:
-            p1 = fitz.Point(pts[0], pts[1])
-            p2 = fitz.Point(pts[2], pts[3])
-            shape.draw_line(p1, p2)
+            shape = page.new_shape()
+            shape.draw_line(fitz.Point(pts[0], pts[1]), fitz.Point(pts[2], pts[3]))
             shape.finish(color=color, width=width, stroke_opacity=opacity)
             shape.commit()
             if mtype == 'measure' and markup_data.get('measurement_value') is not None:
@@ -143,30 +159,31 @@ def _draw_markup_on_page(page, markup_data: dict) -> None:
 
     if mtype in ('rect', 'highlight') and geom.get('w') is not None:
         rect = fitz.Rect(geom['x'], geom['y'], geom['x'] + geom['w'], geom['y'] + geom['h'])
-        fill = (1.0, 0.8, 0.0) if mtype == 'highlight' else None
-        fill_alpha = fill_op if mtype == 'highlight' else 0
+        shape = page.new_shape()
         shape.draw_rect(rect)
+        fill = (1.0, 0.8, 0.0) if mtype == 'highlight' else None
         shape.finish(
             color=color,
             width=width,
             fill=fill,
-            fill_opacity=fill_alpha,
+            fill_opacity=fill_op if mtype == 'highlight' else 0,
             stroke_opacity=opacity,
         )
         shape.commit()
         return
 
     if mtype == 'cloud' and geom.get('w') is not None:
-        path = _revision_cloud_path(geom['x'], geom['y'], geom['w'], geom['h'], scallop)
-        if len(path) >= 2:
-            for i in range(len(path) - 1):
-                shape.draw_line(fitz.Point(path[i][0], path[i][1]), fitz.Point(path[i + 1][0], path[i + 1][1]))
-            shape.finish(color=color, width=width, stroke_opacity=opacity)
+        points = _revision_cloud_points(geom['x'], geom['y'], geom['w'], geom['h'], scallop)
+        if len(points) >= 2:
+            shape = page.new_shape()
+            shape.draw_polyline(points)
+            shape.finish(color=color, width=width, stroke_opacity=opacity, closePath=False)
             shape.commit()
         return
 
     if mtype == 'ellipse' and geom.get('w') is not None:
         rect = fitz.Rect(geom['x'], geom['y'], geom['x'] + geom['w'], geom['y'] + geom['h'])
+        shape = page.new_shape()
         shape.draw_oval(rect)
         shape.finish(color=color, width=width, fill_opacity=fill_op, stroke_opacity=opacity)
         shape.commit()
@@ -176,7 +193,7 @@ def _draw_markup_on_page(page, markup_data: dict) -> None:
         pts = geom['points']
         points = [fitz.Point(pts[i], pts[i + 1]) for i in range(0, len(pts) - 1, 2)]
         if len(points) >= 2:
-            closed = mtype in ('polygon', 'area')
+            shape = page.new_shape()
             shape.draw_polyline(points)
             fill = (0.13, 0.77, 0.37) if mtype == 'area' else None
             shape.finish(
@@ -185,13 +202,15 @@ def _draw_markup_on_page(page, markup_data: dict) -> None:
                 fill=fill,
                 fill_opacity=fill_op if mtype == 'area' else 0,
                 stroke_opacity=opacity,
-                closePath=closed,
+                closePath=mtype in ('polygon', 'area'),
             )
             shape.commit()
         return
 
     if mtype == 'crossout' and geom.get('w') is not None:
-        x, y, w, h = geom['x'], geom['y'], geom['w'], geom.get('h') or geom['w']
+        x, y, w = geom['x'], geom['y'], geom['w']
+        h = geom.get('h') or geom['w']
+        shape = page.new_shape()
         shape.draw_line(fitz.Point(x, y), fitz.Point(x + w, y + h))
         shape.draw_line(fitz.Point(x + w, y), fitz.Point(x, y + h))
         shape.finish(color=color, width=width, stroke_opacity=opacity)
@@ -212,6 +231,7 @@ def _draw_markup_on_page(page, markup_data: dict) -> None:
         tw = geom.get('w') or 110
         th = geom.get('h') or 32
         rect = fitz.Rect(geom['x'], geom['y'], geom['x'] + tw, geom['y'] + th)
+        shape = page.new_shape()
         shape.draw_rect(rect)
         shape.finish(color=color, width=2, stroke_opacity=opacity)
         shape.commit()

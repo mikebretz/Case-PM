@@ -236,11 +236,10 @@ def _draw_contractor_review_stamp(page, rect, stamp: dict, *, upload_folder: str
 
 
 def _draw_submittal_status_banner(page, status: str) -> None:
-    """Draw architect decision status above the stamp boxes on the cover page."""
+    """Draw architect decision label above a status box on the cover page."""
     label = (status or '').strip()
     if not label or label not in SUBMITTAL_DECISION_STATUSES:
         return
-    banner = fitz.Rect(309.567, 232.0, 557.567, 256.0)
     colors = {
         'No Exceptions Taken': ((0.05, 0.45, 0.28), (0.88, 0.98, 0.93)),
         'Reviewed as Noted': ((0.05, 0.42, 0.45), (0.88, 0.97, 0.97)),
@@ -250,25 +249,26 @@ def _draw_submittal_status_banner(page, status: str) -> None:
         'Closed': ((0.25, 0.25, 0.25), (0.94, 0.94, 0.94)),
     }
     border, fill = colors.get(label, ((0.2, 0.2, 0.2), (0.95, 0.95, 0.95)))
-    shape = page.new_shape()
-    shape.draw_rect(banner)
-    shape.finish(color=border, width=1.5, fill=fill)
-    shape.commit()
-    text_x = banner.x0 + 8
-    text_y = banner.y0 + 15
+    header_x = 309.567
     page.insert_text(
-        (text_x, text_y),
-        'ARCHITECT / ENGINEER DECISION:',
+        (header_x, 224.0),
+        'ARCHITECT / ENGINEER DECISION',
         fontsize=7,
         fontname='helv',
         color=(0.35, 0.35, 0.35),
     )
-    page.insert_text(
-        (text_x, text_y + 12),
+    banner = fitz.Rect(309.567, 228.0, 557.567, 258.0)
+    shape = page.new_shape()
+    shape.draw_rect(banner)
+    shape.finish(color=border, width=1.5, fill=fill)
+    shape.commit()
+    page.insert_textbox(
+        banner,
         label.upper(),
-        fontsize=10,
+        fontsize=9,
         fontname='helv',
         color=border,
+        align=fitz.TEXT_ALIGN_CENTER,
     )
 
 
@@ -545,6 +545,29 @@ def _append_bytes_to_pdf(
             src.close()
 
 
+def _read_physical_print_bytes(package: dict, *, submittal_id: int, upload_folder: str) -> tuple[bytes | None, list[bytes]]:
+    """Return (cover_bytes, marked_document_bytes_list) from an uploaded physical print package."""
+    if not package or not isinstance(package, dict):
+        return None, []
+    base = os.path.join(upload_folder, 'submittals', str(submittal_id), 'physical')
+    cover = None
+    cover_meta = package.get('cover')
+    if isinstance(cover_meta, dict) and cover_meta.get('filename'):
+        path = os.path.join(base, cover_meta['filename'])
+        if os.path.isfile(path):
+            with open(path, 'rb') as fh:
+                cover = fh.read()
+    marked = []
+    for item in package.get('marked_documents') or []:
+        if not isinstance(item, dict) or not item.get('filename'):
+            continue
+        path = os.path.join(base, item['filename'])
+        if os.path.isfile(path):
+            with open(path, 'rb') as fh:
+                marked.append(fh.read())
+    return cover, marked
+
+
 def build_submittal_print_pdf(
     submittal,
     project=None,
@@ -565,6 +588,43 @@ def build_submittal_print_pdf(
         raise FileNotFoundError('Submittal form template is missing.')
 
     details = _parse_submittal_details(submittal)
+    submittal_id = getattr(submittal, 'id', None)
+    physical_pkg = details.get('physicalPrintPackage') or {}
+    physical_cover, physical_marked = _read_physical_print_bytes(
+        physical_pkg,
+        submittal_id=int(submittal_id or 0),
+        upload_folder=upload_folder,
+    )
+    if physical_cover or physical_marked:
+        merged = fitz.open()
+        try:
+            if physical_cover:
+                _append_bytes_to_pdf(merged, physical_cover)
+            else:
+                submissions = details.get('reviewSubmissions') or details.get('review_submissions') or []
+                review_comments = (getattr(submittal, 'review_comments', None) or '').strip()
+                use_stamp = bool(details.get('contractorReviewStamp'))
+                auto = fitz.open(template_path)
+                try:
+                    _fill_submittal_cover_page(
+                        auto[0], submittal, project=project, company_info=company_info,
+                        details=details, use_contractor_stamp=use_stamp, upload_folder=upload_folder,
+                    )
+                    _draw_page_footer(auto[0], 1, 2)
+                    _append_submittal_comments_page(
+                        auto, submittal, project=project, details=details,
+                        submissions=submissions, review_comments=review_comments,
+                        page_num=2, total_pages=2,
+                    )
+                    merged.insert_pdf(auto)
+                finally:
+                    auto.close()
+            for data in physical_marked:
+                _append_bytes_to_pdf(merged, data)
+            return merged.tobytes()
+        finally:
+            merged.close()
+
     submissions = details.get('reviewSubmissions') or details.get('review_submissions') or []
     review_comments = (getattr(submittal, 'review_comments', None) or '').strip()
     use_stamp = bool(details.get('contractorReviewStamp'))
@@ -592,7 +652,6 @@ def build_submittal_print_pdf(
             total_pages=2,
         )
         project_id = getattr(submittal, 'project_id', None) or getattr(project, 'id', None)
-        submittal_id = getattr(submittal, 'id', None)
         for attachment in attachments or []:
             try:
                 data = _read_attachment_bytes(

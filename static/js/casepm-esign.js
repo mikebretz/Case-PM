@@ -52,6 +52,36 @@
     return json.stamp || { has_stamp: false };
   }
 
+  async function fetchMyStamps(forceRefresh) {
+    const res = await fetch('/api/users/me/stamps', { credentials: 'same-origin' });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || 'Could not load stamps');
+    return json;
+  }
+
+  async function saveStampEntry(payload) {
+    const res = await fetch('/api/users/me/stamps', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || 'Could not save stamp');
+    cachedMyStamp = json.stamp || null;
+    return json;
+  }
+
+  async function deleteStampEntry(stampId) {
+    const res = await fetch(`/api/users/me/stamps/${encodeURIComponent(stampId)}`, {
+      method: 'DELETE',
+      credentials: 'same-origin',
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || 'Could not delete stamp');
+    return json;
+  }
+
   async function saveMyStamp(payload) {
     const res = await fetch('/api/users/me/stamp', {
       method: 'PUT',
@@ -163,8 +193,11 @@
     fetchUserSignature,
     saveMySignature,
     fetchMyStamp,
+    fetchMyStamps,
     fetchUserStamp,
     saveMyStamp,
+    saveStampEntry,
+    deleteStampEntry,
     buildAttestationPayload,
     mountSignPanel,
     clearCache,

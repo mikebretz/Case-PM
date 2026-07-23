@@ -556,6 +556,7 @@ class User(db.Model, UserMixin):
     stamp_path = db.Column(db.String(300))
     stamp_hash = db.Column(db.String(64))
     stamp_set_at = db.Column(db.DateTime)
+    user_stamps_json = db.Column(db.Text)
     phones_json = db.Column(db.Text)
     notes = db.Column(db.Text)
     access_enabled = db.Column(db.Boolean, default=True)
@@ -6929,10 +6930,10 @@ def api_user_stamp(user_id):
 @app.route('/api/users/<int:user_id>/stamp/image', methods=['GET'])
 @login_required
 def api_user_stamp_image(user_id):
-    from user_signature_persistence import ensure_user_signature_schema
+    from user_signature_persistence import ensure_user_signature_schema, stamp_file_path
     ensure_user_signature_schema(db)
     user = User.query.get_or_404(user_id)
-    path = getattr(user, 'stamp_path', None)
+    path = stamp_file_path(user)
     if not path or not os.path.isfile(path):
         return jsonify({'error': 'No stamp on file'}), 404
     from flask import send_file
@@ -6958,7 +6959,65 @@ def api_save_my_stamp():
     except Exception as exc:
         db.session.rollback()
         return jsonify({'error': str(exc)}), 500
-    return jsonify({'ok': True, 'stamp': stamp})
+    return jsonify({'ok': True, **stamp} if isinstance(stamp, dict) and 'stamps' in stamp else {'ok': True, 'stamp': stamp.get('stamp') if isinstance(stamp, dict) else stamp})
+
+
+@app.route('/api/users/me/stamps', methods=['GET'])
+@login_required
+def api_my_stamps():
+    from user_signature_persistence import ensure_user_signature_schema, stamps_public_view
+    ensure_user_signature_schema(db)
+    return jsonify({'ok': True, **stamps_public_view(current_user)})
+
+
+@app.route('/api/users/me/stamps', methods=['PUT'])
+@login_required
+def api_save_my_stamp_entry():
+    from user_signature_persistence import ensure_user_signature_schema, save_user_stamp
+    ensure_user_signature_schema(db)
+    body = request.get_json(silent=True) or {}
+    data_url = body.get('stamp_png') or body.get('stampDataURL') or body.get('data_url')
+    if not data_url:
+        return jsonify({'error': 'stamp_png is required'}), 400
+    try:
+        result = save_user_stamp(
+            current_user,
+            data_url,
+            label=body.get('label'),
+            stamp_id=body.get('stamp_id'),
+            make_primary=bool(body.get('make_primary')),
+        )
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'ok': True, **result})
+
+
+@app.route('/api/users/me/stamps/<stamp_id>', methods=['DELETE'])
+@login_required
+def api_delete_my_stamp(stamp_id):
+    from user_signature_persistence import ensure_user_signature_schema, delete_user_stamp
+    ensure_user_signature_schema(db)
+    try:
+        result = delete_user_stamp(current_user, stamp_id)
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'ok': True, **result})
+
+
+@app.route('/api/users/<int:user_id>/stamps/<stamp_id>/image', methods=['GET'])
+@login_required
+def api_user_stamp_entry_image(user_id, stamp_id):
+    from user_signature_persistence import ensure_user_signature_schema, stamp_file_path
+    ensure_user_signature_schema(db)
+    user = User.query.get_or_404(user_id)
+    path = stamp_file_path(user, stamp_id)
+    if not path or not os.path.isfile(path):
+        return jsonify({'error': 'No stamp on file'}), 404
+    return send_file(path, mimetype='image/png', max_age=3600)
 
 
 @app.route('/users/create', methods=['POST'])
@@ -10281,7 +10340,7 @@ def api_submittal_add_review_submission(submittal_id):
 @app.route('/api/submittals/<int:submittal_id>/print-review-sheet', methods=['GET'])
 @login_required
 def api_submittal_print_review_sheet(submittal_id):
-    from document_module_security import assert_submittal_read_allowed, submittal_visible_to_user
+    from document_module_security import assert_submittal_read_allowed, submittal_visible_to_user, is_sub_portal_user, is_staff_portal_user
     from financial_security import require_financial_project_access
     from program_settings_persistence import load_company_info
     from submittal_form_pdf import build_submittal_review_sheet_pdf
@@ -10290,6 +10349,8 @@ def api_submittal_print_review_sheet(submittal_id):
     submittal = Submittal.query.get_or_404(submittal_id)
     try:
         assert_submittal_read_allowed(current_user)
+        if is_sub_portal_user(current_user) and not is_staff_portal_user(current_user):
+            return jsonify({'error': 'Permission denied'}), 403
         require_financial_project_access(current_user, submittal.project_id, Project)
         if not submittal_visible_to_user(submittal, current_user, Company=Company, db=db):
             return jsonify({'error': 'Permission denied'}), 403
@@ -10411,6 +10472,173 @@ def api_submittal_attachment_viewer_doc(submittal_id):
     submittal.attachments_json = json.dumps(attachments)
     db.session.commit()
     return jsonify({'ok': True, 'document_id': doc_dict['id'], 'name': doc_dict.get('name') or original})
+
+
+def _submittal_attachment_document(submittal, doc_id):
+    from submittal_persistence import submittal_links_document
+    doc = Document.query.get(int(doc_id))
+    if not doc or doc.deleted_at or doc.project_id != submittal.project_id:
+        return None
+    if submittal_links_document(submittal, doc.id):
+        return doc
+    try:
+        meta = json.loads(doc.source_metadata_json or '{}')
+    except (TypeError, json.JSONDecodeError):
+        meta = {}
+    if meta.get('submittal_id') == submittal.id:
+        return doc
+    return None
+
+
+@app.route('/api/submittals/<int:submittal_id>/attachments/document/<int:doc_id>', methods=['GET'])
+@login_required
+def api_submittal_attachment_document(submittal_id, doc_id):
+    """Submittal-scoped document metadata + markups (no Documents module required)."""
+    from document_module_security import submittal_visible_to_user
+    from document_persistence import document_markup_to_dict
+    from financial_security import require_financial_project_access
+
+    submittal = Submittal.query.get_or_404(submittal_id)
+    try:
+        require_financial_project_access(current_user, submittal.project_id, Project)
+        if not submittal_visible_to_user(submittal, current_user, Company=Company, db=db):
+            return jsonify({'error': 'Permission denied'}), 403
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    doc = _submittal_attachment_document(submittal, doc_id)
+    if not doc:
+        return jsonify({'error': 'Document not found for this submittal'}), 404
+    markups = DocumentMarkup.query.filter_by(document_id=doc.id).all()
+    return jsonify({
+        'ok': True,
+        'document': {
+            'id': doc.id,
+            'name': doc.name,
+            'original_filename': doc.original_filename,
+            'mime_type': doc.mime_type,
+            'file_url': url_for('api_submittal_attachment_document_file', submittal_id=submittal_id, doc_id=doc.id),
+        },
+        'markups': [document_markup_to_dict(m) for m in markups],
+    })
+
+
+@app.route('/api/submittals/<int:submittal_id>/attachments/document/<int:doc_id>/file', methods=['GET'])
+@login_required
+def api_submittal_attachment_document_file(submittal_id, doc_id):
+    from document_module_security import submittal_visible_to_user
+    from financial_security import require_financial_project_access
+
+    submittal = Submittal.query.get_or_404(submittal_id)
+    try:
+        require_financial_project_access(current_user, submittal.project_id, Project)
+        if not submittal_visible_to_user(submittal, current_user, Company=Company, db=db):
+            return jsonify({'error': 'Permission denied'}), 403
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    doc = _submittal_attachment_document(submittal, doc_id)
+    if not doc:
+        return jsonify({'error': 'Document not found for this submittal'}), 404
+    path = os.path.join(app.config['UPLOAD_FOLDER'], 'documents', str(doc.project_id), doc.filename)
+    if not os.path.isfile(path):
+        return jsonify({'error': 'File not found'}), 404
+    return send_file(path, mimetype=doc.mime_type or 'application/octet-stream', as_attachment=False, download_name=doc.original_filename or doc.name)
+
+
+@app.route('/api/submittals/<int:submittal_id>/attachments/document/<int:doc_id>/markups', methods=['GET', 'POST'])
+@login_required
+def api_submittal_attachment_document_markups(submittal_id, doc_id):
+    from document_module_security import submittal_visible_to_user
+    from document_persistence import document_markup_to_dict
+    from financial_security import require_financial_project_access
+    from submittal_persistence import submittal_is_approved_locked
+
+    submittal = Submittal.query.get_or_404(submittal_id)
+    try:
+        require_financial_project_access(current_user, submittal.project_id, Project)
+        if not submittal_visible_to_user(submittal, current_user, Company=Company, db=db):
+            return jsonify({'error': 'Permission denied'}), 403
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    doc = _submittal_attachment_document(submittal, doc_id)
+    if not doc:
+        return jsonify({'error': 'Document not found for this submittal'}), 404
+    if request.method == 'GET':
+        rows = DocumentMarkup.query.filter_by(document_id=doc.id).all()
+        return jsonify({'markups': [document_markup_to_dict(m) for m in rows]})
+    if submittal_is_approved_locked(submittal):
+        return jsonify({'error': 'This submittal is approved and locked; markups cannot be changed.'}), 423
+    lock = _document_edit_lock_error(doc)
+    if lock:
+        return lock
+    body = request.get_json(silent=True) or {}
+    user_name = _user_display_name(current_user.id)
+    markup = DocumentMarkup(
+        document_id=doc.id,
+        user_id=current_user.id,
+        user_name=user_name,
+        layer=body.get('layer') or 'personal',
+        markup_type=body.get('markup_type') or 'line',
+        geometry_json=json.dumps(body.get('geometry') or {}),
+        style_json=json.dumps(body.get('style') or {}),
+        label=body.get('label'),
+        measurement_value=body.get('measurement_value'),
+        measurement_unit=body.get('measurement_unit'),
+    )
+    if body.get('publish'):
+        markup.layer = 'published'
+        markup.published_at = datetime.utcnow()
+    db.session.add(markup)
+    db.session.commit()
+    return jsonify({'ok': True, 'markup': document_markup_to_dict(markup)})
+
+
+@app.route('/api/submittals/<int:submittal_id>/physical-print/<kind>', methods=['POST'])
+@login_required
+def api_submittal_physical_print_upload(submittal_id, kind):
+    """Upload a physically stamped cover page or marked-up document (supersedes auto print)."""
+    from document_module_security import submittal_visible_to_user, user_can_act_on_ball_in_court
+    from financial_security import require_financial_project_access
+    from submittal_persistence import save_physical_print_upload
+
+    if kind not in ('cover', 'marked-document'):
+        return jsonify({'error': 'kind must be cover or marked-document'}), 400
+    submittal = Submittal.query.get_or_404(submittal_id)
+    try:
+        require_financial_project_access(current_user, submittal.project_id, Project)
+        if not submittal_visible_to_user(submittal, current_user, Company=Company, db=db):
+            return jsonify({'error': 'Permission denied'}), 403
+        role = getattr(current_user, 'role', '') or ''
+        is_design = 'architect' in role.lower() or 'engineer' in role.lower()
+        can_act = user_can_act_on_ball_in_court(current_user, submittal.ball_in_court)
+        if not (is_design or can_act or getattr(current_user, 'role', None) in ('Admin', 'Developer', 'Project Manager')):
+            return jsonify({'error': 'Permission denied'}), 403
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    if 'file' not in request.files:
+        return jsonify({'error': 'file required'}), 400
+    f = request.files['file']
+    if not f.filename:
+        return jsonify({'error': 'empty filename'}), 400
+    safe = secure_filename(f.filename)
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'submittals', str(submittal_id), 'physical')
+    os.makedirs(folder, exist_ok=True)
+    stored = f'{kind}_{datetime.utcnow().strftime("%Y%m%d%H%M%S")}_{safe}'
+    path = os.path.join(folder, stored)
+    f.save(path)
+    entry = {
+        'filename': stored,
+        'original_name': f.filename,
+        'uploaded_at': datetime.utcnow().isoformat(),
+        'uploaded_by_id': current_user.id,
+        'uploaded_by': _user_display_name(current_user.id),
+    }
+    pkg = save_physical_print_upload(
+        submittal,
+        'cover' if kind == 'cover' else 'marked_document',
+        entry,
+    )
+    db.session.commit()
+    return jsonify({'ok': True, 'physical_print_package': pkg})
 
 
 @app.route('/api/submittals/<int:submittal_id>/attachments', methods=['DELETE'])
