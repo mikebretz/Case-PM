@@ -418,6 +418,8 @@
           from: m.from,
           fromUser: m.fromUser,
           fromEmail: m.fromEmail || '',
+          fromUserId: m.fromUserId || null,
+          replyTo: m.replyTo || null,
           to: m.to || [],
           cc: m.cc || [],
           bcc: m.bcc || [],
@@ -1299,8 +1301,13 @@
   }
 
   function resolveInternalSender(m) {
+    if (m.replyTo) return formatRecipientLine(m.replyTo);
     const name = (m.from || m.fromUser || '').trim();
     let email = (m.fromEmail || '').trim();
+    if (!email && m.fromUserId) {
+      const byId = buildContactIndex().find(c => String(c.id) === String(m.fromUserId));
+      email = byId?.email || '';
+    }
     if (!email && name) {
       const hit = buildContactIndex().find(c => (c.name || '').toLowerCase() === name.toLowerCase());
       email = hit?.email || '';
@@ -1322,7 +1329,7 @@
       };
     }
 
-    const sender = resolveInternalSender(m);
+    const sender = m.replyTo ? formatRecipientLine(m.replyTo) : resolveInternalSender(m);
     if (!all) {
       return { to: sender, cc: '', showCcBcc: false };
     }
@@ -1429,8 +1436,40 @@
   }
 
   function getMessage(id) {
-    const pool = state.workspace === 'internal' ? internalMessages : mailMessages;
-    return pool.find(m => String(m.id) === String(id));
+    const key = String(id);
+    if (state.workspace === 'internal' || isInternalWorkspace()) {
+      const internal = internalMessages.find(m => String(m.id) === key);
+      if (internal) return internal;
+    }
+    return mailMessages.find(m => String(m.id) === key);
+  }
+
+  function isInternalMessageRef(id) {
+    const key = String(id);
+    return isInternalWorkspace() || internalMessages.some(m => String(m.id) === key);
+  }
+
+  function composeRecipientField(value) {
+    if (Array.isArray(value)) {
+      return value.map(formatRecipientLine).filter(Boolean).join(', ');
+    }
+    return value || '';
+  }
+
+  function applyComposeFieldValues(scope) {
+    const c = state.inlineCompose;
+    if (!c) return;
+    const root = scope?.querySelector?.('#emailInlineCompose') ? scope : (scope || document);
+    const composeRoot = root.querySelector ? root.querySelector('#emailInlineCompose') : document.getElementById('emailInlineCompose');
+    if (!composeRoot) return;
+    const toEl = composeRoot.querySelector('#inlineComposeTo');
+    const ccEl = composeRoot.querySelector('#inlineComposeCc');
+    const bccEl = composeRoot.querySelector('#inlineComposeBcc');
+    const subjectEl = composeRoot.querySelector('#inlineComposeSubject');
+    if (toEl) toEl.value = composeRecipientField(c.to);
+    if (ccEl) ccEl.value = composeRecipientField(c.cc);
+    if (bccEl) bccEl.value = composeRecipientField(c.bcc);
+    if (subjectEl && c.subject != null) subjectEl.value = c.subject;
   }
 
   function render() {
@@ -1819,6 +1858,7 @@
     attachComposeDropZone(scope);
     attachComposeEditor(scope);
     bindAttachmentInteractions(scope);
+    applyComposeFieldValues(scope);
   }
 
   function renderInlineComposeHTML(opts) {
@@ -1840,25 +1880,25 @@
         <div class="email-inline-compose-fields text-sm">
           <div class="email-inline-compose-row">
             <label>To</label>
-            <input type="text" id="inlineComposeTo" value="${esc(c.to)}" placeholder="Recipients" autocomplete="off">
+            <input type="text" id="inlineComposeTo" placeholder="Recipients" autocomplete="off">
             <button type="button" onclick="CasePMEmail.toggleCcBcc()" class="text-xs text-zinc-400 hover:text-white flex-shrink-0">Cc/Bcc</button>
             <div id="inlineSuggestTo" class="email-recipient-suggest hidden"></div>
           </div>
           <div id="inlineCcBccRows" class="${c.showCcBcc ? '' : 'hidden'} space-y-2">
             <div class="email-inline-compose-row">
               <label>Cc</label>
-              <input type="text" id="inlineComposeCc" value="${esc(c.cc)}" autocomplete="off">
+              <input type="text" id="inlineComposeCc" autocomplete="off">
               <div id="inlineSuggestCc" class="email-recipient-suggest hidden"></div>
             </div>
             <div class="email-inline-compose-row">
               <label>Bcc</label>
-              <input type="text" id="inlineComposeBcc" value="${esc(c.bcc)}" autocomplete="off">
+              <input type="text" id="inlineComposeBcc" autocomplete="off">
               <div id="inlineSuggestBcc" class="email-recipient-suggest hidden"></div>
             </div>
           </div>
           <div class="email-inline-compose-row">
             <label>Subj</label>
-            <input type="text" id="inlineComposeSubject" value="${esc(c.subject)}" class="font-medium">
+            <input type="text" id="inlineComposeSubject" class="font-medium">
           </div>
         </div>
         <div class="email-compose-editor-wrap">
@@ -2168,9 +2208,9 @@
     const parts = prepareComposeParts(opts || {});
     state.inlineCompose = {
       mode: opts?.draftId ? 'draft' : (opts?.mode || 'new'),
-      to: opts?.to || '',
-      cc: opts?.cc || '',
-      bcc: opts?.bcc || '',
+      to: composeRecipientField(opts?.to),
+      cc: composeRecipientField(opts?.cc),
+      bcc: composeRecipientField(opts?.bcc),
       subject: opts?.subject || '',
       messageHtml: parts.messageHtml,
       signatureHtml: parts.signatureHtml,
@@ -2454,7 +2494,7 @@
     let to;
     let cc = '';
     let showCcBcc = false;
-    if (state.workspace === 'internal') {
+    if (isInternalMessageRef(id)) {
       const recipients = buildInternalReplyRecipients(m, all);
       to = recipients.to;
       cc = recipients.cc;

@@ -244,6 +244,16 @@ def init_models(_db):
                     return (getattr(u, 'email', None) or '').strip()
             return ''
 
+        def _reply_to_recipient(self):
+            email = self._sender_email()
+            name = self._sender_display()
+            if not email and not name:
+                return None
+            generic = {'project team', 'case pm', 'case pm system', 'case pm admin', 'system'}
+            if not email and (name or '').strip().lower() in generic:
+                return None
+            return {'name': name or email, 'email': email}
+
         def to_dict(self):
             sender = self._sender_display()
             recipients = _parse_recipients_json(self.recipients_json)
@@ -257,6 +267,8 @@ def init_models(_db):
                 'from': sender,
                 'fromUser': sender,
                 'fromEmail': self._sender_email(),
+                'fromUserId': self.from_user_id,
+                'replyTo': self._reply_to_recipient(),
                 'to': recipients['to'],
                 'cc': recipients['cc'],
                 'bcc': recipients['bcc'],
