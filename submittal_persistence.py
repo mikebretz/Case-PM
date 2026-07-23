@@ -112,6 +112,8 @@ def submittal_to_ui_item(submittal):
         'reviewSubmissions': details.get('reviewSubmissions') or details.get('review_submissions') or [],
         'ballInCourt': d.get('ball_in_court') or '',
         'notifiedDate': details.get('notifiedDate') or '',
+        'baseNumber': details.get('baseNumber') or d.get('number') or '',
+        'parentSubmittalId': details.get('parentSubmittalId'),
     }
 
 
@@ -174,6 +176,90 @@ def _record_contractor_review_stamp(submittal, user):
         'has_signature_image': bool(getattr(user, 'signature_path', None)),
     }
     submittal.details_json = json.dumps(details)
+
+
+def _record_design_review_stamp(submittal, user, decision):
+    """Persist architect/engineer stamp metadata for the submittal cover page."""
+    details = _parse_json(getattr(submittal, 'details_json', None), {})
+    role = (getattr(user, 'role', None) or '').lower()
+    reviewed_name = (
+        (getattr(user, 'signature_legal_name', None) or '').strip()
+        or getattr(user, 'full_name', None)
+        or 'User'
+    )
+    stamp = {
+        'reviewed_by_id': getattr(user, 'id', None),
+        'reviewed_by_name': reviewed_name,
+        'reviewed_at': datetime.utcnow().isoformat(),
+        'decision': decision,
+        'stamp_path': getattr(user, 'stamp_path', None),
+        'stamp_hash': getattr(user, 'stamp_hash', None),
+        'signature_path': getattr(user, 'signature_path', None),
+        'signature_hash': getattr(user, 'signature_hash', None),
+    }
+    if 'engineer' in role and 'architect' not in role:
+        details['engineerReviewStamp'] = stamp
+    else:
+        details['architectReviewStamp'] = stamp
+    submittal.details_json = json.dumps(details)
+
+
+def create_submittal_revision(parent, user, *, db, Submittal):
+    """Create the next revision row directly below the parent in the log."""
+    import re
+
+    details = _parse_json(getattr(parent, 'details_json', None), {})
+    try:
+        parent_rev = int(str(details.get('rev') or '0').strip() or '0')
+    except (TypeError, ValueError):
+        parent_rev = 0
+    new_rev = parent_rev + 1
+
+    base_number = details.get('baseNumber') or parent.number or ''
+    base_number = re.sub(r'-R\d+$', '', str(base_number))
+    new_number = f'{base_number}-R{new_rev}'
+    while Submittal.query.filter_by(number=new_number).first():
+        new_rev += 1
+        new_number = f'{base_number}-R{new_rev}'
+
+    new_details = dict(details)
+    new_details['rev'] = str(new_rev)
+    new_details['baseNumber'] = base_number
+    new_details['parentSubmittalId'] = parent.id
+    for key in (
+        'contractorReviewStamp', 'architectReviewStamp', 'engineerReviewStamp',
+        'reviewSubmissions', 'review_submissions', 'notifiedDate',
+    ):
+        new_details.pop(key, None)
+    new_details['history'] = [{
+        'date': datetime.utcnow().isoformat(),
+        'action': f'Revision {new_rev} created after architect review',
+        'user': getattr(user, 'full_name', None) or 'User',
+        'parent_submittal_id': parent.id,
+    }]
+
+    child = Submittal(
+        project_id=parent.project_id,
+        number=new_number,
+        description=parent.description,
+        spec_section=parent.spec_section,
+        status='Sent to Subcontractor',
+        priority=parent.priority,
+        submitted_by=parent.submitted_by,
+        date=datetime.utcnow().date(),
+        ball_in_court=SUBMITTAL_BALL['Sent to Subcontractor'],
+        assigned_company_id=getattr(parent, 'assigned_company_id', None),
+        assigned_company_name=getattr(parent, 'assigned_company_name', None),
+        assigned_contact_user_id=getattr(parent, 'assigned_contact_user_id', None),
+        assigned_contact_name=getattr(parent, 'assigned_contact_name', None),
+        assigned_contact_email=getattr(parent, 'assigned_contact_email', None),
+        details_json=json.dumps(new_details),
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.session.add(child)
+    db.session.flush()
+    return child, str(new_rev)
 
 
 def clear_submittal_comments(submittal):
@@ -309,10 +395,16 @@ def apply_submittal_fields(submittal, data, *, is_create=False):
         submittal.ball_in_court = SUBMITTAL_BALL.get('Draft')
     elif data.get('status') is not None or data.get('ball_in_court') is not None:
         pass  # workflow only
+    if getattr(submittal, 'number', None):
+        import re
+        details = _parse_json(getattr(submittal, 'details_json', None), {})
+        if not details.get('baseNumber'):
+            details['baseNumber'] = re.sub(r'-R\d+$', '', str(submittal.number))
+            submittal.details_json = json.dumps(details)
 
 
-def submittal_workflow_action(submittal, action, user, body=None, *, Company=None, db=None):
-    """Advance submittal status through the review chain."""
+def submittal_workflow_action(submittal, action, user, body=None, *, Company=None, db=None, Submittal=None):
+    """Advance submittal status through the review chain. Returns (status, revision_submittal|None)."""
     from document_module_security import assert_submittal_workflow_allowed, is_sub_portal_user, is_staff_portal_user, submittal_assigned_to_user
 
     body = body or {}
@@ -336,7 +428,7 @@ def submittal_workflow_action(submittal, action, user, body=None, *, Company=Non
         _set_submittal_notified_date(submittal)
         submittal.status = 'Sent to Subcontractor'
         submittal.ball_in_court = SUBMITTAL_BALL['Sent to Subcontractor']
-        return submittal.status
+        return submittal.status, None
 
     if action == 'return_from_sub':
         if status not in ('Sent to Subcontractor', 'Revise & Resubmit', 'Draft'):
@@ -344,11 +436,10 @@ def submittal_workflow_action(submittal, action, user, body=None, *, Company=Non
         if not _sub_assignee_can_act() and not _user_can_act(user, ball):
             raise ValueError('Cannot return submittal from subcontractor')
         _set_submittal_notified_date(submittal)
-        _bump_submittal_revision(submittal)
         submittal.date = datetime.utcnow().date()
         submittal.status = 'Returned from Subcontractor'
         submittal.ball_in_court = SUBMITTAL_BALL['Returned from Subcontractor']
-        return submittal.status
+        return submittal.status, None
 
     if action == 'submit_to_architect':
         if status not in ('Returned from Subcontractor', 'Draft'):
@@ -358,7 +449,7 @@ def submittal_workflow_action(submittal, action, user, body=None, *, Company=Non
         _record_contractor_review_stamp(submittal, user)
         submittal.status = 'Submitted to Architect'
         submittal.ball_in_court = SUBMITTAL_BALL['Submitted to Architect']
-        return submittal.status
+        return submittal.status, None
 
     if action == 'architect_decision':
         if status != 'Submitted to Architect':
@@ -371,6 +462,7 @@ def submittal_workflow_action(submittal, action, user, body=None, *, Company=Non
         }
         if decision not in allowed:
             raise ValueError(f'decision must be one of: {", ".join(sorted(allowed))}')
+        _record_design_review_stamp(submittal, user, decision)
         submittal.status = decision
         submittal.ball_in_court = SUBMITTAL_BALL.get(decision)
         if body.get('review_comments'):
@@ -390,7 +482,10 @@ def submittal_workflow_action(submittal, action, user, body=None, *, Company=Non
                 user_role=getattr(user, 'role', None),
                 party='Architect / Engineer',
             )
-        return submittal.status
+        revision_submittal = None
+        if decision == 'Revise & Resubmit' and db is not None and Submittal is not None:
+            revision_submittal, _ = create_submittal_revision(parent=submittal, user=user, db=db, Submittal=Submittal)
+        return submittal.status, revision_submittal
 
     if action == 'close':
         if status not in ('No Exceptions Taken', 'Reviewed as Noted'):
@@ -399,13 +494,13 @@ def submittal_workflow_action(submittal, action, user, body=None, *, Company=Non
             raise ValueError('Cannot close submittal')
         submittal.status = 'Closed'
         submittal.ball_in_court = None
-        return submittal.status
+        return submittal.status, None
 
     if action == 'reject':
         workflow_reject_authorized(user, ball, user_can_act_fn=_user_can_act)
         submittal.status = 'Rejected'
         submittal.ball_in_court = None
-        return submittal.status
+        return submittal.status, None
 
     if action == 'reopen':
         if status not in ('Closed', 'Rejected'):
@@ -414,7 +509,7 @@ def submittal_workflow_action(submittal, action, user, body=None, *, Company=Non
             raise ValueError('Project Manager role required to reopen submittal')
         submittal.status = 'Draft'
         submittal.ball_in_court = SUBMITTAL_BALL['Draft']
-        return submittal.status
+        return submittal.status, None
 
     raise ValueError(
         'action must be send_to_sub, return_from_sub, submit_to_architect, '

@@ -215,6 +215,43 @@ def _draw_contractor_review_stamp(page, rect, stamp: dict, *, upload_folder: str
     )
 
 
+def _draw_uploaded_approval_stamp(page, rect, stamp: dict, *, upload_folder: str | None = None, fallback_label: str = 'APPROVED') -> None:
+    """Draw a user's uploaded approval stamp image in a stamp field area."""
+    if not rect:
+        return
+    inset = fitz.Rect(rect.x0 + 4, rect.y0 + 4, rect.x1 - 4, rect.y1 - 4)
+    image_bytes = _load_signature_bytes(stamp.get('stamp_path'), upload_folder=upload_folder)
+    if not image_bytes:
+        image_bytes = _load_signature_bytes(stamp.get('signature_path'), upload_folder=upload_folder)
+    if image_bytes:
+        try:
+            page.insert_image(inset, stream=image_bytes, keep_proportion=True)
+            return
+        except Exception:
+            pass
+    border = (0.55, 0.2, 0.2)
+    fill = (1.0, 0.96, 0.96)
+    shape = page.new_shape()
+    shape.draw_rect(inset)
+    shape.finish(color=border, width=2, fill=fill)
+    shape.commit()
+    page.insert_text((inset.x0 + 8, inset.y0 + 16), fallback_label, fontsize=10, fontname='helv', color=border)
+    page.insert_text(
+        (inset.x0 + 8, inset.y0 + 34),
+        (stamp.get('reviewed_by_name') or 'User')[:40],
+        fontsize=8,
+        fontname='helv',
+        color=border,
+    )
+    page.insert_text(
+        (inset.x0 + 8, inset.y1 - 10),
+        _format_review_datetime(stamp.get('reviewed_at')),
+        fontsize=7,
+        fontname='helv',
+        color=(0.4, 0.4, 0.4),
+    )
+
+
 def _party_comment_bucket(party: str | None, user_role: str | None = None) -> str:
     label = f'{party or ""} {user_role or ""}'.lower()
     if 'owner' in label:
@@ -269,10 +306,13 @@ def _fill_submittal_cover_page(
     details = details if isinstance(details, dict) else _parse_submittal_details(submittal)
     values = build_submittal_form_field_values(submittal, project=project, company_info=company_info, details=details)
     contractor_stamp = details.get('contractorReviewStamp') if use_contractor_stamp else None
+    architect_stamp = details.get('architectReviewStamp')
+    engineer_stamp = details.get('engineerReviewStamp')
     if contractor_stamp:
         values['Contractor Field#1'] = ''
-    if blank_ae:
+    if blank_ae or architect_stamp:
         values['Architect Field#1'] = ''
+    if blank_ae or engineer_stamp:
         values['Engineer Field#1'] = ''
     for widget in page.widgets() or []:
         val = values.get(widget.field_name)
@@ -283,6 +323,16 @@ def _fill_submittal_cover_page(
     stamp_rect = _widget_rect(page, 'Contractor Field#1')
     if contractor_stamp and stamp_rect:
         _draw_contractor_review_stamp(page, stamp_rect, contractor_stamp, upload_folder=upload_folder)
+    architect_rect = _widget_rect(page, 'Architect Field#1')
+    if architect_stamp and architect_rect:
+        _draw_uploaded_approval_stamp(
+            page, architect_rect, architect_stamp, upload_folder=upload_folder, fallback_label='ARCHITECT',
+        )
+    engineer_rect = _widget_rect(page, 'Engineer Field#1')
+    if engineer_stamp and engineer_rect:
+        _draw_uploaded_approval_stamp(
+            page, engineer_rect, engineer_stamp, upload_folder=upload_folder, fallback_label='ENGINEER',
+        )
     return stamp_rect
 
 

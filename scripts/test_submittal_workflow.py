@@ -40,7 +40,7 @@ class SubmittalWorkflowTests(unittest.TestCase):
         new_status = submittal_workflow_action(
             submittal, 'return_from_sub', self._sub_user(),
             Company=None, db=None,
-        )
+        )[0]
         self.assertEqual(new_status, 'Returned from Subcontractor')
         self.assertIsNotNone(submittal.date)
         self.assertEqual(submittal.status, 'Returned from Subcontractor')
@@ -75,7 +75,7 @@ class SubmittalWorkflowTests(unittest.TestCase):
         new_status = submittal_workflow_action(
             submittal, 'submit_to_architect', pm,
             Company=None, db=None,
-        )
+        )[0]
         self.assertEqual(new_status, 'Submitted to Architect')
         details = json.loads(submittal.details_json)
         stamp = details.get('contractorReviewStamp') or {}
@@ -83,6 +83,27 @@ class SubmittalWorkflowTests(unittest.TestCase):
         self.assertEqual(stamp.get('reviewed_by_id'), 7)
         self.assertTrue(stamp.get('reviewed_at'))
         self.assertEqual(stamp.get('signature_hash'), 'abc123')
+
+    def test_return_from_sub_keeps_revision_zero(self):
+        from submittal_persistence import submittal_workflow_action
+        import json
+
+        submittal = SimpleNamespace(
+            status='Sent to Subcontractor',
+            ball_in_court='Subcontractor',
+            assigned_company_id=42,
+            assigned_contact_user_id=100,
+            assigned_company_name='My Co',
+            details_json='{"rev":"0"}',
+            date=None,
+            due_date=None,
+        )
+        submittal_workflow_action(
+            submittal, 'return_from_sub', self._sub_user(),
+            Company=None, db=None,
+        )
+        details = json.loads(submittal.details_json)
+        self.assertEqual(details.get('rev'), '0')
 
 
 if __name__ == '__main__':
