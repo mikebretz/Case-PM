@@ -121,6 +121,16 @@ def init_models(_db):
                 return label
             return 'Project Team'
 
+        def _sender_email(self):
+            if self.from_user_id and User is not None:
+                try:
+                    u = User.query.get(self.from_user_id)
+                    if u:
+                        return (getattr(u, 'email', None) or '').strip()
+                except Exception:
+                    pass
+            return ''
+
         def to_dict(self):
             sender = self._sender_display()
             d = {
@@ -132,6 +142,7 @@ def init_models(_db):
                 'body': self.body or '',
                 'from': sender,
                 'fromUser': sender,
+                'fromEmail': self._sender_email(),
                 'project': self._project_name(),
                 'module': self.module or '',
                 'actionUrl': self.action_url or '',
@@ -604,9 +615,123 @@ def register_workflow(app, _db, models):
         )
         return jsonify({'ok': True, 'scoped': True, 'project_id': project_id, 'contacts': contacts})
 
-    @app.route('/api/internal-messages')
+    @app.route('/api/internal-messages', methods=['GET', 'POST'])
     @login_required
     def api_internal_messages():
+        if request.method == 'POST':
+            from project_workflow_users import (
+                parse_recipient_emails,
+                resolve_users_by_emails,
+                validate_internal_message_recipients,
+            )
+
+            if not user_has_module_access(current_user, 'internal_messages', 'entry'):
+                return jsonify({'error': 'You do not have permission to send internal messages.'}), 403
+
+            data = request.get_json(silent=True) or {}
+            to_values = data.get('to') or []
+            cc_values = data.get('cc') or []
+            bcc_values = data.get('bcc') or []
+            subject = (data.get('subject') or '').strip() or '(No subject)'
+            body = data.get('body') or ''
+            preview = (data.get('preview') or '').strip() or body.replace('<', ' ').replace('>', ' ').strip()[:500]
+            project_id = data.get('project_id')
+            try:
+                project_id = int(project_id) if project_id is not None else None
+            except (TypeError, ValueError):
+                project_id = None
+            if not project_id:
+                try:
+                    from app import get_current_project_id
+                    project_id = get_current_project_id()
+                except Exception:
+                    project_id = None
+
+            emails = parse_recipient_emails(to_values, cc_values, bcc_values)
+            if not emails:
+                return jsonify({'error': 'Add at least one recipient.'}), 400
+
+            recipients = resolve_users_by_emails(emails, User)
+            if not recipients:
+                return jsonify({'error': 'No matching active users for those recipients.'}), 400
+
+            project = Project.query.get(project_id) if project_id else None
+            if project_id and project is None:
+                return jsonify({'error': 'Invalid project.'}), 404
+            if project_id:
+                from project_access import user_can_access_project
+                if not user_can_access_project(current_user, project_id, Project):
+                    return jsonify({'error': 'You do not have access to this project.'}), 403
+
+            ok, err = validate_internal_message_recipients(
+                current_user,
+                recipients,
+                project,
+                User,
+                Company=Company,
+            )
+            if not ok:
+                return jsonify({'error': err or 'Recipient not allowed.'}), 403
+
+            sender_name = (getattr(current_user, 'full_name', None) or '').strip()
+            if not sender_name:
+                sender_name = f'{getattr(current_user, "first_name", "")} {getattr(current_user, "last_name", "")}'.strip()
+            recipient_labels = []
+            created = []
+            for user in recipients:
+                if int(user.id) == int(current_user.id):
+                    continue
+                label = (getattr(user, 'full_name', None) or getattr(user, 'email', None) or '').strip()
+                if label:
+                    recipient_labels.append(label)
+                msg = create_internal_message(
+                    user.id,
+                    folder='team',
+                    msg_type='message',
+                    subject=subject,
+                    preview=preview,
+                    body=body,
+                    project_id=project_id,
+                    from_label=sender_name,
+                    from_user_id=current_user.id,
+                    module='Internal',
+                    action_url='',
+                    action_label='',
+                    priority='normal',
+                    requires_action=False,
+                )
+                created.append(msg)
+
+            if not created:
+                return jsonify({'error': 'Add at least one recipient other than yourself.'}), 400
+
+            sent_preview = preview
+            if recipient_labels:
+                sent_preview = f"To: {', '.join(recipient_labels)} — {preview}"[:500]
+
+            create_internal_message(
+                current_user.id,
+                folder='sent',
+                msg_type='message',
+                subject=subject,
+                preview=sent_preview,
+                body=body,
+                project_id=project_id,
+                from_label=sender_name,
+                from_user_id=current_user.id,
+                module='Internal',
+                action_url='',
+                action_label='',
+                priority='normal',
+                requires_action=False,
+            )
+            db.session.commit()
+            return jsonify({
+                'ok': True,
+                'sent': len(created),
+                'message_ids': [m.id for m in created],
+            })
+
         from email_mailbox_persistence import resolve_mailbox_user_id
         from app import EmailMailboxAccess
         folder = request.args.get('folder')

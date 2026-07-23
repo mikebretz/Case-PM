@@ -16,6 +16,7 @@ from access_control import user_can_receive_workflow_email, user_email_internal_
 from project_workflow_users import (  # noqa: E402
     build_project_directory,
     build_internal_message_contacts,
+    parse_recipient_emails,
     CONSULTANT_WORKFLOW_ROLES,
 )
 
@@ -241,11 +242,20 @@ def test_build_internal_message_contacts_merges_project_and_staff(monkeypatch=No
     assert staff['group'] == 'staff'
 
 
+def test_parse_recipient_emails() -> None:
+    emails = parse_recipient_emails(
+        '"Pat Manager" <pm@case.com>, arch@firm.com',
+        ['sam@case.com'],
+    )
+    assert emails == ['pm@case.com', 'arch@firm.com', 'sam@case.com']
+
+
 def main() -> int:
     test_architect_internal_only_not_email()
     test_staff_user_can_receive_workflow_email()
     test_build_project_directory_merges_membership_and_contacts()
     test_build_internal_message_contacts_merges_project_and_staff()
+    test_parse_recipient_emails()
     test_consultant_roles_include_engineers()
     print('test_project_directory_and_workflow: OK')
     return 0

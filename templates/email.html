@@ -12,10 +12,10 @@
     <div class="email-main">
         <!-- Left sidebar -->
         <aside class="email-sidebar">
-            <div class="p-3 flex-shrink-0{% if messaging_internal_only|default(is_sub_vendor_portal) %} hidden{% endif %}">
+            <div class="p-3 flex-shrink-0">
                 <button type="button" onclick="CasePMEmail.compose()"
                         class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-semibold text-white">
-                    <i class="fa-solid fa-pen"></i> Compose
+                    <i class="fa-solid fa-pen"></i> {% if messaging_internal_only|default(is_sub_vendor_portal) %}New Message{% else %}Compose{% endif %}
                 </button>
             </div>
             <div class="email-sidebar-scroll px-2 pb-2">

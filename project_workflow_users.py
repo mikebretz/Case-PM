@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from project_team_persistence import ROLE_LABELS, migrate_legacy_team_contacts
 
+import re
+
 CONSULTANT_WORKFLOW_ROLES = frozenset({
     'Architect',
     'Owner',
@@ -827,3 +829,81 @@ def build_internal_message_contacts(
         )
 
     return sorted(contacts_by_key.values(), key=_contact_sort_key)
+
+
+_EMAIL_RE = re.compile(r'[\w.+-]+@[\w.-]+\.\w+', re.I)
+
+
+def parse_recipient_emails(*values):
+    """Extract unique email addresses from compose To/Cc/Bcc strings."""
+    emails = []
+    seen = set()
+    for value in values:
+        chunks = value if isinstance(value, list) else re.split(r'[,;]', str(value or ''))
+        for chunk in chunks:
+            chunk = str(chunk or '').strip()
+            if not chunk:
+                continue
+            match = _EMAIL_RE.search(chunk)
+            if not match:
+                continue
+            email = match.group(0).lower()
+            if email not in seen:
+                seen.add(email)
+                emails.append(email)
+    return emails
+
+
+def resolve_users_by_emails(emails, User):
+    """Resolve active users from email addresses."""
+    users = []
+    seen = set()
+    for email in emails or []:
+        email_key = (email or '').strip().lower()
+        if not email_key:
+            continue
+        user = None
+        try:
+            user = User.query.filter_by(status='Active').filter(
+                User.email.ilike(email_key),
+            ).first()
+        except Exception:
+            for row in User.query.filter_by(status='Active').all():
+                if (getattr(row, 'email', None) or '').strip().lower() == email_key:
+                    user = row
+                    break
+        if user and user.id not in seen:
+            seen.add(user.id)
+            users.append(user)
+    return users
+
+
+def validate_internal_message_recipients(sender, recipient_users, project, User, Company=None, *, ProjectMembership=None):
+    """Non-staff senders may only message project contacts + main company staff."""
+    from document_module_security import is_staff_portal_user
+    from access_control import user_email_internal_only
+
+    if is_staff_portal_user(sender) and not user_email_internal_only(sender):
+        return True, None
+
+    allowed = build_internal_message_contacts(
+        project,
+        User,
+        Company=Company,
+        ProjectMembership=ProjectMembership,
+        exclude_user_id=None,
+    )
+    allowed_emails = {(c.get('email') or '').strip().lower() for c in allowed if c.get('email')}
+    allowed_ids = {
+        int(c.get('user_id') or c.get('id'))
+        for c in allowed
+        if c.get('user_id') or c.get('id')
+    }
+    for user in recipient_users:
+        if int(user.id) == int(sender.id):
+            continue
+        email = (getattr(user, 'email', None) or '').strip().lower()
+        if email not in allowed_emails and int(user.id) not in allowed_ids:
+            label = getattr(user, 'full_name', None) or email or f'User #{user.id}'
+            return False, f'You cannot message {label} on this project.'
+    return True, None
