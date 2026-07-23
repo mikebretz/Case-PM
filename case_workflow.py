@@ -218,6 +218,7 @@ def init_models(_db):
         requires_action = db.Column(db.Boolean, default=False)
         is_read = db.Column(db.Boolean, default=False)
         archived = db.Column(db.Boolean, default=False)
+        recipients_json = db.Column(db.Text)
         created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
         def _sender_display(self):
@@ -245,6 +246,7 @@ def init_models(_db):
 
         def to_dict(self):
             sender = self._sender_display()
+            recipients = _parse_recipients_json(self.recipients_json)
             d = {
                 'id': self.id,
                 'folder': self.folder,
@@ -255,6 +257,9 @@ def init_models(_db):
                 'from': sender,
                 'fromUser': sender,
                 'fromEmail': self._sender_email(),
+                'to': recipients['to'],
+                'cc': recipients['cc'],
+                'bcc': recipients['bcc'],
                 'project': self._project_name(),
                 'module': self.module or '',
                 'actionUrl': self.action_url or '',
@@ -343,7 +348,43 @@ def ensure_workflow_schema(engine):
             _workflow_session().execute(text('ALTER TABLE user ADD COLUMN company_id INTEGER'))
         if 'permissions_json' not in cols:
             _workflow_session().execute(text('ALTER TABLE user ADD COLUMN permissions_json TEXT'))
-        _workflow_session().commit()
+    if 'internal_message' in inspector.get_table_names():
+        cols = {c['name'] for c in inspector.get_columns('internal_message')}
+        if 'recipients_json' not in cols:
+            _workflow_session().execute(text('ALTER TABLE internal_message ADD COLUMN recipients_json TEXT'))
+    _workflow_session().commit()
+
+
+def _recipient_entry(user):
+    name = (getattr(user, 'full_name', None) or '').strip()
+    if not name:
+        name = f'{getattr(user, "first_name", "")} {getattr(user, "last_name", "")}'.strip()
+    email = (getattr(user, 'email', None) or '').strip()
+    return {'name': name or email, 'email': email}
+
+
+def _recipients_payload(to_users, cc_users, bcc_users):
+    return {
+        'to': [_recipient_entry(u) for u in (to_users or [])],
+        'cc': [_recipient_entry(u) for u in (cc_users or [])],
+        'bcc': [_recipient_entry(u) for u in (bcc_users or [])],
+    }
+
+
+def _parse_recipients_json(raw):
+    if not raw:
+        return {'to': [], 'cc': [], 'bcc': []}
+    try:
+        data = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return {'to': [], 'cc': [], 'bcc': []}
+    if not isinstance(data, dict):
+        return {'to': [], 'cc': [], 'bcc': []}
+    return {
+        'to': data.get('to') or [],
+        'cc': data.get('cc') or [],
+        'bcc': data.get('bcc') or [],
+    }
 
 
 def get_role_permissions(user):
@@ -469,8 +510,11 @@ def notify_user(user_id, title, message, link=None):
 def create_internal_message(user_id, *, folder, msg_type, subject, preview='', body='',
                             project_id=None, approval_id=None, from_label='Case PM',
                             from_user_id=None, module='', action_url='', action_label='Open',
-                            priority='normal', requires_action=False):
+                            priority='normal', requires_action=False, recipients_json=None):
     ensure_workflow_models_bound()
+    recipients_blob = None
+    if recipients_json:
+        recipients_blob = recipients_json if isinstance(recipients_json, str) else json.dumps(recipients_json)
     msg = InternalMessage(
         user_id=user_id,
         project_id=project_id,
@@ -487,6 +531,7 @@ def create_internal_message(user_id, *, folder, msg_type, subject, preview='', b
         action_label=action_label,
         priority=priority,
         requires_action=requires_action,
+        recipients_json=recipients_blob,
     )
     _workflow_session().add(msg)
     return msg
@@ -785,9 +830,21 @@ def register_workflow(app, _db, models):
                 if not emails:
                     return jsonify({'error': 'Add at least one recipient.'}), 400
 
-                recipients = resolve_users_by_emails(emails, user_model)
+                to_users = resolve_users_by_emails(parse_recipient_emails(to_values), user_model)
+                cc_users = resolve_users_by_emails(parse_recipient_emails(cc_values), user_model)
+                bcc_users = resolve_users_by_emails(parse_recipient_emails(bcc_values), user_model)
+                recipients = []
+                seen_ids = set()
+                for user in to_users + cc_users + bcc_users:
+                    if user.id in seen_ids:
+                        continue
+                    seen_ids.add(user.id)
+                    recipients.append(user)
                 if not recipients:
                     return jsonify({'error': 'No matching active users for those recipients.'}), 400
+
+                visible_recipients = _recipients_payload(to_users, cc_users, [])
+                sent_recipients = _recipients_payload(to_users, cc_users, bcc_users)
 
                 project = model_query(project_model).get(project_id) if project_id else None
                 if project_id and project is None:
@@ -833,6 +890,7 @@ def register_workflow(app, _db, models):
                         action_label='',
                         priority='normal',
                         requires_action=False,
+                        recipients_json=visible_recipients,
                     )
                     created.append(msg)
 
@@ -858,6 +916,7 @@ def register_workflow(app, _db, models):
                     action_label='',
                     priority='normal',
                     requires_action=False,
+                    recipients_json=sent_recipients,
                 )
                 _workflow_session().commit()
                 return jsonify({
@@ -939,6 +998,23 @@ def register_workflow(app, _db, models):
         msg.requires_action = False
         _workflow_session().commit()
         return jsonify({'ok': True})
+
+    @app.route('/api/internal-messages/<int:msg_id>', methods=['DELETE'])
+    @login_required
+    def api_internal_message_delete(msg_id):
+        msg, err = _internal_message_for_actor(msg_id)
+        if err:
+            return err
+        permanent = msg.folder == 'trash'
+        if permanent:
+            _workflow_session().delete(msg)
+        else:
+            msg.folder = 'trash'
+            msg.archived = False
+            msg.is_read = True
+            msg.requires_action = False
+        _workflow_session().commit()
+        return jsonify({'ok': True, 'permanent': permanent})
 
     @app.route('/api/approvals', methods=['GET', 'POST'])
     @login_required

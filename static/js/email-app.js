@@ -44,6 +44,7 @@
     { id: 'internal-inbox', label: 'Inbox', icon: 'fa-inbox' },
     { id: 'sent', label: 'Sent', icon: 'fa-paper-plane' },
     { id: 'drafts', label: 'Drafts', icon: 'fa-file-pen' },
+    { id: 'trash', label: 'Trash', icon: 'fa-trash' },
     { id: 'approvals', label: 'Approvals', icon: 'fa-circle-check' },
     { id: 'alerts', label: 'Alerts', icon: 'fa-triangle-exclamation' },
     { id: 'team', label: 'Team Messages', icon: 'fa-people-group' },
@@ -64,6 +65,9 @@
     { id: 'mention', label: 'Mention' },
     { id: 'announce', label: 'Announcement' },
   ];
+
+  const INTERNAL_POLL_MS = 60000;
+  const EMAIL_IN_TEXT_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
 
   const DEFAULT_SETTINGS = {
     provider: 'none',
@@ -143,6 +147,7 @@
 
   let mailMessages = [];
   let internalMessages = [];
+  let internalPollTimer = null;
   let settings = { ...DEFAULT_SETTINGS };
   let contacts = [];
   let rules = [];
@@ -400,7 +405,8 @@
     render();
   }
 
-  async function refreshInternalFromServer() {
+  async function refreshInternalFromServer(opts = {}) {
+    const silent = !!opts.silent;
     try {
       const res = await fetch(`/api/internal-messages${mailboxUserQuery()}`);
       const data = await res.json().catch(() => null);
@@ -412,6 +418,9 @@
           from: m.from,
           fromUser: m.fromUser,
           fromEmail: m.fromEmail || '',
+          to: m.to || [],
+          cc: m.cc || [],
+          bcc: m.bcc || [],
           subject: m.subject,
           preview: m.preview,
           body: m.body,
@@ -436,15 +445,32 @@
       if (!res.ok) {
         const err = data && data.error ? data.error : `Unable to load internal messages (${res.status})`;
         console.warn('Internal messages API unavailable:', err);
-        toast(err, 'error');
+        if (!silent) toast(err, 'error');
       }
     } catch (e) {
       console.warn('Internal messages API unavailable, using cache', e);
     }
-    internalMessages = loadJson(STORAGE.internal, null) || seedInternal();
-    if (!loadJson(STORAGE.internal, null)) persistInternal();
-    render();
+    if (!silent) {
+      internalMessages = loadJson(STORAGE.internal, null) || seedInternal();
+      if (!loadJson(STORAGE.internal, null)) persistInternal();
+      render();
+    }
     return false;
+  }
+
+  function startInternalPolling() {
+    stopInternalPolling();
+    internalPollTimer = setInterval(() => {
+      if (document.hidden) return;
+      refreshInternalFromServer({ silent: true });
+    }, INTERNAL_POLL_MS);
+  }
+
+  function stopInternalPolling() {
+    if (internalPollTimer) {
+      clearInterval(internalPollTimer);
+      internalPollTimer = null;
+    }
   }
 
   function persistMailLocal() { saveJson(STORAGE.mail, mailMessages); }
@@ -594,6 +620,7 @@
         ${m.actionUrl ? `<a href="${esc(m.actionUrl)}" class="email-toolbar-btn"><i class="fa-solid fa-arrow-up-right-from-square"></i> ${esc(m.actionLabel || 'Open')}</a>` : ''}
         ${m.requiresAction ? `<button type="button" class="email-toolbar-btn" onclick="${prefix}.approveInternal('${m.id}')"><i class="fa-solid fa-circle-check"></i> Approve</button>` : ''}
         <button type="button" class="email-toolbar-btn" onclick="${prefix}.dismissInternal('${m.id}')"><i class="fa-solid fa-box-archive"></i> Archive</button>
+        <button type="button" class="email-toolbar-btn" onclick="${prefix}.deleteSelected('${m.id}')"><i class="fa-solid fa-trash"></i> Delete</button>
         <button type="button" class="email-toolbar-btn" onclick="${prefix}.printMessage('${m.id}')"><i class="fa-solid fa-print"></i> Print</button>
       </div>`;
   }
@@ -1233,10 +1260,97 @@
     ).slice(0, 12);
   }
 
+  function emailFromRecipient(value) {
+    if (!value) return '';
+    if (typeof value === 'object') return (value.email || '').trim().toLowerCase();
+    const match = String(value).match(EMAIL_IN_TEXT_RE);
+    return match ? match[0].toLowerCase() : '';
+  }
+
+  function myMailboxEmail() {
+    return emailFromRecipient(settings.emailAddress || ctx.userEmail || '');
+  }
+
+  function formatRecipientLine(value) {
+    if (!value) return '';
+    if (typeof value === 'object') {
+      const name = (value.name || '').trim();
+      const email = (value.email || '').trim();
+      if (email) {
+        return name && name.toLowerCase() !== email.toLowerCase()
+          ? `"${name}" <${email}>`
+          : email;
+      }
+      if (name) {
+        const hit = buildContactIndex().find(c => (c.name || '').toLowerCase() === name.toLowerCase());
+        if (hit?.email) return `"${hit.name}" <${hit.email}>`;
+        return name;
+      }
+      return '';
+    }
+    const text = String(value).trim();
+    if (emailFromRecipient(text)) return text;
+    const hit = buildContactIndex().find(c =>
+      (c.name || '').toLowerCase() === text.toLowerCase()
+      || (c.email || '').toLowerCase() === text.toLowerCase()
+    );
+    if (hit) return hit.name ? `"${hit.name}" <${hit.email}>` : hit.email;
+    return text;
+  }
+
+  function resolveInternalSender(m) {
+    const name = (m.from || m.fromUser || '').trim();
+    let email = (m.fromEmail || '').trim();
+    if (!email && name) {
+      const hit = buildContactIndex().find(c => (c.name || '').toLowerCase() === name.toLowerCase());
+      email = hit?.email || '';
+    }
+    return formatRecipientLine({ name, email });
+  }
+
+  function buildInternalReplyRecipients(m, all) {
+    const me = myMailboxEmail();
+    const isSent = m.folder === 'sent';
+
+    if (isSent) {
+      const toLines = (m.to || []).map(formatRecipientLine).filter(Boolean);
+      const ccLines = all ? (m.cc || []).map(formatRecipientLine).filter(Boolean) : [];
+      return {
+        to: toLines.join(', '),
+        cc: ccLines.join(', '),
+        showCcBcc: ccLines.length > 0 || (m.bcc || []).length > 0,
+      };
+    }
+
+    const sender = resolveInternalSender(m);
+    if (!all) {
+      return { to: sender, cc: '', showCcBcc: false };
+    }
+
+    const unique = new Map();
+    const addLine = (line) => {
+      const email = emailFromRecipient(line);
+      if (!email || email === me) return;
+      if (!unique.has(email)) unique.set(email, line);
+    };
+
+    (m.to || []).forEach(entry => addLine(formatRecipientLine(entry)));
+    (m.cc || []).forEach(entry => addLine(formatRecipientLine(entry)));
+    const others = [...unique.values()];
+    return {
+      to: sender,
+      cc: others.join(', '),
+      showCcBcc: others.length > 0,
+    };
+  }
+
   function folderCount(folderId, workspace) {
     if (workspace === 'internal') {
       if (folderId === 'internal-inbox') {
-        return internalMessages.filter(m => !m.archived && m.unread && !['sent', 'drafts'].includes(m.folder)).length;
+        return internalMessages.filter(m => !m.archived && m.unread && !['sent', 'drafts', 'trash'].includes(m.folder)).length;
+      }
+      if (folderId === 'trash') {
+        return internalMessages.filter(m => m.folder === 'trash').length;
       }
       return internalMessages.filter(m => m.folder === folderId && !m.archived && m.unread).length;
     }
@@ -1282,7 +1396,9 @@
       }
       let list = internalMessages.filter(m => !m.archived);
       if (state.folder === 'internal-inbox') {
-        list = list.filter(m => !['sent', 'drafts'].includes(m.folder));
+        list = list.filter(m => !['sent', 'drafts', 'trash'].includes(m.folder));
+      } else if (state.folder === 'trash') {
+        list = internalMessages.filter(m => m.folder === 'trash');
       } else {
         list = list.filter(m => m.folder === state.folder);
       }
@@ -1376,6 +1492,7 @@
         ` : `
         <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.markReadToggle()"><i class="fa-solid fa-envelope-open"></i> Read/Unread</button>
         <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.dismissInternal()"><i class="fa-solid fa-box-archive"></i> Archive</button>
+        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.deleteSelected()"><i class="fa-solid fa-trash"></i> Delete</button>
         <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.approveInternal()"><i class="fa-solid fa-circle-check"></i> Approve</button>
         `}
         <span class="w-px h-5 bg-zinc-700 mx-1"></span>
@@ -2061,7 +2178,7 @@
       body: parts.messageHtml + parts.signatureHtml + parts.quoteHtml,
       draftId: opts?.draftId || null,
       replyToId: opts?.replyToId || null,
-      showCcBcc: !!(opts?.cc || opts?.bcc),
+      showCcBcc: !!(opts?.cc || opts?.bcc || opts?.showCcBcc),
       attachments: opts?.attachments || [],
       popoutId,
     };
@@ -2335,12 +2452,13 @@
     const m = getMessage(id);
     if (!m) return;
     let to;
+    let cc = '';
+    let showCcBcc = false;
     if (state.workspace === 'internal') {
-      const senderEmail = m.fromEmail || '';
-      const senderName = m.from || m.fromUser || '';
-      to = senderEmail
-        ? (senderName ? `"${senderName}" <${senderEmail}>` : senderEmail)
-        : senderName;
+      const recipients = buildInternalReplyRecipients(m, all);
+      to = recipients.to;
+      cc = recipients.cc;
+      showCcBcc = recipients.showCcBcc;
     } else {
       to = all
         ? [m.fromEmail, ...(m.to || []).filter(e => e !== (settings.emailAddress || ctx.userEmail))].join(', ')
@@ -2350,6 +2468,8 @@
     compose({
       mode: all ? 'replyAll' : 'reply',
       to,
+      cc,
+      showCcBcc,
       subject: 'RE: ' + m.subject.replace(/^RE:\s*/i, ''),
       body: `<br><br><hr><p>On ${fmtDate(m.date)}, ${esc(m.from || m.fromUser || 'sender')} wrote:</p>${m.body || ''}`,
       replyToId: id,
@@ -2384,7 +2504,14 @@
 
   function deleteSelected(id) {
     if (state.workspace === 'internal') {
-      dismissInternal(id || state.selectedId);
+      if (settings.confirmPermanentDelete && state.folder === 'trash') {
+        emailConfirm('Permanently delete?', { title: 'Delete message', danger: true, confirmText: 'Delete' }).then(ok => {
+          if (!ok) return;
+          performDeleteInternal(id);
+        });
+        return;
+      }
+      performDeleteInternal(id);
       return;
     }
     if (settings.confirmPermanentDelete && state.folder === 'trash') {
@@ -2395,6 +2522,39 @@
       return;
     }
     performDeleteSelected(id);
+  }
+
+  async function performDeleteInternal(id) {
+    const ids = id ? [id] : state.selectedId ? [state.selectedId] : [...state.selectedIds];
+    if (!ids.length) return;
+    let permanent = state.folder === 'trash';
+    for (const i of ids) {
+      const m = getMessage(i);
+      if (!m) continue;
+      const isServer = typeof m.id === 'number' || String(m.id).match(/^\d+$/);
+      if (isServer) {
+        try {
+          const res = await fetch(`/api/internal-messages/${m.id}${mailboxUserQuery()}`, { method: 'DELETE' });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            toast(data.error || 'Could not delete message.', 'error');
+            return;
+          }
+          if (data.permanent) permanent = true;
+        } catch (e) {
+          toast('Could not delete message.', 'error');
+          return;
+        }
+      } else {
+        internalMessages = internalMessages.filter(x => String(x.id) !== String(i));
+      }
+    }
+    persistInternal();
+    state.selectedId = null;
+    state.selectedIds = new Set();
+    await refreshInternalFromServer({ silent: true });
+    toast(permanent ? 'Permanently deleted.' : 'Moved to Trash.', 'success');
+    render();
   }
 
   function performDeleteSelected(id) {
@@ -2730,6 +2890,10 @@
       render();
     };
     render();
+    startInternalPolling();
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) refreshInternalFromServer({ silent: true });
+    });
     document.getElementById('emailSearchInput')?.addEventListener('input', e => setSearch(e.target.value));
     const searchEl = document.getElementById('emailSearchInput');
     if (searchEl) {
