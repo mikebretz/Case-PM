@@ -157,6 +157,25 @@ def add_submittal_review_submission(submittal, body, user_id, user_name, user_ro
     return entry, submissions
 
 
+def _record_contractor_review_stamp(submittal, user):
+    """Persist PM/contractor review stamp metadata for the submittal cover page."""
+    details = _parse_json(getattr(submittal, 'details_json', None), {})
+    reviewed_name = (
+        (getattr(user, 'signature_legal_name', None) or '').strip()
+        or getattr(user, 'full_name', None)
+        or 'User'
+    )
+    details['contractorReviewStamp'] = {
+        'reviewed_by_id': getattr(user, 'id', None),
+        'reviewed_by_name': reviewed_name,
+        'reviewed_at': datetime.utcnow().isoformat(),
+        'signature_hash': getattr(user, 'signature_hash', None),
+        'signature_path': getattr(user, 'signature_path', None),
+        'has_signature_image': bool(getattr(user, 'signature_path', None)),
+    }
+    submittal.details_json = json.dumps(details)
+
+
 def clear_submittal_comments(submittal):
     submittal.comments_json = json.dumps([])
     submittal.updated_at = datetime.utcnow()
@@ -336,6 +355,7 @@ def submittal_workflow_action(submittal, action, user, body=None, *, Company=Non
             raise ValueError('Submittal must be returned from subcontractor before architect review')
         if not _user_can_act(user, ball):
             raise ValueError('Cannot submit submittal to architect')
+        _record_contractor_review_stamp(submittal, user)
         submittal.status = 'Submitted to Architect'
         submittal.ball_in_court = SUBMITTAL_BALL['Submitted to Architect']
         return submittal.status
