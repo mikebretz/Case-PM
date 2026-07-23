@@ -3566,7 +3566,9 @@ def api_project_directory(project_id):
     if not user_can_access_project(current_user, project_id, Project):
         return jsonify({'error': 'You do not have access to this project.'}), 403
     project = Project.query.get_or_404(project_id)
+    from project_workflow_users import build_project_directory
     data = project.to_dict()
+    directory = build_project_directory(project, User, Company=Company)
     return jsonify({
         'project': {
             'id': data.get('id'),
@@ -3578,8 +3580,9 @@ def api_project_directory(project_id):
             'address_display': data.get('address_display', ''),
             'description': data.get('description', ''),
             'client': data.get('client', ''),
-            'team_contacts': data.get('team_contacts', []),
         },
+        'directory': directory,
+        'team_contacts': directory,
     })
 
 
@@ -10097,7 +10100,7 @@ def api_submittal_sync():
 def api_submittal_workflow(submittal_id):
     from submittal_persistence import submittal_workflow_action
     from financial_security import require_financial_project_access
-    from workflow_responder import notify_submittal_ball_in_court, notify_submittal_update
+    from workflow_responder import notify_submittal_ball_in_court, notify_submittal_update, notify_project_consultant_forward, submittal_deep_link
     submittal = Submittal.query.get_or_404(submittal_id)
     try:
         require_financial_project_access(current_user, submittal.project_id, Project)
@@ -10136,6 +10139,20 @@ def api_submittal_workflow(submittal_id):
                 event='submit',
             )
             notify_submittal_ball_in_court(submittal, User)
+        elif action == 'submit_to_architect':
+            notify_project_consultant_forward(
+                submittal.project_id,
+                User,
+                title=f'{submittal.number} — submitted for architect review',
+                description=(
+                    f'Submittal {submittal.number} was reviewed by the project team and forwarded '
+                    f'for architect / consultant review.'
+                ),
+                action_url=submittal_deep_link(submittal.project_id, submittal.id),
+                module='Submittals',
+                actor_id=current_user.id,
+                ball_role='Architect',
+            )
         elif new_status != old_status:
             notify_submittal_ball_in_court(submittal, User)
     except Exception:

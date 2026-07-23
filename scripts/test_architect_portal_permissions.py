@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Architect / consultant portal permission tests."""
+"""Regression tests for password_policy.validate_password."""
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -20,7 +21,6 @@ class _User:
 
 
 def _architect_user():
-    import json
     perms = permissions_from_role('Architect')
     return _User('Architect', json.dumps(perms))
 
@@ -30,6 +30,7 @@ def test_architect_cannot_access_schedule_rfq_or_bid_portal_modules() -> None:
     assert not user_has_module_access(user, 'schedule', 'view')
     assert not user_has_module_access(user, 'change_orders_rfq', 'view')
     assert not user_has_module_access(user, 'estimating', 'view')
+    assert not user_has_module_access(user, 'email', 'view')
 
 
 def test_architect_can_access_review_and_directory_modules() -> None:
@@ -38,7 +39,7 @@ def test_architect_can_access_review_and_directory_modules() -> None:
     for module in (
         'project_directory', 'drawings', 'documents',
         'rfis', 'submittals', 'change_orders', 'photos', 'punch_list',
-        'inspections', 'meeting_minutes', 'email',
+        'inspections', 'meeting_minutes', 'internal_messages',
     ):
         assert user_has_module_access(user, module, 'view'), module
 
@@ -46,6 +47,7 @@ def test_architect_can_access_review_and_directory_modules() -> None:
 def test_architect_template_hides_financials_flag() -> None:
     perms = permissions_from_role('Architect')
     assert perms.get('global', {}).get('hide_financials') is True
+    assert perms.get('global', {}).get('email_internal_only') is True
     assert perms.get('portal') == 'consultant'
 
 

@@ -214,6 +214,21 @@ def user_email_internal_only(user) -> bool:
     return user_can_internal_messages(user) and not user_can_external_email(user)
 
 
+def user_can_receive_workflow_email(user) -> bool:
+    """Only main-company staff with external email access receive workflow SMTP."""
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if user_email_internal_only(user):
+        return False
+    try:
+        from document_module_security import is_staff_portal_user
+        if not is_staff_portal_user(user):
+            return False
+    except Exception:
+        pass
+    return user_can_external_email(user)
+
+
 def user_is_privileged(user) -> bool:
     if not user or not getattr(user, 'is_authenticated', False):
         return False

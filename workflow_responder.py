@@ -226,6 +226,7 @@ def get_co_responder_context(co, user, allocations=None):
 
 def _collect_rfi_notify_users(rfi, User, exclude_user_id=None):
     from rfi_persistence import _parse_json
+    from project_workflow_users import resolve_project_ball_users, resolve_project_consultant_users
 
     user_ids = set()
     if rfi.created_by_id:
@@ -244,13 +245,25 @@ def _collect_rfi_notify_users(rfi, User, exclude_user_id=None):
                 if full == name or u.email == name:
                     user_ids.add(u.id)
     ball = getattr(rfi, 'ball_in_court_role', None)
+    targets = {}
     if ball:
-        for u in User.query.filter_by(status='Active').all():
-            if user_can_act_on_rfi_ball(u, ball):
-                user_ids.add(u.id)
-    if exclude_user_id:
-        user_ids.discard(exclude_user_id)
-    return [User.query.get(uid) for uid in user_ids if User.query.get(uid)]
+        for u in resolve_project_ball_users(
+            rfi.project_id,
+            ball,
+            User,
+            can_act_fn=user_can_act_on_rfi_ball,
+            exclude_user_id=exclude_user_id,
+        ):
+            targets[u.id] = u
+    for u in resolve_project_consultant_users(rfi.project_id, User, exclude_user_id=exclude_user_id):
+        targets[u.id] = u
+    for uid in user_ids:
+        if exclude_user_id and int(uid) == int(exclude_user_id):
+            continue
+        u = User.query.get(uid)
+        if u:
+            targets[u.id] = u
+    return list(targets.values())
 
 
 def notify_rfi_update(rfi, User, *, title, description, actor_id=None, event='update'):
@@ -342,17 +355,15 @@ def execute_rfi_action(rfi, action, user, User, body=None):
     workflow_rfi(rfi, action, user_name)
 
     if action == 'submit':
-        notify_rfi_ball_in_court(
-            rfi, User,
-            title=f'{rfi.number} — response needed',
+        notify_project_consultant_forward(
+            rfi.project_id,
+            User,
+            title=f'{rfi.number} — submitted for consultant review',
             description=rfi.question or rfi.subject or 'Please review and respond to this RFI.',
-        )
-        notify_rfi_update(
-            rfi, User,
-            title=f'{rfi.number} — submitted for review',
-            description='This RFI was sent for review.',
+            action_url=rfi_deep_link(rfi.project_id, rfi.id),
+            module='RFIs',
             actor_id=user.id,
-            event='submit',
+            ball_role=getattr(rfi, 'ball_in_court_role', None) or 'Assignee',
         )
     elif action == 'close':
         notify_rfi_update(
@@ -375,23 +386,29 @@ def submittal_deep_link(project_id, submittal_id):
 
 
 def _collect_submittal_notify_users(submittal, User, *, exclude_user_id=None, roles=None):
-    """Notify PM, assigned contact, and role holders for ball-in-court."""
-    user_ids = set()
+    """Notify assigned contact and project-scoped ball-in-court / consultant team."""
+    from co_persistence import user_can_act_on_ball_in_court
+    from project_workflow_users import resolve_project_ball_users, resolve_project_consultant_users
+
+    targets = {}
     assigned_uid = getattr(submittal, 'assigned_contact_user_id', None)
     if assigned_uid:
-        user_ids.add(int(assigned_uid))
+        u = User.query.get(int(assigned_uid))
+        if u:
+            targets[u.id] = u
     ball = (getattr(submittal, 'ball_in_court', None) or '').strip()
     if ball:
-        try:
-            from co_persistence import ROLE_APPROVERS
-            for role in ROLE_APPROVERS.get(ball, ()):
-                for u in User.query.filter_by(role=role, status='Active').all():
-                    user_ids.add(u.id)
-        except Exception:
-            pass
-    if exclude_user_id:
-        user_ids.discard(int(exclude_user_id))
-    return [User.query.get(uid) for uid in user_ids if User.query.get(uid)]
+        for u in resolve_project_ball_users(
+            submittal.project_id,
+            ball,
+            User,
+            can_act_fn=user_can_act_on_ball_in_court,
+            exclude_user_id=exclude_user_id,
+        ):
+            targets[u.id] = u
+    for u in resolve_project_consultant_users(submittal.project_id, User, exclude_user_id=exclude_user_id):
+        targets[u.id] = u
+    return list(targets.values())
 
 
 def notify_submittal_update(submittal, User, *, title, description, actor_id=None, event='update'):
@@ -416,6 +433,65 @@ def notify_submittal_update(submittal, User, *, title, description, actor_id=Non
         )
 
 
+def notify_project_consultant_forward(
+    project_id,
+    User,
+    *,
+    title,
+    description,
+    action_url,
+    module,
+    actor_id=None,
+    ball_role=None,
+):
+    """Notify architect, owner, and engineers assigned to the project (Procore-style forward)."""
+    from co_persistence import user_can_act_on_ball_in_court
+    from project_workflow_users import resolve_project_ball_users, resolve_project_consultant_users
+
+    targets = {}
+    if ball_role:
+        for u in resolve_project_ball_users(
+            project_id,
+            ball_role,
+            User,
+            can_act_fn=user_can_act_on_ball_in_court,
+            exclude_user_id=actor_id,
+        ):
+            targets[u.id] = (u, True)
+    for u in resolve_project_consultant_users(project_id, User, exclude_user_id=actor_id):
+        if u.id not in targets:
+            targets[u.id] = (u, False)
+    for u, requires_action in targets.values():
+        try:
+            from email_notifications import notify_user_workflow
+            notify_user_workflow(
+                u,
+                title=title,
+                description=description,
+                action_url=action_url,
+                project_id=project_id,
+                module=module,
+                requires_action=requires_action,
+            )
+        except Exception:
+            cw.notify_user(u.id, title, description, action_url)
+            cw.create_internal_message(
+                u.id,
+                folder='action-required' if requires_action else 'team',
+                msg_type='alert',
+                subject=title,
+                preview=description[:500],
+                body=f'<p>{description}</p>',
+                project_id=project_id,
+                from_label=module,
+                module=module,
+                action_url=action_url,
+                action_label='Review',
+                priority='high' if requires_action else 'normal',
+                requires_action=requires_action,
+            )
+
+
 def notify_submittal_ball_in_court(submittal, User, title=None, description=None):
     ball = getattr(submittal, 'ball_in_court', None)
     if not ball:
@@ -431,21 +507,24 @@ def notify_submittal_ball_in_court(submittal, User, title=None, description=None
 
 def _submittal_comment_notify_targets(submittal, User, actor):
     """PM comments notify architect+sub; architect notifies PM+sub; sub notifies PM+architect."""
+    from project_workflow_users import resolve_project_users_by_roles
+
     actor_role = (getattr(actor, 'role', None) or '').strip()
     pm_roles = ('Project Manager', 'Admin', 'Contractor Accounting', 'Developer')
-    arch_roles = ('Architect',)
+    arch_roles = ('Architect', 'Structural Engineer', 'MEP Engineer', 'Civil Engineer')
     sub_roles = (
         'Subcontractor', 'Subcontractor Contact', 'Subcontractor Accountant', 'Company User',
     )
-    target_ids = set()
+    targets = {}
     assigned_uid = getattr(submittal, 'assigned_contact_user_id', None)
     if assigned_uid:
-        target_ids.add(int(assigned_uid))
+        u = User.query.get(int(assigned_uid))
+        if u:
+            targets[u.id] = u
 
     def _add_roles(roles):
-        for role in roles:
-            for u in User.query.filter_by(role=role, status='Active').all():
-                target_ids.add(u.id)
+        for u in resolve_project_users_by_roles(submittal.project_id, roles, User):
+            targets[u.id] = u
 
     if actor_role in pm_roles:
         _add_roles(arch_roles)
@@ -465,8 +544,8 @@ def _submittal_comment_notify_targets(submittal, User, actor):
 
     actor_id = getattr(actor, 'id', None)
     if actor_id is not None:
-        target_ids.discard(int(actor_id))
-    return [User.query.get(uid) for uid in target_ids if User.query.get(uid)]
+        targets.pop(int(actor_id), None)
+    return list(targets.values())
 
 
 def notify_submittal_comment(submittal, User, actor, body_text):

@@ -32,12 +32,13 @@
   function renderContacts(contacts) {
     const rows = Array.isArray(contacts) ? contacts : [];
     if (!rows.length) {
-      els.contactsBody.innerHTML = '<tr><td colspan="5" class="pd-empty">No team contacts have been added for this project yet.</td></tr>';
+      els.contactsBody.innerHTML = '<tr><td colspan="5" class="pd-empty">No project team members are assigned yet.</td></tr>';
       setText(els.contactCount, '0 contacts');
       return;
     }
     els.contactsBody.innerHTML = rows.map((contact) => {
       const role = contact.role_label || contact.role || 'Contact';
+      const company = contact.company || contact.firm || '—';
       const email = contact.email
         ? `<a href="mailto:${esc(contact.email)}" class="text-sky-400 hover:text-sky-300">${esc(contact.email)}</a>`
         : '—';
@@ -47,7 +48,7 @@
       return `<tr>
         <td class="text-zinc-300">${esc(role)}</td>
         <td class="text-white">${esc(contact.name || '—')}</td>
-        <td class="text-zinc-300">${esc(contact.firm || '—')}</td>
+        <td class="text-zinc-300">${esc(company)}</td>
         <td>${email}</td>
         <td>${phone}</td>
       </tr>`;
@@ -70,7 +71,7 @@
     setText(els.projectAddress, project.address_display || project.address);
     setText(els.projectDescription, project.description);
     setText(els.subtitle, `${project.number ? project.number + ' · ' : ''}${project.name || 'Project directory'}`);
-    renderContacts(project.team_contacts || []);
+    renderContacts(project.team_contacts || project.directory || []);
     setText(els.statusText, 'Directory loaded.');
   }
 
@@ -88,7 +89,12 @@
         throw new Error(payload.error || `Unable to load directory (${response.status})`);
       }
       const payload = await response.json();
-      renderProject(payload.project || null);
+      const project = payload.project || null;
+      if (project && payload.directory) {
+        project.directory = payload.directory;
+        project.team_contacts = payload.directory;
+      }
+      renderProject(project);
     } catch (error) {
       renderProject(null);
       setText(els.statusText, error.message || 'Unable to load directory.');

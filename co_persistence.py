@@ -842,14 +842,24 @@ def notify_ball_in_court(project_id, co, User, title=None, description=None):
         return
     try:
         import case_workflow as cw
+        from project_workflow_users import resolve_project_ball_users, resolve_project_consultant_users
         action_url = f'/change-orders?project_id={project_id}&open=1&respond=1&co_id={co.id}'
         title = title or f'{co.number} — ball in court: {role}'
         description = description or (co.description or getattr(co, 'title', None) or '')
-        users = User.query.filter_by(status='Active').all()
-        targets = [u for u in users if user_can_act_on_ball_in_court(u, role)]
+        targets = {}
+        for u in resolve_project_ball_users(
+            project_id,
+            role,
+            User,
+            can_act_fn=user_can_act_on_ball_in_court,
+        ):
+            targets[u.id] = u
+        if role in ('Architect', 'Owner') or not targets:
+            for u in resolve_project_consultant_users(project_id, User):
+                targets[u.id] = u
         if not targets:
-            targets = cw.find_assignees(project_id, 'Change Orders')
-        for u in targets:
+            targets = {u.id: u for u in cw.find_assignees(project_id, 'Change Orders')}
+        for u in targets.values():
             from email_notifications import notify_user_workflow
             notify_user_workflow(
                 u,
