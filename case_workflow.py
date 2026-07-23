@@ -43,7 +43,15 @@ def _canonical_db(fallback=None):
 
 
 def _workflow_db():
-    canonical = _canonical_db(_registered_db or db)
+    try:
+        from flask import current_app, has_app_context
+        if has_app_context():
+            ext = current_app.extensions.get('sqlalchemy')
+            if ext is not None:
+                return ext
+    except Exception:
+        pass
+    canonical = _canonical_db(None)
     if canonical is None:
         raise RuntimeError('Case PM database is not initialized.')
     return canonical
@@ -51,6 +59,24 @@ def _workflow_db():
 
 def _workflow_session():
     return _workflow_db().session
+
+
+def model_query(model):
+    """Run ORM queries against the active Flask app database."""
+    if model is None:
+        raise RuntimeError('Model not available')
+    return _workflow_session().query(model)
+
+
+def ensure_workflow_models_bound():
+    """Rebind workflow ORM models when the active SQLAlchemy instance changed."""
+    global db, _registered_db
+    canonical = _workflow_db()
+    if InternalMessage is None or getattr(InternalMessage, '__fsa__', None) is not canonical:
+        init_models(canonical)
+    db = canonical
+    _registered_db = canonical
+    return canonical
 
 
 def _current_project_id():
@@ -418,6 +444,7 @@ def create_internal_message(user_id, *, folder, msg_type, subject, preview='', b
                             project_id=None, approval_id=None, from_label='Case PM',
                             from_user_id=None, module='', action_url='', action_label='Open',
                             priority='normal', requires_action=False):
+    ensure_workflow_models_bound()
     msg = InternalMessage(
         user_id=user_id,
         project_id=project_id,
@@ -633,6 +660,7 @@ def register_workflow(app, _db, models):
     @login_required
     def api_internal_message_contacts():
         try:
+            ensure_workflow_models_bound()
             from access_control import user_email_internal_only
             from document_module_security import is_staff_portal_user
             from project_workflow_users import build_internal_message_contacts
@@ -646,7 +674,7 @@ def register_workflow(app, _db, models):
                 project_id = _current_project_id()
 
             if is_staff_portal_user(current_user) and not user_email_internal_only(current_user):
-                users = user_model.query.filter_by(status='Active').all()
+                users = model_query(user_model).filter_by(status='Active').all()
                 users = sorted(
                     users,
                     key=lambda user: (
@@ -673,7 +701,7 @@ def register_workflow(app, _db, models):
                     })
                 return jsonify({'ok': True, 'scoped': False, 'project_id': project_id, 'contacts': contacts})
 
-            project = project_model.query.get(project_id) if project_id else None
+            project = model_query(project_model).get(project_id) if project_id else None
             if project_id and project is None:
                 return jsonify({'error': 'Invalid project_id'}), 404
             if project_id:
@@ -698,6 +726,7 @@ def register_workflow(app, _db, models):
     def api_internal_messages():
         if request.method == 'POST':
             try:
+                ensure_workflow_models_bound()
                 from project_workflow_users import (
                     parse_recipient_emails,
                     resolve_users_by_emails,
@@ -734,7 +763,7 @@ def register_workflow(app, _db, models):
                 if not recipients:
                     return jsonify({'error': 'No matching active users for those recipients.'}), 400
 
-                project = project_model.query.get(project_id) if project_id else None
+                project = model_query(project_model).get(project_id) if project_id else None
                 if project_id and project is None:
                     return jsonify({'error': 'Invalid project.'}), 404
                 if project_id:
@@ -818,6 +847,7 @@ def register_workflow(app, _db, models):
 
         from email_mailbox_persistence import resolve_mailbox_user_id
         from app import EmailMailboxAccess
+        ensure_workflow_models_bound()
         folder = request.args.get('folder')
         archived = request.args.get('archived') == '1'
         try:
@@ -829,7 +859,7 @@ def register_workflow(app, _db, models):
             )
         except PermissionError:
             return jsonify({'error': 'Mailbox access denied'}), 403
-        q = InternalMessage.query.filter_by(user_id=mailbox_user_id, archived=archived)
+        q = model_query(InternalMessage).filter_by(user_id=mailbox_user_id, archived=archived)
         if folder and folder not in ('internal-inbox', ''):
             q = q.filter_by(folder=folder)
         messages = q.order_by(InternalMessage.created_at.desc()).limit(200).all()
@@ -848,7 +878,7 @@ def register_workflow(app, _db, models):
             )
         except PermissionError:
             return None, (jsonify({'error': 'Mailbox access denied'}), 403)
-        msg = InternalMessage.query.filter_by(id=msg_id, user_id=mailbox_user_id).first()
+        msg = model_query(InternalMessage).filter_by(id=msg_id, user_id=mailbox_user_id).first()
         if not msg:
             return None, (jsonify({'error': 'Not found'}), 404)
         return msg, None
