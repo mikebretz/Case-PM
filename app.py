@@ -10212,6 +10212,7 @@ def api_submittal_print_review_sheet(submittal_id):
         submittal,
         project=project,
         company_info=load_company_info(),
+        upload_folder=app.config['UPLOAD_FOLDER'],
     )
     filename = f'Submittal_{submittal.number or submittal_id}_Review_Sheet.pdf'
     return send_file(

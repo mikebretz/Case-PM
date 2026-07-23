@@ -55,6 +55,35 @@ class SubmittalWorkflowTests(unittest.TestCase):
         self.assertEqual(details['notifiedDate'], '2026-07-01')
         self.assertEqual(submittal.due_date, notified + timedelta(days=14))
 
+    def test_submit_to_architect_records_contractor_review_stamp(self):
+        from submittal_persistence import submittal_workflow_action
+
+        submittal = SimpleNamespace(
+            status='Returned from Subcontractor',
+            ball_in_court='Project Manager',
+            assigned_company_id=42,
+            details_json='{"rev":"0"}',
+        )
+        pm = SimpleNamespace(
+            id=7,
+            role='Project Manager',
+            full_name='Pat PM',
+            signature_legal_name='Patricia PM',
+            signature_hash='abc123',
+            signature_path='uploads/signatures/user_7.png',
+        )
+        new_status = submittal_workflow_action(
+            submittal, 'submit_to_architect', pm,
+            Company=None, db=None,
+        )
+        self.assertEqual(new_status, 'Submitted to Architect')
+        details = json.loads(submittal.details_json)
+        stamp = details.get('contractorReviewStamp') or {}
+        self.assertEqual(stamp.get('reviewed_by_name'), 'Patricia PM')
+        self.assertEqual(stamp.get('reviewed_by_id'), 7)
+        self.assertTrue(stamp.get('reviewed_at'))
+        self.assertEqual(stamp.get('signature_hash'), 'abc123')
+
 
 if __name__ == '__main__':
     unittest.main()

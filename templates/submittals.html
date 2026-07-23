@@ -414,6 +414,7 @@ function refreshSubmittalActionButtons() {
     flex: 1;
     min-height: 0;
     overflow: hidden;
+    gap: 0;
   }
   #submittalDetailMainCol {
     flex: 1;
@@ -421,11 +422,24 @@ function refreshSubmittalActionButtons() {
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    padding: 1.25rem 2rem;
   }
   #submittalDetailMainCol .tab-content {
     flex: 1;
     min-height: 0;
     overflow: auto;
+    max-width: 72rem;
+    width: 100%;
+    margin: 0 auto;
+    padding: 0 0.75rem 1rem;
+  }
+  #detailModal .submittal-modal-panel > .flex.items-center.justify-between.px-6 {
+    padding-left: 1.75rem;
+    padding-right: 1.75rem;
+  }
+  #detailModal .flex.border-b.border-zinc-700.px-6 {
+    padding-left: 1.75rem;
+    padding-right: 1.75rem;
   }
   #submittalReviewChatCol {
     width: 380px;
@@ -940,10 +954,10 @@ function refreshSubmittalActionButtons() {
         </div>
         
         <div class="submittal-detail-body">
-            <div id="submittalDetailMainCol" class="flex-1 overflow-hidden p-6">
+            <div id="submittalDetailMainCol" class="flex-1 overflow-hidden">
             <!-- Tab 0 -->
             <div id="tab0" class="tab-content">
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
                     <div class="space-y-4">
                         <div>
                             <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Spec Section</label>
@@ -1076,7 +1090,7 @@ function refreshSubmittalActionButtons() {
                         <h4 class="font-semibold text-white">Review Submissions</h4>
                         <span class="text-[10px] text-zinc-500 uppercase tracking-wide">Printed on review sheet</span>
                     </div>
-                    <p class="text-xs text-zinc-500 mb-3">Formal comments recorded on the submittal review cover page for Architect, Engineer, and Owner.</p>
+                    <p class="text-xs text-zinc-500 mb-3">Formal comments recorded on page 2 of the printable review sheet (Contractor, Architect, Engineer, and Owner sections).</p>
                     <div id="submittalReviewSubmissionsList" class="space-y-2 mb-3 text-sm"></div>
                     <textarea id="submittalReviewSubmissionInput" rows="3" placeholder="Add a formal review submission…" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm mb-2"></textarea>
                     <button type="button" id="submittalPostReviewSubmissionBtn" onclick="postReviewSubmission()" class="px-4 py-2 bg-sky-700 hover:bg-sky-600 text-white rounded-lg text-sm font-semibold">Post Review Submission</button>
