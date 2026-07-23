@@ -8,6 +8,8 @@ from flask import jsonify, request
 from flask_login import current_user
 
 db = None
+_registered_db = None
+_get_current_project_id_fn = None
 User = None
 Project = None
 Company = None
@@ -18,6 +20,32 @@ ApprovalRequest = None
 InternalMessage = None
 ModuleState = None
 ProjectMembership = None
+
+
+def _workflow_db():
+    """SQLAlchemy extension for the active Flask app (avoids stale module-level db)."""
+    try:
+        from flask import current_app, has_app_context
+        if has_app_context():
+            ext = current_app.extensions.get('sqlalchemy')
+            if ext is not None:
+                return ext
+    except Exception:
+        pass
+    return _registered_db or db
+
+
+def _workflow_session():
+    return _workflow_db().session
+
+
+def _current_project_id():
+    if _get_current_project_id_fn:
+        try:
+            return _get_current_project_id_fn()
+        except Exception:
+            return None
+    return None
 
 
 def init_models(_db):
@@ -226,10 +254,10 @@ def ensure_workflow_schema(engine):
     if 'user' in inspector.get_table_names():
         cols = {c['name'] for c in inspector.get_columns('user')}
         if 'company_id' not in cols:
-            db.session.execute(text('ALTER TABLE user ADD COLUMN company_id INTEGER'))
+            _workflow_session().execute(text('ALTER TABLE user ADD COLUMN company_id INTEGER'))
         if 'permissions_json' not in cols:
-            db.session.execute(text('ALTER TABLE user ADD COLUMN permissions_json TEXT'))
-        db.session.commit()
+            _workflow_session().execute(text('ALTER TABLE user ADD COLUMN permissions_json TEXT'))
+        _workflow_session().commit()
 
 
 def get_role_permissions(user):
@@ -349,7 +377,7 @@ def notify_user(user_id, title, message, link=None):
     if not user_id or not Notification:
         return
     n = Notification(user_id=user_id, title=title, message=message, link=link or '')
-    db.session.add(n)
+    _workflow_session().add(n)
 
 
 def create_internal_message(user_id, *, folder, msg_type, subject, preview='', body='',
@@ -373,7 +401,7 @@ def create_internal_message(user_id, *, folder, msg_type, subject, preview='', b
         priority=priority,
         requires_action=requires_action,
     )
-    db.session.add(msg)
+    _workflow_session().add(msg)
     return msg
 
 
@@ -406,8 +434,8 @@ def create_approval(*, project_id, module, entity_type, entity_id, title,
         action_url=action_url,
         payload_json=json.dumps(payload or {}),
     )
-    db.session.add(approval)
-    db.session.flush()
+    _workflow_session().add(approval)
+    _workflow_session().flush()
 
     assignees = find_assignees(project_id, module, company_id)
     folder = 'approvals' if module in ('Pay Applications', 'Change Orders') else 'action-required'
@@ -437,7 +465,7 @@ def create_approval(*, project_id, module, entity_type, entity_id, title,
         notify_user(notify_company_user_id, f'Update: {title}', description or title, action_url)
 
     if AuditLog and current_user.is_authenticated:
-        db.session.add(AuditLog(
+        _workflow_session().add(AuditLog(
             user_id=current_user.id,
             action='Approval Requested',
             target_type=entity_type,
@@ -501,7 +529,7 @@ def decide_approval(approval_id, decision, comments=''):
         )
 
     if AuditLog:
-        db.session.add(AuditLog(
+        _workflow_session().add(AuditLog(
             user_id=current_user.id,
             action=f'Approval {decision}',
             target_type=approval.entity_type,
@@ -512,9 +540,12 @@ def decide_approval(approval_id, decision, comments=''):
 
 
 def register_workflow(app, _db, models):
-    global db, User, Project, Company, Notification, AuditLog, login_required
+    global db, _registered_db, _get_current_project_id_fn
+    global User, Project, Company, Notification, AuditLog, login_required
     init_models(_db)
     db = _db
+    _registered_db = _db
+    _get_current_project_id_fn = models.get('get_current_project_id')
     User = models['User']
     Project = models['Project']
     Company = models['Company']
@@ -573,11 +604,7 @@ def register_workflow(app, _db, models):
 
             project_id = request.args.get('project_id', type=int)
             if not project_id:
-                try:
-                    from app import get_current_project_id
-                    project_id = get_current_project_id()
-                except Exception:
-                    project_id = None
+                project_id = _current_project_id()
 
             if is_staff_portal_user(current_user) and not user_email_internal_only(current_user):
                 users = User.query.filter_by(status='Active').all()
@@ -654,11 +681,7 @@ def register_workflow(app, _db, models):
                 except (TypeError, ValueError):
                     project_id = None
                 if not project_id:
-                    try:
-                        from app import get_current_project_id
-                        project_id = get_current_project_id()
-                    except Exception:
-                        project_id = None
+                    project_id = _current_project_id()
 
                 emails = parse_recipient_emails(to_values, cc_values, bcc_values)
                 if not emails:
@@ -738,14 +761,14 @@ def register_workflow(app, _db, models):
                     priority='normal',
                     requires_action=False,
                 )
-                db.session.commit()
+                _workflow_session().commit()
                 return jsonify({
                     'ok': True,
                     'sent': len(created),
                     'message_ids': [m.id for m in created],
                 })
             except Exception as exc:
-                db.session.rollback()
+                _workflow_session().rollback()
                 import traceback
                 traceback.print_exc()
                 return jsonify({'error': f'Unable to send message: {exc}'}), 500
@@ -794,7 +817,7 @@ def register_workflow(app, _db, models):
         if err:
             return err
         msg.is_read = True
-        db.session.commit()
+        _workflow_session().commit()
         return jsonify({'ok': True})
 
     @app.route('/api/internal-messages/<int:msg_id>/archive', methods=['POST'])
@@ -806,7 +829,7 @@ def register_workflow(app, _db, models):
         msg.archived = True
         msg.is_read = True
         msg.requires_action = False
-        db.session.commit()
+        _workflow_session().commit()
         return jsonify({'ok': True})
 
     @app.route('/api/approvals', methods=['GET', 'POST'])
@@ -844,7 +867,7 @@ def register_workflow(app, _db, models):
             payload=data.get('payload'),
             notify_company_user_id=data.get('notify_company_user_id'),
         )
-        db.session.commit()
+        _workflow_session().commit()
         return jsonify({'ok': True, 'approval': approval.to_dict()})
 
     @app.route('/api/approvals/<int:approval_id>/decide', methods=['POST'])
@@ -858,7 +881,7 @@ def register_workflow(app, _db, models):
             return jsonify({'error': 'Permission denied'}), 403
         if err == 'already_decided':
             return jsonify({'error': 'Already decided'}), 400
-        db.session.commit()
+        _workflow_session().commit()
         return jsonify({'ok': True, 'approval': approval.to_dict()})
 
     @app.route('/api/notifications')
@@ -880,7 +903,7 @@ def register_workflow(app, _db, models):
     @login_required
     def api_notifications_mark_all():
         Notification.query.filter_by(user_id=current_user.id, is_read=False).update({'is_read': True})
-        db.session.commit()
+        _workflow_session().commit()
         return jsonify({'ok': True})
 
     @app.route('/api/module-state/<module>/<state_key>', methods=['GET', 'PUT'])
@@ -924,11 +947,11 @@ def register_workflow(app, _db, models):
                 module=module,
                 state_key=state_key,
             )
-            db.session.add(row)
+            _workflow_session().add(row)
         row.data_json = json.dumps(payload)
         row.updated_by_id = current_user.id
         row.updated_at = datetime.utcnow()
-        db.session.commit()
+        _workflow_session().commit()
         return jsonify({'ok': True})
 
     @app.route('/api/workflow/event', methods=['POST'])
@@ -968,7 +991,7 @@ def register_workflow(app, _db, models):
                 action_url=action_url,
                 payload=payload,
             )
-            db.session.commit()
+            _workflow_session().commit()
             return jsonify({'ok': True, 'approval': approval.to_dict()})
 
         if event == 'notify':
@@ -991,7 +1014,7 @@ def register_workflow(app, _db, models):
                     requires_action=data.get('requires_action', False),
                 )
                 notify_user(uid, title, description, action_url)
-            db.session.commit()
+            _workflow_session().commit()
             return jsonify({'ok': True})
 
         if event in ('approve', 'reject', 'dismiss'):
@@ -1002,7 +1025,7 @@ def register_workflow(app, _db, models):
                 if err:
                     status = 403 if err in ('forbidden',) or 'access' in str(err).lower() else 400
                     return jsonify({'error': err}), status
-                db.session.commit()
+                _workflow_session().commit()
                 return jsonify({'ok': True, 'approval': approval.to_dict()})
 
         return jsonify({'error': 'Unknown event'}), 400
@@ -1041,7 +1064,7 @@ def register_workflow(app, _db, models):
                 except PermissionError as exc:
                     return jsonify({'error': str(exc)}), 403
                 execute_rfi_action(rfi, action, current_user, User, body)
-                db.session.commit()
+                _workflow_session().commit()
                 ctx = get_rfi_responder_context(rfi, current_user, linked_cos, linked_pcos)
                 return jsonify({'ok': True, 'action': action, **ctx})
 
@@ -1087,7 +1110,7 @@ def register_workflow(app, _db, models):
                     co, body.get('action'), current_user, User, body,
                     ChangeOrderAllocation, workflow_deps=workflow_deps,
                 )
-                db.session.commit()
+                _workflow_session().commit()
                 ctx = get_co_responder_context(co, current_user, allocs)
                 return jsonify({
                     'ok': True,
@@ -1146,7 +1169,7 @@ def register_workflow(app, _db, models):
                     project_id, period, body.get('action'), current_user, User, body,
                     workflow_deps=workflow_deps,
                 )
-                db.session.commit()
+                _workflow_session().commit()
                 return jsonify({
                     'ok': True,
                     'action': action,
@@ -1158,5 +1181,5 @@ def register_workflow(app, _db, models):
 
             return jsonify({'error': f'Unsupported module: {module}'}), 400
         except ValueError as exc:
-            db.session.rollback()
+            _workflow_session().rollback()
             return jsonify({'error': str(exc)}), 400
