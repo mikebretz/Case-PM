@@ -1194,7 +1194,19 @@
     const segments = recipientSegments(value);
     const formatted = (contact.name ? `"${contact.name}" <${contact.email}>` : contact.email).trim();
     segments[segments.length - 1] = ` ${formatted}`;
-    return segments.join(',').replace(/^\s*,\s*/, '').replace(/\s*,\s*/g, ', ').trim();
+    const joined = segments.join(',').replace(/^\s*,\s*/, '').replace(/\s*,\s*/g, ', ').trim();
+    return joined.endsWith(',') ? joined : `${joined}, `;
+  }
+
+  function completedRecipientEmails(value) {
+    const segments = recipientSegments(value);
+    const completed = segments.length > 1 ? segments.slice(0, -1) : [];
+    const emails = new Set();
+    completed.forEach(segment => {
+      const match = String(segment).match(/[\w.+-]+@[\w.-]+\.\w+/i);
+      if (match) emails.add(match[0].toLowerCase());
+    });
+    return emails;
   }
 
   function selectedRecipientEmails(value) {
@@ -1781,7 +1793,7 @@
       function renderSuggest() {
         const val = inp.value;
         const segment = currentRecipientSegment(val);
-        const excluded = selectedRecipientEmails(val);
+        const excluded = completedRecipientEmails(val);
         const matches = filterContacts(segment, excluded);
         if (!segment || !matches.length) { hide(); return; }
         box.innerHTML = matches.map((c, i) => `
