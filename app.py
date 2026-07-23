@@ -6927,6 +6927,16 @@ def api_user_stamp(user_id):
     return jsonify({'ok': True, 'stamp': stamp_public_view(user)})
 
 
+@app.route('/api/users/<int:user_id>/stamps', methods=['GET'])
+@login_required
+def api_user_stamps(user_id):
+    """Read-only list of another user's approval stamps."""
+    from user_signature_persistence import ensure_user_signature_schema, stamps_public_view
+    ensure_user_signature_schema(db)
+    user = User.query.get_or_404(user_id)
+    return jsonify({'ok': True, **stamps_public_view(user)})
+
+
 @app.route('/api/users/<int:user_id>/stamp/image', methods=['GET'])
 @login_required
 def api_user_stamp_image(user_id):

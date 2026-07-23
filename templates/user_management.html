@@ -705,19 +705,24 @@
                 </div>
 
                 <div class="mt-8 pt-6 border-t border-zinc-700" id="stampUploadSection">
+                    <div id="stampViewOnlyBanner" class="mb-3 px-4 py-3 rounded-md border border-amber-800/60 bg-amber-950/30 text-xs text-amber-200 hidden">
+                        <i class="fa-solid fa-eye mr-1"></i> View only. Approval stamps are controlled by each user in their own profile.
+                    </div>
                     <div class="flex items-center gap-2 mb-2">
                         <i class="fa-solid fa-stamp text-violet-400"></i>
                         <label class="block text-sm text-zinc-300 font-medium">Approval stamp</label>
                     </div>
                     <p class="text-[11px] text-zinc-500 mb-3">Upload one or more approval stamp images (PNG/JPG). Only you can add or change your stamps — admins cannot override.</p>
                     <div id="stampList" class="space-y-2 mb-3"></div>
-                    <div id="stampPreview" class="mb-3 min-h-[96px] bg-white rounded-md border border-zinc-700 p-3 flex items-center justify-center">
+                    <div id="stampPreview" class="mb-3 min-h-[96px] bg-white rounded-md border border-zinc-700 p-3 flex items-center justify-center relative overflow-hidden">
                         <span class="text-xs text-zinc-500">Select a stamp below or upload a new one</span>
                     </div>
+                    <div id="stampEditFields">
                     <input type="text" id="stampLabelInput" placeholder="Stamp label (e.g. Approved, Reviewed)" class="w-full mb-2 bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm">
                     <input type="file" id="stampUpload" accept="image/*" onchange="previewStampUpload(this)" class="text-sm file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white hover:file:bg-zinc-600">
                     <div class="flex flex-wrap gap-2 mt-3" id="stampEditControls">
                         <button type="button" onclick="saveStampToServer()" class="px-4 py-1.5 text-xs bg-violet-600 hover:bg-violet-500 rounded font-medium">Add / Update Stamp</button>
+                    </div>
                     </div>
                     <div id="stampUploadStatus" class="text-xs text-emerald-400 mt-2"></div>
                     <div id="stampHashDisplay" class="text-[10px] font-mono text-zinc-500 mt-1"></div>
@@ -1590,6 +1595,7 @@
     }
 
     function previewStampUpload(input) {
+        if (!window.currentEditIsOwner) return;
         if (!input?.files?.[0]) return;
         const reader = new FileReader();
         reader.onload = e => {
@@ -1599,21 +1605,23 @@
         reader.readAsDataURL(input.files[0]);
     }
 
-    function renderStampPreview(imageUrl, dataUrl) {
+    function renderStampPreview(imageUrl, dataUrl, viewOnly) {
         const preview = document.getElementById('stampPreview');
         if (!preview) return;
         const src = dataUrl || imageUrl;
+        const readOnly = viewOnly || !window.currentEditIsOwner;
         if (!src) {
             preview.innerHTML = '<span class="text-xs text-zinc-500">No stamp uploaded</span>';
             return;
         }
-        preview.innerHTML = `<img src="${src}" alt="Approval stamp" class="max-h-28 max-w-full object-contain">`;
+        preview.innerHTML = `<img src="${src}" alt="Approval stamp" class="max-h-28 max-w-full object-contain">${readOnly ? '<div class="absolute inset-0 flex items-center justify-center pointer-events-none"><span class="text-lg font-bold text-red-500/40 rotate-[-18deg] select-none">VIEW ONLY</span></div>' : ''}`;
     }
 
-    function renderStampList(stamps) {
+    function renderStampList(stamps, viewOnly) {
         const list = document.getElementById('stampList');
         if (!list) return;
         myStampsCache = stamps || [];
+        const readOnly = viewOnly || !window.currentEditIsOwner;
         if (!myStampsCache.length) {
             list.innerHTML = '<p class="text-xs text-zinc-500">No stamps uploaded yet.</p>';
             return;
@@ -1625,46 +1633,67 @@
                     <div class="text-xs font-medium text-zinc-200">${(s.label || 'Stamp').replace(/</g,'&lt;')}${s.is_primary ? ' <span class="text-violet-400">(primary)</span>' : ''}</div>
                     <div class="text-[10px] text-zinc-500 font-mono truncate">${(s.hash || '').slice(0, 16)}…</div>
                 </div>
-                <button type="button" class="text-[10px] px-2 py-1 bg-zinc-700 rounded" onclick="previewExistingStamp('${s.id}')">View</button>
-                <button type="button" class="text-[10px] px-2 py-1 bg-red-900/50 text-red-300 rounded" onclick="deleteStampFromServer('${s.id}')">Remove</button>
+                ${readOnly
+                    ? `<button type="button" class="text-[10px] px-2 py-1 bg-zinc-700 rounded" onclick="previewExistingStamp('${s.id}', true)">View</button>`
+                    : `<button type="button" class="text-[10px] px-2 py-1 bg-zinc-700 rounded" onclick="previewExistingStamp('${s.id}', false)">Edit</button>
+                       <button type="button" class="text-[10px] px-2 py-1 bg-red-900/50 text-red-300 rounded" onclick="deleteStampFromServer('${s.id}')">Remove</button>`}
             </div>`).join('');
     }
 
-    function previewExistingStamp(stampId) {
-        const s = myStampsCache.find(x => x.id === stampId);
-        if (!s?.image_url) return;
-        currentStampEditId = stampId;
-        document.getElementById('stampLabelInput').value = s.label || '';
-        renderStampPreview(s.image_url + '?t=' + Date.now());
+    function applyStampViewOnly(viewOnly) {
+        const banner = document.getElementById('stampViewOnlyBanner');
+        const editFields = document.getElementById('stampEditFields');
+        const stampUpload = document.getElementById('stampUpload');
+        const stampLabel = document.getElementById('stampLabelInput');
+        if (banner) banner.classList.toggle('hidden', !viewOnly);
+        if (editFields) editFields.classList.toggle('hidden', viewOnly);
+        if (stampUpload) stampUpload.disabled = viewOnly;
+        if (stampLabel) stampLabel.disabled = viewOnly;
     }
 
-    async function loadServerStampForUser(userId) {
+    function previewExistingStamp(stampId, viewOnly) {
+        const s = myStampsCache.find(x => x.id === stampId);
+        if (!s?.image_url) return;
+        if (!viewOnly) currentStampEditId = stampId;
+        const labelEl = document.getElementById('stampLabelInput');
+        if (labelEl && !viewOnly) labelEl.value = s.label || '';
+        renderStampPreview(s.image_url + '?t=' + Date.now(), null, viewOnly);
+    }
+
+    async function loadServerStampForUser(userId, isOwner) {
         const localUser = users.find(u => u.id == userId);
         const serverId = resolveServerUserId(localUser);
         if (!serverId || typeof CasePMEsign === 'undefined') return null;
+        applyStampViewOnly(!isOwner);
         try {
-            const data = CasePMEsign.fetchMyStamps
+            const data = isOwner && CasePMEsign.fetchMyStamps
                 ? await CasePMEsign.fetchMyStamps()
-                : { stamps: [(await CasePMEsign.fetchUserStamp(serverId))].filter(s => s?.has_stamp) };
+                : (CasePMEsign.fetchUserStamps
+                    ? await CasePMEsign.fetchUserStamps(serverId)
+                    : { stamps: [(await CasePMEsign.fetchUserStamp(serverId))].filter(s => s?.has_stamp) });
             const stamps = data.stamps || [];
-            renderStampList(stamps);
+            renderStampList(stamps, !isOwner);
             const primary = stamps.find(s => s.is_primary) || stamps[0];
             if (primary?.image_url) {
-                currentStampDataURL = primary.image_url;
-                renderStampPreview(primary.image_url + '?t=' + Date.now());
+                currentStampDataURL = isOwner ? primary.image_url : null;
+                renderStampPreview(primary.image_url + '?t=' + Date.now(), null, !isOwner);
             } else {
                 currentStampDataURL = null;
-                renderStampPreview(null);
+                renderStampPreview(null, null, !isOwner);
             }
             return data;
         } catch (_) {
-            renderStampList([]);
-            renderStampPreview(null);
+            renderStampList([], !isOwner);
+            renderStampPreview(null, null, !isOwner);
             return null;
         }
     }
 
     async function saveStampToServer() {
+        if (!window.currentEditIsOwner) {
+            showCenteredAlert('Only the user themselves can save a stamp. Admins cannot override.', 'warning');
+            return;
+        }
         const editingId = parseInt(document.getElementById('userId')?.value || '0');
         const editingUser = users.find(u => u.id === editingId);
         const ownerEmail = (editingUser?.email || '').toLowerCase();
@@ -1686,7 +1715,7 @@
                 status.textContent = 'Approval stamp saved to your profile.';
                 setTimeout(() => { if (status.textContent.includes('saved')) status.textContent = ''; }, 3000);
             }
-            renderStampList(saved.stamps || []);
+            renderStampList(saved.stamps || [], false);
             currentStampEditId = null;
             document.getElementById('stampUpload').value = '';
             logUserAudit('STAMP_SAVED', editingId, { label });
@@ -1697,6 +1726,10 @@
     }
 
     async function deleteStampFromServer(stampId) {
+        if (!window.currentEditIsOwner) {
+            showCenteredAlert('Only the user themselves can remove a stamp.', 'warning');
+            return;
+        }
         const editingId = parseInt(document.getElementById('userId')?.value || '0');
         const editingUser = users.find(u => u.id === editingId);
         if ((editingUser?.email || '').toLowerCase() !== currentUserEmail.toLowerCase()) {
@@ -1706,10 +1739,10 @@
         if (!confirm('Remove this stamp from your profile?')) return;
         try {
             const saved = await CasePMEsign.deleteStampEntry(stampId);
-            renderStampList(saved.stamps || []);
+            renderStampList(saved.stamps || [], false);
             currentStampEditId = null;
             currentStampDataURL = null;
-            renderStampPreview(null);
+            renderStampPreview(null, null, false);
         } catch (err) {
             showCenteredAlert(err.message || 'Could not remove stamp', 'error');
         }
@@ -1926,29 +1959,23 @@
             initSignatureCanvas(!isOwner);
             setupCertificateUpload(!isOwner);
             await loadServerSignatureForUser(user.id);
-            await loadServerStampForUser(user.id);
+            await loadServerStampForUser(user.id, isOwner);
             if (!isOwner && currentSignatureDataURL) drawSignatureWatermark();
 
             const editControls = document.getElementById('signatureEditControls');
             const uploadSection = document.getElementById('signatureUploadSection');
-            const stampSection = document.getElementById('stampUploadSection');
-            const stampControls = document.getElementById('stampEditControls');
             const certSection = document.getElementById('certificateSection');
             const ln = document.getElementById('signatureLegalName');
             const ini = document.getElementById('signatureInitials');
             if (!isOwner) {
                 if (editControls) editControls.style.display = 'none';
                 if (uploadSection) uploadSection.style.display = 'none';
-                if (stampSection) stampSection.style.opacity = '0.85';
-                if (stampControls) stampControls.style.display = 'none';
                 if (certSection) certSection.style.opacity = '0.5';
                 if (ln) ln.disabled = true;
                 if (ini) ini.disabled = true;
             } else {
                 if (editControls) editControls.style.display = '';
                 if (uploadSection) uploadSection.style.display = '';
-                if (stampSection) stampSection.style.opacity = '1';
-                if (stampControls) stampControls.style.display = '';
                 if (certSection) certSection.style.opacity = '1';
                 if (ln) ln.disabled = false;
                 if (ini) ini.disabled = false;
