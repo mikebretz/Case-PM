@@ -741,6 +741,7 @@
     viewerContext: 'drawing',
     openDocument: null,
     documentViewerPage: false,
+    embeddedViewer: false,
     pendingDrag: null,
     lastPinTap: { key: '', t: 0 },
     textDialogCtx: null,
@@ -2551,6 +2552,12 @@
   }
 
   function closeViewer() {
+    if (state.embeddedViewer) {
+      try {
+        global.parent.postMessage({ type: 'casepm-close-doc-viewer' }, '*');
+      } catch (_) { /* ignore */ }
+      return;
+    }
     if (state.documentViewerPage) {
       const pid = projectId();
       global.location.href = pid ? `/documents?project_id=${pid}` : '/documents';
@@ -2608,9 +2615,16 @@
       return;
     }
     state.documentViewerPage = true;
+    state.embeddedViewer = params.get('embedded') === '1';
     state.viewerContext = 'document';
     document.getElementById('mainContent')?.classList.add('main-content-doc-viewer');
     document.body.classList.add('doc-viewer-active');
+    const backLabel = document.getElementById('viewerBackLabel');
+    if (backLabel) backLabel.textContent = state.embeddedViewer ? 'Close' : 'Documents';
+    const backBtn = document.getElementById('viewerBackBtn');
+    if (backBtn && state.embeddedViewer) {
+      backBtn.querySelector('i')?.classList.replace('fa-arrow-left', 'fa-times');
+    }
     if (global.pdfjsLib) {
       pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }

@@ -4776,22 +4776,23 @@ def api_submittal_upload_attachment(submittal_id):
     path = os.path.join(folder, safe)
     f.save(path)
     attachments = _parse_json(submittal.attachments_json, [])
-    attachments.append({
+    entry = {
         'filename': safe,
         'original_name': f.filename,
         'uploaded_at': datetime.utcnow().isoformat(),
         'uploaded_by': f'{current_user.first_name} {current_user.last_name}'.strip(),
         'uploaded_by_id': current_user.id,
-    })
-    submittal.attachments_json = json.dumps(attachments)
-    db.session.commit()
+    }
+    doc_dict = None
     try:
         with open(path, 'rb') as fh:
             fb = fh.read()
-        _mirror_to_system_folder(
+        doc_dict = _mirror_to_system_folder(
             submittal.project_id, fb, f'{submittal.number} — {safe}', f.filename, 'submittals', 'Submittal',
-            {'submittal_id': submittal.id, 'submittal_number': submittal.number},
+            {'submittal_id': submittal.id, 'submittal_number': submittal.number, 'attachment_filename': safe},
         )
+        if doc_dict and doc_dict.get('id'):
+            entry['document_id'] = doc_dict['id']
         _notify_documents_team(
             submittal.project_id,
             'Submittal attachment filed',
@@ -4800,6 +4801,13 @@ def api_submittal_upload_attachment(submittal_id):
         )
     except Exception:
         pass
+    attachments.append(entry)
+    submittal.attachments_json = json.dumps(attachments)
+    db.session.commit()
+    if entry.get('document_id'):
+        entry['url'] = url_for('api_documents_download', doc_id=entry['document_id'])
+    else:
+        entry['url'] = url_for('serve_submittal_attachment', submittal_id=submittal.id, filename=safe)
     return jsonify({'ok': True, 'attachments': attachments})
 
 
@@ -10301,6 +10309,89 @@ def api_submittal_list_attachments(submittal_id):
         elif a.get('filename'):
             a['url'] = url_for('serve_submittal_attachment', submittal_id=submittal_id, filename=a.get('filename', ''))
     return jsonify({'ok': True, 'attachments': attachments})
+
+
+@app.route('/api/submittals/<int:submittal_id>/attachments/viewer-doc', methods=['POST'])
+@login_required
+def api_submittal_attachment_viewer_doc(submittal_id):
+    """Resolve or create a Documents record for markup viewer on a submittal attachment."""
+    from rfi_persistence import _parse_json
+    from financial_security import require_financial_project_access
+    from document_module_security import submittal_visible_to_user
+
+    submittal = Submittal.query.get_or_404(submittal_id)
+    try:
+        require_financial_project_access(current_user, submittal.project_id, Project)
+        if not submittal_visible_to_user(submittal, current_user, Company=Company, db=db):
+            return jsonify({'error': 'Permission denied'}), 403
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+
+    body = request.get_json(silent=True) or {}
+    attachments = _parse_json(submittal.attachments_json, [])
+    attachment = None
+    att_index = body.get('index')
+    if att_index is not None:
+        try:
+            attachment = attachments[int(att_index)]
+        except (IndexError, TypeError, ValueError):
+            attachment = None
+    if attachment is None and body.get('document_id'):
+        doc_id = int(body['document_id'])
+        attachment = next((a for a in attachments if int(a.get('document_id') or 0) == doc_id), None)
+    if attachment is None and body.get('filename'):
+        attachment = next((a for a in attachments if a.get('filename') == body['filename']), None)
+    if not attachment:
+        return jsonify({'error': 'Attachment not found'}), 404
+
+    if attachment.get('document_id'):
+        doc = Document.query.get(int(attachment['document_id']))
+        if doc and doc.project_id == submittal.project_id and not doc.deleted_at:
+            return jsonify({'ok': True, 'document_id': doc.id, 'name': doc.name})
+
+    safe_name = (attachment.get('filename') or '').strip()
+    original = (attachment.get('original_name') or safe_name).strip()
+    for doc in Document.query.filter_by(project_id=submittal.project_id).filter(Document.deleted_at.is_(None)).all():
+        try:
+            meta = json.loads(doc.source_metadata_json or '{}')
+        except (TypeError, json.JSONDecodeError):
+            meta = {}
+        if meta.get('submittal_id') == submittal.id and (
+            meta.get('attachment_filename') == safe_name
+            or (original and original in (doc.original_filename or '', doc.name or ''))
+        ):
+            attachment['document_id'] = doc.id
+            submittal.attachments_json = json.dumps(attachments)
+            db.session.commit()
+            return jsonify({'ok': True, 'document_id': doc.id, 'name': doc.name})
+
+    if not safe_name:
+        return jsonify({'error': 'Attachment is not linked to a viewable document'}), 400
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'submittals', str(submittal_id))
+    path = os.path.join(folder, safe_name)
+    if not os.path.isfile(path):
+        return jsonify({'error': 'Attachment file not found on server'}), 404
+    with open(path, 'rb') as fh:
+        file_bytes = fh.read()
+    doc_dict = _mirror_to_system_folder(
+        submittal.project_id,
+        file_bytes,
+        f'{submittal.number} — {safe_name}',
+        original or safe_name,
+        'submittals',
+        'Submittal',
+        {
+            'submittal_id': submittal.id,
+            'submittal_number': submittal.number,
+            'attachment_filename': safe_name,
+        },
+    )
+    if not doc_dict or not doc_dict.get('id'):
+        return jsonify({'error': 'Could not prepare document for viewer'}), 500
+    attachment['document_id'] = doc_dict['id']
+    submittal.attachments_json = json.dumps(attachments)
+    db.session.commit()
+    return jsonify({'ok': True, 'document_id': doc_dict['id'], 'name': doc_dict.get('name') or original})
 
 
 @app.route('/api/submittals/<int:submittal_id>/attachments', methods=['DELETE'])
