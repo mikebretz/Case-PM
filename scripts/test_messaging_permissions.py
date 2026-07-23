@@ -142,6 +142,26 @@ class MessagingPermissionTests(unittest.TestCase):
                 inbox_rows = inbox.get_json()
                 received = [r for r in inbox_rows if r.get('subject') == 'bind test' and r.get('folder') != 'sent']
                 self.assertTrue(received, 'recipient should see message in inbox list')
+                sent_row = sent_rows[0]
+                self.assertTrue(sent_row.get('to'), 'sent copy should include recipient metadata')
+                _login_client(client, arch, app)
+                client.get('/email?tab=internal')
+                with client.session_transaction() as sess:
+                    token = sess.get('casepm_csrf_token')
+                headers = {'X-CSRF-Token': token, 'Content-Type': 'application/json'}
+                msg_id = sent_row['id']
+                deleted = client.delete(f'/api/internal-messages/{msg_id}', headers=headers)
+                self.assertEqual(deleted.status_code, 200, deleted.get_json())
+                self.assertFalse(deleted.get_json().get('permanent'))
+                listed3 = client.get('/api/internal-messages')
+                trash_rows = [r for r in listed3.get_json() if r.get('id') == msg_id]
+                self.assertEqual(len(trash_rows), 1)
+                self.assertEqual(trash_rows[0].get('folder'), 'trash')
+                deleted2 = client.delete(f'/api/internal-messages/{msg_id}', headers=headers)
+                self.assertEqual(deleted2.status_code, 200, deleted2.get_json())
+                self.assertTrue(deleted2.get_json().get('permanent'))
+                listed4 = client.get('/api/internal-messages')
+                self.assertFalse(any(r.get('id') == msg_id for r in listed4.get_json()))
 
 
 if __name__ == '__main__':
