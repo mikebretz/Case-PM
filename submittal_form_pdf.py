@@ -7,6 +7,14 @@ from datetime import datetime
 import fitz
 
 
+# Right-column stamp boxes on Submittal_Form.pdf (not the left AcroForm name fields).
+SUBMITTAL_STAMP_BOXES = {
+    'contractor': fitz.Rect(309.567, 261.401, 557.567, 413.063),
+    'architect': fitz.Rect(309.567, 432.616, 557.567, 584.278),
+    'engineer': fitz.Rect(309.567, 603.832, 557.567, 755.493),
+}
+
+
 def _format_spec_digits(spec_section: str) -> str:
     digits = ''.join(ch for ch in str(spec_section or '') if ch.isdigit())
     if len(digits) >= 6:
@@ -130,6 +138,9 @@ def _load_signature_bytes(signature_path: str | None, upload_folder: str | None 
     base_dir = os.path.dirname(__file__)
     candidates.append(os.path.join(base_dir, signature_path))
     candidates.append(os.path.join(base_dir, 'uploads', 'signatures', os.path.basename(signature_path)))
+    candidates.append(os.path.join(base_dir, 'uploads', 'stamps', os.path.basename(signature_path)))
+    if upload_folder:
+        candidates.append(os.path.join(upload_folder, 'stamps', os.path.basename(signature_path)))
     for path in candidates:
         if path and os.path.isfile(path):
             with open(path, 'rb') as fh:
@@ -308,11 +319,8 @@ def _fill_submittal_cover_page(
     contractor_stamp = details.get('contractorReviewStamp') if use_contractor_stamp else None
     architect_stamp = details.get('architectReviewStamp')
     engineer_stamp = details.get('engineerReviewStamp')
-    if contractor_stamp:
-        values['Contractor Field#1'] = ''
-    if blank_ae or architect_stamp:
+    if blank_ae:
         values['Architect Field#1'] = ''
-    if blank_ae or engineer_stamp:
         values['Engineer Field#1'] = ''
     for widget in page.widgets() or []:
         val = values.get(widget.field_name)
@@ -320,20 +328,21 @@ def _fill_submittal_cover_page(
             continue
         widget.field_value = val
         widget.update()
-    stamp_rect = _widget_rect(page, 'Contractor Field#1')
-    if contractor_stamp and stamp_rect:
-        _draw_contractor_review_stamp(page, stamp_rect, contractor_stamp, upload_folder=upload_folder)
-    architect_rect = _widget_rect(page, 'Architect Field#1')
-    if architect_stamp and architect_rect:
-        _draw_uploaded_approval_stamp(
-            page, architect_rect, architect_stamp, upload_folder=upload_folder, fallback_label='ARCHITECT',
+    if contractor_stamp:
+        _draw_contractor_review_stamp(
+            page, SUBMITTAL_STAMP_BOXES['contractor'], contractor_stamp, upload_folder=upload_folder,
         )
-    engineer_rect = _widget_rect(page, 'Engineer Field#1')
-    if engineer_stamp and engineer_rect:
+    if architect_stamp:
         _draw_uploaded_approval_stamp(
-            page, engineer_rect, engineer_stamp, upload_folder=upload_folder, fallback_label='ENGINEER',
+            page, SUBMITTAL_STAMP_BOXES['architect'], architect_stamp,
+            upload_folder=upload_folder, fallback_label='ARCHITECT',
         )
-    return stamp_rect
+    if engineer_stamp:
+        _draw_uploaded_approval_stamp(
+            page, SUBMITTAL_STAMP_BOXES['engineer'], engineer_stamp,
+            upload_folder=upload_folder, fallback_label='ENGINEER',
+        )
+    return SUBMITTAL_STAMP_BOXES['contractor']
 
 
 def _append_submittal_comments_page(

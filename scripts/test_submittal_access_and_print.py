@@ -135,6 +135,12 @@ class SubmittalFormPdfTests(unittest.TestCase):
         finally:
             doc.close()
 
+    def test_stamp_boxes_are_on_right_column(self):
+        from submittal_form_pdf import SUBMITTAL_STAMP_BOXES
+        for key, rect in SUBMITTAL_STAMP_BOXES.items():
+            self.assertGreater(rect.x0, 300, f'{key} stamp box should be on the right side')
+            self.assertGreater(rect.width, 200)
+
     def test_uploader_may_delete_attachment(self):
         from document_module_security import assert_submittal_attachment_delete_allowed
 

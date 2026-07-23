@@ -11,7 +11,7 @@
 <div id="drawPanelViewer" class="flex-1 min-h-0 border border-zinc-700 rounded-md bg-zinc-900 overflow-hidden flex flex-col">
     <div class="draw-viewer-toolbar flex items-center justify-between px-2 py-1.5 border-b border-zinc-800 flex-shrink-0 gap-2 flex-wrap no-print">
         <div class="flex items-center gap-2 min-w-0">
-            <button type="button" onclick="CasePMDrawings.closeViewer()" class="px-2 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md h-[28px]"><i class="fa-solid fa-arrow-left"></i> Documents</button>
+            <button type="button" id="viewerBackBtn" onclick="CasePMDrawings.closeViewer()" class="px-2 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md h-[28px]"><i class="fa-solid fa-arrow-left"></i> <span id="viewerBackLabel">Documents</span></button>
             <div id="viewerSheetTitle" class="text-xs font-medium truncate max-w-[50vw]">Document Viewer</div>
             <div id="pdfPageNav" class="pdf-page-nav hidden items-center gap-0.5 no-print">
                 <button type="button" id="btnPdfPrevPage" onclick="CasePMDrawings.pdfPrevPage()" class="pdf-page-nav-btn" title="Previous page"><i class="fa-solid fa-chevron-left"></i></button>
