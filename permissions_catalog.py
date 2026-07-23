@@ -76,6 +76,7 @@ MODULE_GROUPS = [
         'modules': [
             ('dashboard', 'Dashboard'),
             ('projects', 'Projects'),
+            ('project_directory', 'Project Directory'),
             ('schedule', 'Schedule'),
             ('email', 'Email'),
             ('internal_messages', 'Internal Messages'),
@@ -151,6 +152,7 @@ FINANCIAL_MODULE_KEYS = frozenset({
 LEGACY_MODULE_MAP = {
     'Dashboard': 'dashboard',
     'Projects': 'projects',
+    'Project Directory': 'project_directory',
     'Budget': 'budget',
     'Commitments': 'commitments',
     'Pay Applications': 'pay_applications',
@@ -307,6 +309,7 @@ ROLE_TEMPLATES = {
         'modules': _set_modules(default_module_perms('edit', 'none'), **{
             'dashboard': ('edit', 'none'),
             'projects': ('admin', 'none'),
+            'project_directory': ('view', 'none'),
             'rfis': ('edit', 'approve_reject'),
             'submittals': ('edit', 'approve_reject'),
             'change_orders': ('edit', 'approve_reject'),
@@ -347,6 +350,7 @@ ROLE_TEMPLATES = {
         'modules': _set_modules(default_module_perms('none', 'none'), **{
             'dashboard': ('view', 'none'),
             'projects': ('view', 'none'),
+            'project_directory': ('view', 'none'),
             'schedule': ('view', 'none'),
             'daily_log': ('edit', 'submit'),
             'weekly_report': ('edit', 'none'),
@@ -368,19 +372,27 @@ ROLE_TEMPLATES = {
     },
     'Architect': {
         'portal': 'consultant',
-        'description': 'Consultant review — submittals, RFIs, change orders',
+        'description': 'Consultant review — submittals, RFIs, drawings, documents, project directory',
+        'global': {'hide_financials': True},
         'modules': _set_modules(default_module_perms('none', 'none'), **{
             'dashboard': ('client_view', 'none'),
+            'project_directory': ('view', 'none'),
+            'drawings': ('edit', 'none'),
+            'documents': ('edit', 'none'),
             'rfis': ('edit', 'approve_reject'),
             'submittals': ('edit', 'approve_reject'),
             'change_orders': ('view', 'approve_reject'),
             'change_orders_log': ('view', 'approve_reject'),
             'change_orders_pco': ('view', 'none'),
             'change_orders_sub': ('view', 'approve_reject'),
-            'drawings': ('view', 'none'),
-            'documents': ('view', 'none'),
-            'schedule': ('view', 'none'),
+            'photos': ('edit', 'none'),
+            'punch_list': ('view', 'none'),
+            'inspections': ('view', 'none'),
+            'meeting_minutes': ('view', 'none'),
             'email': ('edit', 'none'),
+            'schedule': ('none', 'none'),
+            'estimating': ('none', 'none'),
+            'change_orders_rfq': ('none', 'none'),
         }),
     },
     'Owner': {
@@ -390,6 +402,7 @@ ROLE_TEMPLATES = {
         'modules': _set_modules(default_module_perms('client_view', 'none'), **{
             'dashboard': ('client_view', 'none'),
             'projects': ('client_view', 'none'),
+            'project_directory': ('client_view', 'none'),
             'schedule': ('client_view', 'none'),
             'rfis': ('client_view', 'none'),
             'submittals': ('client_view', 'none'),

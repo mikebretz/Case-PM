@@ -168,6 +168,9 @@
         .portal-architect .nav-hide-architect {
             display: none !important;
         }
+        .portal-architect .nav-architect-visible {
+            display: flex !important;
+        }
         .portal-sub .nav-sub-only { display: block !important; }
         .portal-sub-vendor .nav-link[data-nav-module="dashboard"],
         .portal-sub-vendor .nav-link[data-nav-module="projects"],
@@ -482,6 +485,11 @@
                     <span>Projects</span>
                 </a>
 
+                <a href="{{ url_for('project_directory_page', project_id=active_project.id) if active_project else url_for('project_directory_page') }}" data-nav-module="project_directory" class="nav-link nav-hide-sub flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'project_directory_page' %}active{% endif %}">
+                    <i class="fa-solid fa-address-book w-5"></i>
+                    <span>Project Directory</span>
+                </a>
+
                 {% if messaging_nav_visible|default(true) %}
                 <a href="{{ url_for('email_page') }}{% if messaging_internal_only|default(is_sub_vendor_portal) %}?tab=internal{% endif %}" data-nav-module="{% if messaging_internal_only|default(is_sub_vendor_portal) %}internal_messages{% else %}email{% endif %}" data-nav-module-alt="internal_messages" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'email_page' %}active{% endif %}">
                     <i class="fa-solid {% if messaging_internal_only|default(is_sub_vendor_portal) %}fa-comments{% else %}fa-envelope{% endif %} w-5"></i>
@@ -509,7 +517,7 @@
                     <span>Weekly Report</span>
                 </a>
 
-                <a href="{{ url_for('schedule_page', project_id=active_project.id) if active_project else url_for('schedule_page') }}" data-nav-module="schedule" class="nav-link nav-hide-sub-vendor flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'schedule_page' %}active{% endif %}">
+                <a href="{{ url_for('schedule_page', project_id=active_project.id) if active_project else url_for('schedule_page') }}" data-nav-module="schedule" class="nav-link nav-hide-sub-vendor nav-hide-architect flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'schedule_page' %}active{% endif %}">
                     <i class="fa-solid fa-calendar-alt w-5"></i>
                     <span>Schedule</span>
                 </a>
@@ -524,7 +532,7 @@
                     <span>Change Orders</span>
                 </a>
 
-                <a href="{{ url_for('rfq_portal_page', project_id=active_project.id) if active_project else url_for('rfq_portal_page') }}" data-nav-module="change_orders" class="nav-link nav-sub-only hidden flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'rfq_portal_page' %}active{% endif %}">
+                <a href="{{ url_for('rfq_portal_page', project_id=active_project.id) if active_project else url_for('rfq_portal_page') }}" data-nav-module="change_orders_rfq" class="nav-link nav-sub-only nav-hide-architect hidden flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'rfq_portal_page' %}active{% endif %}">
                     <i class="fa-solid fa-file-invoice w-5"></i>
                     <span>RFQ Portal</span>
                 </a>
@@ -534,7 +542,7 @@
                     <span>Submittals</span>
                 </a>
 
-                <a href="{{ url_for('punch_list_page', project_id=active_project.id) if active_project else url_for('punch_list_page') }}" data-nav-module="punch_list" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'punch_list_page' %}active{% endif %}">
+                <a href="{{ url_for('punch_list_page', project_id=active_project.id) if active_project else url_for('punch_list_page') }}" data-nav-module="punch_list" class="nav-link nav-staff-only nav-architect-visible flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'punch_list_page' %}active{% endif %}">
                     <i class="fa-solid fa-tasks w-5"></i>
                     <span>Punch List</span>
                 </a>
@@ -549,7 +557,7 @@
                     <span>Estimating</span>
                 </a>
 
-                <a href="{{ url_for('estimate_portal_page', project_id=active_project.id) if active_project else url_for('estimate_portal_page') }}" data-nav-module="estimating" class="nav-link nav-sub-only hidden flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'estimate_portal_page' %}active{% endif %}">
+                <a href="{{ url_for('estimate_portal_page', project_id=active_project.id) if active_project else url_for('estimate_portal_page') }}" data-nav-module="estimating" class="nav-link nav-sub-only nav-hide-architect hidden flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'estimate_portal_page' %}active{% endif %}">
                     <i class="fa-solid fa-envelope-open-text w-5"></i>
                     <span>Bid Portal</span>
                 </a>
@@ -585,12 +593,12 @@
                     <div class="section-header px-2 mb-0.5">Field &amp; Docs</div>
                 </div>
 
-                <a href="{{ url_for('photos_page', project_id=active_project.id) if active_project else url_for('photos_page') }}" data-nav-module="photos" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'photos_page' %}active{% endif %}">
+                <a href="{{ url_for('photos_page', project_id=active_project.id) if active_project else url_for('photos_page') }}" data-nav-module="photos" class="nav-link nav-staff-only nav-architect-visible flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'photos_page' %}active{% endif %}">
                     <i class="fa-solid fa-camera w-5"></i>
                     <span>Photos</span>
                 </a>
 
-                <a href="{{ url_for('documents_page', project_id=active_project.id) if active_project else url_for('documents_page') }}" data-nav-module="documents" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'documents_page' %}active{% endif %}">
+                <a href="{{ url_for('documents_page', project_id=active_project.id) if active_project else url_for('documents_page') }}" data-nav-module="documents" class="nav-link nav-staff-only nav-architect-visible flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'documents_page' %}active{% endif %}">
                     <i class="fa-solid fa-folder-open w-5"></i>
                     <span>Documents</span>
                 </a>
@@ -605,12 +613,12 @@
                     <span>Deliveries</span>
                 </a>
 
-                <a href="{{ url_for('inspections_page', project_id=active_project.id) if active_project else url_for('inspections_page') }}" data-nav-module="inspections" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'inspections_page' %}active{% endif %}">
+                <a href="{{ url_for('inspections_page', project_id=active_project.id) if active_project else url_for('inspections_page') }}" data-nav-module="inspections" class="nav-link nav-staff-only nav-architect-visible flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'inspections_page' %}active{% endif %}">
                     <i class="fa-solid fa-clipboard-check w-5"></i>
                     <span>Permits &amp; Inspections</span>
                 </a>
 
-                <a href="{{ url_for('meeting_minutes_page', project_id=active_project.id) if active_project else url_for('meeting_minutes_page') }}" data-nav-module="meeting_minutes" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'meeting_minutes_page' %}active{% endif %}">
+                <a href="{{ url_for('meeting_minutes_page', project_id=active_project.id) if active_project else url_for('meeting_minutes_page') }}" data-nav-module="meeting_minutes" class="nav-link nav-staff-only nav-architect-visible flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'meeting_minutes_page' %}active{% endif %}">
                     <i class="fa-solid fa-users w-5"></i>
                     <span>Meeting Minutes</span>
                 </a>

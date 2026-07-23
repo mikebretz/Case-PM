@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block content %}
+<script>
+window.CASEPM_PROJECT_DIRECTORY_CTX = {
+  projectId: {{ active_project.id if active_project else 'null' }},
+  projectName: {{ (active_project.name if active_project else '')|tojson }},
+};
+</script>
+<script src="{{ url_for('static', filename='js/project-directory-app.js') }}"></script>
+
+<style>
+.pd-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 1rem 1rem 0; box-sizing: border-box; }
+.pd-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+.pd-card { background: #18181b; border: 1px solid #3f3f46; border-radius: 0.75rem; }
+.pd-table { width: 100%; border-collapse: collapse; }
+.pd-table th, .pd-table td { padding: 0.65rem 0.85rem; border-bottom: 1px solid #27272a; text-align: left; font-size: 0.875rem; }
+.pd-table th { color: #a1a1aa; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.pd-table tr:last-child td { border-bottom: none; }
+.pd-empty { color: #71717a; padding: 2rem; text-align: center; }
+</style>
+
+<div class="pd-page">
+<div class="pd-stack">
+
+<div class="flex items-center justify-between flex-shrink-0 mb-3 gap-3">
+  <div class="min-w-0">
+    <div class="text-2xl font-semibold text-white">Project Directory</div>
+    <div id="pdSubtitle" class="text-sm text-zinc-400 mt-1">Team contacts and project context</div>
+  </div>
+  <button type="button" id="pdRefresh" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px]">
+    <i class="fa-solid fa-rotate"></i>
+    <span class="hidden sm:inline">Refresh</span>
+  </button>
+</div>
+
+<div id="pdProjectCard" class="pd-card p-4 mb-3 flex-shrink-0 hidden">
+  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 text-sm">
+    <div><div class="text-xs text-zinc-500 uppercase tracking-wide">Project</div><div id="pdProjectName" class="text-white font-medium mt-1">—</div></div>
+    <div><div class="text-xs text-zinc-500 uppercase tracking-wide">Number</div><div id="pdProjectNumber" class="text-zinc-200 mt-1">—</div></div>
+    <div><div class="text-xs text-zinc-500 uppercase tracking-wide">Status</div><div id="pdProjectStatus" class="text-zinc-200 mt-1">—</div></div>
+    <div><div class="text-xs text-zinc-500 uppercase tracking-wide">Project Manager</div><div id="pdProjectManager" class="text-zinc-200 mt-1">—</div></div>
+    <div class="md:col-span-2 xl:col-span-4"><div class="text-xs text-zinc-500 uppercase tracking-wide">Address</div><div id="pdProjectAddress" class="text-zinc-200 mt-1">—</div></div>
+    <div class="md:col-span-2 xl:col-span-4"><div class="text-xs text-zinc-500 uppercase tracking-wide">Description</div><div id="pdProjectDescription" class="text-zinc-300 mt-1 whitespace-pre-wrap">—</div></div>
+  </div>
+</div>
+
+<div class="pd-card flex-1 min-h-0 overflow-hidden flex flex-col">
+  <div class="px-4 py-3 border-b border-zinc-800 flex items-center justify-between gap-2">
+    <div class="font-semibold text-white">Team &amp; Contacts</div>
+    <div id="pdContactCount" class="text-xs text-zinc-500">0 contacts</div>
+  </div>
+  <div class="flex-1 min-h-0 overflow-auto">
+    <table class="pd-table">
+      <thead>
+        <tr>
+          <th>Role</th>
+          <th>Name</th>
+          <th>Firm</th>
+          <th>Email</th>
+          <th>Phone</th>
+        </tr>
+      </thead>
+      <tbody id="pdContactsBody">
+        <tr><td colspan="5" class="pd-empty">Select a project to view the directory.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="flex-shrink-0 border-t border-zinc-700 bg-zinc-900 px-4 py-2 text-xs text-zinc-500 mt-3">
+  <span id="pdStatusText">—</span>
+</div>
+
+</div>
+</div>
+{% endblock %}
