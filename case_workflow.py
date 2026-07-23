@@ -69,13 +69,13 @@ def model_query(model):
 
 
 def ensure_workflow_models_bound():
-    """Rebind workflow ORM models when the active SQLAlchemy instance changed."""
+    """Sync module db pointers. Workflow ORM classes are defined once per process."""
     global db, _registered_db
     canonical = _workflow_db()
-    if InternalMessage is None or getattr(InternalMessage, '__fsa__', None) is not canonical:
-        init_models(canonical)
     db = canonical
     _registered_db = canonical
+    if InternalMessage is None:
+        init_models(canonical)
     return canonical
 
 
@@ -105,18 +105,14 @@ def init_models(_db):
     """Define SQLAlchemy models once db is available."""
     global db, ApprovalRequest, InternalMessage, ModuleState, ProjectMembership
     canonical = _canonical_db(_db) or _db
-    if InternalMessage is not None and getattr(InternalMessage, '__fsa__', None) is canonical:
+    if InternalMessage is not None:
         db = canonical
         return
-    if InternalMessage is not None:
-        ApprovalRequest = None
-        InternalMessage = None
-        ModuleState = None
-        ProjectMembership = None
     db = canonical
 
     class _ApprovalRequest(db.Model):
         __tablename__ = 'approval_request'
+        __table_args__ = {'extend_existing': True}
         id = db.Column(db.Integer, primary_key=True)
         project_id = db.Column(db.Integer, db.ForeignKey('project.id'))
         company_id = db.Column(db.Integer, db.ForeignKey('company.id'), nullable=True)
@@ -170,6 +166,7 @@ def init_models(_db):
 
     class _InternalMessage(db.Model):
         __tablename__ = 'internal_message'
+        __table_args__ = {'extend_existing': True}
         id = db.Column(db.Integer, primary_key=True)
         user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
         project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
@@ -272,6 +269,7 @@ def init_models(_db):
 
         __table_args__ = (
             db.UniqueConstraint('project_id', 'company_id', 'module', 'state_key', name='uq_module_state'),
+            {'extend_existing': True},
         )
 
     class _ProjectMembership(db.Model):
@@ -284,6 +282,7 @@ def init_models(_db):
 
         __table_args__ = (
             db.UniqueConstraint('project_id', 'user_id', name='uq_project_member'),
+            {'extend_existing': True},
         )
 
     ApprovalRequest = _ApprovalRequest

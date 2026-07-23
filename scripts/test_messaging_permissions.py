@@ -88,46 +88,25 @@ class MessagingPermissionTests(unittest.TestCase):
         self.assertEqual(merged['modules']['internal_messages']['access'], 'edit')
         self.assertTrue(user_has_module_access(user, 'internal_messages', 'entry'))
 
-    def test_workflow_models_rebind_when_sqlalchemy_instance_changes(self):
-        from flask import Flask
-        from flask_sqlalchemy import SQLAlchemy
+    def test_ensure_workflow_models_bound_is_idempotent(self):
+        from app import app
         import case_workflow as cw
 
-        app1 = Flask('workflow-test-stale')
-        app1.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
-        app1.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-        db1 = SQLAlchemy(app1)
-        cw.init_models(db1)
+        with app.app_context():
+            first = cw.InternalMessage
+            cw.ensure_workflow_models_bound()
+            cw.ensure_workflow_models_bound()
+            self.assertIs(cw.InternalMessage, first)
+            msg = cw.create_internal_message(
+                1,
+                folder='team',
+                msg_type='message',
+                subject='idempotent bind test',
+            )
+            self.assertIsNotNone(msg)
+            cw._workflow_session().rollback()
 
-        app2 = Flask('workflow-test-live')
-        app2.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
-        app2.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-        db2 = SQLAlchemy(app2)
-
-        with app2.app_context():
-            cw.register_workflow(app2, db2, {
-                'User': None,
-                'Project': None,
-                'Company': None,
-                'Notification': None,
-                'login_required': lambda view: view,
-                'get_current_project_id': lambda: None,
-            })
-            self.assertIs(cw.InternalMessage.__fsa__, db2)
-            session = cw._workflow_session()
-            self.assertIs(session, db2.session)
-
-    def test_internal_message_send_after_stale_model_init(self):
-        from flask import Flask
-        from flask_sqlalchemy import SQLAlchemy
-        import case_workflow as cw
-
-        app1 = Flask('stale-msg')
-        app1.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
-        app1.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-        db1 = SQLAlchemy(app1)
-        cw.init_models(db1)
-
+    def test_internal_message_send_api(self):
         from app import app, User
         from scripts.simulate_security_harness import _login_client
 
