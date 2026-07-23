@@ -9,7 +9,9 @@ import re
 from datetime import datetime
 
 SIGNATURE_UPLOAD_DIR = os.path.join('uploads', 'signatures')
+STAMP_UPLOAD_DIR = os.path.join('uploads', 'stamps')
 MAX_SIGNATURE_BYTES = 512 * 1024  # 512 KB PNG
+MAX_STAMP_BYTES = 1024 * 1024  # 1 MB PNG/JPG
 
 
 def ensure_user_signature_schema(db):
@@ -27,12 +29,16 @@ def ensure_user_signature_schema(db):
         'signature_set_at': 'DATETIME',
         'signature_audit_json': 'TEXT',
         'certificate_meta_json': 'TEXT',
+        'stamp_path': 'VARCHAR(300)',
+        'stamp_hash': 'VARCHAR(64)',
+        'stamp_set_at': 'DATETIME',
     }
     for col, typedef in additions.items():
         if col not in existing:
             db.session.execute(text(f'ALTER TABLE user ADD COLUMN {col} {typedef}'))
     db.session.commit()
     os.makedirs(SIGNATURE_UPLOAD_DIR, exist_ok=True)
+    os.makedirs(STAMP_UPLOAD_DIR, exist_ok=True)
 
 
 def _parse_json(raw, default=None):
@@ -84,6 +90,41 @@ def signature_public_view(user):
         'hash': user.signature_hash,
         'image_url': f'/api/users/{uid}/signature/image' if user.signature_path else None,
     }
+
+
+def stamp_public_view(user):
+    """Safe approval-stamp metadata for document stamping."""
+    if not user or not getattr(user, 'stamp_hash', None):
+        return {
+            'has_stamp': False,
+            'user_id': getattr(user, 'id', None),
+            'set_at': None,
+            'hash': None,
+            'image_url': None,
+        }
+    uid = user.id
+    return {
+        'has_stamp': True,
+        'user_id': uid,
+        'set_at': user.stamp_set_at.isoformat() if getattr(user, 'stamp_set_at', None) else None,
+        'hash': user.stamp_hash,
+        'image_url': f'/api/users/{uid}/stamp/image' if getattr(user, 'stamp_path', None) else None,
+    }
+
+
+def save_user_stamp(user, data_url):
+    """Persist PNG/JPEG approval stamp — only the user may update their own."""
+    png_bytes = _decode_png_data_url(data_url)
+    stamp_hash = _sha256_bytes(png_bytes)
+    os.makedirs(STAMP_UPLOAD_DIR, exist_ok=True)
+    path = os.path.join(STAMP_UPLOAD_DIR, f'user_{user.id}.png')
+    with open(path, 'wb') as fh:
+        fh.write(png_bytes)
+    user.stamp_path = path
+    user.stamp_hash = stamp_hash
+    user.stamp_set_at = datetime.utcnow()
+    append_signature_audit(user, 'stamp_saved', {'hash': stamp_hash})
+    return stamp_public_view(user)
 
 
 def append_signature_audit(user, event_type, details=None):

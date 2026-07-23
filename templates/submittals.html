@@ -428,7 +428,7 @@ function refreshSubmittalActionButtons() {
     flex: 1;
     min-height: 0;
     overflow: auto;
-    max-width: 72rem;
+    max-width: 84rem;
     width: 100%;
     margin: 0 auto;
     padding: 0 0.75rem 1rem;
@@ -442,8 +442,9 @@ function refreshSubmittalActionButtons() {
     padding-right: 1.75rem;
   }
   #submittalReviewChatCol {
-    width: 380px;
-    min-width: 320px;
+    width: 760px;
+    min-width: 560px;
+    flex-shrink: 0;
     border-left: 1px solid #3f3f46;
     display: flex;
     flex-direction: column;
@@ -1642,16 +1643,24 @@ function getFilteredSubmittals() {
     const search = (document.getElementById('searchInput')?.value || '').toLowerCase().trim();
     const status = document.getElementById('statusFilter')?.value || '';
     const division = document.getElementById('divisionFilter')?.value || '';
-    return submittals.filter(s => {
+    const rows = submittals.filter(s => {
         if (SUBMITTAL_ACCESS.isSubPortal && !submittalItemAssignedToMe(s)) return false;
         const hay = [
-            s.number, s.subject, s.specSection, s.sectionName, s.paragraph, s.type, s.receivedFrom, s.referredTo
+            s.number, s.baseNumber, s.subject, s.specSection, s.sectionName, s.paragraph, s.type, s.receivedFrom, s.referredTo
         ].filter(Boolean).join(' ').toLowerCase();
         const matchesSearch = !search || hay.includes(search);
         const matchesStatus = !status || s.status === status;
         const div = (s.specSection || '').replace(/\s/g, '').slice(0, 2);
         const matchesDivision = !division || div === division;
         return matchesSearch && matchesStatus && matchesDivision;
+    });
+    return rows.sort((a, b) => {
+        const aBase = (a.baseNumber || a.number || '').toString();
+        const bBase = (b.baseNumber || b.number || '').toString();
+        if (aBase !== bBase) return aBase.localeCompare(bBase, undefined, { numeric: true });
+        const aRev = parseInt(a.rev || '0', 10) || 0;
+        const bRev = parseInt(b.rev || '0', 10) || 0;
+        return aRev - bRev;
     });
 }
 
@@ -1682,8 +1691,8 @@ function renderSubmittalsTable(list) {
         row.onclick = () => openDetailModal(item.id);
         
         row.innerHTML = `
-            <td class="px-4 py-2 font-mono text-emerald-400 font-semibold">${item.number || '<span class="text-zinc-500 italic">Draft</span>'}</td>
-            <td class="px-3 py-2 text-center font-mono">${item.rev}</td>
+            <td class="px-4 py-2 font-mono text-emerald-400 font-semibold">${item.baseNumber || item.number || '<span class="text-zinc-500 italic">Draft</span>'}</td>
+            <td class="px-3 py-2 text-center font-mono">${item.rev || '0'}</td>
             <td class="px-3 py-2 font-mono text-sky-400 ${submittalCanViewSpecBook(item) ? 'hover:underline cursor-pointer' : ''}" ${submittalCanViewSpecBook(item) ? `title="View full spec section in specifications book" onclick="event.stopPropagation(); openSpecSectionFromSubmittal(${item.id})"` : ''}>${item.specSection}</td>
             <td class="px-3 py-2 text-xs text-zinc-400">${item.paragraph || '-'}</td>
             <td class="px-4 py-2"><div class="font-medium">${item.subject}</div>${item.sectionName ? `<div class="text-xs text-zinc-500 mt-0.5">${item.sectionName}</div>` : ''}</td>
@@ -2288,6 +2297,16 @@ async function recordArchitectDecision(decision) {
         });
         if (json?.new_status) currentModalItem.status = json.new_status;
         if (reviewComments) currentModalItem.reviewComments = reviewComments;
+        if (json?.revision_submittal) {
+            const revItem = json.revision_submittal;
+            revItem.id = revItem.serverId || revItem.id;
+            const existingIdx = submittals.findIndex(s => String(s.serverId) === String(revItem.serverId));
+            if (existingIdx >= 0) submittals[existingIdx] = revItem;
+            else submittals.push(revItem);
+            showCenteredAlert(`Decision recorded: ${decision}. Revision ${revItem.rev || ''} created for subcontractor.`, 'success');
+        } else {
+            showCenteredAlert(`Decision recorded: ${decision}`, 'success');
+        }
         saveData();
         await loadReviewSubmissions(currentModalItem.serverId);
         const badge = document.getElementById('modalStatusBadge');
@@ -2298,7 +2317,6 @@ async function recordArchitectDecision(decision) {
         updateSubmittalWorkflowActions();
         renderSubmittalsTable();
         updateMetrics();
-        showCenteredAlert(`Decision recorded: ${decision}`, 'success');
     } catch (err) {
         showCenteredAlert(err.message || 'Could not record decision', 'error');
     }

@@ -553,6 +553,9 @@ class User(db.Model, UserMixin):
     signature_set_at = db.Column(db.DateTime)
     signature_audit_json = db.Column(db.Text)
     certificate_meta_json = db.Column(db.Text)
+    stamp_path = db.Column(db.String(300))
+    stamp_hash = db.Column(db.String(64))
+    stamp_set_at = db.Column(db.DateTime)
     phones_json = db.Column(db.Text)
     notes = db.Column(db.Text)
     access_enabled = db.Column(db.Boolean, default=True)
@@ -6898,6 +6901,58 @@ def api_my_signature_audit():
     return jsonify({'ok': True, 'audit': audit[:50]})
 
 
+@app.route('/api/users/me/stamp', methods=['GET'])
+@login_required
+def api_my_stamp():
+    from user_signature_persistence import ensure_user_signature_schema, stamp_public_view
+    ensure_user_signature_schema(db)
+    return jsonify({'ok': True, 'stamp': stamp_public_view(current_user)})
+
+
+@app.route('/api/users/<int:user_id>/stamp', methods=['GET'])
+@login_required
+def api_user_stamp(user_id):
+    from user_signature_persistence import ensure_user_signature_schema, stamp_public_view
+    ensure_user_signature_schema(db)
+    user = User.query.get_or_404(user_id)
+    return jsonify({'ok': True, 'stamp': stamp_public_view(user)})
+
+
+@app.route('/api/users/<int:user_id>/stamp/image', methods=['GET'])
+@login_required
+def api_user_stamp_image(user_id):
+    from user_signature_persistence import ensure_user_signature_schema
+    ensure_user_signature_schema(db)
+    user = User.query.get_or_404(user_id)
+    path = getattr(user, 'stamp_path', None)
+    if not path or not os.path.isfile(path):
+        return jsonify({'error': 'No stamp on file'}), 404
+    from flask import send_file
+    return send_file(path, mimetype='image/png', max_age=3600)
+
+
+@app.route('/api/users/me/stamp', methods=['PUT'])
+@login_required
+def api_save_my_stamp():
+    """Only the authenticated user may update their own approval stamp."""
+    from user_signature_persistence import ensure_user_signature_schema, save_user_stamp
+    ensure_user_signature_schema(db)
+    body = request.get_json(silent=True) or {}
+    data_url = body.get('stamp_png') or body.get('stampDataURL') or body.get('data_url')
+    if not data_url:
+        return jsonify({'error': 'stamp_png is required'}), 400
+    try:
+        stamp = save_user_stamp(current_user, data_url)
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 500
+    return jsonify({'ok': True, 'stamp': stamp})
+
+
 @app.route('/users/create', methods=['POST'])
 @login_required
 @admin_required
@@ -9922,9 +9977,10 @@ def api_submittal_workflow(submittal_id):
     body = request.get_json(silent=True) or {}
     action = body.get('action')
     old_status = submittal.status
+    revision_submittal = None
     try:
-        new_status = submittal_workflow_action(
-            submittal, action, current_user, body, Company=Company, db=db,
+        new_status, revision_submittal = submittal_workflow_action(
+            submittal, action, current_user, body, Company=Company, db=db, Submittal=Submittal,
         )
     except (ValueError, PermissionError) as exc:
         return jsonify({'error': str(exc)}), 403 if isinstance(exc, PermissionError) else 400
@@ -9955,7 +10011,12 @@ def api_submittal_workflow(submittal_id):
             notify_submittal_ball_in_court(submittal, User)
     except Exception:
         pass
-    return jsonify({'ok': True, 'new_status': new_status, 'submittal_id': submittal.id})
+    payload = {'ok': True, 'new_status': new_status, 'submittal_id': submittal.id}
+    if revision_submittal is not None:
+        from submittal_persistence import submittal_to_ui_item
+        payload['revision_submittal'] = submittal_to_ui_item(revision_submittal)
+        payload['revision_submittal_id'] = revision_submittal.id
+    return jsonify(payload)
 
 
 @app.route('/api/submittals/<int:submittal_id>/print-form', methods=['GET'])

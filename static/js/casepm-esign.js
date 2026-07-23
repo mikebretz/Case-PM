@@ -5,6 +5,7 @@
   'use strict';
 
   let cachedMySignature = null;
+  let cachedMyStamp = null;
 
   async function fetchMySignature(forceRefresh) {
     if (cachedMySignature && !forceRefresh) return cachedMySignature;
@@ -35,8 +36,38 @@
     return json.signature;
   }
 
+  async function fetchMyStamp(forceRefresh) {
+    if (cachedMyStamp && !forceRefresh) return cachedMyStamp;
+    const res = await fetch('/api/users/me/stamp', { credentials: 'same-origin' });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || 'Could not load stamp');
+    cachedMyStamp = json.stamp || { has_stamp: false };
+    return cachedMyStamp;
+  }
+
+  async function fetchUserStamp(userId) {
+    const res = await fetch(`/api/users/${userId}/stamp`, { credentials: 'same-origin' });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || 'Could not load stamp');
+    return json.stamp || { has_stamp: false };
+  }
+
+  async function saveMyStamp(payload) {
+    const res = await fetch('/api/users/me/stamp', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || 'Could not save stamp');
+    cachedMyStamp = json.stamp;
+    return json.stamp;
+  }
+
   function clearCache() {
     cachedMySignature = null;
+    cachedMyStamp = null;
   }
 
   /**
@@ -131,6 +162,9 @@
     fetchMySignature,
     fetchUserSignature,
     saveMySignature,
+    fetchMyStamp,
+    fetchUserStamp,
+    saveMyStamp,
     buildAttestationPayload,
     mountSignPanel,
     clearCache,

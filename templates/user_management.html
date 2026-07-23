@@ -704,6 +704,23 @@
                     <input type="file" id="signatureUpload" accept="image/*" class="text-sm file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white hover:file:bg-zinc-600">
                 </div>
 
+                <div class="mt-8 pt-6 border-t border-zinc-700" id="stampUploadSection">
+                    <div class="flex items-center gap-2 mb-2">
+                        <i class="fa-solid fa-stamp text-violet-400"></i>
+                        <label class="block text-sm text-zinc-300 font-medium">Approval stamp</label>
+                    </div>
+                    <p class="text-[11px] text-zinc-500 mb-3">Upload a round or rectangular approval stamp image (PNG/JPG). Used on submittal cover sheets for Architect, Engineer, and similar formal reviews.</p>
+                    <div id="stampPreview" class="mb-3 min-h-[96px] bg-white rounded-md border border-zinc-700 p-3 flex items-center justify-center">
+                        <span class="text-xs text-zinc-500">No stamp uploaded</span>
+                    </div>
+                    <input type="file" id="stampUpload" accept="image/*" onchange="previewStampUpload(this)" class="text-sm file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white hover:file:bg-zinc-600">
+                    <div class="flex flex-wrap gap-2 mt-3" id="stampEditControls">
+                        <button type="button" onclick="saveStampToServer()" class="px-4 py-1.5 text-xs bg-violet-600 hover:bg-violet-500 rounded font-medium">Save My Stamp</button>
+                    </div>
+                    <div id="stampUploadStatus" class="text-xs text-emerald-400 mt-2"></div>
+                    <div id="stampHashDisplay" class="text-[10px] font-mono text-zinc-500 mt-1"></div>
+                </div>
+
                 <div class="mt-6 pt-4 border-t border-zinc-700" id="certificateSection">
                     <label class="block text-sm mb-2 text-zinc-300">Digital certificate <span class="text-zinc-500">(optional)</span></label>
                     <p class="text-[11px] text-zinc-500 mb-2">For PKI-backed signing. We store certificate <em>metadata</em> only — private keys never leave your device.</p>
@@ -717,6 +734,7 @@
                         <li>Change Order approvals (Owner &amp; Architect)</li>
                         <li>Commitment execution (internal e-sign)</li>
                         <li>Pay applications &amp; formal document packages</li>
+                        <li>Submittal cover sheets (signature or approval stamp)</li>
                     </ul>
                 </div>
             </div>
@@ -768,6 +786,7 @@
     let users = {{ server_users_for_js|tojson }};
     let companies = [];
     let currentSignatureDataURL = null;
+    let currentStampDataURL = null;
     let currentCertificateFileName = null;
     let currentEditingUserId = null;
     let phoneNumbers = [];
@@ -1566,6 +1585,78 @@
         }
     }
 
+    function previewStampUpload(input) {
+        if (!input?.files?.[0]) return;
+        const reader = new FileReader();
+        reader.onload = e => {
+            currentStampDataURL = e.target.result;
+            renderStampPreview(null, currentStampDataURL);
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+
+    function renderStampPreview(imageUrl, dataUrl) {
+        const preview = document.getElementById('stampPreview');
+        if (!preview) return;
+        const src = dataUrl || imageUrl;
+        if (!src) {
+            preview.innerHTML = '<span class="text-xs text-zinc-500">No stamp uploaded</span>';
+            return;
+        }
+        preview.innerHTML = `<img src="${src}" alt="Approval stamp" class="max-h-28 max-w-full object-contain">`;
+    }
+
+    async function loadServerStampForUser(userId) {
+        const localUser = users.find(u => u.id == userId);
+        const serverId = resolveServerUserId(localUser);
+        if (!serverId || typeof CasePMEsign === 'undefined' || !CasePMEsign.fetchUserStamp) return null;
+        try {
+            const stamp = await CasePMEsign.fetchUserStamp(serverId);
+            const hashEl = document.getElementById('stampHashDisplay');
+            if (stamp?.has_stamp && stamp.image_url) {
+                currentStampDataURL = stamp.image_url;
+                renderStampPreview(stamp.image_url + '?t=' + Date.now());
+                if (hashEl && stamp.hash) hashEl.textContent = `Stamp hash: ${stamp.hash}`;
+            } else {
+                currentStampDataURL = null;
+                renderStampPreview(null);
+                if (hashEl) hashEl.textContent = '';
+            }
+            return stamp;
+        } catch (_) {
+            renderStampPreview(null);
+            return null;
+        }
+    }
+
+    async function saveStampToServer() {
+        const editingId = parseInt(document.getElementById('userId')?.value || '0');
+        const editingUser = users.find(u => u.id === editingId);
+        const ownerEmail = (editingUser?.email || '').toLowerCase();
+        if (ownerEmail !== currentUserEmail.toLowerCase()) {
+            showCenteredAlert('Only the user themselves can save a stamp. Admins cannot override.', 'warning');
+            return;
+        }
+        if (!currentStampDataURL || !currentStampDataURL.startsWith('data:')) {
+            showCenteredAlert('Choose a stamp image to upload first.', 'warning');
+            return;
+        }
+        const status = document.getElementById('stampUploadStatus');
+        try {
+            const saved = await CasePMEsign.saveMyStamp({ stamp_png: currentStampDataURL });
+            if (status) {
+                status.textContent = 'Approval stamp saved to your profile.';
+                setTimeout(() => { if (status.textContent.includes('saved')) status.textContent = ''; }, 3000);
+            }
+            const hashEl = document.getElementById('stampHashDisplay');
+            if (hashEl && saved.hash) hashEl.textContent = `Stamp hash: ${saved.hash}`;
+            logUserAudit('STAMP_SAVED', editingId, { hash: saved.hash });
+        } catch (err) {
+            if (status) status.textContent = '';
+            showCenteredAlert(err.message || 'Could not save stamp', 'error');
+        }
+    }
+
     // ==================== PROFILE IMAGE ====================
     function previewProfileImage(input) {
         if (input.files && input.files[0]) {
@@ -1777,22 +1868,29 @@
             initSignatureCanvas(!isOwner);
             setupCertificateUpload(!isOwner);
             await loadServerSignatureForUser(user.id);
+            await loadServerStampForUser(user.id);
             if (!isOwner && currentSignatureDataURL) drawSignatureWatermark();
 
             const editControls = document.getElementById('signatureEditControls');
             const uploadSection = document.getElementById('signatureUploadSection');
+            const stampSection = document.getElementById('stampUploadSection');
+            const stampControls = document.getElementById('stampEditControls');
             const certSection = document.getElementById('certificateSection');
             const ln = document.getElementById('signatureLegalName');
             const ini = document.getElementById('signatureInitials');
             if (!isOwner) {
                 if (editControls) editControls.style.display = 'none';
                 if (uploadSection) uploadSection.style.display = 'none';
+                if (stampSection) stampSection.style.opacity = '0.85';
+                if (stampControls) stampControls.style.display = 'none';
                 if (certSection) certSection.style.opacity = '0.5';
                 if (ln) ln.disabled = true;
                 if (ini) ini.disabled = true;
             } else {
                 if (editControls) editControls.style.display = '';
                 if (uploadSection) uploadSection.style.display = '';
+                if (stampSection) stampSection.style.opacity = '1';
+                if (stampControls) stampControls.style.display = '';
                 if (certSection) certSection.style.opacity = '1';
                 if (ln) ln.disabled = false;
                 if (ini) ini.disabled = false;
