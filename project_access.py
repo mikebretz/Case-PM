@@ -10,6 +10,32 @@ def _membership_model():
         return None
 
 
+def _workflow_session():
+    try:
+        from case_workflow import _workflow_session as workflow_session
+        return workflow_session()
+    except Exception:
+        pass
+    try:
+        import sys
+        app_mod = sys.modules.get('app')
+        if app_mod is not None and getattr(app_mod, 'db', None) is not None:
+            return app_mod.db.session
+    except Exception:
+        pass
+    return None
+
+
+def _membership_rows(PM, **filters):
+    session = _workflow_session()
+    if session is None or PM is None:
+        return []
+    query = session.query(PM)
+    for key, value in filters.items():
+        query = query.filter_by(**{key: value})
+    return query.all()
+
+
 def enforcement_enabled() -> bool:
     try:
         from program_settings_persistence import load_security_settings
@@ -38,7 +64,7 @@ def get_assigned_project_ids(user, Project=None, ProjectMembership=None) -> set[
     ids: set[int] = set()
     if PM is not None:
         try:
-            for row in PM.query.filter_by(user_id=user.id).all():
+            for row in _membership_rows(PM, user_id=user.id):
                 ids.add(int(row.project_id))
         except Exception:
             pass
@@ -108,18 +134,21 @@ def list_memberships_for_user(user_id, ProjectMembership=None):
     PM = ProjectMembership or _membership_model()
     if PM is None:
         return []
-    rows = PM.query.filter_by(user_id=int(user_id)).all()
+    rows = _membership_rows(PM, user_id=int(user_id))
     return [{'project_id': r.project_id, 'role': r.role or 'Viewer'} for r in rows]
 
 
-def save_memberships_for_user(user_id, project_ids, db, ProjectMembership=None, default_role='Viewer'):
+def save_memberships_for_user(user_id, project_ids, db=None, ProjectMembership=None, default_role='Viewer'):
     PM = ProjectMembership or _membership_model()
     if PM is None:
         raise RuntimeError('Project membership model not available')
+    session = _workflow_session()
+    if session is None:
+        raise RuntimeError('Database session not available')
     uid = int(user_id)
     clean_ids = sorted({int(x) for x in (project_ids or []) if x is not None})
-    PM.query.filter_by(user_id=uid).delete()
+    session.query(PM).filter_by(user_id=uid).delete()
     for pid in clean_ids:
-        db.session.add(PM(project_id=pid, user_id=uid, role=default_role))
-    db.session.flush()
+        session.add(PM(project_id=pid, user_id=uid, role=default_role))
+    session.flush()
     return clean_ids
