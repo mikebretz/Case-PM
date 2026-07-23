@@ -3567,8 +3567,12 @@ def api_project_directory(project_id):
         return jsonify({'error': 'You do not have access to this project.'}), 403
     project = Project.query.get_or_404(project_id)
     from project_workflow_users import build_project_directory
+    try:
+        directory = build_project_directory(project, User, Company=Company)
+    except Exception as exc:
+        current_app.logger.exception('project directory build failed for project %s', project_id)
+        return jsonify({'error': f'Unable to build project directory: {exc}'}), 500
     data = project.to_dict()
-    directory = build_project_directory(project, User, Company=Company)
     return jsonify({
         'project': {
             'id': data.get('id'),

@@ -300,7 +300,19 @@ def _collect_pay_app_sov(project_id, entries_by_key, User, Company, PayAppProjec
     except Exception:
         return
 
-    _record, state = get_pay_app_state(PayAppProjectState, int(project_id))
+    db = None
+    try:
+        from flask import has_app_context
+        if has_app_context():
+            from app import db as app_db
+            db = app_db
+    except Exception:
+        pass
+
+    try:
+        _record, state = get_pay_app_state(PayAppProjectState, int(project_id), db=db)
+    except Exception:
+        return
     if not state:
         return
     sub_status = state.get('subSOVStatus') or {}
@@ -491,6 +503,13 @@ def _collect_bid_invitations(project_id, entries_by_key, BidPackage, BidInvitati
         ))
 
 
+def _safe_collect(collector, *args, **kwargs):
+    try:
+        collector(*args, **kwargs)
+    except Exception:
+        pass
+
+
 def build_project_directory(project, User, Company=None, ProjectMembership=None):
     """Everyone attached to a project — team, vendors, SOV subs, and module contacts."""
     entries_by_key = {}
@@ -498,10 +517,11 @@ def build_project_directory(project, User, Company=None, ProjectMembership=None)
     if Company is None:
         Company = models.get('Company')
 
-    _collect_membership_and_team(project, User, Company, ProjectMembership, entries_by_key)
+    _safe_collect(_collect_membership_and_team, project, User, Company, ProjectMembership, entries_by_key)
     project_id = int(project.id)
-    _collect_commitments(project_id, entries_by_key, Company, models.get('Commitment'))
-    _collect_pay_app_sov(
+    _safe_collect(_collect_commitments, project_id, entries_by_key, Company, models.get('Commitment'))
+    _safe_collect(
+        _collect_pay_app_sov,
         project_id,
         entries_by_key,
         User,
@@ -509,10 +529,10 @@ def build_project_directory(project, User, Company=None, ProjectMembership=None)
         models.get('PayAppProjectState'),
         models.get('Commitment'),
     )
-    _collect_submittals(project_id, entries_by_key, User, models.get('Submittal'))
-    _collect_change_orders(project_id, entries_by_key, models.get('ChangeOrder'))
-    _collect_rfqs(project_id, entries_by_key, models.get('SubcontractorRFQ'), Company)
-    _collect_bid_invitations(project_id, entries_by_key, models.get('BidPackage'), models.get('BidInvitation'))
+    _safe_collect(_collect_submittals, project_id, entries_by_key, User, models.get('Submittal'))
+    _safe_collect(_collect_change_orders, project_id, entries_by_key, models.get('ChangeOrder'))
+    _safe_collect(_collect_rfqs, project_id, entries_by_key, models.get('SubcontractorRFQ'), Company)
+    _safe_collect(_collect_bid_invitations, project_id, entries_by_key, models.get('BidPackage'), models.get('BidInvitation'))
 
     def sort_key(entry):
         role = (entry.get('role') or '').strip().lower().replace(' ', '_')
