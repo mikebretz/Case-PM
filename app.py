@@ -277,6 +277,9 @@ MODULE_ROUTE_GUARD = {
     'rfis_page': 'rfis',
     'submittals_page': 'submittals',
     'change_orders_page': 'change_orders',
+    'rfq_portal_page': 'change_orders_rfq',
+    'estimating_page': 'estimating',
+    'estimate_portal_page': 'estimating',
     'daily_log': 'daily_log',
     'weekly_report': 'weekly_report',
     'punch_list_page': 'punch_list',
@@ -291,6 +294,7 @@ MODULE_ROUTE_GUARD = {
     'email_page': 'email',
     'projects_page': 'projects',
     'project_detail': 'projects',
+    'project_directory_page': 'project_directory',
 }
 
 
@@ -3545,6 +3549,38 @@ def update_project_status(project_id):
 def project_detail(project_id):
     project = Project.query.get_or_404(project_id)
     return render_template('project_detail.html', project=project)
+
+
+@app.route('/project-directory')
+@login_required
+def project_directory_page():
+    ensure_project_schema()
+    return render_template('project_directory.html', active_project=get_active_project())
+
+
+@app.route('/api/project-directory/<int:project_id>', methods=['GET'])
+@login_required
+def api_project_directory(project_id):
+    ensure_project_schema()
+    from project_access import user_can_access_project
+    if not user_can_access_project(current_user, project_id, Project):
+        return jsonify({'error': 'You do not have access to this project.'}), 403
+    project = Project.query.get_or_404(project_id)
+    data = project.to_dict()
+    return jsonify({
+        'project': {
+            'id': data.get('id'),
+            'number': data.get('number', ''),
+            'name': data.get('name', ''),
+            'status': data.get('status', ''),
+            'project_manager': data.get('project_manager', ''),
+            'address': data.get('address', ''),
+            'address_display': data.get('address_display', ''),
+            'description': data.get('description', ''),
+            'client': data.get('client', ''),
+            'team_contacts': data.get('team_contacts', []),
+        },
+    })
 
 
 # ==================== DAILY LOG ROUTES ====================

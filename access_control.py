@@ -42,6 +42,7 @@ API_PREFIX_MODULE = [
     ('/api/co/', 'change_orders'),
     ('/api/pcos', 'change_orders'),
     ('/api/change-events', 'change_orders'),
+    ('/api/rfqs/portal', 'change_orders_rfq'),
     ('/api/rfqs', 'change_orders'),
     ('/api/estimates', 'estimating'),
     ('/api/cors', 'change_orders'),
@@ -65,7 +66,8 @@ API_PREFIX_MODULE = [
     ('/api/sage/', 'budget'),
     ('/api/schedules', 'schedule'),
     ('/api/schedule', 'schedule'),
-    ('/api/projects', 'projects'),
+    ('/api/projects/', 'projects'),
+    ('/api/project-directory/', 'project_directory'),
     ('/api/dashboard', 'dashboard'),
     ('/api/email', 'email'),
     ('/api/internal-messages', 'internal_messages'),
@@ -318,7 +320,7 @@ def guard_api_request(current_user):
 
         flags = user_global_flags(current_user)
         if flags.get('client_portal_only') and module_key not in (
-            'dashboard', 'projects', 'documents', 'drawings', 'rfis', 'submittals',
+            'dashboard', 'projects', 'project_directory', 'documents', 'drawings', 'rfis', 'submittals',
             'change_orders', 'pay_applications', 'schedule', 'email', 'internal_messages', 'notifications',
         ):
             return jsonify({'error': 'Client portal access only — module not available.'}), 403

@@ -197,7 +197,7 @@ ROLE_PERMISSIONS = {
     'Admin': {'portal': 'staff', 'approve': '*', 'modules': '*'},
     'Project Manager': {'portal': 'staff', 'approve': ['Pay Applications', 'Change Orders', 'Commitments', 'Submittals', 'RFIs', 'Budget'], 'modules': '*'},
     'Superintendent': {'portal': 'staff', 'approve': ['Daily Log', 'Safety'], 'modules': 'field'},
-    'Architect': {'portal': 'consultant', 'approve': ['Submittals', 'RFIs', 'Change Orders'], 'modules': ['Submittals', 'RFIs', 'Change Orders', 'Drawings', 'Documents', 'Email']},
+    'Architect': {'portal': 'consultant', 'approve': ['Submittals', 'RFIs', 'Change Orders'], 'modules': ['Submittals', 'RFIs', 'Change Orders', 'Drawings', 'Documents', 'Photos', 'Punch List', 'Inspections', 'Meeting Minutes', 'Project Directory', 'Email']},
     'Owner': {'portal': 'consultant', 'approve': ['Change Orders', 'Pay Applications'], 'modules': ['Pay Applications', 'Change Orders', 'RFIs', 'Documents', 'Email', 'Schedule']},
     'Contractor Accounting': {
         'portal': 'staff',
