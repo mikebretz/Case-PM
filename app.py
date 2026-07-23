@@ -236,6 +236,12 @@ def users_module_required(f):
     def decorated_function(*args, **kwargs):
         from access_control import users_module_admin
         if not current_user.is_authenticated or not users_module_admin(current_user):
+            if (
+                (request.path or '').startswith('/api/')
+                or request.is_json
+                or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+            ):
+                return jsonify({'error': 'You do not have permission to manage users.'}), 403
             flash("You do not have permission to manage users.", "error")
             return redirect(url_for('dashboard'))
         return f(*args, **kwargs)
@@ -2681,28 +2687,41 @@ def api_my_2fa_disable():
 @users_module_required
 def api_user_project_memberships(user_id):
     from project_access import list_memberships_for_user
-    user = User.query.get_or_404(user_id)
-    if user.role == 'Developer':
-        from developer_tools import can_assign_developer_role
-        if not can_assign_developer_role(current_user):
-            return jsonify({'error': 'Not found'}), 404
-    return jsonify({'ok': True, 'memberships': list_memberships_for_user(user_id)})
+    try:
+        user = User.query.get_or_404(user_id)
+        if user.role == 'Developer':
+            from developer_tools import can_assign_developer_role
+            if not can_assign_developer_role(current_user):
+                return jsonify({'error': 'Not found'}), 404
+        return jsonify({'ok': True, 'memberships': list_memberships_for_user(user_id)})
+    except Exception as exc:
+        db.session.rollback()
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Unable to load project memberships: {exc}'}), 500
 
 
 @app.route('/api/users/<int:user_id>/project-memberships', methods=['PUT'])
 @login_required
 @users_module_required
 def api_save_user_project_memberships(user_id):
+    from case_workflow import _workflow_session
     from project_access import save_memberships_for_user
     user = User.query.get_or_404(user_id)
+    if user.role == 'Developer':
+        from developer_tools import can_assign_developer_role
+        if not can_assign_developer_role(current_user):
+            return jsonify({'error': 'Not found'}), 404
     body = request.get_json(silent=True) or {}
     ids = body.get('project_ids') or []
     try:
-        saved = save_memberships_for_user(user_id, ids, db)
-        db.session.commit()
+        saved = save_memberships_for_user(user_id, ids)
+        _workflow_session().commit()
         write_audit('Updated project access', f'{user.email}: {len(saved)} projects', module='users', category='settings', commit=True)
     except Exception as exc:
-        db.session.rollback()
+        _workflow_session().rollback()
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(exc)}), 400
     return jsonify({'ok': True, 'project_ids': saved})
 

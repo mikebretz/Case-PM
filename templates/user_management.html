@@ -1287,12 +1287,16 @@
         }
         try {
             const res = await fetch(`/api/users/${userId}/project-memberships`, { credentials: 'same-origin' });
-            const data = await res.json();
-            if (res.ok && data.memberships) {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data.error || `Unable to load project assignments (${res.status})`);
+            }
+            if (data.memberships) {
                 selectedProjectIds = data.memberships.map(m => m.project_id);
             }
         } catch (e) {
             console.warn('Project memberships:', e);
+            showCenteredAlert(e.message || 'Could not load project assignments for this user.', 'warning');
         }
         renderProjectMembershipList();
     }
@@ -1350,16 +1354,17 @@
 
     async function saveProjectMemberships(userId) {
         if (!userId) return;
-        try {
-            await fetch(`/api/users/${userId}/project-memberships`, {
-                method: 'PUT',
-                credentials: 'same-origin',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ project_ids: selectedProjectIds }),
-            });
-        } catch (e) {
-            console.warn('Could not save project memberships:', e);
+        const res = await fetch(`/api/users/${userId}/project-memberships`, {
+            method: 'PUT',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ project_ids: selectedProjectIds }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error(data.error || `Could not save project assignments (${res.status})`);
         }
+        return data;
     }
 
     async function loadMailboxAccessForUser(userId) {
