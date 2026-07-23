@@ -403,8 +403,8 @@
   async function refreshInternalFromServer() {
     try {
       const res = await fetch(`/api/internal-messages${mailboxUserQuery()}`);
-      if (res.ok) {
-        const data = await res.json();
+      const data = await res.json().catch(() => null);
+      if (res.ok && Array.isArray(data)) {
         internalMessages = data.map(m => ({
           id: m.id,
           folder: m.folder,
@@ -431,7 +431,12 @@
         }));
         persistInternal();
         render();
-        return;
+        return true;
+      }
+      if (!res.ok) {
+        const err = data && data.error ? data.error : `Unable to load internal messages (${res.status})`;
+        console.warn('Internal messages API unavailable:', err);
+        toast(err, 'error');
       }
     } catch (e) {
       console.warn('Internal messages API unavailable, using cache', e);
@@ -439,6 +444,7 @@
     internalMessages = loadJson(STORAGE.internal, null) || seedInternal();
     if (!loadJson(STORAGE.internal, null)) persistInternal();
     render();
+    return false;
   }
 
   function persistMailLocal() { saveJson(STORAGE.mail, mailMessages); }
@@ -2247,9 +2253,13 @@
         persistInternal();
       }
       finishComposeAfterSend();
-      await refreshInternalFromServer();
+      const refreshed = await refreshInternalFromServer();
       state.folder = 'sent';
-      toast('Message sent.', 'success');
+      if (refreshed) {
+        toast('Message sent.', 'success');
+      } else {
+        toast('Message sent, but the message list could not be refreshed. Reload the page.', 'warning');
+      }
       render();
     } catch (e) {
       toast('Could not send message.', 'error');
