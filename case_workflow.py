@@ -22,8 +22,8 @@ ModuleState = None
 ProjectMembership = None
 
 
-def _workflow_db():
-    """SQLAlchemy extension for the active Flask app (avoids stale module-level db)."""
+def _canonical_db(fallback=None):
+    """Return the SQLAlchemy extension for the active Flask app."""
     try:
         from flask import current_app, has_app_context
         if has_app_context():
@@ -32,7 +32,21 @@ def _workflow_db():
                 return ext
     except Exception:
         pass
-    return _registered_db or db
+    try:
+        import sys
+        app_mod = sys.modules.get('app')
+        if app_mod is not None and getattr(app_mod, 'db', None) is not None:
+            return app_mod.db
+    except Exception:
+        pass
+    return fallback
+
+
+def _workflow_db():
+    canonical = _canonical_db(_registered_db or db)
+    if canonical is None:
+        raise RuntimeError('Case PM database is not initialized.')
+    return canonical
 
 
 def _workflow_session():
@@ -48,12 +62,32 @@ def _current_project_id():
     return None
 
 
+def _runtime_model(name, fallback=None):
+    try:
+        import sys
+        app_mod = sys.modules.get('app')
+        if app_mod is not None:
+            model = getattr(app_mod, name, None)
+            if model is not None:
+                return model
+    except Exception:
+        pass
+    return fallback
+
+
 def init_models(_db):
     """Define SQLAlchemy models once db is available."""
     global db, ApprovalRequest, InternalMessage, ModuleState, ProjectMembership
-    if ApprovalRequest is not None:
+    canonical = _canonical_db(_db) or _db
+    if InternalMessage is not None and getattr(InternalMessage, '__fsa__', None) is canonical:
+        db = canonical
         return
-    db = _db
+    if InternalMessage is not None:
+        ApprovalRequest = None
+        InternalMessage = None
+        ModuleState = None
+        ProjectMembership = None
+    db = canonical
 
     class _ApprovalRequest(db.Model):
         __tablename__ = 'approval_request'
@@ -542,9 +576,10 @@ def decide_approval(approval_id, decision, comments=''):
 def register_workflow(app, _db, models):
     global db, _registered_db, _get_current_project_id_fn
     global User, Project, Company, Notification, AuditLog, login_required
-    init_models(_db)
-    db = _db
-    _registered_db = _db
+    canonical = _canonical_db(_db) or _db
+    init_models(canonical)
+    db = canonical
+    _registered_db = canonical
     _get_current_project_id_fn = models.get('get_current_project_id')
     User = models['User']
     Project = models['Project']
@@ -602,12 +637,16 @@ def register_workflow(app, _db, models):
             from document_module_security import is_staff_portal_user
             from project_workflow_users import build_internal_message_contacts
 
+            user_model = _runtime_model('User', User)
+            project_model = _runtime_model('Project', Project)
+            company_model = _runtime_model('Company', Company)
+
             project_id = request.args.get('project_id', type=int)
             if not project_id:
                 project_id = _current_project_id()
 
             if is_staff_portal_user(current_user) and not user_email_internal_only(current_user):
-                users = User.query.filter_by(status='Active').all()
+                users = user_model.query.filter_by(status='Active').all()
                 users = sorted(
                     users,
                     key=lambda user: (
@@ -634,18 +673,18 @@ def register_workflow(app, _db, models):
                     })
                 return jsonify({'ok': True, 'scoped': False, 'project_id': project_id, 'contacts': contacts})
 
-            project = Project.query.get(project_id) if project_id else None
+            project = project_model.query.get(project_id) if project_id else None
             if project_id and project is None:
                 return jsonify({'error': 'Invalid project_id'}), 404
             if project_id:
                 from project_access import user_can_access_project
-                if not user_can_access_project(current_user, project_id, Project):
+                if not user_can_access_project(current_user, project_id, project_model):
                     return jsonify({'error': 'You do not have access to this project.'}), 403
 
             contacts = build_internal_message_contacts(
                 project,
-                User,
-                Company=Company,
+                user_model,
+                Company=company_model,
                 exclude_user_id=current_user.id,
             )
             return jsonify({'ok': True, 'scoped': True, 'project_id': project_id, 'contacts': contacts})
@@ -668,6 +707,10 @@ def register_workflow(app, _db, models):
                 if not user_has_module_access(current_user, 'internal_messages', 'entry'):
                     return jsonify({'error': 'You do not have permission to send internal messages.'}), 403
 
+                user_model = _runtime_model('User', User)
+                project_model = _runtime_model('Project', Project)
+                company_model = _runtime_model('Company', Company)
+
                 data = request.get_json(silent=True) or {}
                 to_values = data.get('to') or []
                 cc_values = data.get('cc') or []
@@ -687,24 +730,24 @@ def register_workflow(app, _db, models):
                 if not emails:
                     return jsonify({'error': 'Add at least one recipient.'}), 400
 
-                recipients = resolve_users_by_emails(emails, User)
+                recipients = resolve_users_by_emails(emails, user_model)
                 if not recipients:
                     return jsonify({'error': 'No matching active users for those recipients.'}), 400
 
-                project = Project.query.get(project_id) if project_id else None
+                project = project_model.query.get(project_id) if project_id else None
                 if project_id and project is None:
                     return jsonify({'error': 'Invalid project.'}), 404
                 if project_id:
                     from project_access import user_can_access_project
-                    if not user_can_access_project(current_user, project_id, Project):
+                    if not user_can_access_project(current_user, project_id, project_model):
                         return jsonify({'error': 'You do not have access to this project.'}), 403
 
                 ok, err = validate_internal_message_recipients(
                     current_user,
                     recipients,
                     project,
-                    User,
-                    Company=Company,
+                    user_model,
+                    Company=company_model,
                 )
                 if not ok:
                     return jsonify({'error': err or 'Recipient not allowed.'}), 403
