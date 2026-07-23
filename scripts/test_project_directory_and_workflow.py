@@ -101,8 +101,8 @@ def test_staff_user_can_receive_workflow_email() -> None:
 
 def test_build_project_directory_merges_membership_and_contacts() -> None:
     users = [
-        _User(id=1, first_name='Brett', last_name='Architect', email='arch@firm.com', phone='555-1111', role='Architect', company='Design Co', status='Active'),
-        _User(id=2, first_name='Pat', last_name='Manager', email='pm@case.com', phone='555-2222', role='Project Manager', company='Case Contracting', status='Active'),
+        _User(id=1, first_name='Brett', last_name='Architect', email='arch@firm.com', phone='555-1111', role='Architect', job_title='Lead Architect', company='Design Co', status='Active'),
+        _User(id=2, first_name='Pat', last_name='Manager', email='pm@case.com', phone='555-2222', role='Project Manager', job_title='Project Manager', company='Case Contracting', status='Active'),
     ]
     pm = _PM([
         _MembershipRow(7, 1, 'Architect'),
@@ -140,7 +140,8 @@ def test_build_project_directory_merges_membership_and_contacts() -> None:
     assert 'Pat Manager' in names or any('Pat' in n for n in names)
     arch = next(entry for entry in directory if entry['name'] == 'Brett Architect')
     assert arch['email'] == 'arch@firm.com'
-    assert arch['role_label'] == 'Architect'
+    assert arch['position'] == 'Lead Architect'
+    assert arch['role'] != arch['position']
 
 
 def test_consultant_roles_include_engineers() -> None:

@@ -42,6 +42,55 @@ ROLE_SORT_ORDER = {
     'custom': 11,
 }
 
+# Permission / portal roles — not shown as directory position when a job title exists.
+SYSTEM_ACCOUNT_ROLES = frozenset({
+    'Admin',
+    'Developer',
+    'Viewer',
+    'Contractor Accounting',
+    'Subcontractor',
+    'Subcontractor Contact',
+    'Subcontractor Accountant',
+    'Company User',
+})
+
+
+def _user_job_title(user) -> str:
+    return (getattr(user, 'job_title', None) or '').strip()
+
+
+def _resolve_position(*, job_title='', team_position='', context_position=''):
+    """Prefer profile job title, then project team position, then contextual label."""
+    for value in (job_title, team_position, context_position):
+        text = (value or '').strip()
+        if not text:
+            continue
+        if text in SYSTEM_ACCOUNT_ROLES and job_title:
+            continue
+        return text
+    return ''
+
+
+def _finalize_directory_entry(entry):
+    """Ensure every row exposes a human position (job title), not a permission role."""
+    position = (entry.get('position') or '').strip()
+    if not position:
+        position = _resolve_position(
+            job_title=entry.get('job_title') or '',
+            team_position=entry.get('role_label') or '',
+            context_position=entry.get('context_position') or '',
+        )
+    role_key = (entry.get('role') or '').strip().lower().replace(' ', '_')
+    if not position and role_key in ROLE_LABELS:
+        position = ROLE_LABELS[role_key]
+    entry['position'] = position or (entry.get('role_label') or '').strip()
+    entry['job_title'] = (entry.get('job_title') or _user_job_title_from_entry(entry) or '').strip()
+    return entry
+
+
+def _user_job_title_from_entry(entry):
+    return (entry.get('job_title') or '').strip()
+
 
 def _company_name(company_id, Company):
     if not company_id or Company is None:
@@ -53,21 +102,27 @@ def _company_name(company_id, Company):
         return ''
 
 
-def _user_directory_row(user, *, role='', role_label='', company='', source='membership'):
+def _user_directory_row(user, *, role='', role_label='', company='', source='membership', team_position=''):
     name = f'{getattr(user, "first_name", "")} {getattr(user, "last_name", "")}'.strip()
     company_name = (company or getattr(user, 'company', None) or '').strip()
-    display_role = role or (getattr(user, 'role', None) or '')
-    return {
+    job_title = _user_job_title(user)
+    team_pos = (team_position or role_label or '').strip()
+    if team_pos in SYSTEM_ACCOUNT_ROLES and not job_title:
+        team_pos = ''
+    position = _resolve_position(job_title=job_title, team_position=team_pos)
+    return _finalize_directory_entry({
         'user_id': getattr(user, 'id', None),
         'name': name,
         'email': (getattr(user, 'email', None) or '').strip(),
         'phone': (getattr(user, 'phone', None) or '').strip(),
-        'role': display_role,
-        'role_label': role_label or display_role or 'Team Member',
+        'role': role or (getattr(user, 'role', None) or ''),
+        'role_label': team_pos or role_label or '',
+        'job_title': job_title,
+        'position': position,
         'company': company_name,
         'firm': company_name,
         'source': source,
-    }
+    })
 
 
 def _person_directory_row(
@@ -80,35 +135,47 @@ def _person_directory_row(
     company='',
     source='',
     user_id=None,
+    job_title='',
+    position='',
 ):
     company_name = (company or '').strip()
     display_name = (name or company_name or '').strip()
-    return {
+    resolved_position = _resolve_position(
+        job_title=job_title,
+        team_position=role_label,
+        context_position=position,
+    )
+    return _finalize_directory_entry({
         'user_id': user_id,
         'name': display_name,
         'email': (email or '').strip(),
         'phone': (phone or '').strip(),
         'role': role or 'contact',
-        'role_label': role_label or role or 'Contact',
+        'role_label': role_label or role or '',
+        'job_title': (job_title or '').strip(),
+        'position': resolved_position,
         'company': company_name,
         'firm': company_name,
         'source': source,
-    }
+    })
 
 
 def _contact_directory_row(contact, source='team_contact'):
     firm = (contact.get('firm') or '').strip()
-    return {
+    team_position = (contact.get('role_label') or ROLE_LABELS.get(contact.get('role'), 'Contact')).strip()
+    return _finalize_directory_entry({
         'user_id': contact.get('user_id'),
         'name': (contact.get('name') or '').strip(),
         'email': (contact.get('email') or '').strip(),
         'phone': (contact.get('phone') or '').strip(),
         'role': (contact.get('role') or '').strip(),
-        'role_label': (contact.get('role_label') or ROLE_LABELS.get(contact.get('role'), 'Contact')).strip(),
+        'role_label': team_position,
+        'job_title': '',
+        'position': team_position,
         'company': firm,
         'firm': firm,
         'source': source,
-    }
+    })
 
 
 def _entry_key(entry):
@@ -129,7 +196,7 @@ def _entry_key(entry):
 
 def _merge_directory_entry(existing, incoming):
     merged = dict(existing)
-    for field in ('name', 'email', 'phone', 'role', 'role_label', 'company', 'firm'):
+    for field in ('name', 'email', 'phone', 'role', 'role_label', 'company', 'firm', 'job_title', 'position'):
         if not (merged.get(field) or '').strip() and (incoming.get(field) or '').strip():
             merged[field] = incoming[field]
     if incoming.get('user_id') and not merged.get('user_id'):
@@ -194,11 +261,11 @@ def _collect_membership_and_team(project, User, Company, ProjectMembership, entr
             company = _company_name(getattr(row, 'company_id', None), Company)
             if not company:
                 company = _company_name(getattr(user, 'company_id', None), Company) or (getattr(user, 'company', None) or '')
-            membership_role = (row.role or getattr(user, 'role', None) or 'Viewer').strip()
+            membership_role = (row.role or '').strip()
             _add_entry(entries_by_key, _user_directory_row(
                 user,
-                role=membership_role,
-                role_label=membership_role,
+                role=membership_role or getattr(user, 'role', '') or '',
+                team_position=membership_role if membership_role not in SYSTEM_ACCOUNT_ROLES else '',
                 company=company,
                 source='membership',
             ))
@@ -213,7 +280,7 @@ def _collect_membership_and_team(project, User, Company, ProjectMembership, entr
                 entry = _user_directory_row(
                     user,
                     role=contact.get('role', '') or getattr(user, 'role', ''),
-                    role_label=entry['role_label'],
+                    team_position=entry['role_label'],
                     company=company,
                     source='team_contact',
                 )
@@ -228,7 +295,7 @@ def _collect_membership_and_team(project, User, Company, ProjectMembership, entr
         _add_entry(entries_by_key, _person_directory_row(
             name=pm_name,
             role='project_manager',
-            role_label='Project Manager',
+            position='Project Manager',
             company='',
             source='project',
         ))
@@ -243,7 +310,7 @@ def _collect_membership_and_team(project, User, Company, ProjectMembership, entr
                 email=client_company.email or '',
                 phone=client_company.phone or '',
                 role='owner',
-                role_label='Owner / Client',
+                position='Owner / Client',
                 company=client_company.name,
                 source='client_company',
             ))
@@ -252,7 +319,7 @@ def _collect_membership_and_team(project, User, Company, ProjectMembership, entr
         _add_entry(entries_by_key, _person_directory_row(
             name=client_name,
             role='owner',
-            role_label='Owner / Client',
+            position='Owner / Client',
             company=client_name,
             source='project',
         ))
@@ -268,6 +335,7 @@ def _collect_commitments(project_id, entries_by_key, Company, Commitment):
         ctype = (getattr(commitment, 'commitment_type', None) or 'Commitment').strip()
         number = (getattr(commitment, 'number', None) or '').strip()
         role_label = f'{ctype}{f" {number}" if number else ""}'.strip()
+        contact_position = 'Subcontractor Contact' if ctype == 'Subcontract' else f'{ctype} Contact'
         contact_name = (getattr(commitment, 'contact_name', None) or '').strip()
         contact_email = (getattr(commitment, 'contact_email', None) or '').strip()
         contact_phone = (getattr(commitment, 'contact_phone', None) or '').strip()
@@ -278,6 +346,7 @@ def _collect_commitments(project_id, entries_by_key, Company, Commitment):
                 phone=contact_phone,
                 role='vendor_contact',
                 role_label=role_label,
+                position=contact_position,
                 company=company_name,
                 source='commitment',
             ))
@@ -286,6 +355,7 @@ def _collect_commitments(project_id, entries_by_key, Company, Commitment):
                 name=company_name,
                 role='vendor',
                 role_label=role_label,
+                position=ctype or 'Vendor',
                 company=company_name,
                 source='commitment',
             ))
@@ -332,6 +402,7 @@ def _collect_pay_app_sov(project_id, entries_by_key, User, Company, PayAppProjec
             continue
         status = (status_entry.get('status') or '').strip()
         role_label = f'Subcontractor SOV{f" — {status}" if status else ""}'
+        contact_position = 'Subcontractor Contact'
 
         contact_name = contact_email = contact_phone = ''
         for commitment in commitments:
@@ -353,6 +424,7 @@ def _collect_pay_app_sov(project_id, entries_by_key, User, Company, PayAppProjec
                     phone=company.phone or '',
                     role='vendor_contact',
                     role_label=role_label,
+                    position=contact_position,
                     company=company_name,
                     source='pay_app_sov',
                 ))
@@ -362,7 +434,7 @@ def _collect_pay_app_sov(project_id, entries_by_key, User, Company, PayAppProjec
                 _add_entry(entries_by_key, _user_directory_row(
                     user,
                     role='subcontractor',
-                    role_label=f'{role_label} Contact',
+                    team_position=contact_position,
                     company=company_name,
                     source='pay_app_sov',
                 ))
@@ -374,6 +446,7 @@ def _collect_pay_app_sov(project_id, entries_by_key, User, Company, PayAppProjec
                 phone=contact_phone,
                 role='vendor_contact',
                 role_label=role_label,
+                position=contact_position,
                 company=company_name,
                 source='pay_app_sov',
             ))
@@ -382,6 +455,7 @@ def _collect_pay_app_sov(project_id, entries_by_key, User, Company, PayAppProjec
                 name=company_name,
                 role='subcontractor',
                 role_label=role_label,
+                position='Subcontractor',
                 company=company_name,
                 source='pay_app_sov',
             ))
@@ -408,7 +482,7 @@ def _collect_submittals(project_id, entries_by_key, User, Submittal):
                 _add_entry(entries_by_key, _user_directory_row(
                     user,
                     role='submittal_contact',
-                    role_label='Submittal Contact',
+                    team_position='Submittal Contact',
                     company=company_name or getattr(user, 'company', '') or '',
                     source='submittal',
                 ))
@@ -417,7 +491,7 @@ def _collect_submittals(project_id, entries_by_key, User, Submittal):
             name=contact_name or company_name,
             email=contact_email,
             role='submittal_contact',
-            role_label='Submittal Contact',
+            position='Submittal Contact',
             company=company_name,
             source='submittal',
         ))
@@ -446,6 +520,7 @@ def _collect_change_orders(project_id, entries_by_key, ChangeOrder):
             phone=contact_phone,
             role='vendor_contact',
             role_label=role_label,
+            position='Vendor Contact',
             company=company_name,
             source='change_order',
         ))
@@ -471,6 +546,7 @@ def _collect_rfqs(project_id, entries_by_key, SubcontractorRFQ, Company):
             name=company_name,
             role='vendor',
             role_label=f'RFQ Vendor{f" {number}" if number else ""}',
+            position='RFQ Vendor',
             company=company_name,
             source='rfq',
         ))
@@ -497,7 +573,7 @@ def _collect_bid_invitations(project_id, entries_by_key, BidPackage, BidInvitati
             name=contact_name or company_name,
             email=contact_email,
             role='bidder',
-            role_label='Bid Package Invite',
+            position='Bid Contact',
             company=company_name,
             source='bid_invitation',
         ))

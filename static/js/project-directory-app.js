@@ -48,7 +48,7 @@
         return;
       }
       els.contactsBody.innerHTML = rows.map((contact) => {
-        const role = contact.role_label || contact.role || 'Contact';
+        const position = contact.position || contact.job_title || contact.role_label || '—';
         const company = contact.company || contact.firm || '—';
         const email = contact.email
           ? `<a href="mailto:${esc(contact.email)}" class="text-sky-400 hover:text-sky-300">${esc(contact.email)}</a>`
@@ -57,7 +57,7 @@
           ? `<a href="tel:${esc(contact.phone)}" class="text-sky-400 hover:text-sky-300">${esc(contact.phone)}</a>`
           : '—';
         return `<tr>
-          <td class="text-zinc-300">${esc(role)}</td>
+          <td class="text-zinc-300">${esc(position)}</td>
           <td class="text-white">${esc(contact.name || '—')}</td>
           <td class="text-zinc-300">${esc(company)}</td>
           <td>${email}</td>
