@@ -328,6 +328,9 @@
     templates = loadJson(STORAGE.templates, null) || seedTemplates();
     customFolders = loadJson(STORAGE.customFolders, []);
     internalMessages = [];
+    if (emailInternalOnly()) {
+      return refreshInternalFromServer();
+    }
     return loadMailboxFromServer().then((loaded) => {
       if (!loaded) {
         mailMessages = loadJson(STORAGE.mail, null) || seedMail();
@@ -1158,9 +1161,54 @@
     }
   }
 
-  function filterContacts(query) {
+  function currentRecipientSegment(value) {
+    let inQuotes = false;
+    let start = 0;
+    const text = String(value || '');
+    for (let i = 0; i < text.length; i += 1) {
+      const ch = text[i];
+      if (ch === '"') inQuotes = !inQuotes;
+      else if (!inQuotes && (ch === ',' || ch === ';')) start = i + 1;
+    }
+    return text.slice(start).trim();
+  }
+
+  function recipientSegments(value) {
+    const text = String(value || '');
+    if (!text.trim()) return [''];
+    let inQuotes = false;
+    let start = 0;
+    const segments = [];
+    for (let i = 0; i <= text.length; i += 1) {
+      const ch = text[i];
+      if (ch === '"') inQuotes = !inQuotes;
+      else if (!inQuotes && (ch === ',' || ch === ';' || ch === undefined)) {
+        segments.push(text.slice(start, i));
+        start = i + 1;
+      }
+    }
+    return segments.length ? segments : [text];
+  }
+
+  function replaceCurrentRecipientSegment(value, contact) {
+    const segments = recipientSegments(value);
+    const formatted = (contact.name ? `"${contact.name}" <${contact.email}>` : contact.email).trim();
+    segments[segments.length - 1] = ` ${formatted}`;
+    return segments.join(',').replace(/^\s*,\s*/, '').replace(/\s*,\s*/g, ', ').trim();
+  }
+
+  function selectedRecipientEmails(value) {
+    const emails = new Set();
+    recipientSegments(value).forEach(segment => {
+      const match = String(segment).match(/[\w.+-]+@[\w.-]+\.\w+/i);
+      if (match) emails.add(match[0].toLowerCase());
+    });
+    return emails;
+  }
+  function filterContacts(query, excludeEmails) {
     const q = (query || '').toLowerCase().trim();
-    const all = buildContactIndex();
+    const excluded = excludeEmails || new Set();
+    const all = buildContactIndex().filter(c => !excluded.has((c.email || '').toLowerCase()));
     if (!q) return all.slice(0, 12);
     return all.filter(c =>
       c.email.includes(q) || (c.name && c.name.toLowerCase().includes(q))
@@ -1707,29 +1755,34 @@
       </div>`;
   }
 
-  function attachRecipientAutocomplete() {
+  function attachRecipientAutocomplete(scope) {
+    const root = scope?.querySelector?.('#emailInlineCompose') ? scope : document;
+    const composeRoot = root.querySelector ? root.querySelector('#emailInlineCompose') : document.getElementById('emailInlineCompose');
+    if (!composeRoot || composeRoot.dataset.recipientAutocompleteBound === '1') return;
+    composeRoot.dataset.recipientAutocompleteBound = '1';
+
     const fields = [
       { input: 'inlineComposeTo', suggest: 'inlineSuggestTo' },
       { input: 'inlineComposeCc', suggest: 'inlineSuggestCc' },
       { input: 'inlineComposeBcc', suggest: 'inlineSuggestBcc' },
     ];
     fields.forEach(({ input, suggest }) => {
-      const inp = document.getElementById(input);
-      const box = document.getElementById(suggest);
+      const inp = composeRoot.querySelector(`#${input}`) || document.getElementById(input);
+      const box = composeRoot.querySelector(`#${suggest}`) || document.getElementById(suggest);
       if (!inp || !box) return;
       let activeIdx = -1;
       function hide() { box.classList.add('hidden'); box.innerHTML = ''; activeIdx = -1; }
       function pick(contact) {
-        const parts = inp.value.split(/[,;]/);
-        parts[parts.length - 1] = ' ' + (contact.name ? `"${contact.name}" <${contact.email}>` : contact.email);
-        inp.value = parts.join(',').replace(/^,\s*/, '').trim();
+        inp.value = replaceCurrentRecipientSegment(inp.value, contact);
         hide();
         inp.focus();
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
       }
       function renderSuggest() {
         const val = inp.value;
-        const segment = (val.split(/[,;]/).pop() || '').trim();
-        const matches = filterContacts(segment);
+        const segment = currentRecipientSegment(val);
+        const excluded = selectedRecipientEmails(val);
+        const matches = filterContacts(segment, excluded);
         if (!segment || !matches.length) { hide(); return; }
         box.innerHTML = matches.map((c, i) => `
           <button type="button" class="email-recipient-suggest-item${i === activeIdx ? ' active' : ''}" data-idx="${i}">

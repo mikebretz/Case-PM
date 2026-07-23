@@ -258,6 +258,11 @@ def ensure_messaging_modules(perms: dict, role: str | None = None) -> dict:
     email_rank = rank_of('email')
     internal_rank = rank_of('internal_messages')
     internal_only = bool(global_opts.get('email_internal_only')) or role_name in SUB_PORTAL_ROLES
+    if not internal_only and role_name:
+        tpl = ROLE_TEMPLATES.get(role_name) or {}
+        tpl_global = tpl.get('global') or {}
+        if tpl_global.get('email_internal_only') or tpl.get('portal') == 'consultant':
+            internal_only = True
 
     if internal_only:
         target_rank = max(internal_rank, email_rank, ACCESS_RANK['view'])
@@ -643,13 +648,31 @@ def permissions_from_role(role):
 
 
 def merge_permissions(role, stored_json):
+    role_base = permissions_from_role(role)
     if stored_json:
         try:
             import json
             raw = json.loads(stored_json) if isinstance(stored_json, str) else stored_json
             normalized = normalize_legacy_permissions(raw)
             if normalized and normalized.get('version') == 2:
-                return ensure_messaging_modules(normalized, role)
+                merged = _merge_with_role_defaults(role_base, normalized)
+                return ensure_messaging_modules(merged, role)
         except (TypeError, ValueError):
             pass
-    return permissions_from_role(role)
+    return role_base
+
+
+def _merge_with_role_defaults(role_base: dict, stored: dict) -> dict:
+    """Apply stored customizations on top of the role template, backfilling new modules."""
+    base_modules = {k: dict(v) for k, v in (role_base.get('modules') or {}).items()}
+    stored_modules = stored.get('modules') or {}
+    merged_modules = dict(base_modules)
+    for key, val in stored_modules.items():
+        if isinstance(val, dict):
+            merged_modules[key] = dict(val)
+    return {
+        'version': stored.get('version', 2),
+        'portal': stored.get('portal') or role_base.get('portal', 'staff'),
+        'modules': inherit_submodule_defaults(merged_modules),
+        'global': {**(role_base.get('global') or {}), **(stored.get('global') or {})},
+    }

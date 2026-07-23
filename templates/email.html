@@ -144,10 +144,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     window.CasePMCurrentUserId = {{ current_user.id }};
     {% if messaging_internal_only|default(is_sub_vendor_portal) %}
     window.CASEPM_EMAIL_INTERNAL_ONLY = true;
-    {% endif %}
+    {% else %}
     if (window.CasePMEmailSettingsUI?.ensureLoaded) {
         await CasePMEmailSettingsUI.ensureLoaded({ mode: 'user', userId: {{ current_user.id }} });
     }
+    {% endif %}
     CasePMEmail.init({
         userName: {{ current_user.full_name|tojson }},
         userEmail: {{ current_user.email|tojson }},
