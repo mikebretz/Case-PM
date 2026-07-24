@@ -3,6 +3,7 @@ Case PM workflow layer — approvals, internal messages, notifications, module s
 """
 from datetime import datetime
 import json
+import uuid
 
 from flask import jsonify, request
 from flask_login import current_user
@@ -219,6 +220,8 @@ def init_models(_db):
         is_read = db.Column(db.Boolean, default=False)
         archived = db.Column(db.Boolean, default=False)
         recipients_json = db.Column(db.Text)
+        thread_key = db.Column(db.String(120))
+        in_reply_to_id = db.Column(db.Integer, db.ForeignKey('internal_message.id'), nullable=True)
         created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
         def _sender_display(self):
@@ -272,6 +275,9 @@ def init_models(_db):
                 'to': recipients['to'],
                 'cc': recipients['cc'],
                 'bcc': recipients['bcc'],
+                'threadKey': self.thread_key or '',
+                'inReplyToId': self.in_reply_to_id,
+                'projectId': self.project_id,
                 'project': self._project_name(),
                 'module': self.module or '',
                 'actionUrl': self.action_url or '',
@@ -364,6 +370,10 @@ def ensure_workflow_schema(engine):
         cols = {c['name'] for c in inspector.get_columns('internal_message')}
         if 'recipients_json' not in cols:
             _workflow_session().execute(text('ALTER TABLE internal_message ADD COLUMN recipients_json TEXT'))
+        if 'thread_key' not in cols:
+            _workflow_session().execute(text('ALTER TABLE internal_message ADD COLUMN thread_key VARCHAR(120)'))
+        if 'in_reply_to_id' not in cols:
+            _workflow_session().execute(text('ALTER TABLE internal_message ADD COLUMN in_reply_to_id INTEGER'))
     _workflow_session().commit()
 
 
@@ -522,7 +532,8 @@ def notify_user(user_id, title, message, link=None):
 def create_internal_message(user_id, *, folder, msg_type, subject, preview='', body='',
                             project_id=None, approval_id=None, from_label='Case PM',
                             from_user_id=None, module='', action_url='', action_label='Open',
-                            priority='normal', requires_action=False, recipients_json=None):
+                            priority='normal', requires_action=False, recipients_json=None,
+                            thread_key=None, in_reply_to_id=None):
     ensure_workflow_models_bound()
     recipients_blob = None
     if recipients_json:
@@ -544,6 +555,8 @@ def create_internal_message(user_id, *, folder, msg_type, subject, preview='', b
         priority=priority,
         requires_action=requires_action,
         recipients_json=recipients_blob,
+        thread_key=thread_key,
+        in_reply_to_id=in_reply_to_id,
     )
     _workflow_session().add(msg)
     return msg
@@ -876,6 +889,36 @@ def register_workflow(app, _db, models):
                 if not ok:
                     return jsonify({'error': err or 'Recipient not allowed.'}), 403
 
+                from email_mailbox_persistence import resolve_mailbox_user_id
+                from app import EmailMailboxAccess
+                try:
+                    mailbox_user_id = resolve_mailbox_user_id(
+                        current_user,
+                        data.get('user_id'),
+                        User=user_model,
+                        EmailMailboxAccess=EmailMailboxAccess,
+                    )
+                except PermissionError:
+                    return jsonify({'error': 'Mailbox access denied'}), 403
+
+                thread_key = (data.get('thread_key') or '').strip() or None
+                reply_to_id = data.get('reply_to_id')
+                parent_msg = None
+                if reply_to_id:
+                    try:
+                        parent_msg = model_query(InternalMessage).filter_by(
+                            id=int(reply_to_id),
+                            user_id=mailbox_user_id,
+                        ).first()
+                    except (TypeError, ValueError):
+                        parent_msg = None
+                if parent_msg:
+                    thread_key = parent_msg.thread_key or thread_key
+                    if not thread_key:
+                        thread_key = f'legacy-{parent_msg.id}'
+                if not thread_key:
+                    thread_key = str(uuid.uuid4())
+
                 sender_name = (getattr(current_user, 'full_name', None) or '').strip()
                 if not sender_name:
                     sender_name = f'{getattr(current_user, "first_name", "")} {getattr(current_user, "last_name", "")}'.strip()
@@ -903,6 +946,8 @@ def register_workflow(app, _db, models):
                         priority='normal',
                         requires_action=False,
                         recipients_json=visible_recipients,
+                        thread_key=thread_key,
+                        in_reply_to_id=parent_msg.id if parent_msg else None,
                     )
                     created.append(msg)
 
@@ -929,12 +974,15 @@ def register_workflow(app, _db, models):
                     priority='normal',
                     requires_action=False,
                     recipients_json=sent_recipients,
+                    thread_key=thread_key,
+                    in_reply_to_id=parent_msg.id if parent_msg else None,
                 )
                 _workflow_session().commit()
                 return jsonify({
                     'ok': True,
                     'sent': len(created),
                     'message_ids': [m.id for m in created],
+                    'thread_key': thread_key,
                 })
             except Exception as exc:
                 _workflow_session().rollback()
@@ -1027,6 +1075,41 @@ def register_workflow(app, _db, models):
             msg.requires_action = False
         _workflow_session().commit()
         return jsonify({'ok': True, 'permanent': permanent})
+
+    @app.route('/api/internal-messages/bulk', methods=['POST'])
+    @login_required
+    def api_internal_messages_bulk():
+        from email_mailbox_persistence import resolve_mailbox_user_id
+        from app import EmailMailboxAccess
+        data = request.get_json(silent=True) or {}
+        ids = data.get('ids') or []
+        action = (data.get('action') or '').strip().lower()
+        if not ids or action not in ('read', 'unread'):
+            return jsonify({'error': 'Invalid bulk request.'}), 400
+        try:
+            mailbox_user_id = resolve_mailbox_user_id(
+                current_user,
+                data.get('user_id'),
+                User=_runtime_model('User', User),
+                EmailMailboxAccess=EmailMailboxAccess,
+            )
+        except PermissionError:
+            return jsonify({'error': 'Mailbox access denied'}), 403
+        updated = 0
+        for raw_id in ids:
+            try:
+                msg_id = int(raw_id)
+            except (TypeError, ValueError):
+                continue
+            msg = model_query(InternalMessage).filter_by(id=msg_id, user_id=mailbox_user_id).first()
+            if not msg:
+                continue
+            msg.is_read = action == 'read'
+            if action == 'read':
+                msg.requires_action = False
+            updated += 1
+        _workflow_session().commit()
+        return jsonify({'ok': True, 'updated': updated})
 
     @app.route('/api/approvals', methods=['GET', 'POST'])
     @login_required

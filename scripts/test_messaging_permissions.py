@@ -123,9 +123,10 @@ class MessagingPermissionTests(unittest.TestCase):
                 headers = {'X-CSRF-Token': token, 'Content-Type': 'application/json'}
                 contacts = client.get('/api/internal-messages/contacts?project_id=1')
                 self.assertEqual(contacts.status_code, 200, contacts.get_json())
+                subject_token = f'bind test {int(__import__("time").time() * 1000)}'
                 sent = client.post('/api/internal-messages', json={
                     'to': ['admin@casepm.local'],
-                    'subject': 'bind test',
+                    'subject': subject_token,
                     'body': '<p>hello</p>',
                     'project_id': 1,
                 }, headers=headers)
@@ -134,23 +135,38 @@ class MessagingPermissionTests(unittest.TestCase):
                 self.assertEqual(listed.status_code, 200, listed.get_json())
                 rows = listed.get_json()
                 self.assertIsInstance(rows, list)
-                sent_rows = [r for r in rows if r.get('folder') == 'sent' and r.get('subject') == 'bind test']
+                sent_rows = [r for r in rows if r.get('folder') == 'sent' and r.get('subject') == subject_token]
                 self.assertTrue(sent_rows, 'sent copy should appear in GET /api/internal-messages')
                 _login_client(client, admin, app)
                 inbox = client.get('/api/internal-messages')
                 self.assertEqual(inbox.status_code, 200, inbox.get_json())
                 inbox_rows = inbox.get_json()
-                received = [r for r in inbox_rows if r.get('subject') == 'bind test' and r.get('folder') != 'sent']
+                received = [r for r in inbox_rows if r.get('subject') == subject_token and r.get('folder') != 'sent']
                 self.assertTrue(received, 'recipient should see message in inbox list')
                 sent_row = sent_rows[0]
                 self.assertTrue(sent_row.get('to'), 'sent copy should include recipient metadata')
                 self.assertTrue(sent_row.get('replyTo'), 'inbox copy should include replyTo sender metadata')
                 self.assertEqual(sent_row['replyTo'].get('email'), 'test@arch.com')
+                self.assertTrue(sent_row.get('threadKey'), 'sent copy should include thread key')
                 _login_client(client, arch, app)
                 client.get('/email?tab=internal')
                 with client.session_transaction() as sess:
                     token = sess.get('casepm_csrf_token')
                 headers = {'X-CSRF-Token': token, 'Content-Type': 'application/json'}
+                reply = client.post('/api/internal-messages', json={
+                    'to': ['admin@casepm.local'],
+                    'subject': f'RE: {subject_token}',
+                    'body': '<p>reply body</p>',
+                    'project_id': 1,
+                    'reply_to_id': sent_row['id'],
+                    'thread_key': sent_row.get('threadKey'),
+                }, headers=headers)
+                self.assertEqual(reply.status_code, 200, reply.get_json())
+                listed_reply = client.get('/api/internal-messages')
+                reply_rows = [r for r in listed_reply.get_json() if r.get('folder') == 'sent' and r.get('threadKey') == sent_row.get('threadKey')]
+                self.assertGreaterEqual(len(reply_rows), 2, 'reply should add another sent message in thread')
+                thread_keys = {r.get('threadKey') for r in reply_rows if r.get('threadKey')}
+                self.assertEqual(len(thread_keys), 1, 'all thread messages should share threadKey')
                 msg_id = sent_row['id']
                 deleted = client.delete(f'/api/internal-messages/{msg_id}', headers=headers)
                 self.assertEqual(deleted.status_code, 200, deleted.get_json())
