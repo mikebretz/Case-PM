@@ -121,6 +121,7 @@
     internalNotifications: true,
     approvalRouting: true,
     projectScopedInternal: true,
+    internalThreadSort: 'asc',
   };
 
   let state = {
@@ -439,6 +440,9 @@
           payload: m.payload || {},
           entityType: m.entityType || '',
           entityId: m.entityId || '',
+          threadKey: m.threadKey || '',
+          inReplyToId: m.inReplyToId || null,
+          projectId: m.projectId || null,
         }));
         persistInternal();
         render();
@@ -627,10 +631,55 @@
       </div>`;
   }
 
+  function renderInternalThreadItem(m) {
+    const fromLabel = (m.from || '').replace(/^(Case PM|Case PM System|Case PM Admin)$/i, m.fromUser || 'Project Team');
+    const toLine = (m.to || []).map(formatRecipientLine).filter(Boolean).join(', ');
+    return `
+      <article class="email-internal-thread-item ${m.unread ? 'unread' : ''}" data-thread-msg-id="${m.id}">
+        <div class="email-internal-thread-meta">
+          <div>
+            <div class="text-sm text-white font-medium">${esc(fromLabel)}${m.fromEmail ? ` <span class="text-zinc-500 font-normal">&lt;${esc(m.fromEmail)}&gt;</span>` : ''}</div>
+            ${toLine ? `<div class="text-xs text-zinc-500 mt-0.5">To: ${esc(toLine)}</div>` : ''}
+          </div>
+          <time class="text-xs text-zinc-500 flex-shrink-0">${fmtDate(m.date)}</time>
+        </div>
+        <div class="prose prose-invert max-w-none text-sm text-zinc-300 email-internal-thread-body">${m.body || esc(m.preview)}</div>
+      </article>`;
+  }
+
   function renderInternalMessageContent(m, opts) {
     const snapshot = renderSubmissionSnapshot(m);
-    const fromLabel = (m.from || '').replace(/^(Case PM|Case PM System|Case PM Admin)$/i, m.fromUser || 'Project Team');
+    const thread = internalThreadMessages(m);
+    const showThread = thread.length > 1 || ((m.type || 'message') === 'message' && settings.conversationView);
     const toolbar = opts?.skipToolbar ? '' : renderInternalActions(m, 'CasePMEmail', opts);
+    const threadSort = internalThreadSortOrder();
+    const threadControls = showThread && thread.length > 1 ? `
+      <div class="email-internal-thread-controls">
+        <span class="text-xs text-zinc-500">${thread.length} messages in this conversation</span>
+        <label class="text-xs text-zinc-400 flex items-center gap-2">
+          <span>Order</span>
+          <select class="bg-zinc-900 border border-zinc-700 rounded text-[10px] px-2 py-1 text-zinc-300"
+                  onchange="CasePMEmail.setInternalThreadSort(this.value)">
+            <option value="asc" ${threadSort === 'asc' ? 'selected' : ''}>Oldest first</option>
+            <option value="desc" ${threadSort === 'desc' ? 'selected' : ''}>Newest first</option>
+          </select>
+        </label>
+      </div>` : '';
+    const subject = thread[0]?.subject || m.subject;
+    if (showThread && thread.length > 0) {
+      return `
+        ${toolbar}
+        <div class="email-reading-message overflow-auto p-6">
+          <div class="mb-4">
+            <h2 class="text-lg font-semibold text-white">${esc(subject)}</h2>
+            <div class="text-xs text-zinc-500 mt-1">${esc(m.module || '')}${m.project ? ` · ${esc(m.project)}` : ''}</div>
+          </div>
+          ${snapshot}
+          ${threadControls}
+          <div class="email-internal-thread-chain">${thread.map(renderInternalThreadItem).join('')}</div>
+        </div>`;
+    }
+    const fromLabel = (m.from || '').replace(/^(Case PM|Case PM System|Case PM Admin)$/i, m.fromUser || 'Project Team');
     return `
       ${toolbar}
       <div class="email-reading-message overflow-auto p-6">
@@ -1315,6 +1364,109 @@
     return formatRecipientLine({ name, email });
   }
 
+  function normalizeInternalSubject(subject) {
+    return (subject || '').replace(/^(re|fw|fwd):\s*/gi, '').trim().toLowerCase();
+  }
+
+  function internalThreadKey(m) {
+    if (!m) return '';
+    if (m.threadKey) return String(m.threadKey);
+    if ((m.type || 'message') !== 'message') return `solo:${m.id}`;
+    return `legacy:${normalizeInternalSubject(m.subject)}|${m.projectId || m.project || ''}`;
+  }
+
+  function internalThreadSortOrder() {
+    return settings.internalThreadSort || state.internalThreadSort || 'asc';
+  }
+
+  function internalThreadMessages(messageOrId) {
+    const anchor = typeof messageOrId === 'object' ? messageOrId : getMessage(messageOrId);
+    if (!anchor) return [];
+    const key = internalThreadKey(anchor);
+    if (key.startsWith('solo:')) return [anchor];
+    const pool = internalMessages.filter(m => {
+      if (internalThreadKey(m) !== key) return false;
+      if (m.archived || m.folder === 'trash') return false;
+      return true;
+    });
+    const asc = internalThreadSortOrder() === 'asc';
+    return [...pool].sort((a, b) => {
+      const diff = new Date(a.date) - new Date(b.date);
+      return asc ? diff : -diff;
+    });
+  }
+
+  function buildInternalListItems(messages) {
+    if (!settings.conversationView) {
+      return messages.map(m => ({
+        representative: m,
+        count: 1,
+        ids: [String(m.id)],
+        unread: !!m.unread,
+      }));
+    }
+    const groups = new Map();
+    messages.forEach(m => {
+      const key = internalThreadKey(m);
+      const group = groups.get(key);
+      if (!group) groups.set(key, { messages: [m] });
+      else group.messages.push(m);
+    });
+    return [...groups.values()].map(group => {
+      const sorted = [...group.messages].sort((a, b) => new Date(b.date) - new Date(a.date));
+      const representative = sorted[0];
+      return {
+        representative,
+        count: sorted.length,
+        ids: sorted.map(msg => String(msg.id)),
+        unread: sorted.some(msg => msg.unread),
+      };
+    });
+  }
+
+  function selectedInternalIds(id) {
+    if (id !== undefined && id !== null && id !== '') return [String(id)];
+    if (state.selectedIds.size) return [...state.selectedIds].map(String);
+    if (state.selectedId) return [String(state.selectedId)];
+    return [];
+  }
+
+  function toggleMessageCheck(id, checked, event) {
+    if (event) event.stopPropagation();
+    const key = String(id);
+    if (checked) state.selectedIds.add(key);
+    else state.selectedIds.delete(key);
+    renderHeader();
+    renderMessageList();
+  }
+
+  function toggleThreadCheck(ids, checked, event) {
+    if (event) event.stopPropagation();
+    (ids || []).forEach(id => {
+      const key = String(id);
+      if (checked) state.selectedIds.add(key);
+      else state.selectedIds.delete(key);
+    });
+    renderHeader();
+    renderMessageList();
+  }
+
+  function toggleSelectAllInternal(checked) {
+    const items = buildInternalListItems(activeMessages());
+    const ids = items.flatMap(item => item.ids);
+    if (checked) ids.forEach(id => state.selectedIds.add(String(id)));
+    else state.selectedIds.clear();
+    renderHeader();
+    renderMessageList();
+  }
+
+  function setInternalThreadSort(sort) {
+    settings.internalThreadSort = sort === 'desc' ? 'desc' : 'asc';
+    state.internalThreadSort = settings.internalThreadSort;
+    persistSettings();
+    renderReadingPane();
+  }
+
   function buildInternalReplyRecipients(m, all) {
     const me = myMailboxEmail();
     const isSent = m.folder === 'sent';
@@ -1513,7 +1665,7 @@
 
   function renderToolbarHTML() {
     const isMail = state.workspace === 'mail';
-    const hasSel = state.selectedId || state.selectedIds.size > 0;
+    const hasSel = state.selectedIds.size > 0 || state.selectedId;
     return `
       <div class="flex items-center gap-1 flex-wrap">
         ${isMail || state.workspace === 'internal' ? `<button type="button" class="email-toolbar-btn" onclick="CasePMEmail.compose()"><i class="fa-solid fa-pen"></i> New</button>` : ''}
@@ -2011,15 +2163,36 @@
     }
 
     if (state.workspace === 'internal') {
-      el.innerHTML = messages.map(m => {
+      const listItems = sortMessages(buildInternalListItems(messages));
+      const allIds = listItems.flatMap(item => item.ids);
+      const allSelected = allIds.length > 0 && allIds.every(id => state.selectedIds.has(String(id)));
+      const someSelected = allIds.some(id => state.selectedIds.has(String(id)));
+      const header = `
+        <div class="email-list-select-row">
+          <label class="email-msg-check" onclick="event.stopPropagation()">
+            <input type="checkbox" ${allSelected ? 'checked' : ''} ${someSelected && !allSelected ? 'data-indeterminate="1"' : ''}
+                   onchange="CasePMEmail.toggleSelectAllInternal(this.checked)">
+          </label>
+          <span class="text-[10px] uppercase tracking-wide text-zinc-500">Select all</span>
+        </div>`;
+      el.innerHTML = header + listItems.map(item => {
+        const m = item.representative;
         const badgeClass = { approval: 'email-internal-badge-approval', alert: 'email-internal-badge-alert', message: 'email-internal-badge-message', mention: 'email-internal-badge-mention', announce: 'email-internal-badge-announce', update: 'email-internal-badge-update' }[m.type] || 'email-internal-badge-alert';
+        const rowSelected = item.ids.every(id => state.selectedIds.has(String(id)));
+        const rowActive = String(state.selectedId) === String(m.id);
+        const threadCount = item.count > 1 ? `<span class="email-thread-count">${item.count}</span>` : '';
         return `
-        <div class="email-msg-row ${m.unread ? 'unread' : ''} ${state.selectedId === m.id ? 'active' : ''}" onclick="CasePMEmail.select('${m.id}')" ondblclick="CasePMEmail.openMessage('${m.id}')" data-id="${m.id}">
+        <div class="email-msg-row ${item.unread ? 'unread' : ''} ${rowActive ? 'active' : ''} ${rowSelected ? 'selected' : ''}" onclick="CasePMEmail.select('${m.id}')" ondblclick="CasePMEmail.openMessage('${m.id}')" data-id="${m.id}">
           <div class="flex items-start gap-2">
+            <label class="email-msg-check" onclick="event.stopPropagation()">
+              <input type="checkbox" ${rowSelected ? 'checked' : ''}
+                     onchange="CasePMEmail.toggleThreadCheck(${JSON.stringify(item.ids)}, this.checked, event)">
+            </label>
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2 mb-0.5">
                 <span class="email-chip ${badgeClass}">${esc(m.type || 'alert')}</span>
                 ${m.requiresAction ? '<span class="text-[9px] text-amber-400 font-semibold">ACTION</span>' : ''}
+                ${threadCount}
                 <span class="text-[10px] text-zinc-500 ml-auto flex-shrink-0">${fmtDate(m.date)}</span>
               </div>
               <div class="email-msg-subject text-sm text-zinc-200 truncate">${esc(m.subject)}</div>
@@ -2029,6 +2202,10 @@
           </div>
         </div>`;
       }).join('');
+      requestAnimationFrame(() => {
+        const master = el.querySelector('.email-list-select-row input[type="checkbox"]');
+        if (master) master.indeterminate = someSelected && !allSelected;
+      });
       return;
     }
 
@@ -2083,12 +2260,14 @@
     const composeHtml = showMainCompose ? renderInlineComposeHTML() : '';
 
     if (state.workspace === 'internal' && m) {
+      internalThreadMessages(m).forEach(msg => {
+        if (msg.unread) markMessageRead(msg);
+      });
       el.innerHTML = composeHtml + renderInternalMessageContent(m);
       if (showMainCompose) {
         attachRecipientAutocomplete();
         initComposeSurface(el);
       }
-      if (m.unread) markMessageRead(m);
       return;
     }
 
@@ -2131,6 +2310,7 @@
     state.category = null;
     state.internalTypeFilter = '';
     state.selectedId = null;
+    state.selectedIds = new Set();
     state.inlineCompose = null;
     resetSearchInput();
     render();
@@ -2140,6 +2320,7 @@
     state.folder = id;
     state.category = null;
     state.selectedId = null;
+    state.selectedIds = new Set();
     render();
   }
 
@@ -2383,6 +2564,8 @@
     if (!to) { toast('Add at least one recipient.', 'error'); return; }
 
     const draftId = state.inlineCompose?.draftId;
+    const replyToId = state.inlineCompose?.replyToId;
+    const parent = replyToId ? getMessage(replyToId) : null;
     const payload = {
       to: to.split(/[,;]/).map(s => s.trim()).filter(Boolean),
       cc: (document.getElementById('inlineComposeCc')?.value || '').split(/[,;]/).map(s => s.trim()).filter(Boolean),
@@ -2391,6 +2574,8 @@
       body,
       preview: body.replace(/<[^>]+>/g, '').slice(0, 500),
       project_id: activeProjectId(),
+      reply_to_id: replyToId || null,
+      thread_key: parent?.threadKey || null,
     };
 
     try {
@@ -2565,7 +2750,7 @@
   }
 
   async function performDeleteInternal(id) {
-    const ids = id ? [id] : state.selectedId ? [state.selectedId] : [...state.selectedIds];
+    const ids = selectedInternalIds(id);
     if (!ids.length) return;
     let permanent = state.folder === 'trash';
     for (const i of ids) {
@@ -2607,18 +2792,41 @@
     render();
   }
 
-  function markReadToggle() {
-    const m = getMessage(state.selectedId);
-    if (!m) return;
+  function markReadToggle(id) {
     if (state.workspace === 'internal') {
-      m.unread = !m.unread;
+      const ids = selectedInternalIds(id);
+      if (!ids.length) return;
+      const markRead = ids.some(i => {
+        const msg = getMessage(i);
+        return msg && msg.unread;
+      });
+      const serverIds = [];
+      ids.forEach(i => {
+        const m = getMessage(i);
+        if (!m) return;
+        m.unread = !markRead;
+        if (typeof m.id === 'number' || String(m.id).match(/^\d+$/)) {
+          serverIds.push(m.id);
+        }
+      });
       persistInternal();
-      if (!m.unread && (typeof m.id === 'number' || String(m.id).match(/^\d+$/))) {
-        fetch(`/api/internal-messages/${m.id}/read`, internalApiOpts()).catch(() => {});
+      if (serverIds.length) {
+        fetch('/api/internal-messages/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ids: serverIds,
+            action: markRead ? 'read' : 'unread',
+            user_id: effectiveUserId() !== ctx.currentUserId ? effectiveUserId() : undefined,
+          }),
+        }).catch(() => {});
       }
+      toast(markRead ? 'Marked as read.' : 'Marked as unread.', 'success');
       render();
       return;
     }
+    const m = getMessage(state.selectedId);
+    if (!m) return;
     if (m) { m.unread = !m.unread; persistMail(); render(); }
   }
 
@@ -2736,23 +2944,28 @@
   }
 
   async function dismissInternal(id) {
-    const target = id || state.selectedId;
-    const m = internalMessages.find(x => String(x.id) === String(target));
-    if (!m) return;
-    if (m.approvalId && typeof CasePMWorkflow !== 'undefined') {
-      try {
-        await CasePMWorkflow.decide(m.approvalId, 'dismiss');
-      } catch (e) {
-        /* still archive locally */
+    const ids = selectedInternalIds(id);
+    if (!ids.length) return;
+    for (const target of ids) {
+      const m = internalMessages.find(x => String(x.id) === String(target));
+      if (!m) continue;
+      if (m.approvalId && typeof CasePMWorkflow !== 'undefined') {
+        try {
+          await CasePMWorkflow.decide(m.approvalId, 'dismiss');
+        } catch (e) {
+          /* still archive locally */
+        }
       }
+      if (typeof m.id === 'number' || String(m.id).match(/^\d+$/)) {
+        await fetch(`/api/internal-messages/${m.id}/archive`, internalApiOpts()).catch(() => {});
+      }
+      m.archived = true;
+      m.unread = false;
     }
-    if (typeof m.id === 'number' || String(m.id).match(/^\d+$/)) {
-      await fetch(`/api/internal-messages/${m.id}/archive`, internalApiOpts()).catch(() => {});
-    }
-    m.archived = true;
-    m.unread = false;
     state.selectedId = null;
+    state.selectedIds = new Set();
     await refreshInternalFromServer();
+    toast(ids.length > 1 ? `Archived ${ids.length} messages.` : 'Archived.', 'success');
   }
 
   function composeInternal(opts) {
@@ -2974,6 +3187,7 @@
     snoozeSelected, moveSelected, labelSelected, reportPhishing,
     addCustomFolder, renameCustomFolder, deleteCustomFolder,
     markInternalRead, approveInternal, dismissInternal, composeInternal,
+    toggleMessageCheck, toggleThreadCheck, toggleSelectAllInternal, setInternalThreadSort,
     refresh, printMessage, searchLabel, openSetup, showSettings, showRules, addRule, deleteRule,
     showContacts, showAdvancedSearch, runAdvancedSearch,
     getSettings: () => settings,
