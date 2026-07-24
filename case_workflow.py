@@ -374,6 +374,8 @@ def ensure_workflow_schema(engine):
             _workflow_session().execute(text('ALTER TABLE internal_message ADD COLUMN thread_key VARCHAR(120)'))
         if 'in_reply_to_id' not in cols:
             _workflow_session().execute(text('ALTER TABLE internal_message ADD COLUMN in_reply_to_id INTEGER'))
+    from message_deletion_archive import ensure_deleted_message_archive_schema_sqlalchemy
+    ensure_deleted_message_archive_schema_sqlalchemy()
     _workflow_session().commit()
 
 
@@ -1067,6 +1069,8 @@ def register_workflow(app, _db, models):
             return err
         permanent = msg.folder == 'trash'
         if permanent:
+            from message_deletion_archive import archive_internal_message_row
+            archive_internal_message_row(msg)
             _workflow_session().delete(msg)
         else:
             msg.folder = 'trash'

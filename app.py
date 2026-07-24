@@ -15056,8 +15056,17 @@ def api_email_mailbox():
         current_user, uid, EmailMailboxAccess=EmailMailboxAccess,
     ):
         return jsonify({'error': 'Send/edit access denied for this mailbox'}), 403
-    saved = save_user_mailbox(uid, messages, meta or {}, db=db, UserEmailMailbox=UserEmailMailbox)
-    return jsonify({'ok': True, 'user_id': uid, **saved})
+    previous = load_user_mailbox(uid, UserEmailMailbox=UserEmailMailbox)
+    from message_deletion_archive import archive_removed_mailbox_messages
+    archived_count = archive_removed_mailbox_messages(
+        uid,
+        previous.get('messages') or [],
+        messages,
+    )
+    if archived_count:
+        db.session.commit()
+    saved = save_user_mailbox(uid, messages, meta if meta is not None else (previous.get('meta') or {}), db=db, UserEmailMailbox=UserEmailMailbox)
+    return jsonify({'ok': True, 'user_id': uid, 'archived_deleted': archived_count, **saved})
 
 
 @app.route('/api/email/mailbox-access')

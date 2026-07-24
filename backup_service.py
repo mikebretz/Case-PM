@@ -268,10 +268,32 @@ def create_local_backup(note='', config=None, progress_cb=None):
         else:
             _notify_progress(progress_cb, 55, 'No upload files to include')
         _add_excel_exports_to_zip(zf, manifest, progress_cb)
+        try:
+            from message_deletion_archive import export_pending_archive_document
+            archive_doc = export_pending_archive_document(db_path=DB_PATH)
+            pending_count = int(archive_doc.get('pending_count') or 0)
+            if pending_count:
+                _notify_progress(progress_cb, 86, f'Adding deleted message archive ({pending_count})…')
+                zf.writestr('deleted_messages_archive.json', json.dumps(archive_doc, indent=2))
+                manifest['files'].append('deleted_messages_archive.json')
+            manifest['deleted_messages_archive'] = {
+                'pending_count': pending_count,
+                'total_count': int(archive_doc.get('total_count') or 0),
+            }
+        except Exception as exc:
+            manifest['deleted_messages_archive'] = {'error': str(exc)}
+            _backup_log(f'Deleted message archive export failed: {exc}')
         _notify_progress(progress_cb, 88, 'Writing manifest and finishing zip…', filename)
         zf.writestr('manifest.json', json.dumps(manifest, indent=2))
 
     _notify_progress(progress_cb, 92, f'Local backup saved: {filename}', dest)
+    try:
+        from message_deletion_archive import finalize_archive_after_backup
+        purge_summary = finalize_archive_after_backup(filename, db_path=DB_PATH)
+        result_purge = purge_summary
+    except Exception as exc:
+        result_purge = {'error': str(exc)}
+        _backup_log(f'Deleted message archive purge failed: {exc}')
     return {
         'ok': True,
         'filename': filename,
@@ -282,6 +304,8 @@ def create_local_backup(note='', config=None, progress_cb=None):
         'location': 'local',
         'local_folder': os.path.abspath(dir_path),
         'excel_exports': manifest.get('excel_exports'),
+        'deleted_messages_archive': manifest.get('deleted_messages_archive'),
+        'deleted_messages_purged': result_purge,
     }
 
 
