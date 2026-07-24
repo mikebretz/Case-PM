@@ -22,6 +22,21 @@ InternalMessage = None
 ModuleState = None
 ProjectMembership = None
 
+INTERNAL_MESSAGE_MOVE_FOLDERS = frozenset({
+    'internal-inbox', 'sent', 'drafts', 'trash',
+    'approvals', 'alerts', 'team', 'mentions',
+    'announcements', 'action-required', 'fyi', 'internal-archive',
+})
+
+
+def _apply_internal_folder_move(msg, folder):
+    """Move an internal message to a folder or archive."""
+    if folder == 'internal-archive':
+        msg.archived = True
+        return
+    msg.archived = False
+    msg.folder = folder
+
 
 def _canonical_db(fallback=None):
     """Return the SQLAlchemy extension for the active Flask app."""
@@ -1084,8 +1099,11 @@ def register_workflow(app, _db, models):
         data = request.get_json(silent=True) or {}
         ids = data.get('ids') or []
         action = (data.get('action') or '').strip().lower()
-        if not ids or action not in ('read', 'unread'):
+        folder = (data.get('folder') or '').strip()
+        if not ids or action not in ('read', 'unread', 'move'):
             return jsonify({'error': 'Invalid bulk request.'}), 400
+        if action == 'move' and folder not in INTERNAL_MESSAGE_MOVE_FOLDERS:
+            return jsonify({'error': 'Invalid folder.'}), 400
         try:
             mailbox_user_id = resolve_mailbox_user_id(
                 current_user,
@@ -1104,9 +1122,12 @@ def register_workflow(app, _db, models):
             msg = model_query(InternalMessage).filter_by(id=msg_id, user_id=mailbox_user_id).first()
             if not msg:
                 continue
-            msg.is_read = action == 'read'
-            if action == 'read':
-                msg.requires_action = False
+            if action == 'move':
+                _apply_internal_folder_move(msg, folder)
+            else:
+                msg.is_read = action == 'read'
+                if action == 'read':
+                    msg.requires_action = False
             updated += 1
         _workflow_session().commit()
         return jsonify({'ok': True, 'updated': updated})

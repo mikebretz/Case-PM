@@ -626,6 +626,7 @@
         ${m.actionUrl ? `<a href="${esc(m.actionUrl)}" class="email-toolbar-btn"><i class="fa-solid fa-arrow-up-right-from-square"></i> ${esc(m.actionLabel || 'Open')}</a>` : ''}
         ${m.requiresAction ? `<button type="button" class="email-toolbar-btn" onclick="${prefix}.approveInternal('${m.id}')"><i class="fa-solid fa-circle-check"></i> Approve</button>` : ''}
         <button type="button" class="email-toolbar-btn" onclick="${prefix}.dismissInternal('${m.id}')"><i class="fa-solid fa-box-archive"></i> Archive</button>
+        <button type="button" class="email-toolbar-btn" onclick="${prefix}.moveSelected('${m.id}')"><i class="fa-solid fa-folder"></i> Move</button>
         <button type="button" class="email-toolbar-btn" onclick="${prefix}.deleteSelected('${m.id}')"><i class="fa-solid fa-trash"></i> Delete</button>
         <button type="button" class="email-toolbar-btn" onclick="${prefix}.printMessage('${m.id}')"><i class="fa-solid fa-print"></i> Print</button>
       </div>`;
@@ -1460,6 +1461,141 @@
     renderMessageList();
   }
 
+  function toggleSelectAllMessages(checked) {
+    if (state.workspace === 'internal') {
+      toggleSelectAllInternal(checked);
+      return;
+    }
+    const ids = activeMessages().map(m => String(m.id));
+    if (checked) ids.forEach(id => state.selectedIds.add(id));
+    else state.selectedIds.clear();
+    renderHeader();
+    renderMessageList();
+  }
+
+  function selectedMessageIds(id) {
+    if (state.workspace === 'internal') return selectedInternalIds(id);
+    if (id !== undefined && id !== null && id !== '') return [String(id)];
+    if (state.selectedIds.size) return [...state.selectedIds].map(String);
+    if (state.selectedId) return [String(state.selectedId)];
+    return [];
+  }
+
+  function messageIdsForDrag(rowIds) {
+    const normalized = (rowIds || []).map(String).filter(Boolean);
+    if (!normalized.length) return [];
+    const selected = [...state.selectedIds].map(String);
+    if (selected.some(id => normalized.includes(id))) {
+      return selected.length ? selected : normalized;
+    }
+    return normalized;
+  }
+
+  function internalMoveTargets() {
+    return INTERNAL_FOLDERS.map(f => ({ value: f.id, label: f.label }));
+  }
+
+  function mailMoveTargets() {
+    const systemFolders = MAIL_FOLDERS
+      .filter(f => f.id !== 'focused' && f.id !== 'other')
+      .map(f => ({ value: f.id, label: f.label }));
+    const customList = customFolders.map(f => ({ value: `custom_${f.id}`, label: f.name }));
+    return [...systemFolders, ...customList];
+  }
+
+  function applyLocalInternalFolderMove(message, folder) {
+    if (!message) return;
+    if (folder === 'internal-archive') {
+      message.archived = true;
+      return;
+    }
+    message.archived = false;
+    message.folder = folder;
+  }
+
+  function isValidMailFolder(folder) {
+    return MAIL_FOLDERS.some(f => f.id === folder) || String(folder).startsWith('custom_');
+  }
+
+  function folderLabel(folderId) {
+    const internal = INTERNAL_FOLDERS.find(f => f.id === folderId);
+    if (internal) return internal.label;
+    const mail = MAIL_FOLDERS.find(f => f.id === folderId);
+    if (mail) return mail.label;
+    if (String(folderId).startsWith('custom_')) {
+      const custom = customFolders.find(f => `custom_${f.id}` === folderId);
+      return custom?.name || folderId;
+    }
+    return folderId;
+  }
+
+  const MSG_DRAG_MIME = 'application/x-casepm-msg-ids';
+  let messageDragDropBound = false;
+
+  function bindMessageDragDrop() {
+    if (messageDragDropBound) return;
+    const listEl = document.getElementById('emailMessageList');
+    const foldersEl = document.getElementById('emailFolderList');
+    if (!listEl || !foldersEl) return;
+    messageDragDropBound = true;
+
+    listEl.addEventListener('dragstart', e => {
+      const row = e.target.closest('.email-msg-row[data-message-ids]');
+      if (!row || e.target.closest('.email-msg-check') || e.target.closest('.email-star')) {
+        e.preventDefault();
+        return;
+      }
+      const ids = messageIdsForDrag((row.dataset.messageIds || '').split(',').filter(Boolean));
+      if (!ids.length) {
+        e.preventDefault();
+        return;
+      }
+      e.dataTransfer.setData(MSG_DRAG_MIME, JSON.stringify(ids));
+      e.dataTransfer.effectAllowed = 'move';
+      row.classList.add('dragging');
+    });
+
+    listEl.addEventListener('dragend', () => {
+      listEl.querySelectorAll('.email-msg-row.dragging').forEach(row => row.classList.remove('dragging'));
+      foldersEl.querySelectorAll('.email-folder-btn.drag-over').forEach(btn => btn.classList.remove('drag-over'));
+    });
+
+    foldersEl.addEventListener('dragover', e => {
+      const btn = e.target.closest('[data-folder-drop]');
+      if (!btn) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      foldersEl.querySelectorAll('.email-folder-btn.drag-over').forEach(el => {
+        if (el !== btn) el.classList.remove('drag-over');
+      });
+      btn.classList.add('drag-over');
+    });
+
+    foldersEl.addEventListener('dragleave', e => {
+      const btn = e.target.closest('[data-folder-drop]');
+      if (!btn) return;
+      const related = e.relatedTarget;
+      if (related && btn.contains(related)) return;
+      btn.classList.remove('drag-over');
+    });
+
+    foldersEl.addEventListener('drop', async e => {
+      const btn = e.target.closest('[data-folder-drop]');
+      if (!btn) return;
+      e.preventDefault();
+      btn.classList.remove('drag-over');
+      const folder = btn.dataset.folderId;
+      let ids = [];
+      try {
+        ids = JSON.parse(e.dataTransfer.getData(MSG_DRAG_MIME) || '[]');
+      } catch (_) {
+        ids = [];
+      }
+      if (!folder || !ids.length) return;
+      await moveMessagesToFolder(folder, ids);
+    });
+  }
+
   function setInternalThreadSort(sort) {
     settings.internalThreadSort = sort === 'desc' ? 'desc' : 'asc';
     state.internalThreadSort = settings.internalThreadSort;
@@ -1631,6 +1767,7 @@
     renderMessageList();
     renderReadingPane();
     applyLayoutClasses();
+    bindMessageDragDrop();
   }
 
   function updateListControls() {
@@ -1682,6 +1819,7 @@
         <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.reportPhishing()"><i class="fa-solid fa-shield"></i> Report</button>
         ` : `
         <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.markReadToggle()"><i class="fa-solid fa-envelope-open"></i> Read/Unread</button>
+        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.moveSelected()"><i class="fa-solid fa-folder"></i> Move</button>
         <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.dismissInternal()"><i class="fa-solid fa-box-archive"></i> Archive</button>
         <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.deleteSelected()"><i class="fa-solid fa-trash"></i> Delete</button>
         <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.approveInternal()"><i class="fa-solid fa-circle-check"></i> Approve</button>
@@ -1755,7 +1893,7 @@
         return true;
       });
       foldersEl.innerHTML = folders.map(f => `
-        <button type="button" class="email-folder-btn ${state.folder === f.id ? 'active' : ''}" onclick="CasePMEmail.setFolder('${f.id}')">
+        <button type="button" class="email-folder-btn ${state.folder === f.id ? 'active' : ''}" data-folder-id="${f.id}" data-folder-drop="1" onclick="CasePMEmail.setFolder('${f.id}')">
           <span><i class="fa-solid ${f.icon} w-4 mr-2 text-zinc-500"></i>${f.label}</span>
           <span class="count">${folderCount(f.id, 'mail') || ''}</span>
         </button>`).join('');
@@ -1763,7 +1901,7 @@
       if (settings.gmailCategories && (state.folder === 'inbox' || state.folder === 'focused' || state.folder === 'other')) {
         foldersEl.innerHTML += `<div class="mt-3 mb-1 px-2 text-[9px] uppercase tracking-wider text-zinc-500">Categories</div>`;
         foldersEl.innerHTML += GMAIL_CATEGORIES.map(c => `
-          <button type="button" class="email-folder-btn ${state.category === c.id ? 'active' : ''}" onclick="CasePMEmail.setCategory('${c.id}')">
+          <button type="button" class="email-folder-btn ${state.category === c.id ? 'active' : ''}" data-folder-id="inbox" data-folder-drop="1" onclick="CasePMEmail.setCategory('${c.id}')">
             <span><i class="fa-solid ${c.icon} w-4 mr-2 text-zinc-500"></i>${c.label}</span>
           </button>`).join('');
       }
@@ -1773,7 +1911,7 @@
         <button type="button" onclick="CasePMEmail.addCustomFolder()" class="text-[9px] text-emerald-400 hover:text-emerald-300" title="New folder"><i class="fa-solid fa-plus"></i></button>
       </div>`;
       foldersEl.innerHTML += customFolders.map(f => `
-        <div class="email-folder-btn ${state.folder === 'custom_' + f.id ? 'active' : ''}" style="padding-right:0.35rem">
+        <div class="email-folder-btn ${state.folder === 'custom_' + f.id ? 'active' : ''}" style="padding-right:0.35rem" data-folder-id="custom_${f.id}" data-folder-drop="1">
           <button type="button" class="flex-1 flex items-center min-w-0 text-left" onclick="CasePMEmail.setFolder('custom_${f.id}')">
             <i class="fa-solid fa-folder w-4 mr-2 text-zinc-500 flex-shrink-0"></i>
             <span class="truncate">${esc(f.name)}</span>
@@ -1804,7 +1942,7 @@
       }
     } else {
       foldersEl.innerHTML = INTERNAL_FOLDERS.map(f => `
-        <button type="button" class="email-folder-btn ${state.folder === f.id ? 'active' : ''}" onclick="CasePMEmail.setFolder('${f.id}')">
+        <button type="button" class="email-folder-btn ${state.folder === f.id ? 'active' : ''}" data-folder-id="${f.id}" data-folder-drop="1" onclick="CasePMEmail.setFolder('${f.id}')">
           <span><i class="fa-solid ${f.icon} w-4 mr-2 text-zinc-500"></i>${f.label}</span>
           <span class="count">${folderCount(f.id, 'internal') || ''}</span>
         </button>`).join('');
@@ -2171,7 +2309,7 @@
         <div class="email-list-select-row">
           <label class="email-msg-check" onclick="event.stopPropagation()">
             <input type="checkbox" ${allSelected ? 'checked' : ''} ${someSelected && !allSelected ? 'data-indeterminate="1"' : ''}
-                   onchange="CasePMEmail.toggleSelectAllInternal(this.checked)">
+                   onchange="CasePMEmail.toggleSelectAllMessages(this.checked)">
           </label>
           <span class="text-[10px] uppercase tracking-wide text-zinc-500">Select all</span>
         </div>`;
@@ -2182,7 +2320,7 @@
         const rowActive = String(state.selectedId) === String(m.id);
         const threadCount = item.count > 1 ? `<span class="email-thread-count">${item.count}</span>` : '';
         return `
-        <div class="email-msg-row ${item.unread ? 'unread' : ''} ${rowActive ? 'active' : ''} ${rowSelected ? 'selected' : ''}" onclick="CasePMEmail.select('${m.id}')" ondblclick="CasePMEmail.openMessage('${m.id}')" data-id="${m.id}">
+        <div class="email-msg-row ${item.unread ? 'unread' : ''} ${rowActive ? 'active' : ''} ${rowSelected ? 'selected' : ''}" draggable="true" data-message-ids="${item.ids.join(',')}" onclick="CasePMEmail.select('${m.id}')" ondblclick="CasePMEmail.openMessage('${m.id}')" data-id="${m.id}">
           <div class="flex items-start gap-2">
             <label class="email-msg-check" onclick="event.stopPropagation()">
               <input type="checkbox" ${rowSelected ? 'checked' : ''}
@@ -2209,9 +2347,28 @@
       return;
     }
 
-    el.innerHTML = messages.map(m => `
-      <div class="email-msg-row ${m.unread ? 'unread' : ''} ${m.starred ? 'starred' : ''} ${state.selectedId === m.id ? 'active' : ''}" onclick="CasePMEmail.select('${m.id}')" ondblclick="CasePMEmail.openMessage('${m.id}')" data-id="${m.id}">
+    const listItems = sortMessages(messages);
+    const allIds = listItems.map(m => String(m.id));
+    const allSelected = allIds.length > 0 && allIds.every(id => state.selectedIds.has(id));
+    const someSelected = allIds.some(id => state.selectedIds.has(id));
+    const header = `
+      <div class="email-list-select-row">
+        <label class="email-msg-check" onclick="event.stopPropagation()">
+          <input type="checkbox" ${allSelected ? 'checked' : ''} ${someSelected && !allSelected ? 'data-indeterminate="1"' : ''}
+                 onchange="CasePMEmail.toggleSelectAllMessages(this.checked)">
+        </label>
+        <span class="text-[10px] uppercase tracking-wide text-zinc-500">Select all</span>
+      </div>`;
+    el.innerHTML = header + listItems.map(m => {
+      const rowSelected = state.selectedIds.has(String(m.id));
+      const rowActive = String(state.selectedId) === String(m.id);
+      return `
+      <div class="email-msg-row ${m.unread ? 'unread' : ''} ${m.starred ? 'starred' : ''} ${rowActive ? 'active' : ''} ${rowSelected ? 'selected' : ''}" draggable="true" data-message-ids="${m.id}" onclick="CasePMEmail.select('${m.id}')" ondblclick="CasePMEmail.openMessage('${m.id}')" data-id="${m.id}">
         <div class="flex items-start gap-2">
+          <label class="email-msg-check" onclick="event.stopPropagation()">
+            <input type="checkbox" ${rowSelected ? 'checked' : ''}
+                   onchange="CasePMEmail.toggleMessageCheck('${m.id}', this.checked, event)">
+          </label>
           <button type="button" class="email-star text-zinc-600 hover:text-amber-400 flex-shrink-0 mt-0.5" onclick="event.stopPropagation(); CasePMEmail.toggleStar('${m.id}')">
             <i class="fa-${m.starred ? 'solid' : 'regular'} fa-star text-xs"></i>
           </button>
@@ -2230,7 +2387,13 @@
             </div>
           </div>
         </div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
+    requestAnimationFrame(() => {
+      const master = el.querySelector('.email-list-select-row input[type="checkbox"]');
+      if (master) master.indeterminate = someSelected && !allSelected;
+    });
+    return;
   }
 
   function renderReadingPane() {
@@ -2851,22 +3014,92 @@
     });
   }
 
+  async function moveMessagesToFolder(folder, ids) {
+    if (!canEditViewedMailbox()) {
+      toast('You have read-only access to this mailbox.', 'error');
+      return;
+    }
+    const targetIds = (ids || []).map(String).filter(Boolean);
+    if (!targetIds.length || !folder) return;
+    if (state.workspace === 'internal') {
+      if (!INTERNAL_FOLDERS.some(f => f.id === folder)) {
+        toast('Unknown folder.', 'error');
+        return;
+      }
+      await performMoveInternal(targetIds, folder);
+      return;
+    }
+    if (!isValidMailFolder(folder)) {
+      toast('Unknown folder.', 'error');
+      return;
+    }
+    performMoveMail(targetIds, folder);
+  }
+
+  async function performMoveInternal(ids, folder) {
+    const serverIds = ids.filter(i => /^\d+$/.test(String(i)));
+    if (serverIds.length) {
+      try {
+        const res = await fetch('/api/internal-messages/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ids: serverIds,
+            action: 'move',
+            folder,
+            user_id: effectiveUserId() !== ctx.currentUserId ? effectiveUserId() : undefined,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast(data.error || 'Could not move messages.', 'error');
+          return;
+        }
+      } catch (_) {
+        toast('Could not move messages.', 'error');
+        return;
+      }
+    }
+    ids.forEach(i => applyLocalInternalFolderMove(getMessage(i), folder));
+    persistInternal();
+    state.selectedId = null;
+    state.selectedIds = new Set();
+    await refreshInternalFromServer({ silent: true });
+    toast(`Moved to ${folderLabel(folder)}.`, 'success');
+    render();
+  }
+
+  function performMoveMail(ids, folder) {
+    ids.forEach(i => {
+      const m = getMessage(i);
+      if (m) m.folder = folder;
+    });
+    persistMail();
+    state.selectedId = null;
+    state.selectedIds = new Set();
+    toast(`Moved to ${folderLabel(folder)}.`, 'success');
+    render();
+  }
+
   async function moveSelected(id) {
-    const systemFolders = MAIL_FOLDERS.map(f => ({ value: f.id, label: f.label }));
-    const customList = customFolders.map(f => ({ value: `custom_${f.id}`, label: f.name }));
+    if (!canEditViewedMailbox()) {
+      toast('You have read-only access to this mailbox.', 'error');
+      return;
+    }
+    const ids = selectedMessageIds(id);
+    if (!ids.length) {
+      toast('Select at least one message.', 'warning');
+      return;
+    }
+    const options = state.workspace === 'internal' ? internalMoveTargets() : mailMoveTargets();
     const picked = await emailSelect({
       title: 'Move to folder',
-      message: 'Choose a destination folder',
-      options: [...systemFolders, ...customList],
+      message: ids.length > 1 ? `Move ${ids.length} messages` : 'Choose a destination folder',
+      options,
     });
     if (!picked) return;
-    const target = id || state.selectedId;
-    const m = getMessage(target);
-    if (!m) return;
     const normalized = String(picked).includes('(') ? String(picked).split('(')[0].trim() : String(picked).trim();
-    const valid = MAIL_FOLDERS.some(f => f.id === normalized) || normalized.startsWith('custom_');
-    if (valid) { m.folder = normalized; persistMail(); toast('Moved.', 'success'); render(); }
-    else toast('Unknown folder.', 'error');
+    await moveMessagesToFolder(normalized, ids);
   }
 
   function addCustomFolder() {
@@ -3187,7 +3420,7 @@
     snoozeSelected, moveSelected, labelSelected, reportPhishing,
     addCustomFolder, renameCustomFolder, deleteCustomFolder,
     markInternalRead, approveInternal, dismissInternal, composeInternal,
-    toggleMessageCheck, toggleThreadCheck, toggleSelectAllInternal, setInternalThreadSort,
+    toggleMessageCheck, toggleThreadCheck, toggleSelectAllInternal, toggleSelectAllMessages, setInternalThreadSort,
     refresh, printMessage, searchLabel, openSetup, showSettings, showRules, addRule, deleteRule,
     showContacts, showAdvancedSearch, runAdvancedSearch,
     getSettings: () => settings,
