@@ -167,6 +167,22 @@ class MessagingPermissionTests(unittest.TestCase):
                 self.assertGreaterEqual(len(reply_rows), 2, 'reply should add another sent message in thread')
                 thread_keys = {r.get('threadKey') for r in reply_rows if r.get('threadKey')}
                 self.assertEqual(len(thread_keys), 1, 'all thread messages should share threadKey')
+                moved = client.post('/api/internal-messages/bulk', json={
+                    'ids': [sent_row['id']],
+                    'action': 'move',
+                    'folder': 'team',
+                }, headers=headers)
+                self.assertEqual(moved.status_code, 200, moved.get_json())
+                moved_row = next(r for r in client.get('/api/internal-messages').get_json() if r.get('id') == sent_row['id'])
+                self.assertEqual(moved_row.get('folder'), 'team')
+                archived = client.post('/api/internal-messages/bulk', json={
+                    'ids': [sent_row['id']],
+                    'action': 'move',
+                    'folder': 'internal-archive',
+                }, headers=headers)
+                self.assertEqual(archived.status_code, 200, archived.get_json())
+                archived_row = next(r for r in client.get('/api/internal-messages?archived=1').get_json() if r.get('id') == sent_row['id'])
+                self.assertTrue(archived_row.get('archived'))
                 msg_id = sent_row['id']
                 deleted = client.delete(f'/api/internal-messages/{msg_id}', headers=headers)
                 self.assertEqual(deleted.status_code, 200, deleted.get_json())

@@ -83,6 +83,11 @@
 }
 .email-folder-btn:hover { background: #27272a; }
 .email-folder-btn.active { background: #27272a; color: #fff; font-weight: 500; }
+.email-folder-btn.drag-over {
+  background: #14532d;
+  color: #ecfdf5;
+  outline: 1px solid #10b981;
+}
 .email-folder-btn .count {
   font-size: 0.6875rem;
   color: #71717a;
@@ -99,6 +104,7 @@
 .email-msg-row.active { background: #1c1917; border-left: 3px solid #10b981; }
 .email-msg-row.unread .email-msg-subject { font-weight: 600; color: #fff; }
 .email-msg-row.selected { background: #1a1a1f; }
+.email-msg-row.dragging { opacity: 0.45; }
 .email-msg-row.starred .email-star { color: #fbbf24; }
 .email-list-select-row {
   display: flex;
