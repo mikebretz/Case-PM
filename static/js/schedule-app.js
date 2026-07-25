@@ -47,14 +47,14 @@
         active_baseline_index: -1,
         show_baseline_bars: true,
         show_bar_labels: true,
-        theme: 'light',
+        theme: 'dark',
         default_cell_align: { h: 'left', v: 'middle' },
         column_align: {},
         default_cell_style: { font_size: 11 },
-        default_row_height: 22,
+        default_row_height: 24,
         default_bar_height: 14,
-        summary_row_height: 22,
-        summary_bar_height: 14
+        summary_row_height: 24,
+        summary_bar_height: 10
     };
     if (!scheduleSettings.print_settings) {
         scheduleSettings.print_settings = {
@@ -351,6 +351,38 @@
             const meta = getProjectMeta();
             sub.textContent = meta.label || 'Gantt chart · CPM · baselines';
         }
+    }
+
+    const WBS_GUTTER_COLORS = ['#00b0f0', '#92d050', '#ffff00', '#ffc000'];
+    const WBS_GUTTER_WIDTH = 14;
+
+    function buildP6DemoSchedule() {
+        const tasks = [
+            { id: 1, text: 'Pipe Repairs & Improvement 12', type: 'project', open: true, start_date: '2023-06-05', end_date: '2023-07-28', duration: 0, progress: 0 },
+            { id: 2, parent: 1, text: 'Demolition Piping', open: true, start_date: '2023-06-05', end_date: '2023-06-20', duration: 11, progress: 0.45 },
+            { id: 3, parent: 2, text: 'Project Management', activity_id: 'A1010', start_date: '2023-06-05', end_date: '2023-07-15', duration: 28, progress: 0.35 },
+            { id: 4, parent: 2, text: 'Remove Existing Piping', activity_id: 'A1020', start_date: '2023-06-08', end_date: '2023-06-18', duration: 8, progress: 0.6 },
+            { id: 5, parent: 2, text: 'Demolition Complete', activity_id: 'A1030', type: 'milestone', start_date: '2023-06-20', end_date: '2023-06-20', duration: 0, progress: 0 },
+            { id: 6, parent: 1, text: 'Piping', open: true, start_date: '2023-06-12', end_date: '2023-07-25', duration: 31, progress: 0.2 },
+            { id: 7, parent: 6, text: 'Install New Piping', activity_id: 'A2010', start_date: '2023-06-12', end_date: '2023-07-10', duration: 20, progress: 0.25 },
+            { id: 8, parent: 6, text: 'Pressure Test', activity_id: 'A2020', start_date: '2023-07-11', end_date: '2023-07-18', duration: 6, progress: 0 },
+            { id: 9, parent: 6, text: 'Piping Complete', activity_id: 'A2030', type: 'milestone', start_date: '2023-07-25', end_date: '2023-07-25', duration: 0, progress: 0 }
+        ];
+        const links = [
+            { id: 1, source: 3, target: 4, type: '0' },
+            { id: 2, source: 4, target: 5, type: '0' },
+            { id: 3, source: 5, target: 7, type: '0' },
+            { id: 4, source: 7, target: 8, type: '0' },
+            { id: 5, source: 8, target: 9, type: '0' }
+        ];
+        return { data: tasks, links, customColumns: [], hiddenColumns: ['wbs', 'predecessors', 'successors', 'link_lag', 'progress', 'resource', 'owner', 'total_float', 'constraint_type', 'bar_color'], columnWidths: {}, columnOrder: [] };
+    }
+
+    function isBareProjectSchedule(payload) {
+        const data = payload?.data || [];
+        if (data.length !== 1) return false;
+        const only = data[0];
+        return only && (only.type === 'project' || !only.parent) && !data.some(t => t.parent && String(t.parent) !== '0');
     }
 
     function buildEmptySchedule(opts) {
@@ -1237,20 +1269,20 @@
     }
 
     function getTaskRowHeight(task) {
-        if (!task) return scheduleSettings.default_row_height || 32;
+        if (!task) return scheduleSettings.default_row_height || 24;
         const custom = parseInt(task.row_height, 10);
         if (!Number.isNaN(custom) && custom >= 18) return custom;
-        return scheduleSettings.default_row_height || 32;
+        return scheduleSettings.default_row_height || 24;
     }
 
     function getTaskBarHeight(task) {
-        if (!task) return scheduleSettings.default_bar_height || 22;
+        if (!task) return scheduleSettings.default_bar_height || 14;
         const custom = parseInt(task.bar_height, 10);
         if (!Number.isNaN(custom) && custom >= 6) return custom;
-        if (task.type === 'project' || isParentTask(task)) {
-            return scheduleSettings.summary_bar_height || 26;
+        if (isSummaryTask(task)) {
+            return scheduleSettings.summary_bar_height || 10;
         }
-        return scheduleSettings.default_bar_height || 22;
+        return scheduleSettings.default_bar_height || 14;
     }
 
     function buildTaskBarStyle(task) {
@@ -1276,10 +1308,12 @@
 
     function refreshGanttRowMetrics() {
         if (!ganttReady) return;
-        const baseRow = scheduleSettings.default_row_height || 32;
+        const baseRow = scheduleSettings.default_row_height || 24;
         gantt.config.row_height = baseRow;
-        gantt.config.bar_height = scheduleSettings.default_bar_height || 22;
-        gantt.getTaskHeight = task => getTaskRowHeight(task);
+        gantt.config.bar_height = scheduleSettings.default_bar_height || 14;
+        gantt.getTaskHeight = () => baseRow;
+        const host = document.getElementById('gantt_here');
+        if (host) host.style.setProperty('--sched-row-h', baseRow + 'px');
     }
 
     function applyRowHeightsToDom() {
@@ -1495,6 +1529,7 @@
                     'sched-cell-selected'
                 );
                 cell.classList.add(`sched-align-h-${a.h}`, `sched-align-v-${a.v}`);
+                if (col.name === 'hierarchy') cell.classList.add('sched-hierarchy-cell');
                 cell.style.fontSize = getCellFontSize(task, col.name) + 'px';
             });
         });
@@ -1691,7 +1726,7 @@
         const opts = ps || scheduleSettings.print_settings || {};
         const cols = gantt.config.columns || [];
         const baseFilter = c => {
-            if (c.name === 'collapse') return false;
+            if (c.name === 'collapse' || c.name === 'hierarchy') return false;
             if (opts.print_hide_wbs && c.name === 'wbs') return false;
             if (opts.print_hide_id && c.name === 'activity_id') return false;
             if (opts.print_hide_color && c.name === 'bar_color') return false;
@@ -2078,12 +2113,28 @@
         return ganttReady && gantt.hasChild(task.id);
     }
 
+    function hierarchyIndentTemplate(task) {
+        const level = getWbsLevel(task);
+        const isSummary = isSummaryTask(task);
+        const gutterCount = isSummary ? level + 1 : Math.max(1, level);
+        let html = '<div class="sched-wbs-indents">';
+        for (let i = 0; i < gutterCount && i <= 3; i++) {
+            const color = WBS_GUTTER_COLORS[i] || WBS_GUTTER_COLORS[3];
+            const isActive = isSummary && i === level;
+            const cls = isActive ? 'sched-wbs-gutter-active' : 'sched-wbs-gutter-line';
+            html += `<span class="sched-wbs-gutter ${cls}" style="--wbs-color:${color}"></span>`;
+        }
+        html += '</div>';
+        return html;
+    }
+
     function activityNameTemplate(task) {
-        const pad = (task.$level || 0) * 14;
         const parent = isParentTask(task);
-        const cls = parent ? 'sched-parent-name' : '';
-        const weight = parent ? 'font-weight:700;' : '';
-        return `<span class="${cls}" style="padding-left:${pad}px;display:inline-block;${weight}">${task.text || ''}</span>`;
+        if (parent) {
+            const prefix = task.type === 'project' ? 'Project: ' : 'WBS: ';
+            return `<span class="sched-wbs-header-label">${prefix}${task.text || ''}</span>`;
+        }
+        return `<span class="sched-activity-label">${task.text || ''}</span>`;
     }
 
     function collapseTemplate(task) {
@@ -2194,7 +2245,8 @@
 
     function getBuiltinColumnDefs() {
         return [
-            { name: 'collapse', label: '', width: 30, min_width: 30, resize: false, align: 'center', template: collapseTemplate },
+            { name: 'hierarchy', label: '', width: 56, min_width: 56, max_width: 56, resize: false, align: 'left', template: hierarchyIndentTemplate },
+            { name: 'collapse', label: '', width: 28, min_width: 28, resize: false, align: 'center', template: collapseTemplate },
             { name: 'wbs', label: 'WBS', width: 58, align: 'center', resize: true, template: t => wbsCode(t) },
             { name: 'activity_id', label: 'Activity ID', width: 72, align: 'center', resize: true, editor: { type: 'sched_text', map_to: 'activity_id' }, template: t => t.activity_id || '' },
             { name: 'text', label: 'Activity Name', tree: false, width: 240, min_width: 120, resize: true, editor: { type: 'sched_text', map_to: 'text' }, template: activityNameTemplate },
@@ -2413,10 +2465,10 @@
         gantt.config.skip_off_time = false;
         gantt.config.duration_unit = 'day';
         gantt.config.time_step = 1440;
-        gantt.config.row_height = 22;
+        gantt.config.row_height = 24;
         gantt.config.bar_height = 14;
         updateRowHeightsForLabels();
-        gantt.getTaskHeight = task => getTaskRowHeight(task);
+        gantt.getTaskHeight = () => scheduleSettings.default_row_height || 24;
         gantt.config.scale_height = 52;
         updateScaleHeight();
         gantt.config.scroll_size = 20;
@@ -2513,14 +2565,16 @@
 
         gantt.templates.grid_row_class = function (start, end, task) {
             const classes = [];
+            const level = getWbsLevel(task);
             if (isParentTask(task)) classes.push('cpm_project_row', 'sched-parent-row', 'sched-summary-row');
             const wbsCls = getWbsLevelClass(task);
             if (wbsCls) classes.push(wbsCls);
+            classes.push(`sched-depth-${level}`);
             return classes.join(' ');
         };
 
         gantt.templates.task_row_class = function (start, end, task) {
-            const classes = [];
+            const classes = [`sched-depth-${getWbsLevel(task)}`];
             const wbsCls = getWbsLevelClass(task);
             if (wbsCls) classes.push(wbsCls);
             if (isParentTask(task)) classes.push('sched-summary-timeline-row');
@@ -2558,8 +2612,9 @@
             return task.text || '';
         };
 
-        gantt.templates.rightside_text = function () {
-            return '';
+        gantt.templates.rightside_text = function (start, end, task) {
+            if (isSummaryTask(task)) return '';
+            return task.text || '';
         };
 
         gantt.templates.leftside_text = function () {
@@ -2844,7 +2899,7 @@
         sanitizeAllTaskDates();
         baselines = payload.baselines || [];
         if (payload.settings) scheduleSettings = Object.assign(scheduleSettings, payload.settings);
-        if (!scheduleSettings.theme) scheduleSettings.theme = 'light';
+        if (!scheduleSettings.theme) scheduleSettings.theme = 'dark';
         if (window.ScheduleExtras) ScheduleExtras.applyThemeFromSettings();
         if (!scheduleSettings.print_settings) {
             scheduleSettings.print_settings = {
@@ -2893,7 +2948,15 @@
 
     async function loadSchedule() {
         const projectId = getSelectedProjectId();
+        const params = new URLSearchParams(window.location.search);
+        const forceDemo = params.get('schedule_demo') === 'p6';
         setSaveStatus('Loading…');
+
+        if (forceDemo) {
+            loadSchedulePayload(buildP6DemoSchedule());
+            setSaveStatus('P6 demo schedule loaded');
+            return;
+        }
 
         try {
             const res = await fetch(`/api/schedule?project_id=${projectId}`);
@@ -2919,8 +2982,14 @@
             } catch (e) { /* ignore */ }
         }
 
-        loadSchedulePayload(buildEmptySchedule(await fetchProjectScheduleDefaults(projectId)));
-        setSaveStatus('Empty schedule — add activities or import');
+        loadSchedulePayload(buildP6DemoSchedule());
+        setSaveStatus('P6 demo schedule loaded');
+    }
+
+    function loadP6DemoSchedule() {
+        loadSchedulePayload(buildP6DemoSchedule());
+        setSaveStatus('P6 demo schedule loaded');
+        queueSave();
     }
 
     async function clearSchedule() {
@@ -4793,7 +4862,7 @@
         exportJson, importFile, printGantt, printLookAhead, showPrintSetup, savePrintSettings, setPrintColumnToggle,
         showHeaderFooterSetup, saveHeaderFooterSettings, onHeaderLogoSelected, clearHeaderLogo,
         saveSchedule,
-        loadSchedule, clearSchedule, showColumnManager, showAddColumnDialog, removeColumn, addFieldColumn, queueSave,
+        loadSchedule, loadP6DemoSchedule, clearSchedule, showColumnManager, showAddColumnDialog, removeColumn, addFieldColumn, queueSave,
         setGridCellAlignH, setGridCellAlignV, setGridFontSize, setGridRowHeight, saveBarSettingsAsDefaults,
         runResourceLeveling, showResourceLeveling, renderPortfolio, resetColumnWidths, renderBaselineComparison,
         restoreBaseline, toggleScheduleTheme: () => window.ScheduleExtras?.toggleTheme(),
