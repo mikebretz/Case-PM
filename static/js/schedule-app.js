@@ -61,6 +61,13 @@
             include_summary: true,
             include_activity_table: true,
             include_inline_bars: true,
+            include_predecessor_links: true,
+            orientation: 'landscape',
+            font_size_pt: 8,
+            row_height_px: 16,
+            chart_width_pct: 58,
+            print_wbs_colors: true,
+            print_bar_labels: false,
             include_schedule_chart: false,
             include_evm: false,
             include_footer: true,
@@ -472,20 +479,40 @@
 
     function applyColumnWidthToCell(cell, w) {
         if (!cell) return;
-        cell.style.setProperty('width', w + 'px', 'important');
-        cell.style.setProperty('min-width', w + 'px', 'important');
-        cell.style.setProperty('max-width', w + 'px', 'important');
+        cell.style.width = w + 'px';
+        cell.style.minWidth = w + 'px';
+        cell.style.maxWidth = w + 'px';
     }
 
-    function applySingleColumnWidth(colIndex, width) {
+    function applyGridColumnWidthStyles() {
         if (!ganttReady || !gantt.config.columns) return;
-        const w = parseInt(width, 10) || 80;
-        const headCells = document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell');
-        applyColumnWidthToCell(headCells[colIndex], w);
-        document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
-            const cells = row.querySelectorAll(':scope > .gantt_cell');
-            applyColumnWidthToCell(cells[colIndex], w);
-        });
+        syncColumnWidthsToConfig();
+        const key = columnWidthsKey();
+        const cols = gantt.config.columns;
+        const styleEl = document.getElementById('sched-grid-col-widths');
+        if (styleEl) {
+            let css = '';
+            cols.forEach((col, i) => {
+                const w = parseInt(col.width, 10) || 80;
+                const n = i + 1;
+                css += `#gantt_here .gantt_grid_scale .gantt_grid_head_cell:nth-child(${n}),`;
+                css += `#gantt_here .gantt_grid_data .gantt_row > .gantt_cell:nth-child(${n}){`;
+                css += `width:${w}px;min-width:${w}px;max-width:${w}px;}`;
+            });
+            styleEl.textContent = css;
+        }
+        if (key !== lastHeaderWidthsKey) {
+            lastHeaderWidthsKey = key;
+            document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell').forEach((cell, i) => {
+                if (i < cols.length) applyColumnWidthToCell(cell, parseInt(cols[i].width, 10) || 80);
+            });
+            document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
+                row.querySelectorAll(':scope > .gantt_cell').forEach((cell, i) => {
+                    if (i < cols.length) applyColumnWidthToCell(cell, parseInt(cols[i].width, 10) || 80);
+                });
+            });
+        }
+        syncColumnResizeHandlePositions();
     }
 
     function syncColumnResizeHandlePositions() {
@@ -520,37 +547,8 @@
         });
     }
 
-    function applyGridColumnWidthStyles() {
-        if (!ganttReady || !gantt.config.columns) return;
-        syncColumnWidthsToConfig();
-        const key = columnWidthsKey();
-        if (key === lastHeaderWidthsKey) {
-            syncColumnResizeHandlePositions();
-            return;
-        }
-        lastHeaderWidthsKey = key;
-
-        const cols = gantt.config.columns;
-        const styleEl = document.getElementById('sched-grid-col-widths');
-        if (styleEl) styleEl.textContent = '';
-
-        document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell').forEach((cell, i) => {
-            if (i < cols.length) applyColumnWidthToCell(cell, parseInt(cols[i].width, 10) || 80);
-        });
-        document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
-            row.querySelectorAll(':scope > .gantt_cell').forEach((cell, i) => {
-                if (i < cols.length) applyColumnWidthToCell(cell, parseInt(cols[i].width, 10) || 80);
-            });
-        });
-        syncColumnResizeHandlePositions();
-        applyCellAlignToDom();
-        if (typeof gantt.setSizes === 'function') gantt.setSizes();
-    }
-
     function queueColumnResizeHandleSync() {
-        requestAnimationFrame(() => {
-            syncColumnResizeHandlePositions();
-        });
+        requestAnimationFrame(syncColumnResizeHandlePositions);
     }
 
     function syncGridHeaderAlignment() {
@@ -1491,9 +1489,11 @@
             });
         });
         applyRowHighlight();
+        applyColumnHighlight();
         document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell').forEach((head, i) => {
             const col = gantt.config.columns[i];
             head.classList.toggle('sched-col-selected', !!(gridSelection.type === 'column' && col && gridSelection.colName === col.name));
+            head.classList.toggle('sched-col-active', !!(gridSelection.type === 'column' && col && gridSelection.colName === col.name));
             if (!col) return;
             const a = getHeaderCellAlign(col.name);
             head.classList.remove(
@@ -1507,6 +1507,17 @@
     function getActiveRowTaskId() {
         if (gridSelection.type === 'row' || gridSelection.type === 'cell') return gridSelection.taskId;
         return gantt.getSelectedId();
+    }
+
+    function applyColumnHighlight() {
+        if (!ganttReady) return;
+        const selCol = gridSelection.type === 'column' ? gridSelection.colName : null;
+        const colIdx = selCol ? gantt.config.columns.findIndex(c => c.name === selCol) : -1;
+        document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
+            row.querySelectorAll(':scope > .gantt_cell').forEach((cell, i) => {
+                cell.classList.toggle('sched-col-active', colIdx >= 0 && i === colIdx);
+            });
+        });
     }
 
     function applyRowHighlight() {
@@ -1739,7 +1750,7 @@
             if (!col) return;
             const delta = e.clientX - colResizeDrag.startX;
             const newW = Math.max(col.min_width || 50, Math.min(520, colResizeDrag.startW + delta));
-            handleColumnResize(colResizeDrag.colIndex, col, newW, false, false);
+            handleColumnResize(colResizeDrag.colIndex, col, newW, false, true);
             preserveGridScrollLeft(columnResizeScrollLeft);
         };
 
@@ -1795,21 +1806,21 @@
     }
 
     function handleColumnResize(index, column, new_width, persist, reflow) {
+        const w = parseInt(new_width, 10) || 80;
         if (column && column.name) {
-            columnWidths[column.name] = new_width;
-            column.width = new_width;
-            if (gantt.config.columns[index]) {
-                gantt.config.columns[index].width = new_width;
-            }
+            columnWidths[column.name] = w;
+            column.width = w;
+            if (gantt.config.columns[index]) gantt.config.columns[index].width = w;
         }
-        applySingleColumnWidth(index, new_width);
-        queueColumnResizeHandleSync();
         if (reflow) {
-            syncGridTableWidth();
             lastHeaderWidthsKey = '';
             applyGridColumnWidthStyles();
+            syncGridTableWidth();
             queueChartOverlay();
+            applyCellAlignToDom();
             if (persist) queueSave();
+        } else {
+            queueColumnResizeHandleSync();
         }
     }
 
@@ -1940,13 +1951,14 @@
     }
 
     function getWbsLevelClass(task) {
-        if (!task || task.type !== 'project') return '';
+        if (!task) return '';
+        if (!isParentTask(task) && task.type !== 'project') return '';
         const level = Math.min(getWbsLevel(task), 3);
         return `sched-wbs-l${level}`;
     }
 
     function isSummaryTask(task) {
-        return task && task.type === 'project';
+        return task && (task.type === 'project' || isParentTask(task));
     }
 
     function getColumnDefaultAlign(colName) {
@@ -2662,11 +2674,11 @@
         gantt.attachEvent('onColumnResizeStart', function () {
             const grid = document.querySelector('#gantt_here .gantt_grid_data');
             columnResizeScrollLeft = grid ? grid.scrollLeft : 0;
+            const styleEl = document.getElementById('sched-grid-col-widths');
+            if (styleEl) styleEl.textContent = '';
         });
         gantt.attachEvent('onColumnResize', function (index, column, new_width) {
-            handleColumnResize(index, column, new_width, false, false);
             preserveGridScrollLeft(columnResizeScrollLeft);
-            return false;
         });
         gantt.attachEvent('onColumnResizeEnd', function (index, column, new_width) {
             handleColumnResize(index, column, new_width, true, true);
@@ -3705,37 +3717,48 @@
 
     // ─── Views ───
     function switchScheduleView(view) {
-        ['ganttViewPanel', 'calendarViewPanel', 'lookaheadViewPanel', 'traceViewPanel', 'portfolioViewPanel'].forEach(id => {
-            document.getElementById(id)?.classList.add('hidden');
-        });
-        document.querySelectorAll('.schedule-view-tab').forEach(btn => btn.classList.remove('active-view'));
+        try {
+            ['ganttViewPanel', 'calendarViewPanel', 'lookaheadViewPanel', 'traceViewPanel', 'portfolioViewPanel'].forEach(id => {
+                document.getElementById(id)?.classList.add('hidden');
+            });
+            document.querySelectorAll('.schedule-view-tab').forEach(btn => btn.classList.remove('active-view'));
 
-        if (view === 'gantt') {
-            document.getElementById('ganttViewPanel')?.classList.remove('hidden');
-            document.getElementById('tabGantt')?.classList.add('active-view');
-            resizeGanttHost();
-            gantt.render();
-            applyChartOverlay();
-        } else if (view === 'calendar') {
-            document.getElementById('calendarViewPanel')?.classList.remove('hidden');
-            document.getElementById('tabCalendar')?.classList.add('active-view');
-            renderCalendarView();
-        } else if (view === 'lookahead') {
-            document.getElementById('lookaheadViewPanel')?.classList.remove('hidden');
-            document.getElementById('tabLookahead')?.classList.add('active-view');
-            renderLookAhead();
-        } else if (view === 'trace') {
-            document.getElementById('traceViewPanel')?.classList.remove('hidden');
-            document.getElementById('tabTrace')?.classList.add('active-view');
-            renderTraceTable();
-        } else if (view === 'portfolio') {
-            document.getElementById('portfolioViewPanel')?.classList.remove('hidden');
-            document.getElementById('tabPortfolio')?.classList.add('active-view');
-            renderPortfolio();
+            if (view === 'gantt') {
+                document.getElementById('ganttViewPanel')?.classList.remove('hidden');
+                document.getElementById('tabGantt')?.classList.add('active-view');
+                if (ganttReady) {
+                    resizeGanttHost();
+                    gantt.render();
+                    applyChartOverlay();
+                }
+            } else if (view === 'calendar') {
+                document.getElementById('calendarViewPanel')?.classList.remove('hidden');
+                document.getElementById('tabCalendar')?.classList.add('active-view');
+                renderCalendarView();
+            } else if (view === 'lookahead') {
+                document.getElementById('lookaheadViewPanel')?.classList.remove('hidden');
+                document.getElementById('tabLookahead')?.classList.add('active-view');
+                renderLookAhead();
+            } else if (view === 'trace') {
+                document.getElementById('traceViewPanel')?.classList.remove('hidden');
+                document.getElementById('tabTrace')?.classList.add('active-view');
+                renderTraceTable();
+            } else if (view === 'portfolio') {
+                document.getElementById('portfolioViewPanel')?.classList.remove('hidden');
+                document.getElementById('tabPortfolio')?.classList.add('active-view');
+                renderPortfolio();
+            }
+        } catch (err) {
+            console.error('switchScheduleView', err);
+            showScheduleAlert('Could not open that view. Try refreshing the page.', 'warning');
         }
     }
 
     function renderCalendarView() {
+        if (!ganttReady) {
+            showScheduleAlert('Schedule is still loading…', 'warning');
+            return;
+        }
         if (!window.ScheduleCalendar) return;
         const tasks = [];
         gantt.eachTask(t => tasks.push(Object.assign({}, t)));
@@ -3745,6 +3768,10 @@
     }
 
     function renderLookAhead() {
+        if (!ganttReady) {
+            showScheduleAlert('Schedule is still loading…', 'warning');
+            return;
+        }
         const tasks = [];
         gantt.eachTask(t => tasks.push(Object.assign({}, t)));
         const links = gantt.getLinks().map(l => Object.assign({}, l));
@@ -3796,6 +3823,7 @@
     }
 
     function renderTraceTable() {
+        if (!ganttReady) return;
         const tbody = document.getElementById('traceTableBody');
         if (!tbody) return;
         tbody.innerHTML = '';
@@ -3962,6 +3990,7 @@
     }
 
     async function renderPortfolio() {
+        if (!ganttReady) return;
         const container = document.getElementById('portfolioContent');
         if (!container) return;
         container.innerHTML = '<p class="text-zinc-400 text-sm p-4">Loading portfolio schedules…</p>';
@@ -4230,9 +4259,19 @@
         document.getElementById('printIncludeSummary').checked = ps.include_summary !== false;
         document.getElementById('printIncludeTable').checked = ps.include_activity_table !== false;
         document.getElementById('printIncludeInlineBars').checked = ps.include_inline_bars !== false;
+        document.getElementById('printIncludeLinks').checked = ps.include_predecessor_links !== false;
         document.getElementById('printIncludeChart').checked = !!ps.include_schedule_chart;
         document.getElementById('printIncludeEvm').checked = !!ps.include_evm;
         document.getElementById('printIncludeFooter').checked = !!ps.include_footer;
+        const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+        setVal('printOrientation', ps.orientation || 'landscape');
+        setVal('printFontSize', ps.font_size_pt || 8);
+        setVal('printRowHeight', ps.row_height_px || 16);
+        setVal('printChartWidthPct', ps.chart_width_pct || 58);
+        const wbsColors = document.getElementById('printWbsColors');
+        if (wbsColors) wbsColors.checked = ps.print_wbs_colors !== false;
+        const barLabels = document.getElementById('printBarLabels');
+        if (barLabels) barLabels.checked = ps.print_bar_labels === true;
         updatePrintColumnToggleUI();
         const vis = getPrintVisibleGridColumns(ps);
         const hint = document.getElementById('printVisibleColHint');
@@ -4253,9 +4292,16 @@
             include_summary: document.getElementById('printIncludeSummary')?.checked !== false,
             include_activity_table: document.getElementById('printIncludeTable')?.checked !== false,
             include_inline_bars: document.getElementById('printIncludeInlineBars')?.checked !== false,
+            include_predecessor_links: document.getElementById('printIncludeLinks')?.checked !== false,
             include_schedule_chart: document.getElementById('printIncludeChart')?.checked === true,
             include_evm: document.getElementById('printIncludeEvm')?.checked === true,
             include_footer: document.getElementById('printIncludeFooter')?.checked === true,
+            orientation: document.getElementById('printOrientation')?.value || 'landscape',
+            font_size_pt: parseInt(document.getElementById('printFontSize')?.value, 10) || 8,
+            row_height_px: parseInt(document.getElementById('printRowHeight')?.value, 10) || 16,
+            chart_width_pct: parseInt(document.getElementById('printChartWidthPct')?.value, 10) || 58,
+            print_wbs_colors: document.getElementById('printWbsColors')?.checked !== false,
+            print_bar_labels: document.getElementById('printBarLabels')?.checked === true,
             print_hide_wbs: scheduleSettings.print_settings?.print_hide_wbs === true,
             print_hide_id: scheduleSettings.print_settings?.print_hide_id === true,
             header_footer: hf
@@ -4293,6 +4339,29 @@
         return `<div class="print-bar print-bar-task${crit ? ' print-bar-critical' : ''}" style="left:${left}%;width:${width}%;background:${color}"></div>`;
     }
 
+    function buildPrintLinkPaths(rowMap, rowIdx, startMs, span) {
+        if (!rowIdx) return '';
+        let paths = '';
+        gantt.getLinks().forEach(link => {
+            if (!gantt.isTaskExists(link.source) || !gantt.isTaskExists(link.target)) return;
+            const src = gantt.getTask(link.source);
+            const tgt = gantt.getTask(link.target);
+            const si = rowMap.get(link.source);
+            const ti = rowMap.get(link.target);
+            if (si == null || ti == null) return;
+            const x1 = ((toGanttDate(src.end_date)?.getTime() || startMs) - startMs) / span * 100;
+            const x2 = ((toGanttDate(tgt.start_date)?.getTime() || startMs) - startMs) / span * 100;
+            const y1 = ((si + 0.5) / rowIdx) * 100;
+            const y2 = ((ti + 0.5) / rowIdx) * 100;
+            const midX = Math.min(x1 + 1.5, x2 - 0.5);
+            const crit = gantt.config.highlight_critical_path && (isTaskCritical(src) || isTaskCritical(tgt));
+            const stroke = crit ? '#c00000' : '#444';
+            paths += `<path d="M ${x1} ${y1} H ${midX} V ${y2} H ${x2}" fill="none" stroke="${stroke}" stroke-width="0.4"/>`;
+            paths += `<polygon points="${x2},${y2} ${x2 - 0.7},${y2 - 0.4} ${x2 - 0.7},${y2 + 0.4}" fill="${stroke}"/>`;
+        });
+        return paths;
+    }
+
     function getPrintColumnAlignClass(col) {
         const align = col.align === 'center' ? 'c' : (col.align === 'right' ? 'r' : getColumnDefaultAlign(col.name).h);
         if (align === 'right' || align === 'r') return ' r';
@@ -4324,8 +4393,14 @@
         const exposedW = getExposedGridWidth();
         const timelineW = getTimelineWidth();
         const splitTotal = Math.max(exposedW + timelineW, 1);
-        const textTablePct = showInlineBars ? (exposedW / splitTotal) * 100 : 100;
-        const barTablePct = showInlineBars ? (timelineW / splitTotal) * 100 : 0;
+        const showLinks = ps.include_predecessor_links !== false;
+        const printFontPt = parseInt(ps.font_size_pt, 10) || 8;
+        const printRowH = parseInt(ps.row_height_px, 10) || 16;
+        const chartWidthPct = parseInt(ps.chart_width_pct, 10);
+        const textTablePct = showInlineBars
+            ? (chartWidthPct >= 30 && chartWidthPct <= 80 ? 100 - chartWidthPct : (exposedW / splitTotal) * 100)
+            : 100;
+        const barTablePct = showInlineBars ? (100 - textTablePct) : 0;
         const visibleTextW = visibleCols.reduce((s, v) => s + v.width, 0) || 1;
 
         let critical = 0;
@@ -4469,13 +4544,20 @@
             return html;
         })();
 
-        const tableBlock = showTable && visibleCols.length ? `
-            <table class="schedule-print-table schedule-print-table-compact schedule-print-table-visible-cols">
+        const tableBlock = showTable && visibleCols.length ? (() => {
+            const linkSvg = (showLinks && showInlineBars && rowIdx)
+                ? `<svg class="print-inline-links" viewBox="0 0 100 100" preserveAspectRatio="none">${buildPrintLinkPaths(rowMap, rowIdx, startMs, span)}</svg>`
+                : '';
+            const wbsCls = ps.print_wbs_colors === false ? ' print-no-wbs-colors' : '';
+            return `<div class="print-schedule-wrap${wbsCls}" style="--print-font-size:${printFontPt}pt;--print-row-height:${printRowH}px;--print-chart-width:${barTablePct.toFixed(2)}%" data-print-orientation="${ps.orientation || 'landscape'}">
+                ${linkSvg}
+                <table class="schedule-print-table schedule-print-table-compact schedule-print-table-visible-cols">
                 <thead><tr>
                     ${colHeaders}${evmHeader}${barHeader}
                 </tr>${tsRow}</thead>
                 <tbody>${rows}</tbody>
-            </table>` : '';
+            </table></div>`;
+        })() : '';
 
         const hf = ensureHeaderFooterSettings();
         const footerBlock = (() => {
@@ -4497,6 +4579,7 @@
         if (!sheet) return;
         sheet.innerHTML = headerBlock + tableBlock + chartBlock + footerBlock;
         sheet.dataset.printFooter = hf.include_footer !== false ? '1' : '0';
+        sheet.dataset.printOrientation = ps.orientation || 'landscape';
     }
 
     function printGantt() {
@@ -4506,12 +4589,21 @@
             showScheduleAlert('Nothing to print — add activities first.', 'warning');
             return;
         }
+        const orient = sheet.dataset.printOrientation || 'landscape';
+        let pageStyle = document.getElementById('sched-print-page-style');
+        if (!pageStyle) {
+            pageStyle = document.createElement('style');
+            pageStyle.id = 'sched-print-page-style';
+            document.head.appendChild(pageStyle);
+        }
+        pageStyle.textContent = `@media print { @page { size: ${orient}; margin: 0.35in 0.45in; } }`;
         const deliver = () => {
             document.body.classList.toggle('printing-gantt-show-footer', sheet.dataset.printFooter === '1');
+            document.body.classList.toggle('printing-gantt-portrait', orient === 'portrait');
             document.body.classList.add('printing-gantt');
             setTimeout(() => {
                 window.print();
-                setTimeout(() => document.body.classList.remove('printing-gantt', 'printing-gantt-show-footer'), 600);
+                setTimeout(() => document.body.classList.remove('printing-gantt', 'printing-gantt-show-footer', 'printing-gantt-portrait'), 600);
             }, 150);
         };
         if (typeof CasePMOutput !== 'undefined') {
