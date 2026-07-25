@@ -15,7 +15,7 @@
     { id: 'delete', label: 'Delete', group: 'edit', defaultOnBar: true },
     { id: 'indent', label: 'Indent', group: 'structure', defaultOnBar: true },
     { id: 'outdent', label: 'Outdent', group: 'structure', defaultOnBar: true },
-    { id: 'align', label: 'Cell Alignment & Font', group: 'format', defaultOnBar: true },
+    { id: 'align', label: 'Cell Alignment & Font', group: 'format', defaultOnBar: false },
     { id: 'link-fs', label: 'Link FS', group: 'links', defaultOnBar: true },
     { id: 'link-ss', label: 'Link SS', group: 'links', defaultOnBar: false },
     { id: 'link-ff', label: 'Link FF', group: 'links', defaultOnBar: false },
