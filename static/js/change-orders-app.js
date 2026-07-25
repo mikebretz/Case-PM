@@ -712,7 +712,7 @@
     }
     const typeOptions = state.costTypes.length ? state.costTypes : DEFAULT_COST_TYPES;
     container.innerHTML = state.allocationRows.map((row, idx) => `
-      <tr>
+      <tr data-ce-line-id="${row.change_event_line_item_id || ''}">
         <td class="alloc-num">${idx + 1}</td>
         <td>
           <select class="alloc-cost-code" data-idx="${idx}" onchange="CasePMChangeOrders.onAllocCostCodeChange(${idx})">
@@ -743,7 +743,12 @@
       const costType = document.querySelector(`.alloc-cost-type[data-idx="${idx}"]`)?.value?.trim() || '';
       const desc = document.querySelector(`.alloc-desc[data-idx="${idx}"]`)?.value?.trim() || '';
       const amt = parseFloat(document.querySelector(`.alloc-amt[data-idx="${idx}"]`)?.value) || 0;
-      if (code || costType || desc || amt) rows.push({ cost_code: code, cost_type: costType, amount: amt, description: desc });
+      const rowEl = sel.closest('tr');
+      const ceLineId = rowEl?.dataset?.ceLineId ? parseInt(rowEl.dataset.ceLineId, 10) || null : null;
+      if (code || costType || desc || amt) rows.push({
+        cost_code: code, cost_type: costType, amount: amt, description: desc,
+        change_event_line_item_id: ceLineId,
+      });
     });
     return rows;
   }
@@ -909,6 +914,9 @@
         cost_type: a.cost_type || lookupCostCodeMeta(a.cost_code)?.cost_type || '',
         amount: a.amount || 0,
         description: a.description || '',
+        sov_line_id: a.sov_line_id || '',
+        tax_group: a.tax_group || '',
+        change_event_line_item_id: a.change_event_line_item_id || null,
       }))
       : [{ cost_code: record?.cost_code || '', cost_type: '', amount: record?.amount || record?.estimated_amount || 0, description: '' }];
     onCompanyChange();
@@ -1242,7 +1250,7 @@
       ${(co.approval_history || []).length ? `<div class="mt-4"><div class="text-xs text-zinc-500 uppercase tracking-wide mb-2">Approval history</div>
         <div class="space-y-2">${co.approval_history.map(h => `<div class="text-xs border border-zinc-800 rounded p-2"><div class="text-zinc-400">${esc(h.user_name || '')} · ${esc(h.action)} · ${h.at ? new Date(h.at).toLocaleString() : ''}</div>${h.comment ? `<div class="mt-1">${esc(h.comment)}</div>` : ''}</div>`).join('')}</div></div>` : ''}
       <div class="mt-4">
-        <div class="text-xs text-zinc-500 uppercase tracking-wide mb-2">Cost code allocations</div>
+        <div class="text-xs text-zinc-500 uppercase tracking-wide mb-2">Cost code allocations (SOV)</div>
         <table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left py-1">Code</th><th class="text-left py-1">Type</th><th class="text-left py-1">Description</th><th class="text-right py-1">Amount</th></tr></thead>
         <tbody>${allocs || '<tr><td colspan="4" class="py-3 text-zinc-500">No allocations</td></tr>'}</tbody></table>
       </div>
@@ -1292,7 +1300,7 @@
         ${p.change_order_id ? `<p><span class="text-zinc-500">Promoted to CO</span><br>#${p.change_order_id}</p>` : ''}
       </div>
       <div class="mt-4">
-        <div class="text-xs text-zinc-500 uppercase tracking-wide mb-2">Allocations</div>
+        <div class="text-xs text-zinc-500 uppercase tracking-wide mb-2">Schedule of Values (SOV)</div>
         <table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left py-1">Code</th><th class="text-left py-1">Type</th><th class="text-left py-1">Description</th><th class="text-right py-1">Amount</th></tr></thead>
         <tbody>${allocs || '<tr><td colspan="4" class="py-3 text-zinc-500">No allocations</td></tr>'}</tbody></table>
       </div>

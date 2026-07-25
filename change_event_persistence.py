@@ -225,6 +225,10 @@ def ensure_change_event_schema(engine, db):
     _add_columns(inspector, db, 'pco_allocation', {
         'sov_line_id': 'VARCHAR(64)',
         'tax_group': 'VARCHAR(40)',
+        'change_event_line_item_id': 'INTEGER',
+    })
+    _add_columns(inspector, db, 'change_order_allocation', {
+        'change_event_line_item_id': 'INTEGER',
     })
     _add_columns(inspector, db, 'sage_sync_event', {
         'accounting_status': "VARCHAR(30) DEFAULT 'pending_review'",
@@ -320,7 +324,131 @@ def rfq_to_dict(rfq, allocations=None):
     }
 
 
-def cor_to_dict(cor, allocations=None):
+def _sov_allocation_dict(alloc, *, pco_id=None, pco_number=None):
+    """Serialize a PCO/CO allocation row for API (Schedule of Values line)."""
+    if isinstance(alloc, dict):
+        row = {
+            'cost_code': alloc.get('cost_code'),
+            'cost_type': alloc.get('cost_type') or '',
+            'amount': float(alloc.get('amount') or 0),
+            'description': alloc.get('description', '') or '',
+            'sov_line_id': alloc.get('sov_line_id'),
+            'tax_group': alloc.get('tax_group'),
+            'change_event_line_item_id': alloc.get('change_event_line_item_id'),
+        }
+    else:
+        row = {
+            'cost_code': alloc.cost_code,
+            'cost_type': getattr(alloc, 'cost_type', None) or '',
+            'amount': float(alloc.amount or 0),
+            'description': getattr(alloc, 'description', '') or '',
+            'sov_line_id': getattr(alloc, 'sov_line_id', None),
+            'tax_group': getattr(alloc, 'tax_group', None),
+            'change_event_line_item_id': getattr(alloc, 'change_event_line_item_id', None),
+        }
+    if pco_id is not None:
+        row['pco_id'] = pco_id
+    if pco_number is not None:
+        row['pco_number'] = pco_number
+    return row
+
+
+def get_cor_linked_pcos(cor, PotentialChangeOrder):
+    """PCOs packaged in this COR (Procore: COR groups PCOs; SOV lives on PCOs)."""
+    if not cor or not getattr(cor, 'id', None) or PotentialChangeOrder is None:
+        return []
+    rows = PotentialChangeOrder.query.filter_by(linked_cor_id=cor.id).order_by(
+        PotentialChangeOrder.created_at.asc()
+    ).all()
+    if not rows and getattr(cor, 'linked_pco_id', None):
+        legacy = PotentialChangeOrder.query.get(cor.linked_pco_id)
+        if legacy and legacy not in rows:
+            rows = [legacy]
+    return rows
+
+
+def cor_rollup_allocations(pcos, PCOAllocation):
+    """Read-only SOV rollup from linked PCOs for COR display."""
+    rollup = []
+    for pco in pcos or []:
+        allocs = PCOAllocation.query.filter_by(pco_id=pco.id).all()
+        for alloc in allocs:
+            rollup.append(_sov_allocation_dict(
+                alloc, pco_id=pco.id, pco_number=getattr(pco, 'number', None),
+            ))
+    return rollup
+
+
+def cor_amount_from_pcos(pcos):
+    if not pcos:
+        return 0.0
+    return round(sum(float(getattr(p, 'estimated_amount', 0) or 0) for p in pcos), 2)
+
+
+def link_pcos_to_cor(cor, pco_ids, PotentialChangeOrder, PCOAllocation, db):
+    """Attach owner PCOs to a COR package. COR has no editable SOV — amounts roll up from PCOs."""
+    ids = [int(i) for i in (pco_ids or [])]
+    current = PotentialChangeOrder.query.filter_by(linked_cor_id=cor.id).all()
+    keep = set(ids)
+    for pco in current:
+        if pco.id not in keep:
+            pco.linked_cor_id = None
+    for pid in ids:
+        pco = PotentialChangeOrder.query.get(pid)
+        if not pco:
+            raise ValueError(f'PCO {pid} not found.')
+        if int(pco.project_id) != int(cor.project_id):
+            raise ValueError(f'PCO {pco.number} belongs to a different project.')
+        if (getattr(pco, 'contract_type', None) or 'Owner') == 'Subcontract':
+            raise ValueError(f'{pco.number} is a commitment CPCO and cannot be added to an owner COR.')
+        if pco.linked_cor_id and int(pco.linked_cor_id) != int(cor.id):
+            raise ValueError(f'PCO {pco.number} is already linked to another COR.')
+        pco.linked_cor_id = cor.id
+    linked = get_cor_linked_pcos(cor, PotentialChangeOrder)
+    cor.amount = cor_amount_from_pcos(linked)
+    cor.linked_pco_id = linked[0].id if len(linked) == 1 else (cor.linked_pco_id if len(linked) > 1 else None)
+    return linked
+
+
+def finalize_cor_promotion(cor, allocations, PotentialChangeOrder, PCOAllocation, db, generate_number_fn, user_id):
+    """On COR approval: linked PCOs keep their SOV; legacy CORs without PCOs still spawn one PCO."""
+    linked = get_cor_linked_pcos(cor, PotentialChangeOrder)
+    if linked:
+        cor.status = 'Promoted'
+        if len(linked) == 1:
+            cor.linked_pco_id = linked[0].id
+        for pco in linked:
+            if pco.status in ('Open', 'Draft', 'Pricing'):
+                pco.status = 'Pending Review'
+                pco.ball_in_court_role = 'Project Manager'
+        return None
+    return promote_cor_to_pco(cor, allocations, PotentialChangeOrder, PCOAllocation, db, generate_number_fn, user_id)
+
+
+def cor_to_dict(cor, allocations=None, PotentialChangeOrder=None, PCOAllocation=None):
+    linked_pcos = []
+    rollup = []
+    if PotentialChangeOrder is not None:
+        linked_pcos = get_cor_linked_pcos(cor, PotentialChangeOrder)
+        if PCOAllocation is not None and linked_pcos:
+            rollup = cor_rollup_allocations(linked_pcos, PCOAllocation)
+
+    legacy_alloc_rows = [{
+        'cost_code': a.cost_code,
+        'cost_type': getattr(a, 'cost_type', None) or '',
+        'amount': float(a.amount or 0),
+        'description': getattr(a, 'description', '') or '',
+        'sov_line_id': getattr(a, 'sov_line_id', None),
+        'tax_group': getattr(a, 'tax_group', None),
+    } for a in (allocations or [])]
+
+    if linked_pcos:
+        amount = cor_amount_from_pcos(linked_pcos)
+    elif legacy_alloc_rows:
+        amount = round(sum(r['amount'] for r in legacy_alloc_rows), 2)
+    else:
+        amount = float(cor.amount or 0)
+
     return {
         'id': cor.id,
         'project_id': cor.project_id,
@@ -328,7 +456,7 @@ def cor_to_dict(cor, allocations=None):
         'number': cor.number,
         'title': cor.title,
         'description': cor.description,
-        'amount': cor.amount or 0,
+        'amount': amount,
         'status': cor.status,
         'reason': cor.reason,
         'priority': cor.priority,
@@ -338,14 +466,16 @@ def cor_to_dict(cor, allocations=None):
         'drawing_revision': getattr(cor, 'drawing_revision', None),
         'ball_in_court_role': getattr(cor, 'ball_in_court_role', None),
         'notes': getattr(cor, 'notes', None),
-        'allocations': [{
-            'cost_code': a.cost_code,
-            'cost_type': getattr(a, 'cost_type', None) or '',
-            'amount': float(a.amount or 0),
-            'description': getattr(a, 'description', '') or '',
-            'sov_line_id': getattr(a, 'sov_line_id', None),
-            'tax_group': getattr(a, 'tax_group', None),
-        } for a in (allocations or [])],
+        'has_editable_sov': False,
+        'linked_pcos': [{
+            'id': p.id,
+            'number': p.number,
+            'title': p.title,
+            'estimated_amount': float(p.estimated_amount or 0),
+            'status': p.status,
+        } for p in linked_pcos],
+        'rollup_allocations': rollup,
+        'allocations': legacy_alloc_rows if not linked_pcos else [],
         'created_at': cor.created_at.isoformat() if cor.created_at else None,
     }
 
@@ -436,6 +566,8 @@ def save_generic_allocations(AllocationModel, parent_field, parent_id, allocatio
             row.sov_line_id = item.get('sov_line_id')
         if hasattr(row, 'tax_group'):
             row.tax_group = item.get('tax_group')
+        if hasattr(row, 'change_event_line_item_id') and item.get('change_event_line_item_id'):
+            row.change_event_line_item_id = int(item['change_event_line_item_id'])
         if extra:
             extra(row, item)
         db.session.add(row)
@@ -526,7 +658,7 @@ def change_event_workflow_action(ce, action, user):
     raise ValueError('action must be submit, approve, or reject')
 
 
-def cor_workflow_action(cor, action, user, body=None, ChangeOrderRequest=None, CORAllocation=None):
+def cor_workflow_action(cor, action, user, body=None, ChangeOrderRequest=None, CORAllocation=None, PotentialChangeOrder=None):
     from co_persistence import user_can_act_on_ball_in_court, OWNER_CO_APPROVAL_THRESHOLD
     from financial_security import (
         authoritative_cor_amount,
@@ -560,7 +692,9 @@ def cor_workflow_action(cor, action, user, body=None, ChangeOrderRequest=None, C
         for step in COR_APPROVAL_CHAIN:
             if step['from_status'] == cor.status and step['role'] == role:
                 next_status = step['next_status']
-                base = authoritative_cor_amount(cor, CORAllocation=CORAllocation)
+                base = authoritative_cor_amount(
+                    cor, CORAllocation=CORAllocation, PotentialChangeOrder=PotentialChangeOrder,
+                )
                 cumulative = cumulative_approved_cor_amount(
                     cor.project_id, ChangeOrderRequest, exclude_cor_id=getattr(cor, 'id', None),
                 ) if ChangeOrderRequest else 0.0
@@ -648,6 +782,7 @@ def promote_cor_to_pco(cor, allocations, PotentialChangeOrder, PCOAllocation, db
             description=getattr(a, 'description', '') or '',
             sov_line_id=getattr(a, 'sov_line_id', None),
             tax_group=getattr(a, 'tax_group', None),
+            change_event_line_item_id=getattr(a, 'change_event_line_item_id', None),
         ))
     cor.linked_pco_id = pco.id
     cor.status = 'Promoted'
@@ -690,6 +825,7 @@ def promote_cpco_to_sco(pco, allocations, ChangeOrder, ChangeOrderAllocation, db
             description=getattr(a, 'description', '') or '',
             sov_line_id=getattr(a, 'sov_line_id', None),
             tax_group=getattr(a, 'tax_group', None),
+            change_event_line_item_id=getattr(a, 'change_event_line_item_id', None),
         ))
     pco.change_order_id = sco.id
     pco.status = 'Promoted'
@@ -1034,6 +1170,7 @@ def _line_alloc_payload(line):
         'description': line.description or '',
         'sov_line_id': line.sov_line_id,
         'tax_group': line.tax_group,
+        'change_event_line_item_id': line.id,
     }
 
 
@@ -1159,6 +1296,7 @@ def bulk_create_commitment_cos_from_lines(
                 description=item.get('description') or '',
                 sov_line_id=item.get('sov_line_id'),
                 tax_group=item.get('tax_group'),
+                change_event_line_item_id=item.get('change_event_line_item_id'),
             ))
         for row in group_rows:
             row.linked_sco_id = sco.id
@@ -1229,6 +1367,7 @@ def bulk_create_cpcos_from_lines(
                 description=item.get('description') or '',
                 sov_line_id=item.get('sov_line_id'),
                 tax_group=item.get('tax_group'),
+                change_event_line_item_id=item.get('change_event_line_item_id'),
             ))
         for row in group_rows:
             row.linked_cpco_id = pco.id

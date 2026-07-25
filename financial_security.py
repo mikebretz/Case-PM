@@ -185,7 +185,12 @@ def authoritative_commitment_amount(commitment, CommitmentAllocation=None):
     return abs(float(commitment.current_amount or commitment.original_amount or 0))
 
 
-def authoritative_cor_amount(cor, ChangeEventAllocation=None, CORAllocation=None):
+def authoritative_cor_amount(cor, ChangeEventAllocation=None, CORAllocation=None, PotentialChangeOrder=None, PCOAllocation=None):
+    from change_event_persistence import cor_amount_from_pcos, get_cor_linked_pcos
+    if PotentialChangeOrder is not None:
+        linked = get_cor_linked_pcos(cor, PotentialChangeOrder)
+        if linked:
+            return abs(cor_amount_from_pcos(linked))
     alloc_model = CORAllocation or ChangeEventAllocation
     if alloc_model is not None and getattr(cor, 'id', None):
         rows = alloc_model.query.filter_by(cor_id=cor.id).all()

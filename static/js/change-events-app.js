@@ -14,7 +14,7 @@
     erpEvents: [],
     billingVariances: [],
     subSovLines: [],
-    commitments: [],
+    ownerPcos: [],
     ceLineSelection: new Set(),
     ceVendorFilter: '',
     activeChangeEventId: null,
@@ -69,6 +69,53 @@
     return true;
   }
 
+  function formatCorRollupHtml(c) {
+    const rollup = c?.rollup_allocations || [];
+    const linked = c?.linked_pcos || [];
+    if (!linked.length && !rollup.length) {
+      return '<div class="text-xs text-zinc-500 mt-2">No owner PCOs packaged. Line-item detail belongs on PCOs, not the COR.</div>';
+    }
+    const pcoList = linked.map(p => `<span class="inline-block mr-2 text-amber-400 font-mono text-xs">${esc(p.number)}</span>`).join('') || '—';
+    const rows = rollup.map(a => `
+      <tr class="border-b border-zinc-800">
+        <td class="py-1 font-mono text-[10px] text-amber-400">${esc(a.pco_number || '')}</td>
+        <td class="py-1 font-mono text-xs">${esc(a.cost_code)}</td>
+        <td class="py-1 text-xs text-zinc-400">${esc(a.cost_type || '')}</td>
+        <td class="py-1 text-xs">${esc(a.description || '')}</td>
+        <td class="py-1 text-right font-mono">${fmt(a.amount)}</td>
+      </tr>`).join('');
+    return `
+      <div class="mt-3"><div class="text-[10px] uppercase tracking-wide text-zinc-500 mb-1">Packaged PCOs</div><div>${pcoList}</div></div>
+      <div class="mt-3"><div class="text-[10px] uppercase tracking-wide text-zinc-500 mb-1">SOV rollup (from PCOs)</div>
+        <table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left">PCO</th><th class="text-left">Code</th><th class="text-left">Type</th><th class="text-left">Description</th><th class="text-right">Amount</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" class="py-2 text-zinc-500">No SOV lines on linked PCOs yet.</td></tr>'}</tbody></table>
+      </div>`;
+  }
+
+  async function loadOwnerPcos() {
+    const id = pid();
+    if (!id) return;
+    const json = await api(`/api/pcos?project_id=${id}&scope=owner`);
+    ext.ownerPcos = (json.pcos || []).filter(p => !p.linked_cor_id && p.status !== 'Promoted');
+  }
+
+  function renderCorPcoPicker(selectedIds) {
+    const box = document.getElementById('ceModalCorPcos');
+    if (!box) return;
+    const selected = new Set((selectedIds || []).map(Number));
+    if (!ext.ownerPcos?.length) {
+      box.innerHTML = '<div class="text-xs text-zinc-500">No draft owner PCOs available. Create PCOs with SOV lines first, then package them in a COR.</div>';
+      return;
+    }
+    box.innerHTML = ext.ownerPcos.map(p => `
+      <label class="flex items-center gap-2 py-1 cursor-pointer hover:bg-zinc-700/40 rounded px-1">
+        <input type="checkbox" value="${p.id}" ${selected.has(p.id) ? 'checked' : ''}>
+        <span class="font-mono text-amber-400 text-xs">${esc(p.number)}</span>
+        <span class="flex-1 truncate">${esc(p.title || '')}</span>
+        <span class="font-mono text-xs text-zinc-400">${fmt(p.estimated_amount)}</span>
+      </label>`).join('');
+  }
+
   function openCorReviewModal(id) {
     if (CO.closeDrawer) CO.closeDrawer();
     const c = ext.cors.find(x => x.id === id);
@@ -77,6 +124,7 @@
       return;
     }
     const promotePco = c.status === 'Pending Accounting';
+    const hasLinkedPcos = (c.linked_pcos || []).length > 0;
     global.CasePMApprovalResponder.openLocal({
       module: 'COR',
       entityId: id,
@@ -84,13 +132,14 @@
       status: c.status,
       ball: c.ball_in_court_role,
       summaryHtml: `
-        <div class="flex justify-between text-sm"><span class="text-zinc-500">Amount</span><span class="font-mono text-emerald-400">${fmt(c.amount)}</span></div>
+        <div class="flex justify-between text-sm"><span class="text-zinc-500">Package total</span><span class="font-mono text-emerald-400">${fmt(c.amount)}</span></div>
         <div class="flex justify-between text-sm"><span class="text-zinc-500">Drawing</span><span>${esc(c.drawing_revision || '—')}</span></div>
         <div class="flex justify-between text-sm"><span class="text-zinc-500">Schedule impact</span><span>${c.schedule_impact_days || 0} days</span></div>
         <div class="flex justify-between text-sm"><span class="text-zinc-500">Status</span><span>${statusBadge(c.status)}</span></div>
-        ${c.description ? `<div class="mt-3"><div class="text-[10px] uppercase tracking-wide text-zinc-500 mb-1">Description</div><p class="text-sm whitespace-pre-wrap">${esc(c.description)}</p></div>` : ''}`,
+        ${c.description ? `<div class="mt-3"><div class="text-[10px] uppercase tracking-wide text-zinc-500 mb-1">Description</div><p class="text-sm whitespace-pre-wrap">${esc(c.description)}</p></div>` : ''}
+        ${formatCorRollupHtml(c)}`,
       actions: [
-        { action: 'approve', label: promotePco ? 'Approve → PCO' : 'Approve Step', style: 'primary' },
+        { action: 'approve', label: promotePco ? (hasLinkedPcos ? 'Approve package' : 'Approve → PCO') : 'Approve Step', style: 'primary' },
         { action: 'reject', label: 'Reject', requires_comment: true, style: 'danger' },
       ],
       onSubmit: async (action, comment) => {
@@ -474,13 +523,14 @@
     const tbody = document.getElementById('ceCorsTableBody');
     if (!tbody) return;
     if (!ext.cors.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="px-6 py-10 text-center text-zinc-500">No CORs yet.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="px-6 py-10 text-center text-zinc-500">No CORs yet.</td></tr>';
       return;
     }
     tbody.innerHTML = ext.cors.map(c => `
       <tr class="border-b border-zinc-800 hover:bg-zinc-800/50">
         <td class="px-4 py-3 font-mono text-indigo-400">${esc(c.number)}</td>
         <td class="px-4 py-3">${esc(c.title)}</td>
+        <td class="px-4 py-3 text-xs">${(c.linked_pcos || []).length ? `${(c.linked_pcos || []).length} PCO(s)` : '—'}</td>
         <td class="px-4 py-3 text-right font-mono">${fmt(c.amount)}</td>
         <td class="px-4 py-3 text-center">${statusBadge(c.status)}</td>
         <td class="px-4 py-3 text-xs">${esc(c.drawing_revision || '—')}</td>
@@ -542,6 +592,7 @@
   }
 
   async function newCor() {
+    await loadOwnerPcos();
     openCeModal('cor');
   }
 
@@ -559,12 +610,18 @@
     document.getElementById('ceModalContingency').value = record?.contingency_release_amount ?? 0;
     document.getElementById('ceModalDescription').value = record?.description || '';
     document.getElementById('ceRfqFields')?.classList.toggle('hidden', mode !== 'rfq');
+    document.getElementById('ceCorFields')?.classList.toggle('hidden', mode !== 'cor');
     document.getElementById('ceModalContingencyRow')?.classList.toggle('hidden', mode !== 'event');
     document.getElementById('ceModalDrawingRow')?.classList.toggle('hidden', mode === 'rfq');
+    const romRow = document.getElementById('ceModalRom')?.closest('div');
+    if (romRow) romRow.classList.toggle('hidden', mode === 'cor');
     if (mode === 'rfq') {
       document.getElementById('ceModalRfqCompany').value = record?.company_name || '';
       document.getElementById('ceModalRfqCommitment').value = record?.linked_commitment_ref || '';
       document.getElementById('ceModalRfqCostCode').value = record?.allocations?.[0]?.cost_code || '';
+    }
+    if (mode === 'cor') {
+      renderCorPcoPicker((record?.linked_pcos || []).map(p => p.id));
     }
     if (global.CasePMChangeOrders?.openDialog) global.CasePMChangeOrders.openDialog(modal);
     else modal.showModal();
@@ -599,7 +656,12 @@
       await api('/api/rfqs', { method: 'POST', body: JSON.stringify({ project_id, title, company_name: company, linked_commitment_ref: commitment, allocations: costCode ? [{ cost_code: costCode, cost_type: 'Subcontract', amount: rom }] : [] }) });
       await loadRfqs();
     } else if (mode === 'cor') {
-      await api('/api/cors', { method: 'POST', body: JSON.stringify({ project_id, title, amount: rom, drawing_revision: drawing, description, schedule_impact_days: schedule, allocations: [{ cost_code: '01-0000', cost_type: 'Other', amount: rom }] }) });
+      const pcoIds = [...document.querySelectorAll('#ceModalCorPcos input[type=checkbox]:checked')].map(cb => parseInt(cb.value, 10)).filter(Boolean);
+      if (!pcoIds.length) {
+        alert('Select at least one owner PCO to package in this COR. SOV line items live on the PCOs.');
+        return;
+      }
+      await api('/api/cors', { method: 'POST', body: JSON.stringify({ project_id, title, drawing_revision: drawing, description, schedule_impact_days: schedule, pco_ids: pcoIds }) });
       await loadCors();
     }
     document.getElementById('ceModal').close();
