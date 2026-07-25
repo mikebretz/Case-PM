@@ -34,8 +34,39 @@ gantt.config.grid_elastic_columns = false;
 gantt.config.show_links = true;
 gantt.config.scroll_size = 16;
 gantt.getTaskHeight = () => 24;
+const WBS_GUTTER_COLORS = ['#0070c0', '#00b050', '#ffff00', '#ffc000'];
+function fixtureWbsLevel(task) {
+  const level = Number(task.$level);
+  return Number.isFinite(level) ? Math.max(0, level) : 0;
+}
+function fixtureIsSummary(task) {
+  return task && (task.type === 'project' || gantt.hasChild(task.id));
+}
+function fixtureShowsGutter(task, gutterLevel) {
+  if (gutterLevel === 0) return true;
+  const maxLevel = WBS_GUTTER_COLORS.length - 1;
+  const levelFor = t => Math.min(fixtureWbsLevel(t), maxLevel);
+  if (fixtureIsSummary(task) && levelFor(task) === gutterLevel) return true;
+  let pid = task.parent;
+  while (pid != null && pid !== 0 && pid !== '0') {
+    if (!gantt.isTaskExists(pid)) break;
+    const p = gantt.getTask(pid);
+    if (fixtureIsSummary(p) && levelFor(p) === gutterLevel) return true;
+    pid = p.parent;
+  }
+  return false;
+}
+function fixtureHierarchyTemplate(task) {
+  let html = '<div class="sched-wbs-indents">';
+  for (let i = 0; i < WBS_GUTTER_COLORS.length; i++) {
+    html += fixtureShowsGutter(task, i)
+      ? `<span class="sched-wbs-slot sched-wbs-slot-active" style="background-color:${WBS_GUTTER_COLORS[i]}"></span>`
+      : '<span class="sched-wbs-slot"></span>';
+  }
+  return html + '</div>';
+}
 gantt.config.columns = [
-  { name: 'hierarchy', label: '', width: 56, resize: false, template: () => '' },
+  { name: 'hierarchy', label: '', width: 56, resize: false, template: fixtureHierarchyTemplate },
   { name: 'activity_id', label: 'Activity ID', width: 72, resize: true },
   { name: 'text', label: 'Activity Name', width: 240, resize: true },
   { name: 'duration', label: 'Original Duration', width: 64, resize: true },

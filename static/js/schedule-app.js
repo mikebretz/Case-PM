@@ -670,7 +670,8 @@
             height: '100%',
             'z-index': '30',
             flex: 'none',
-            overflow: 'hidden',
+            'overflow-x': 'auto',
+            'overflow-y': 'hidden',
             background: 'var(--sched-bg, #1e1e1e)',
             'box-sizing': 'border-box',
             'border-right': '3px solid #1a6dbd',
@@ -875,7 +876,7 @@
 
             syncLayoutTimelineWidth();
 
-            const needsSetSizes = !options.skipSetSizes && sizeKey !== lastOverlayKey;
+            const needsSetSizes = !options.skipSetSizes && sizeKey !== lastOverlayKey && !options.light;
             if (needsSetSizes && typeof gantt.setSizes === 'function') {
                 lastOverlayKey = sizeKey;
                 lastGridWidthKey = gridKey;
@@ -1981,16 +1982,20 @@
     function bindGridHorizontalScrollSync() {
         const gridData = document.querySelector('#gantt_here .gantt_grid_data');
         const scale = document.querySelector('#gantt_here .gantt_grid_scale');
+        const gridPane = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1)');
+        const horScroll = document.querySelector('#gantt_here [data-cell-id="gridScroll"] .gantt_hor_scroll')
+            || document.querySelector('#gantt_here [data-cell-id="gridScroll"]');
         if (!gridData || !scale || gridData.dataset.hscrollBound) return;
         gridData.dataset.hscrollBound = '1';
-        const syncFromGrid = () => {
-            if (scale.scrollLeft !== gridData.scrollLeft) scale.scrollLeft = gridData.scrollLeft;
+        const targets = [gridData, scale, horScroll, gridPane].filter(Boolean);
+        const syncScroll = (source, left) => {
+            targets.forEach(el => {
+                if (el !== source && el.scrollLeft !== left) el.scrollLeft = left;
+            });
         };
-        const syncFromScale = () => {
-            if (gridData.scrollLeft !== scale.scrollLeft) gridData.scrollLeft = scale.scrollLeft;
-        };
-        gridData.addEventListener('scroll', syncFromGrid, { passive: true });
-        scale.addEventListener('scroll', syncFromScale, { passive: true });
+        targets.forEach(el => {
+            el.addEventListener('scroll', () => syncScroll(el, el.scrollLeft), { passive: true });
+        });
     }
 
     const colReorderDrag = { active: false, fromIdx: -1, toIdx: -1, startX: 0, startY: 0, pending: null };
@@ -2160,7 +2165,7 @@
             measureCell(cells[colIndex]);
         });
 
-        return Math.min(520, Math.max(col.min_width || 50, Math.ceil(maxW)));
+        return Math.max(col.min_width || 50, Math.ceil(maxW));
     }
 
     function autoFitGridColumn(colIndex) {
@@ -2372,7 +2377,7 @@
             const col = gantt.config.columns[colResizeDrag.colIndex];
             if (!col) return;
             const dx = e.clientX - colResizeDrag.startX;
-            const newW = Math.max(col.min_width || 40, Math.min(640, colResizeDrag.startW + dx));
+            const newW = Math.max(col.min_width || 40, colResizeDrag.startW + dx);
             col.width = newW;
             columnWidths[col.name] = newW;
             gantt.config.grid_width = getColumnsTotalWidth();
@@ -2404,8 +2409,8 @@
             gantt.config.grid_width = getColumnsTotalWidth();
             gantt.config.keep_grid_width = true;
             applyColumnWidthsToDom();
-            if (typeof gantt.render === 'function') gantt.render();
             ensureColumnResizeGrips();
+            ensureAddColumnHeader();
             syncWbsGutterSpans();
             queueSave();
         });
@@ -2432,7 +2437,7 @@
     }
 
     function handleColumnResize(index, column, new_width, persist, reflow) {
-        const w = Math.max(column?.min_width || 50, Math.min(520, parseInt(new_width, 10) || 80));
+        const w = Math.max(column?.min_width || 50, parseInt(new_width, 10) || 80);
         if (column && column.name) {
             columnWidths[column.name] = w;
             column.width = w;
@@ -2443,8 +2448,9 @@
         if (reflow) {
             lastGridWidthKey = '';
             applyColumnWidthsToDom();
-            queueGanttLayoutSync();
+            if (isOverlayMode()) applyOverlayDomLayout();
             applyCellAlignToDom();
+            ensureColumnResizeGrips();
             if (persist) queueSave();
         }
     }
@@ -2780,22 +2786,39 @@
         return segments;
     }
 
-    function hierarchyIndentTemplate() {
+    function taskShowsGutterLevel(task, gutterLevel) {
+        if (!task || !ganttReady) return false;
+        if (gutterLevel === 0) return true;
+        const maxLevel = WBS_GUTTER_COLORS.length - 1;
+        const levelFor = t => Math.min(getWbsLevel(t), maxLevel);
+        if (isSummaryTask(task) && levelFor(task) === gutterLevel) return true;
+        let pid = task.parent;
+        while (pid != null && pid !== 0 && pid !== '0') {
+            if (!gantt.isTaskExists(pid)) break;
+            const p = gantt.getTask(pid);
+            if (isSummaryTask(p) && levelFor(p) === gutterLevel) return true;
+            pid = p.parent;
+        }
+        return false;
+    }
+
+    function hierarchyIndentTemplate(task) {
         let html = '<div class="sched-wbs-indents">';
         for (let i = 0; i < WBS_GUTTER_COLORS.length; i++) {
-            html += '<span class="sched-wbs-slot"></span>';
+            if (taskShowsGutterLevel(task, i)) {
+                html += `<span class="sched-wbs-slot sched-wbs-slot-active" style="background-color:${WBS_GUTTER_COLORS[i]}"></span>`;
+            } else {
+                html += '<span class="sched-wbs-slot"></span>';
+            }
         }
         html += '</div>';
         return html;
     }
 
     function buildPrintHierarchyGutters(task) {
-        const items = lastWbsBandSegments.length ? null : getVisibleTaskItems();
-        const segments = lastWbsBandSegments.length ? lastWbsBandSegments : computeWbsBandSegments(items || []);
-        const idx = (items || getVisibleTaskItems()).findIndex(it => String(it.id) === String(task.id));
         let html = '<div class="print-wbs-indents">';
         for (let i = 0; i < WBS_GUTTER_COLORS.length; i++) {
-            const active = idx >= 0 && segments.some(seg => seg.level === i && idx >= seg.startIdx && idx <= seg.endIdx);
+            const active = taskShowsGutterLevel(task, i);
             const color = WBS_GUTTER_COLORS[i];
             html += active
                 ? `<span class="print-wbs-gutter print-wbs-gutter-active" style="background:${color}"></span>`
@@ -2807,37 +2830,15 @@
 
     function syncWbsGutterSpans() {
         if (!ganttReady) return;
-        const gridData = document.querySelector('#gantt_here .gantt_grid_data');
-        if (!gridData) return;
-        const layer = ensureWbsGutterLayer(gridData);
-        if (!layer) return;
-        layer.querySelectorAll('.sched-wbs-band').forEach(el => el.remove());
-
         const items = getVisibleTaskItems();
-        if (!items.length) return;
-        const segments = computeWbsBandSegments(items);
-        lastWbsBandSegments = segments;
-        const scrollTop = gridData.scrollTop || 0;
+        if (items.length) lastWbsBandSegments = computeWbsBandSegments(items);
+        document.querySelectorAll('#gantt_here .sched-wbs-gutter-layer .sched-wbs-band').forEach(el => el.remove());
+    }
 
-        segments.forEach(seg => {
-            const startRow = items[seg.startIdx].row;
-            const endRow = items[seg.endIdx].row;
-            const top = startRow.offsetTop - scrollTop;
-            let endBottom = endRow.offsetTop + endRow.offsetHeight;
-            if (seg.level > 0 && seg.endIdx + 1 < items.length) {
-                endBottom = items[seg.endIdx + 1].row.offsetTop;
-            }
-            const height = endBottom - startRow.offsetTop;
-            const band = document.createElement('div');
-            band.className = 'sched-wbs-band';
-            band.dataset.wbsLevel = String(seg.level);
-            band.style.top = top + 'px';
-            band.style.left = (seg.level * WBS_GUTTER_WIDTH) + 'px';
-            band.style.width = WBS_GUTTER_WIDTH + 'px';
-            band.style.height = Math.max(height, startRow.offsetHeight) + 'px';
-            band.style.backgroundColor = seg.color;
-            layer.appendChild(band);
-        });
+    function refreshWbsGutterDisplay() {
+        if (!ganttReady) return;
+        syncWbsGutterSpans();
+        gantt.eachTask(id => gantt.refreshTask(id));
     }
 
     function bindWbsGutterScrollSync() {
@@ -3433,6 +3434,14 @@
                 ${preds ? 'Predecessors: ' + preds : ''}`;
         };
 
+        gantt.attachEvent('onAfterTaskMove', () => {
+            refreshWbsCodes();
+            refreshWbsGutterDisplay();
+            pushUndoState();
+            queueSave();
+        });
+        gantt.attachEvent('onTaskOpened', () => { refreshWbsGutterDisplay(); });
+        gantt.attachEvent('onTaskClosed', () => { refreshWbsGutterDisplay(); });
         gantt.attachEvent('onTaskClick', function (id, e) {
             const target = e.target || e.srcElement;
             if (!target.closest?.('.sched-floating-cell-editor')) {
@@ -3450,19 +3459,17 @@
                 const pos = locateGridCell(target);
                 if (pos) {
                     gridSelection = { type: 'cell', taskId: pos.id, colName: pos.column };
-                    applyCellFocusHighlight();
-                    applyRowHighlight();
+                    highlightGridSelection();
                     if (gantt.getSelectedId()) gantt.unselectTask(gantt.getSelectedId());
                 } else {
                     gridSelection = { type: 'row', taskId: id };
-                    applyCellFocusHighlight();
-                    applyRowHighlight();
+                    highlightGridSelection();
                 }
                 return false;
             }
             gantt.selectTask(id);
             gridSelection = { type: 'row', taskId: id };
-            applyRowHighlight();
+            highlightGridSelection();
             return true;
         });
 
@@ -4289,6 +4296,7 @@
         gantt.selectTask(id);
         refreshWbsCodes();
         gantt.render();
+        refreshWbsGutterDisplay();
         queueSave();
     }
 
@@ -4320,6 +4328,7 @@
         gantt.selectTask(id);
         refreshWbsCodes();
         gantt.render();
+        refreshWbsGutterDisplay();
         queueSave();
     }
 
