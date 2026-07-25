@@ -511,16 +511,52 @@
         return { columns: metrics, total: left };
     }
 
-    function syncGridContentLayout() {
+    function enforceGridColumnExtents() {
         if (!ganttReady) return;
-        const total = getColumnsTotalWidth();
+        const { columns: metrics, total } = getColumnLayoutMetrics();
         gantt.config.grid_width = total;
         gantt.config.keep_grid_width = true;
         const host = document.getElementById('gantt_here');
         if (host) host.style.setProperty('--sched-grid-min-width', total + 'px');
+
+        const gridHead = document.querySelector('#gantt_here .gantt_grid_scale .gantt_grid_head');
+        if (gridHead) {
+            gridHead.style.width = total + 'px';
+            gridHead.style.minWidth = total + 'px';
+            gridHead.style.maxWidth = 'none';
+        }
+
+        document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell').forEach((cell, i) => {
+            const m = metrics[i];
+            if (!m) return;
+            cell.style.width = m.width + 'px';
+            cell.style.minWidth = m.width + 'px';
+            cell.style.maxWidth = m.width + 'px';
+            cell.style.left = m.left + 'px';
+        });
+
+        document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
+            row.style.width = total + 'px';
+            row.style.minWidth = total + 'px';
+            row.style.maxWidth = 'none';
+            row.querySelectorAll(':scope > .gantt_cell').forEach((cell, i) => {
+                const m = metrics[i];
+                if (!m) return;
+                cell.style.width = m.width + 'px';
+                cell.style.minWidth = m.width + 'px';
+                cell.style.maxWidth = m.width + 'px';
+                cell.style.left = m.left + 'px';
+                cell.classList.toggle('sched-add-col-cell', isAddColumnCol(m.col));
+            });
+        });
+
         syncGridScrollContentWidth(total);
         layoutColumnResizeGripsFromDom();
         applyColumnHighlight();
+    }
+
+    function syncGridContentLayout() {
+        enforceGridColumnExtents();
     }
 
     /** @deprecated use syncGridContentLayout — kept as alias for callers */
@@ -565,8 +601,10 @@
             scrollHost.style.width = '100%';
             scrollHost.style.overflowX = 'auto';
             scrollHost.style.display = '';
+            scrollHost.style.visibility = 'visible';
             const horScroll = scrollHost.querySelector('.gantt_hor_scroll') || scrollHost;
             horScroll.style.overflowX = 'auto';
+            horScroll.style.width = '100%';
             const inner = horScroll.querySelector(':scope > div') || horScroll.firstElementChild;
             if (inner) {
                 inner.style.width = total + 'px';
@@ -577,7 +615,13 @@
         if (gridHead) {
             gridHead.style.width = total + 'px';
             gridHead.style.minWidth = total + 'px';
+            gridHead.style.maxWidth = 'none';
         }
+        document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
+            row.style.width = total + 'px';
+            row.style.minWidth = total + 'px';
+            row.style.maxWidth = 'none';
+        });
     }
 
     function normalizeHexColor(value) {
@@ -2076,20 +2120,39 @@
         const scale = document.querySelector('#gantt_here .gantt_grid_scale');
         const scrollHost = document.querySelector('#gantt_here [data-cell-id="gridScroll"]');
         const horScroll = scrollHost?.querySelector('.gantt_hor_scroll') || scrollHost;
-        if (!gridData || !scale || gridData.dataset.hscrollBound) return;
-        gridData.dataset.hscrollBound = '1';
-        const targets = [gridData, scale, horScroll, scrollHost].filter(Boolean);
-        const syncScroll = (source, left) => {
+        if (!gridData || !scale) return;
+        if (!gridData.dataset.hscrollBound) {
+            gridData.dataset.hscrollBound = '1';
+            const targets = [gridData, scale, horScroll, scrollHost].filter(Boolean);
+            const syncScroll = (source, left) => {
+                targets.forEach(el => {
+                    if (el !== source && Math.abs(el.scrollLeft - left) > 0.5) el.scrollLeft = left;
+                });
+            };
             targets.forEach(el => {
-                if (el !== source && el.scrollLeft !== left) el.scrollLeft = left;
+                el.addEventListener('scroll', () => {
+                    syncScroll(el, el.scrollLeft);
+                    if (el === gridData || el === scale || el === horScroll || el === scrollHost) {
+                        layoutColumnResizeGripsFromDom();
+                        applyColumnHighlight();
+                    }
+                }, { passive: true });
             });
-        };
-        targets.forEach(el => {
-            el.addEventListener('scroll', () => {
-                syncScroll(el, el.scrollLeft);
-                if (el === gridData || el === scale) applyColumnHighlight();
-            }, { passive: true });
-        });
+        }
+        const host = document.getElementById('gantt_here');
+        if (host && !host.dataset.gridWheelBound) {
+            host.dataset.gridWheelBound = '1';
+            host.addEventListener('wheel', e => {
+                const inGrid = e.target.closest?.('.gantt_grid_data, .gantt_grid_scale, [data-cell-id="gridScroll"]');
+                if (!inGrid || !isOverlayMode()) return;
+                if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) && !e.shiftKey) return;
+                const dx = e.deltaX || e.deltaY;
+                const leader = horScroll || scrollHost || gridData;
+                if (!leader) return;
+                leader.scrollLeft += dx;
+                e.preventDefault();
+            }, { passive: false });
+        }
         syncGridScrollContentWidth();
     }
 
@@ -2479,7 +2542,7 @@
                 resizeRaf = requestAnimationFrame(() => {
                     resizeRaf = null;
                     preserveGridScrollLeft(columnResizeScrollLeft);
-                    gantt.render();
+                    enforceGridColumnExtents();
                 });
             }
         });
@@ -2500,8 +2563,7 @@
             lastGridWidthKey = '';
             gantt.config.grid_width = getColumnsTotalWidth();
             gantt.config.keep_grid_width = true;
-            gantt.render();
-            syncGridContentLayout();
+            enforceGridColumnExtents();
             ensureColumnResizeGrips();
             ensureAddColumnHeader();
             syncWbsGutterSpans();
@@ -2540,8 +2602,7 @@
         gantt.config.grid_width = getColumnsTotalWidth();
         if (reflow) {
             lastGridWidthKey = '';
-            gantt.render();
-            syncGridContentLayout();
+            enforceGridColumnExtents();
             if (isOverlayMode()) applyOverlayDomLayout();
             applyCellAlignToDom();
             if (persist) queueSave();
@@ -3646,7 +3707,7 @@
                 columnWidths[column.name] = new_width;
                 gantt.config.keep_grid_width = true;
                 gantt.config.grid_width = getColumnsTotalWidth();
-                syncGridScrollContentWidth();
+                enforceGridColumnExtents();
             }
         });
         gantt.attachEvent('onColumnResizeEnd', function (index, column, new_width) {
@@ -3670,7 +3731,7 @@
             ensureColumnResizeGrips();
             ensureAddColumnHeader();
             bindWbsGutterScrollSync();
-            syncGridContentLayout();
+            enforceGridColumnExtents();
         });
 
         document.addEventListener('keydown', onScheduleKeyDown);
