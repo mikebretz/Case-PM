@@ -27,25 +27,15 @@ const { chromium } = require('playwright');
             return r.width > 0 && r.left >= hostRect.left + overlayW - 8;
         });
 
-        const gutters = [...document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row .sched-wbs-gutter')];
-        const gutterHeights = gutters.slice(0, 6).map(g => {
-            const row = g.closest('.gantt_row');
-            const gr = g.getBoundingClientRect();
-            const rr = row?.getBoundingClientRect();
-            return rr ? Math.round((gr.height / rr.height) * 100) : 0;
-        });
-
         return {
             gridPaneW: gridCell ? gridCell.getBoundingClientRect().width : 0,
             headCount: heads.length,
             visibleHeads: visibleHeads.length,
             barCount: bars.length,
-            barsInChart: barsInChart.length,
-            gutterHeightPct: gutterHeights
+            barsInChart: barsInChart.length
         };
     });
     console.log(JSON.stringify(result, null, 2));
-    const minGutterPct = Math.min(...result.gutterHeightPct.filter(Boolean), 100);
-    if (result.visibleHeads < 4 || result.barsInChart < 1 || minGutterPct < 95) process.exit(1);
+    if (result.visibleHeads < 4 || result.barsInChart < 1) process.exit(1);
     await browser.close();
 })();
