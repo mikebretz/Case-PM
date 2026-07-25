@@ -52,9 +52,9 @@
         column_align: {},
         default_cell_style: { font_size: 11 },
         default_row_height: 24,
-        default_bar_height: 12,
+        default_bar_height: 16,
         summary_row_height: 24,
-        summary_bar_height: 10
+        summary_bar_height: 12
     };
     if (!scheduleSettings.print_settings) {
         scheduleSettings.print_settings = {
@@ -64,7 +64,7 @@
             include_predecessor_links: true,
             orientation: 'landscape',
             font_size_pt: 8,
-            row_height_px: 16,
+            row_height_px: 24,
             chart_width_pct: 58,
             print_wbs_colors: true,
             print_bar_labels: false,
@@ -367,13 +367,13 @@
             { id: 7, parent: 5, text: 'Site Mobilization', activity_id: 'A1015', start_date: '2023-06-05', end_date: '2023-06-09', duration: 3, progress: 1 },
             { id: 8, parent: 5, text: 'Remove Existing Piping', activity_id: 'A1020', start_date: '2023-06-08', end_date: '2023-06-18', duration: 8, progress: 0.6 },
             { id: 9, parent: 5, text: 'Remove Thrust Blocks', activity_id: 'A1025', start_date: '2023-06-10', end_date: '2023-06-15', duration: 4, progress: 0.5 },
-            { id: 10, parent: 4, text: 'Demolition Complete', activity_id: 'A1030', type: 'milestone', start_date: '2023-06-20', end_date: '2023-06-20', duration: 0, progress: 0 },
-            { id: 11, parent: 1, text: 'Piping', open: true, start_date: '2023-06-12', end_date: '2023-07-25', duration: 31, progress: 0.2 },
-            { id: 12, parent: 11, text: 'Procure Pipe Materials', activity_id: 'A2005', start_date: '2023-06-12', end_date: '2023-06-25', duration: 9, progress: 0.8 },
-            { id: 13, parent: 11, text: 'Install New Piping', activity_id: 'A2010', start_date: '2023-06-20', end_date: '2023-07-10', duration: 15, progress: 0.25 },
-            { id: 14, parent: 11, text: 'Install Thrust Blocks', activity_id: 'A2015', start_date: '2023-06-22', end_date: '2023-07-05', duration: 9, progress: 0.15 },
-            { id: 15, parent: 11, text: 'Pressure Test', activity_id: 'A2020', start_date: '2023-07-11', end_date: '2023-07-18', duration: 6, progress: 0 },
-            { id: 16, parent: 11, text: 'Piping Complete', activity_id: 'A2030', type: 'milestone', start_date: '2023-07-25', end_date: '2023-07-25', duration: 0, progress: 0 },
+            { id: 10, parent: 4, text: 'Piping', open: true, start_date: '2023-06-12', end_date: '2023-07-25', duration: 31, progress: 0.2 },
+            { id: 11, parent: 10, text: 'Procure Pipe Materials', activity_id: 'A2005', start_date: '2023-06-12', end_date: '2023-06-25', duration: 9, progress: 0.8 },
+            { id: 12, parent: 10, text: 'Install New Piping', activity_id: 'A2010', start_date: '2023-06-20', end_date: '2023-07-10', duration: 15, progress: 0.25 },
+            { id: 13, parent: 10, text: 'Install Thrust Blocks', activity_id: 'A2015', start_date: '2023-06-22', end_date: '2023-07-05', duration: 9, progress: 0.15 },
+            { id: 14, parent: 10, text: 'Pressure Test', activity_id: 'A2020', start_date: '2023-07-11', end_date: '2023-07-18', duration: 6, progress: 0 },
+            { id: 15, parent: 4, text: 'Demolition Complete', activity_id: 'A1030', type: 'milestone', start_date: '2023-06-20', end_date: '2023-06-20', duration: 0, progress: 0 },
+            { id: 16, parent: 10, text: 'Piping Complete', activity_id: 'A2030', type: 'milestone', start_date: '2023-07-25', end_date: '2023-07-25', duration: 0, progress: 0 },
             { id: 17, parent: 1, text: 'Restoration & Cleanup', open: true, start_date: '2023-07-18', end_date: '2023-07-28', duration: 8, progress: 0 },
             { id: 18, parent: 17, text: 'Backfill & Restore Surfaces', activity_id: 'A3010', start_date: '2023-07-18', end_date: '2023-07-24', duration: 5, progress: 0 },
             { id: 19, parent: 17, text: 'Final Inspection', activity_id: 'A3020', start_date: '2023-07-25', end_date: '2023-07-27', duration: 2, progress: 0 },
@@ -384,17 +384,25 @@
             { id: 2, source: 6, target: 7, type: '0' },
             { id: 3, source: 7, target: 8, type: '0' },
             { id: 4, source: 8, target: 9, type: '0' },
-            { id: 5, source: 9, target: 10, type: '0' },
-            { id: 6, source: 10, target: 12, type: '0' },
-            { id: 7, source: 12, target: 13, type: '0' },
-            { id: 8, source: 13, target: 14, type: '0' },
-            { id: 9, source: 14, target: 15, type: '0' },
-            { id: 10, source: 15, target: 16, type: '0' },
+            { id: 5, source: 9, target: 15, type: '0' },
+            { id: 6, source: 15, target: 11, type: '0' },
+            { id: 7, source: 11, target: 12, type: '0' },
+            { id: 8, source: 12, target: 13, type: '0' },
+            { id: 9, source: 13, target: 14, type: '0' },
+            { id: 10, source: 14, target: 16, type: '0' },
             { id: 11, source: 16, target: 18, type: '0' },
             { id: 12, source: 18, target: 19, type: '0' },
             { id: 13, source: 19, target: 20, type: '0' }
         ];
-        return { data: tasks, links, customColumns: [], hiddenColumns: ['wbs', 'predecessors', 'successors', 'link_lag', 'progress', 'resource', 'owner', 'total_float', 'constraint_type', 'bar_color'], columnWidths: {}, columnOrder: [] };
+        return {
+            data: tasks,
+            links,
+            customColumns: [],
+            hiddenColumns: ['wbs', 'predecessors', 'successors', 'link_lag', 'progress', 'resource', 'owner', 'total_float', 'constraint_type', 'bar_color', 'collapse'],
+            columnWidths: {},
+            columnOrder: ['hierarchy', 'activity_id', 'text', 'duration', 'start_date', 'end_date'],
+            settings: { timeline_pct: 0.48, default_row_height: 24, default_bar_height: 16, link_color: '#b0b0b0' }
+        };
     }
 
     function isBareProjectSchedule(payload) {
@@ -626,7 +634,7 @@
     let lastGridWidthKey = '';
 
     function syncGanttLayout(options = {}) {
-        if (!ganttReady) return;
+        if (!ganttReady || columnResizeInProgress) return;
         if (layoutSyncInProgress) {
             layoutSyncPending = true;
             return;
@@ -735,6 +743,25 @@
             overlayDrag.active = false;
             document.body.classList.remove('schedule-chart-resizing');
             queueSave();
+        });
+    }
+
+    function bindLayoutResizePersistence() {
+        if (bindLayoutResizePersistence.done) return;
+        bindLayoutResizePersistence.done = true;
+        document.addEventListener('mouseup', () => {
+            if (!ganttReady) return;
+            const root = document.querySelector('#gantt_here .gantt_layout_root');
+            if (!root) return;
+            const timelineCell = root.querySelectorAll(':scope > .gantt_layout_cell')[2];
+            const hostW = document.getElementById('gantt_here')?.clientWidth;
+            if (!timelineCell || !hostW) return;
+            const w = timelineCell.offsetWidth;
+            if (w >= 180 && Math.abs((scheduleSettings.timeline_width_px || 0) - w) > 4) {
+                scheduleSettings.timeline_width_px = w;
+                scheduleSettings.timeline_pct = w / hostW;
+                queueSave();
+            }
         });
     }
 
@@ -1277,11 +1304,11 @@
         const parts = [
             `--dhx-gantt-task-background:${color}`,
             `--dhx-gantt-task-border:${color}`,
-            `background-color:${color} !important`
+            `background-color:${color} !important`,
+            `height:${barH}px`,
+            `min-height:${barH}px`,
+            `max-height:${barH}px`
         ];
-        if (isSummaryTask(task)) {
-            parts.push(`height:${barH}px`);
-        }
         const bw = parseInt(task.bar_border_width, 10);
         if (!Number.isNaN(bw) && bw > 0) {
             const bc = normalizeHexColor(task.bar_border_color) || task.bar_border_color || '#ffffff';
@@ -1294,10 +1321,14 @@
 
     function applyP6RowMetrics() {
         const baseRow = 24;
-        const barH = 12;
+        const barH = scheduleSettings.default_bar_height || 16;
         scheduleSettings.default_row_height = baseRow;
-        scheduleSettings.default_bar_height = barH;
-        scheduleSettings.summary_bar_height = 10;
+        if (!scheduleSettings.default_bar_height || scheduleSettings.default_bar_height < 8) {
+            scheduleSettings.default_bar_height = 16;
+        }
+        if (!scheduleSettings.summary_bar_height || scheduleSettings.summary_bar_height < 6) {
+            scheduleSettings.summary_bar_height = 12;
+        }
         scheduleSettings.summary_row_height = baseRow;
         if (!ganttReady) return;
         gantt.config.row_height = baseRow;
@@ -1305,7 +1336,11 @@
         gantt.config.scale_height = 52;
         gantt.getTaskHeight = () => baseRow;
         const host = document.getElementById('gantt_here');
-        if (host) host.style.setProperty('--sched-row-h', baseRow + 'px');
+        if (host) {
+            host.style.setProperty('--sched-row-h', baseRow + 'px');
+            host.style.setProperty('--sched-bar-h', barH + 'px');
+            host.style.setProperty('--sched-summary-bar-h', (scheduleSettings.summary_bar_height || 12) + 'px');
+        }
     }
 
     function refreshGanttRowMetrics() {
@@ -1531,6 +1566,7 @@
         });
         applyRowHighlight();
         applyColumnHighlight();
+        applyCellFocusHighlight();
         document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell').forEach((head, i) => {
             const col = gantt.config.columns[i];
             head.classList.toggle('sched-col-selected', !!(gridSelection.type === 'column' && col && gridSelection.colName === col.name));
@@ -1563,6 +1599,11 @@
 
     function applyRowHighlight() {
         if (!ganttReady) return;
+        if (gridSelection.type === 'cell' || floatingEditorActive) {
+            document.querySelectorAll('#gantt_here .gantt_row.sched-row-active, #gantt_here .gantt_task_row.sched-row-active')
+                .forEach(r => r.classList.remove('sched-row-active'));
+            return;
+        }
         const activeId = getActiveRowTaskId();
         const match = (row) => {
             let taskId = null;
@@ -1572,6 +1613,15 @@
         };
         document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(match);
         document.querySelectorAll('#gantt_here .gantt_task_row').forEach(match);
+    }
+
+    function applyCellFocusHighlight() {
+        if (!ganttReady) return;
+        document.querySelectorAll('#gantt_here .gantt_cell.sched-cell-focus').forEach(c => c.classList.remove('sched-cell-focus'));
+        if (gridSelection.type === 'cell' && gridSelection.taskId && gridSelection.colName) {
+            const cell = findGridCell(gridSelection.taskId, gridSelection.colName);
+            if (cell) cell.classList.add('sched-cell-focus');
+        }
     }
 
     function highlightGridSelection() {
@@ -1808,6 +1858,8 @@
 
     const colResizeDrag = { active: false, colIndex: -1, startX: 0, startW: 0 };
 
+    let columnResizeInProgress = false;
+
     function bindColumnResizeDrag() {
         if (bindColumnResizeDrag.done) return;
         bindColumnResizeDrag.done = true;
@@ -1822,6 +1874,7 @@
             if (colIndex < 0 || !gantt.config.columns[colIndex] || gantt.config.columns[colIndex].resize === false) return;
             e.preventDefault();
             e.stopPropagation();
+            columnResizeInProgress = true;
             colResizeDrag.active = true;
             colResizeDrag.colIndex = colIndex;
             colResizeDrag.startX = e.clientX;
@@ -1855,11 +1908,20 @@
             if (!colResizeDrag.active) return;
             const idx = colResizeDrag.colIndex;
             const col = gantt.config.columns[idx];
-            if (col) handleColumnResize(idx, col, col.width, true, true);
+            if (col) {
+                columnWidths[col.name] = col.width;
+                handleColumnResize(idx, col, col.width, true, true);
+            }
             colResizeDrag.active = false;
             colResizeDrag.colIndex = -1;
+            columnResizeInProgress = false;
             columnResizeScrollLeft = null;
             document.body.classList.remove('sched-col-resizing');
+            lastGridWidthKey = '';
+            gantt.config.grid_width = getColumnsTotalWidth();
+            gantt.config.keep_grid_width = false;
+            if (typeof gantt.render === 'function') gantt.render();
+            queueSave();
         });
 
         host.addEventListener('dblclick', e => {
@@ -2367,6 +2429,23 @@
         document.querySelectorAll('.sched-floating-cell-editor').forEach(el => el.remove());
         floatingEditorActive = false;
         editingContext = null;
+        applyCellFocusHighlight();
+    }
+
+    function mountCellEditor(cell, wrap) {
+        const grid = document.querySelector('#gantt_here .gantt_grid_data');
+        if (!grid || !cell) return false;
+        const cr = cell.getBoundingClientRect();
+        const gr = grid.getBoundingClientRect();
+        wrap.style.position = 'absolute';
+        wrap.style.left = (cr.left - gr.left + grid.scrollLeft) + 'px';
+        wrap.style.top = (cr.top - gr.top + grid.scrollTop) + 'px';
+        wrap.style.width = Math.max(20, cr.width) + 'px';
+        wrap.style.height = Math.max(18, cr.height) + 'px';
+        wrap.style.right = 'auto';
+        wrap.style.bottom = 'auto';
+        grid.appendChild(wrap);
+        return true;
     }
 
     function saveFloatingEditor(taskId, colName, value) {
@@ -2466,7 +2545,11 @@
         }
         input.className = 'sched-cell-editor';
         wrap.appendChild(input);
-        cell.appendChild(wrap);
+        if (!mountCellEditor(cell, wrap)) {
+            cell.appendChild(wrap);
+        }
+        gridSelection = { type: 'cell', taskId: id, colName };
+        applyCellFocusHighlight();
         input.focus();
         if (input.select) input.select();
 
@@ -2474,9 +2557,7 @@
             if (!floatingEditorActive) return;
             saveFloatingEditor(id, colName, input.value);
             closeFloatingEditor();
-            syncColumnWidthsToConfig();
-            gantt.refreshTask(id);
-            queueGridHeaderSync();
+            gantt.render();
         };
         input.addEventListener('keydown', e => {
             e.stopPropagation();
@@ -2518,7 +2599,7 @@
         gantt.config.drag_resize = true;
         gantt.config.drag_progress = true;
         gantt.config.autosize = false;
-        gantt.config.reorder_grid_columns = true;
+        gantt.config.reorder_grid_columns = false;
         gantt.config.open_tree_initially = true;
         gantt.config.details_on_dblclick = false;
         gantt.config.details_on_create = false;
@@ -2698,22 +2779,23 @@
                 return false;
             }
             if (target.closest?.('.gantt_tree_icon')) return true;
-            gantt.selectTask(id);
             if (target.closest?.('.gantt_grid_data .gantt_cell')) {
                 const pos = locateGridCell(target);
                 if (pos) {
                     gridSelection = { type: 'cell', taskId: pos.id, colName: pos.column };
-                    highlightGridSelection();
-                    if (columnEditors.has(pos.column) && !['wbs', 'successors', 'collapse'].includes(pos.column)
-                        && !target.closest?.('.sched-tree-btn') && !target.closest?.('.gantt_tree_icon')) {
-                        setTimeout(() => startCellEdit(pos.id, pos.column), 0);
-                        return false;
-                    }
+                    applyCellFocusHighlight();
+                    applyRowHighlight();
+                    if (gantt.getSelectedId()) gantt.unselectTask(gantt.getSelectedId());
                 } else {
                     gridSelection = { type: 'row', taskId: id };
-                    highlightGridSelection();
+                    applyCellFocusHighlight();
+                    applyRowHighlight();
                 }
+                return false;
             }
+            gantt.selectTask(id);
+            gridSelection = { type: 'row', taskId: id };
+            applyRowHighlight();
             return true;
         });
 
@@ -2721,6 +2803,15 @@
             const target = e.target || e.srcElement;
             if (target.closest?.('.sched-tree-btn') || target.closest?.('.gantt_tree_icon')) return true;
             if (target.closest?.('.sched-floating-cell-editor')) return true;
+            if (target.closest?.('.gantt_grid_data .gantt_cell')) {
+                const pos = locateGridCell(target);
+                if (pos && columnEditors.has(pos.column)
+                    && !['wbs', 'successors', 'collapse', 'hierarchy'].includes(pos.column)
+                    && !target.closest?.('.sched-tree-btn') && !target.closest?.('.gantt_tree_icon')) {
+                    startCellEdit(pos.id, pos.column);
+                    return false;
+                }
+            }
             if (window.ScheduleActivityModal) {
                 ScheduleActivityModal.open(id);
                 return false;
@@ -2763,6 +2854,7 @@
             queueGanttLayoutSync();
         });
         gantt.attachEvent('onColumnResizeStart', function () {
+            columnResizeInProgress = true;
             const grid = document.querySelector('#gantt_here .gantt_grid_data');
             columnResizeScrollLeft = grid ? grid.scrollLeft : 0;
         });
@@ -2770,6 +2862,7 @@
             preserveGridScrollLeft(columnResizeScrollLeft);
         });
         gantt.attachEvent('onColumnResizeEnd', function (index, column, new_width) {
+            columnResizeInProgress = false;
             handleColumnResize(index, column, new_width, true, true);
             columnResizeScrollLeft = null;
         });
@@ -2819,9 +2912,12 @@
         }
         if (e.key === 'F2') {
             e.preventDefault();
-            const id = gantt.getSelectedId();
-            if (!id) return;
-            startCellEdit(id, 'text');
+            if (gridSelection.type === 'cell' && gridSelection.taskId && gridSelection.colName) {
+                startCellEdit(gridSelection.taskId, gridSelection.colName);
+            } else {
+                const id = gantt.getSelectedId();
+                if (id) startCellEdit(id, 'text');
+            }
             return;
         }
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
@@ -2948,7 +3044,7 @@
                 include_predecessor_links: true,
                 orientation: 'landscape',
                 font_size_pt: 8,
-                row_height_px: 16,
+                row_height_px: 24,
                 chart_width_pct: 58,
                 print_wbs_colors: true,
                 include_schedule_chart: false,
@@ -2988,10 +3084,15 @@
     async function loadSchedule() {
         const projectId = getSelectedProjectId();
         const params = new URLSearchParams(window.location.search);
-        const forceDemo = params.get('schedule_demo') === 'p6';
+        const forceOff = params.get('schedule_demo') === 'off';
         setSaveStatus('Loading…');
 
-        if (forceDemo) {
+        if (!forceOff) {
+            loadP6DemoSchedule();
+            return;
+        }
+
+        if (params.get('schedule_demo') === 'p6') {
             loadSchedulePayload(buildP6DemoSchedule());
             setSaveStatus('P6 demo schedule loaded');
             return;
@@ -3002,6 +3103,10 @@
             if (res.ok) {
                 const json = await res.json();
                 if (json.payload && json.payload.data && json.payload.data.length) {
+                    if (isBareProjectSchedule(json.payload)) {
+                        loadP6DemoSchedule();
+                        return;
+                    }
                     if (loadSchedulePayload(json.payload)) {
                         setSaveStatus('Loaded from server');
                         return;
@@ -3014,15 +3119,20 @@
         if (local) {
             try {
                 const parsed = JSON.parse(local);
-                if (parsed.data && parsed.data.length && loadSchedulePayload(parsed)) {
-                    setSaveStatus('Loaded from browser');
-                    return;
+                if (parsed.data && parsed.data.length) {
+                    if (isBareProjectSchedule(parsed)) {
+                        loadP6DemoSchedule();
+                        return;
+                    }
+                    if (loadSchedulePayload(parsed)) {
+                        setSaveStatus('Loaded from browser');
+                        return;
+                    }
                 }
             } catch (e) { /* ignore */ }
         }
 
-        loadSchedulePayload(buildP6DemoSchedule());
-        setSaveStatus('P6 demo schedule loaded');
+        loadP6DemoSchedule();
     }
 
     function loadP6DemoSchedule() {
@@ -3095,6 +3205,18 @@
         root.style.setProperty('--gantt-link-width', (s.link_width || 1) + 'px');
         if (ganttReady) {
             gantt.config.link_line_width = s.link_width || 1;
+            const rowH = s.default_row_height || 24;
+            const barH = s.default_bar_height || 16;
+            const summaryBarH = s.summary_bar_height || 12;
+            gantt.config.row_height = rowH;
+            gantt.config.bar_height = barH;
+            gantt.getTaskHeight = () => rowH;
+            const host = document.getElementById('gantt_here');
+            if (host) {
+                host.style.setProperty('--sched-row-h', rowH + 'px');
+                host.style.setProperty('--sched-bar-h', barH + 'px');
+                host.style.setProperty('--sched-summary-bar-h', summaryBarH + 'px');
+            }
             gantt.render();
         }
     }
