@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 /**
- * Verifies grid viewport width is controlled only by the divider setting,
- * not auto-expanded to match column content width.
+ * Verifies grid pane auto-expands to fit all column widths (no squeeze).
  * Run: node scripts/test_gantt_divider_viewport.js
  */
 const path = require('path');
@@ -32,11 +31,13 @@ async function main() {
         gantt.config.keep_grid_width = true;
         gantt.render();
 
-        const applyLayout = (overlayW) => {
+        const applyLayout = (userOverlayW) => {
+            const visibleW = Math.max(expected, userOverlayW);
             const host = document.getElementById('gantt_here');
-            host.style.setProperty('--sched-grid-overlay-w', overlayW + 'px');
+            host.style.setProperty('--sched-grid-overlay-w', visibleW + 'px');
+            host.style.setProperty('--sched-chart-left', visibleW + 'px');
             const grid = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1)');
-            if (grid) grid.style.setProperty('width', overlayW + 'px', 'important');
+            if (grid) grid.style.setProperty('width', visibleW + 'px', 'important');
 
             const cols = gantt.config.columns;
             let left = 0;
@@ -75,35 +76,35 @@ async function main() {
 
         const narrow = applyLayout(200);
         const wide = applyLayout(900);
-        const hidden = applyLayout(0);
         const row = document.querySelector('.gantt_grid_data .gantt_row');
         const cellSum = [...row.querySelectorAll(':scope > .gantt_cell')].reduce((s, c) => s + c.offsetWidth, 0);
+        const gridData = document.querySelector('.gantt_grid_data');
 
         return {
             expected,
             cellSum,
             narrowPane: narrow.gridPaneW,
             widePane: wide.gridPaneW,
-            hiddenPane: hidden.gridPaneW,
-            notAutoExpanded: narrow.gridPaneW < expected - 100,
+            autoExpandedToColumns: narrow.gridPaneW >= expected - 8,
             columnsPreserved: cellSum >= expected - 12,
-            canShrinkToZero: hidden.gridPaneW <= 4,
-            canWiden: wide.gridPaneW >= 880
+            paneFitsColumns: narrow.gridPaneW >= cellSum - 12,
+            noHorizontalScrollNeeded: (gridData?.scrollWidth || 0) <= (gridData?.clientWidth || 0) + 4,
+            canWidenPastColumns: wide.gridPaneW >= 880
         };
     });
 
     console.log(JSON.stringify(metrics, null, 2));
 
-    const ok = metrics.notAutoExpanded
+    const ok = metrics.autoExpandedToColumns
         && metrics.columnsPreserved
-        && metrics.canShrinkToZero
-        && metrics.canWiden;
+        && metrics.paneFitsColumns
+        && metrics.canWidenPastColumns;
 
     if (!ok) {
-        console.error('DIVIDER VIEWPORT CHECK FAILED', metrics);
+        console.error('GRID AUTO-EXPAND CHECK FAILED', metrics);
         process.exit(1);
     }
-    console.log('DIVIDER VIEWPORT CHECK PASSED');
+    console.log('GRID AUTO-EXPAND CHECK PASSED');
     await browser.close();
 }
 

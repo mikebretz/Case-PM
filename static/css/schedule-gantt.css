@@ -421,13 +421,11 @@ body.schedule-chart-resizing {
     max-width: none !important;
 }
 .schedule-overlay-mode #gantt_here [data-cell-id="gridScroll"] {
-    flex: 0 0 20px !important;
-    min-height: 20px !important;
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    z-index: 35 !important;
-    background: var(--sched-scroll-bg) !important;
-    border-top: 1px solid var(--sched-border) !important;
+    display: none !important;
+    flex: 0 0 0 !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_column_resize_wrap {
     z-index: 40 !important;
@@ -1175,11 +1173,11 @@ body.sched-col-dragging .gantt_grid_scale {
     cursor: grabbing !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_scale {
-    overflow-x: scroll !important;
+    overflow-x: hidden !important;
     overflow-y: hidden !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_data {
-    overflow-x: scroll !important;
+    overflow-x: hidden !important;
     overflow-y: auto !important;
     scrollbar-width: thin;
 }
