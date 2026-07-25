@@ -13,6 +13,7 @@
     stats: {},
     companies: [],
     users: [],
+    directory: [],
     linkOptions: { change_orders: [], pcos: [] },
     selected: null,
     filter: { search: '', status: '', priority: '', ball: '' },
@@ -747,9 +748,127 @@
     return `<span class="text-xs font-medium ${colors[p] || 'text-zinc-400'}">${esc(p || '—')}</span>`;
   }
 
-  function ballBadge(role) {
+  function ballBadge(role, userName) {
     if (!role) return '<span class="text-zinc-500">—</span>';
-    return `<span class="px-2 py-0.5 rounded text-[10px] bg-violet-900/50 text-violet-300">${esc(role)}</span>`;
+    const who = userName ? ` · ${esc(userName)}` : '';
+    return `<span class="px-2 py-0.5 rounded text-[10px] bg-violet-900/50 text-violet-300" title="${esc(role + (userName ? ' — ' + userName : ''))}">${esc(role)}${who}</span>`;
+  }
+
+  function directoryOptionLabel(entry) {
+    const name = entry.name || entry.email || 'Contact';
+    const company = entry.company || entry.firm || '';
+    const role = entry.role_label || entry.position || entry.role || '';
+    const bits = [name];
+    if (company) bits.push(company);
+    if (role) bits.push(role);
+    return bits.join(' · ');
+  }
+
+  function directoryEntryKey(entry) {
+    if (entry.user_id) return `u:${entry.user_id}`;
+    const email = (entry.email || '').trim().toLowerCase();
+    if (email) return `e:${email}`;
+    return `n:${(entry.name || '').trim().toLowerCase()}`;
+  }
+
+  async function loadProjectDirectory() {
+    const pid = projectId();
+    if (!pid) return;
+    try {
+      const json = await api(`/api/project-directory/${pid}`);
+      state.directory = json.directory || [];
+    } catch {
+      state.directory = [];
+    }
+  }
+
+  function populateDirectorySelects(record) {
+    const managerSel = document.getElementById('modalRfiManager');
+    const assigneeSel = document.getElementById('modalRfiAssignees');
+    const distSel = document.getElementById('modalRfiDistribution');
+    const entries = state.directory || [];
+    const optionHtml = entries.map((entry) => {
+      const key = directoryEntryKey(entry);
+      const label = directoryOptionLabel(entry);
+      const uid = entry.user_id || '';
+      return `<option value="${esc(key)}" data-user-id="${esc(String(uid))}" data-name="${esc(entry.name || '')}">${esc(label)}</option>`;
+    }).join('');
+    if (managerSel) {
+      managerSel.innerHTML = '<option value="">— Select from Project Directory —</option>' + optionHtml;
+    }
+    if (assigneeSel) {
+      assigneeSel.innerHTML = optionHtml || '<option disabled>No directory contacts</option>';
+    }
+    if (distSel) {
+      distSel.innerHTML = optionHtml || '<option disabled>No directory contacts</option>';
+    }
+    if (!record) return;
+    const managerKey = record.rfi_manager_user_id
+      ? `u:${record.rfi_manager_user_id}`
+      : (record.rfi_manager_name
+        ? entries.find(e => (e.name || '').toLowerCase() === String(record.rfi_manager_name).toLowerCase())
+        : null);
+    if (managerSel) {
+      if (record.rfi_manager_user_id) {
+        managerSel.value = `u:${record.rfi_manager_user_id}`;
+      } else if (managerKey && managerKey.user_id) {
+        managerSel.value = `u:${managerKey.user_id}`;
+      }
+    }
+    const selectedAssigneeKeys = new Set(
+      (record.assignees || []).map((a) => {
+        if (typeof a === 'object' && a.user_id) return `u:${a.user_id}`;
+        const name = typeof a === 'object' ? a.name : a;
+        const match = entries.find(e => (e.name || '').toLowerCase() === String(name || '').toLowerCase());
+        return match ? directoryEntryKey(match) : `n:${String(name || '').toLowerCase()}`;
+      }),
+    );
+    const selectedDistKeys = new Set(
+      (record.distribution || []).map((a) => {
+        if (typeof a === 'object' && a.user_id) return `u:${a.user_id}`;
+        const name = typeof a === 'object' ? a.name : a;
+        const match = entries.find(e => (e.name || '').toLowerCase() === String(name || '').toLowerCase());
+        return match ? directoryEntryKey(match) : `n:${String(name || '').toLowerCase()}`;
+      }),
+    );
+    if (assigneeSel) {
+      [...assigneeSel.options].forEach((opt) => {
+        opt.selected = selectedAssigneeKeys.has(opt.value);
+      });
+    }
+    if (distSel) {
+      [...distSel.options].forEach((opt) => {
+        opt.selected = selectedDistKeys.has(opt.value);
+      });
+    }
+  }
+
+  function readSelectedParties(selectEl) {
+    if (!selectEl) return [];
+    return [...selectEl.selectedOptions].map((opt) => ({
+      user_id: opt.dataset.userId ? parseInt(opt.dataset.userId, 10) : null,
+      name: opt.dataset.name || opt.textContent.split('·')[0].trim(),
+    })).filter(p => p.name);
+  }
+
+  function readManagerFromModal() {
+    const sel = document.getElementById('modalRfiManager');
+    if (!sel || !sel.value) return { rfi_manager_user_id: null, rfi_manager_name: '' };
+    const opt = sel.selectedOptions[0];
+    return {
+      rfi_manager_user_id: opt.dataset.userId ? parseInt(opt.dataset.userId, 10) : null,
+      rfi_manager_name: opt.dataset.name || opt.textContent.split('·')[0].trim(),
+    };
+  }
+
+  function validateOpenPayload(payload) {
+    const errors = [];
+    if (!payload.subject) errors.push('Subject is required.');
+    if (!payload.question) errors.push('Question is required.');
+    if (!payload.due_date) errors.push('Due date is required.');
+    if (!payload.rfi_manager_name && !payload.rfi_manager_user_id) errors.push('RFI Manager is required.');
+    if (!payload.assignees?.length) errors.push('At least one assignee is required.');
+    return errors;
   }
 
   function renderTable() {
@@ -757,7 +876,7 @@
     if (!tbody) return;
     const rows = filteredRfis();
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="12" class="px-6 py-12 text-center text-zinc-500">No RFIs found. Create your first RFI.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="15" class="px-6 py-12 text-center text-zinc-500">No RFIs found. Create your first RFI.</td></tr>';
       return;
     }
     tbody.innerHTML = rows.map(r => {
@@ -765,6 +884,8 @@
       const attCell = attCount
         ? `<span class="inline-flex items-center gap-1 text-emerald-400" title="${attCount} attachment(s)"><i class="fa-solid fa-paperclip"></i>${attCount}</span>`
         : '<span class="text-zinc-600">—</span>';
+      const assigneeLabel = (r.assignee_names || r.assignees || []).map(a => typeof a === 'string' ? a : a.name).filter(Boolean).join(', ') || r.to_party || '—';
+      const daysOut = r.days_outstanding != null ? r.days_outstanding : '—';
       return `
       <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer ${r.is_overdue ? 'bg-red-950/10' : ''}" onclick="CasePMRfis.view(${r.id})">
         <td class="px-4 py-3 font-mono text-sky-400 whitespace-nowrap">${esc(r.number)}</td>
@@ -773,12 +894,15 @@
           <div class="text-[10px] text-zinc-500 truncate">${esc(r.question || '')}</div>
         </td>
         <td class="px-4 py-3 text-xs text-zinc-400">${esc(r.received_from_company || r.from_party || '—')}</td>
-        <td class="px-4 py-3 text-xs text-zinc-400">${esc(r.to_party || r.assignees?.[0] || '—')}</td>
+        <td class="px-4 py-3 text-xs text-zinc-400">${esc(assigneeLabel)}</td>
         <td class="px-4 py-3 text-xs font-mono">${esc(r.drawing_reference || '—')}</td>
         <td class="px-4 py-3 text-xs font-mono">${esc(r.spec_reference || '—')}</td>
+        <td class="px-4 py-3 text-xs text-zinc-300">${esc(r.rfi_manager_user_name || r.rfi_manager_name || '—')}</td>
+        <td class="px-4 py-3 text-xs text-zinc-400">${esc(r.responsible_contractor || '—')}</td>
+        <td class="px-4 py-3 text-center text-xs text-zinc-400">${esc(daysOut)}</td>
         <td class="px-4 py-3 text-center">${priorityBadge(r.priority)}</td>
         <td class="px-4 py-3 text-center">${statusBadge(r.status)}</td>
-        <td class="px-4 py-3 text-center">${ballBadge(r.ball_in_court_role)}</td>
+        <td class="px-4 py-3 text-center">${ballBadge(r.ball_in_court_role, r.ball_in_court_user_name)}</td>
         <td class="px-4 py-3 text-center text-xs whitespace-nowrap ${r.is_overdue ? 'text-red-400 font-semibold' : 'text-zinc-400'}">${fmtDate(r.due_date)}</td>
         <td class="px-4 py-3 text-center text-xs">${attCell}</td>
         <td class="px-4 py-3 text-center" onclick="event.stopPropagation()">
@@ -833,17 +957,18 @@
       set('modalRfiDueDate', '');
       set('modalRfiDrawing', '');
       set('modalRfiSpec', '');
+      set('modalRfiReference', '');
+      set('modalRfiCostCode', '');
+      set('modalRfiProjectStage', '');
       set('modalRfiFrom', userName());
       set('modalRfiTo', 'Architect');
-      set('modalRfiManager', userName());
-      set('modalRfiAssignees', '');
-      set('modalRfiDistribution', '');
       set('modalRfiNotes', '');
       set('modalRfiLocation', '');
       set('modalRfiDiscipline', '');
       setCheck('modalRfiPrivate', false);
       document.getElementById('modalRfiNumber').textContent = 'Auto';
       applyImpactFieldsToModal({ cost_impact_label: 'TBD', schedule_impact_label: 'TBD' });
+      populateDirectorySelects(null);
     } else if (record) {
       set('modalRfiSubject', record.subject);
       set('modalRfiQuestion', record.question);
@@ -857,15 +982,16 @@
       set('modalRfiCompany', record.received_from_company);
       set('modalRfiContact', record.received_from_contact);
       set('modalRfiContractor', record.responsible_contractor);
-      set('modalRfiManager', record.rfi_manager_name);
-      set('modalRfiAssignees', (record.assignees || []).join(', '));
-      set('modalRfiDistribution', (record.distribution || []).join(', '));
+      set('modalRfiReference', record.reference);
+      set('modalRfiCostCode', record.cost_code);
+      set('modalRfiProjectStage', record.project_stage);
       set('modalRfiNotes', record.notes);
       set('modalRfiLocation', record.location_description);
       set('modalRfiDiscipline', record.discipline);
       setCheck('modalRfiPrivate', record.is_private);
       applyImpactFieldsToModal(record);
       document.getElementById('modalRfiNumber').textContent = record.number;
+      populateDirectorySelects(record);
     }
     populateCompanySelects();
     const details = document.getElementById('rfiDetailsSection');
@@ -895,8 +1021,9 @@
   }
 
   function modalPayload() {
-    const assignees = (document.getElementById('modalRfiAssignees')?.value || '').split(',').map(s => s.trim()).filter(Boolean);
-    const distribution = (document.getElementById('modalRfiDistribution')?.value || '').split(',').map(s => s.trim()).filter(Boolean);
+    const manager = readManagerFromModal();
+    const assignees = readSelectedParties(document.getElementById('modalRfiAssignees'));
+    const distribution = readSelectedParties(document.getElementById('modalRfiDistribution'));
     const impacts = readImpactFieldsFromModal();
     return {
       subject: document.getElementById('modalRfiSubject')?.value?.trim(),
@@ -905,12 +1032,16 @@
       due_date: document.getElementById('modalRfiDueDate')?.value || null,
       drawing_reference: document.getElementById('modalRfiDrawing')?.value?.trim(),
       spec_reference: document.getElementById('modalRfiSpec')?.value?.trim(),
+      reference: document.getElementById('modalRfiReference')?.value?.trim(),
+      cost_code: document.getElementById('modalRfiCostCode')?.value?.trim(),
+      project_stage: document.getElementById('modalRfiProjectStage')?.value,
       from_party: document.getElementById('modalRfiFrom')?.value?.trim(),
       to_party: document.getElementById('modalRfiTo')?.value,
       received_from_company: document.getElementById('modalRfiCompany')?.value,
       received_from_contact: document.getElementById('modalRfiContact')?.value?.trim(),
       responsible_contractor: document.getElementById('modalRfiContractor')?.value?.trim(),
-      rfi_manager_name: document.getElementById('modalRfiManager')?.value?.trim(),
+      rfi_manager_name: manager.rfi_manager_name,
+      rfi_manager_user_id: manager.rfi_manager_user_id,
       assignees,
       distribution,
       notes: document.getElementById('modalRfiNotes')?.value?.trim(),
@@ -927,6 +1058,10 @@
   async function saveModal(createAsOpen) {
     const payload = modalPayload();
     if (!payload.subject) { alert('Subject is required.'); return; }
+    if (createAsOpen) {
+      const errors = validateOpenPayload(payload);
+      if (errors.length) { alert(errors.join('\n')); return; }
+    }
     try {
       let rfiId = state.modalRfiId;
       if (state.modalMode === 'create') {
@@ -1115,7 +1250,7 @@
     if (numEl) numEl.textContent = r.number || '';
     if (subjEl) subjEl.textContent = r.subject || '';
     if (badgesEl) {
-      badgesEl.innerHTML = `${statusBadge(r.status)} ${priorityBadge(r.priority)} ${ballBadge(r.ball_in_court_role)}`;
+      badgesEl.innerHTML = `${statusBadge(r.status)} ${priorityBadge(r.priority)} ${ballBadge(r.ball_in_court_role, r.ball_in_court_user_name)}`;
     }
     if (actionsEl) {
       actionsEl.innerHTML = `
@@ -1131,7 +1266,10 @@
       <div class="border border-zinc-700 rounded-md p-3 ${resp.is_official ? 'border-emerald-700 bg-emerald-950/20' : ''}">
         <div class="flex justify-between text-xs text-zinc-500 mb-1">
           <span>${esc(resp.user_name)} ${resp.is_official ? '<span class="text-emerald-400 ml-1">Official Answer</span>' : ''}</span>
-          <span>${fmtDate(resp.created_at)}</span>
+          <span class="flex items-center gap-2">
+            ${canEnterRfis() && isStaffPortal() && !resp.is_official && r.status !== 'Closed' ? `<button type="button" onclick="CasePMRfis.markOfficial(${r.id}, ${Number(resp.id)})" class="text-sky-400 hover:text-sky-300">Mark Official</button>` : ''}
+            <span>${fmtDate(resp.created_at)}</span>
+          </span>
         </div>
         <div class="text-sm whitespace-pre-wrap">${esc(resp.body)}</div>
       </div>`).join('') || '<p class="text-zinc-500 text-sm">No responses yet.</p>';
@@ -1164,7 +1302,10 @@
         <div><span class="text-zinc-500">Discipline</span><div>${esc(r.discipline || '—')}</div></div>
         <div><span class="text-zinc-500">From</span><div>${esc(r.received_from_company || r.from_party || '—')}</div></div>
         <div><span class="text-zinc-500">To / Assignee</span><div>${esc((r.assignees || []).join(', ') || r.to_party || '—')}</div></div>
-        <div><span class="text-zinc-500">RFI Manager</span><div>${esc(r.rfi_manager_name || '—')}</div></div>
+        <div><span class="text-zinc-500">RFI Manager</span><div>${esc(r.rfi_manager_user_name || r.rfi_manager_name || '—')}</div></div>
+        <div><span class="text-zinc-500">Days Outstanding</span><div>${r.days_outstanding != null ? esc(r.days_outstanding) : '—'}</div></div>
+        <div><span class="text-zinc-500">Date Initiated</span><div>${fmtDate(r.date_initiated || r.submitted_at || r.date)}</div></div>
+        <div><span class="text-zinc-500">Reference</span><div>${esc(r.reference || '—')}</div></div>
         <div><span class="text-zinc-500">Cost Impact</span><div>${formatRfiImpactDisplay(r.cost_impact_label, r.cost_impact_amount, 'cost')}</div></div>
         <div><span class="text-zinc-500">Schedule Impact</span><div>${formatRfiImpactDisplay(r.schedule_impact_label, r.schedule_impact_days, 'schedule')}</div></div>
       </div>
@@ -1202,6 +1343,9 @@
         ${canEnterRfis() && isStaffPortal() ? `
         <button onclick="CasePMRfis.workflow(${r.id}, 'submit')" class="px-3 py-1.5 text-xs bg-sky-800 hover:bg-sky-700 rounded-md">Send for Review</button>
         <button onclick="CasePMRfis.workflow(${r.id}, 'close')" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md">Close RFI</button>
+        <button onclick="CasePMRfis.workflow(${r.id}, 'return_to_assignee')" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md">Return to Assignee</button>
+        ${r.status === 'Closed' ? `<button onclick="CasePMRfis.workflow(${r.id}, 'reopen')" class="px-3 py-1.5 text-xs bg-amber-900/70 hover:bg-amber-800 rounded-md">Reopen</button>` : ''}
+        ${r.status !== 'Void' && r.status !== 'Closed' ? `<button onclick="CasePMRfis.workflow(${r.id}, 'void')" class="px-3 py-1.5 text-xs bg-red-950/70 hover:bg-red-900 rounded-md">Void</button>` : ''}
         <button onclick="CasePMRfis.promotePco(${r.id})" class="px-3 py-1.5 text-xs bg-violet-800 hover:bg-violet-700 rounded-md"><i class="fa-solid fa-lightbulb mr-1"></i>Create PCO</button>` : ''}
         ${canEditRfis() && isStaffPortal() ? `<button onclick="CasePMRfis.edit(${r.id})" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md"><i class="fa-solid fa-edit mr-1"></i>Edit</button>` : ''}
         ${canDeleteRfi() ? `<button onclick="CasePMRfis.deleteRfi(${r.id})" class="px-3 py-1.5 text-xs bg-red-900/70 hover:bg-red-800 text-red-200 rounded-md"><i class="fa-solid fa-trash mr-1"></i>Delete</button>` : ''}
@@ -1214,9 +1358,28 @@
   }
 
   async function workflow(id, action) {
+    if (action === 'void') {
+      const ok = typeof CasePMDialog !== 'undefined'
+        ? await CasePMDialog.confirm('Void this RFI? It will no longer be active.', { title: 'Void RFI', danger: true, confirmText: 'Void' })
+        : confirm('Void this RFI?');
+      if (!ok) return;
+    }
     try {
       await api(`/api/rfis/${id}/workflow`, { method: 'POST', body: JSON.stringify({ action }) });
       toast('Workflow updated');
+      await Promise.all([loadRfis(), loadDashboard()]);
+      if (state.drawerRecord?.id === id) view(id);
+    } catch (e) { alert(e.message); }
+  }
+
+  async function markOfficial(id, responseId) {
+    const ok = typeof CasePMDialog !== 'undefined'
+      ? await CasePMDialog.confirm('Mark this response as the official answer?', { title: 'Official Response', confirmText: 'Mark Official' })
+      : confirm('Mark this response as the official answer?');
+    if (!ok) return;
+    try {
+      await api(`/api/rfis/${id}/workflow`, { method: 'POST', body: JSON.stringify({ action: 'mark_official', response_id: responseId }) });
+      toast('Official answer recorded');
       await Promise.all([loadRfis(), loadDashboard()]);
       if (state.drawerRecord?.id === id) view(id);
     } catch (e) { alert(e.message); }
@@ -1615,6 +1778,7 @@
     loadCompanies();
     bindFilters();
     bindAttachmentHandlers();
+    await loadProjectDirectory();
     await Promise.all([loadDashboard(), loadRfis(), loadLinkOptions()]);
     const newBtn = document.querySelector('[onclick="CasePMRfis.newRfi()"]');
     if (newBtn && !canEnterRfis()) newBtn.classList.add('hidden');
@@ -1650,6 +1814,7 @@
     openResponder,
     refresh,
     workflow,
+    markOfficial,
     promotePco,
     deleteRfi,
     addPlanPin,
