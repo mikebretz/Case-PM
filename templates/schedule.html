@@ -94,6 +94,24 @@
                     <span data-sched-tool="resources"><button type="button" class="schedule-toolbar-btn schedule-toolbar-btn-compact" onclick="ScheduleApp.showResourceLeveling()" title="Resources"><i class="fa-solid fa-users-gear"></i></button></span>
                 </div>
             </div>
+            <div class="schedule-ribbon-group" data-sched-tool-group="format">
+                <span class="schedule-ribbon-label">Format</span>
+                <div class="schedule-ribbon-buttons">
+                    <span data-sched-tool="align" class="schedule-format-tools">
+                        <button type="button" id="schedAlignLeftBtn" class="schedule-toolbar-btn active-tool" onclick="ScheduleApp.setGridCellAlignH('left')" title="Align left"><i class="fa-solid fa-align-left"></i></button>
+                        <button type="button" id="schedAlignCenterHBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.setGridCellAlignH('center')" title="Align center"><i class="fa-solid fa-align-center"></i></button>
+                        <button type="button" id="schedAlignRightBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.setGridCellAlignH('right')" title="Align right"><i class="fa-solid fa-align-right"></i></button>
+                        <button type="button" id="schedAlignTopBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.setGridCellAlignV('top')" title="Align top"><i class="fa-solid fa-arrow-up"></i></button>
+                        <button type="button" id="schedAlignMiddleBtn" class="schedule-toolbar-btn active-tool" onclick="ScheduleApp.setGridCellAlignV('middle')" title="Align middle"><i class="fa-solid fa-grip-lines"></i></button>
+                        <button type="button" id="schedAlignBottomBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.setGridCellAlignV('bottom')" title="Align bottom"><i class="fa-solid fa-arrow-down"></i></button>
+                        <input type="number" id="schedFontSizeInput" min="8" max="24" step="1" value="13" class="schedule-ribbon-input" title="Font size" onkeydown="if(event.key==='Enter'){event.preventDefault();ScheduleApp.setGridFontSize(Number(this.value));}">
+                        <button type="button" class="schedule-toolbar-btn text-xs" onclick="ScheduleApp.setGridFontSize(Number(document.getElementById('schedFontSizeInput').value))" title="Apply font size">Size</button>
+                        <input type="color" id="schedFontColorInput" value="#d4d4d4" class="schedule-ribbon-color" title="Font color" onchange="ScheduleApp.setGridFontColor(this.value)">
+                        <input type="number" id="schedRowHeightInput" min="18" max="80" step="1" value="32" class="schedule-ribbon-input" title="Row height" onkeydown="if(event.key==='Enter'){event.preventDefault();ScheduleApp.setGridRowHeight(Number(this.value));}">
+                        <button type="button" class="schedule-toolbar-btn text-xs" onclick="ScheduleApp.setGridRowHeight(Number(document.getElementById('schedRowHeightInput').value))" title="Row height">Row</button>
+                    </span>
+                </div>
+            </div>
             <div class="schedule-ribbon-group" data-sched-tool-group="view">
                 <span class="schedule-ribbon-label">View</span>
                 <div class="schedule-ribbon-buttons">
@@ -117,19 +135,6 @@
             </div>
             <!-- Overflow-only tools (hidden from ribbon, available in More menu) -->
             <div class="schedule-ribbon-overflow" aria-hidden="true">
-            <div data-sched-tool="align" data-sched-tool-group="format" class="hidden">
-                <button type="button" id="schedAlignLeftBtn" class="schedule-toolbar-btn active-tool" onclick="ScheduleApp.setGridCellAlignH('left')" title="Align left"><i class="fa-solid fa-align-left"></i></button>
-                <button type="button" id="schedAlignCenterHBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.setGridCellAlignH('center')" title="Align center"><i class="fa-solid fa-align-center"></i></button>
-                <button type="button" id="schedAlignRightBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.setGridCellAlignH('right')" title="Align right"><i class="fa-solid fa-align-right"></i></button>
-                <button type="button" id="schedAlignTopBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.setGridCellAlignV('top')" title="Align top"><i class="fa-solid fa-arrow-up"></i></button>
-                <button type="button" id="schedAlignMiddleBtn" class="schedule-toolbar-btn active-tool" onclick="ScheduleApp.setGridCellAlignV('middle')" title="Align middle"><i class="fa-solid fa-grip-lines"></i></button>
-                <button type="button" id="schedAlignBottomBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.setGridCellAlignV('bottom')" title="Align bottom"><i class="fa-solid fa-arrow-down"></i></button>
-                <input type="number" id="schedFontSizeInput" min="8" max="24" step="1" value="13" class="schedule-ribbon-input" onkeydown="if(event.key==='Enter'){event.preventDefault();ScheduleApp.setGridFontSize(Number(this.value));}">
-                <button type="button" class="schedule-toolbar-btn text-xs" onclick="ScheduleApp.setGridFontSize(Number(document.getElementById('schedFontSizeInput').value))" title="Apply font size">Font</button>
-                <input type="number" id="schedRowHeightInput" min="18" max="80" step="1" value="32" class="schedule-ribbon-input" onkeydown="if(event.key==='Enter'){event.preventDefault();ScheduleApp.setGridRowHeight(Number(this.value));}">
-                <button type="button" class="schedule-toolbar-btn text-xs" onclick="ScheduleApp.setGridRowHeight(Number(document.getElementById('schedRowHeightInput').value))" title="Row height">Row</button>
-                <button type="button" class="schedule-toolbar-btn text-xs" onclick="ScheduleApp.setGridRowHeight(Number(document.getElementById('schedRowHeightInput').value), true)" title="All rows">All</button>
-            </div>
             <span data-sched-tool="sort" class="hidden"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.sortByStartDate()"><i class="fa-solid fa-arrow-down-short-wide"></i> Sort</button></span>
             <span data-sched-tool="export-csv" class="hidden"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportCsv()"><i class="fa-solid fa-file-csv"></i> CSV</button></span>
             <span data-sched-tool="export-xer" class="hidden"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportXer()"><i class="fa-solid fa-file-export"></i> XER</button></span>

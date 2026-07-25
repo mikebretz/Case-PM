@@ -404,10 +404,15 @@ body.schedule-chart-resizing {
 }
 .schedule-overlay-mode #gantt_here .gantt_grid {
     min-width: var(--sched-grid-min-width, 640px) !important;
-    width: var(--sched-grid-min-width, 640px) !important;
+    width: 100% !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_scale,
 .schedule-overlay-mode #gantt_here .gantt_grid_data {
+    width: 100% !important;
+    min-width: 100% !important;
+}
+.schedule-overlay-mode #gantt_here .gantt_grid_scale .gantt_grid_head,
+.schedule-overlay-mode #gantt_here .gantt_grid_data .gantt_row {
     min-width: var(--sched-grid-min-width, 640px) !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_column_resize_wrap {
@@ -1171,6 +1176,7 @@ body.sched-col-dragging .gantt_grid_scale {
     pointer-events: none;
     z-index: 24;
     display: none;
+    box-sizing: border-box;
 }
 #gantt_here .gantt_grid_scale .gantt_grid_head {
     position: relative !important;
@@ -2107,6 +2113,21 @@ input[type="date"].sched-cell-editor::-webkit-calendar-picker-indicator {
     background: var(--sched-bg);
     color: var(--sched-text);
     text-align: center;
+}
+.schedule-ribbon-color {
+    width: 2rem;
+    height: 1.6rem;
+    padding: 0;
+    border: 1px solid var(--sched-border);
+    border-radius: 2px;
+    background: var(--sched-bg);
+    cursor: pointer;
+}
+.schedule-format-tools {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    flex-wrap: wrap;
 }
 .schedule-timescale-group {
     display: inline-flex;
