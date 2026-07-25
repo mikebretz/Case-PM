@@ -1209,8 +1209,21 @@ body.sched-col-dragging .gantt_grid_scale {
     position: relative !important;
     display: block !important;
 }
+.sched-col-grip-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    pointer-events: none;
+    z-index: 200;
+    overflow: visible;
+}
+.sched-col-grip-layer .sched-col-resize-grip {
+    pointer-events: auto !important;
+}
 #gantt_here .gantt_grid_scale .gantt_grid_head_cell {
     position: absolute !important;
+    z-index: 1 !important;
 }
 #gantt_here .gantt_grid_data .gantt_cell {
     position: absolute !important;
