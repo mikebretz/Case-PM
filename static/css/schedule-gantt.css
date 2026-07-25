@@ -381,6 +381,10 @@ body.schedule-chart-resizing .schedule-overlay-mode #gantt_here .gantt_layout_ce
     min-width: 16px !important;
     margin-left: auto !important;
 }
+.schedule-overlay-mode #gantt_here .gantt_grid {
+    min-width: var(--sched-grid-min-width, 640px) !important;
+    width: var(--sched-grid-min-width, 640px) !important;
+}
 .schedule-overlay-mode #gantt_here .gantt_grid,
 .schedule-overlay-mode #gantt_here .gantt_grid_scale,
 .schedule-overlay-mode #gantt_here .gantt_grid_data,
