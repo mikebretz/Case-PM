@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Headless visual/layout checks for P6-style Gantt split mode.
+ * Headless visual/layout checks for P6-style Gantt overlay mode.
  * Run: node scripts/test_gantt_layout.js
  */
 const path = require('path');
@@ -37,21 +37,20 @@ async function main() {
         const overlay = document.getElementById('scheduleGanttHost')?.classList.contains('schedule-overlay-mode');
         const split = document.getElementById('scheduleGanttHost')?.classList.contains('schedule-split-mode');
         const linkSegs = document.querySelectorAll('#gantt_here .gantt_task_link .gantt_line_wrapper div').length;
-        const gridCell = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1)');
         const timelineCell = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(3)');
         const timelineLeft = timelineCell ? timelineCell.getBoundingClientRect().left : 0;
-        const gridRight = gridCell ? gridCell.getBoundingClientRect().right : 0;
         const hostLeft = document.getElementById('gantt_here')?.getBoundingClientRect().left || 0;
         const timelineWidth = timelineCell ? timelineCell.getBoundingClientRect().width : 0;
         const hostWidth = document.getElementById('gantt_here')?.clientWidth || 0;
         const heads = [...document.querySelectorAll('#gantt_here .gantt_grid_head_cell')];
         const visibleHeads = heads.filter(h => h.getBoundingClientRect().width > 2).length;
         const bars = [...document.querySelectorAll('#gantt_here .gantt_task_line')];
-        const barsInChart = bars.filter(b => b.getBoundingClientRect().left >= gridRight - 4).length;
+        const overlayW = 660;
+        const barsInChart = bars.filter(b => b.getBoundingClientRect().left >= hostLeft + overlayW - 8).length;
         return {
             rowHeights, taskHeights, gaps, align, resizeWraps, overlay, split, linkSegs,
             rowHeight: window.gantt?.config?.row_height,
-            timelineLeft, gridRight, hostLeft, timelineWidth, hostWidth,
+            timelineLeft, hostLeft, timelineWidth, hostWidth,
             visibleHeads, barsInChart, barCount: bars.length
         };
     });
@@ -60,16 +59,16 @@ async function main() {
 
     const maxGap = Math.max(...metrics.gaps, 0);
     const maxAlign = Math.max(...metrics.align.map(a => Math.abs(a || 0)), 0);
-    const timelineAfterGrid = metrics.timelineLeft >= metrics.gridRight - 8;
-    const timelineNotFullWidth = metrics.timelineWidth < metrics.hostWidth - 40;
-    const ok = metrics.split && !metrics.overlay && metrics.resizeWraps > 0
+    const timelineStartsAtHost = Math.abs(metrics.timelineLeft - metrics.hostLeft) <= 2;
+    const timelineIsFullWidth = metrics.timelineWidth >= metrics.hostWidth - 24;
+    const ok = metrics.overlay && !metrics.split && metrics.resizeWraps > 0
         && maxGap <= 0.5 && maxAlign <= 1 && metrics.rowHeight === 24
-        && timelineAfterGrid && timelineNotFullWidth
+        && timelineStartsAtHost && timelineIsFullWidth
         && metrics.visibleHeads >= 5 && metrics.barsInChart >= 1;
 
     if (!ok) {
         console.error('LAYOUT CHECK FAILED', {
-            maxGap, maxAlign, timelineAfterGrid, timelineNotFullWidth,
+            maxGap, maxAlign, timelineStartsAtHost, timelineIsFullWidth,
             visibleHeads: metrics.visibleHeads, barsInChart: metrics.barsInChart, ok
         });
         process.exit(1);
