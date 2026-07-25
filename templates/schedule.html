@@ -192,7 +192,7 @@
         <div id="scheduleGanttHost" class="schedule-gantt-host flex-1 min-h-0 relative">
             <div id="gantt_here"></div>
             <div id="scheduleOverlayControls" class="schedule-overlay-controls">
-                <div id="scheduleChartResizer" class="schedule-chart-resizer" title="Drag to resize chart — task columns show in the exposed area on the left" role="separator" aria-orientation="vertical"></div>
+                <div id="scheduleChartResizer" class="schedule-chart-resizer" title="Drag to resize the Gantt chart panel" role="separator" aria-orientation="vertical"></div>
             </div>
         </div>
     </div>
@@ -365,7 +365,7 @@
     <div class="px-4 py-3 border-b border-zinc-700 flex justify-between items-center">
         <div>
             <h3 class="font-semibold text-sm">Print Setup — Schedule / Gantt</h3>
-            <p class="text-xs text-zinc-500">P6-style layout: match your screen or customize the printout</p>
+            <p class="text-xs text-zinc-500">Match your screen layout or customize the printout</p>
         </div>
         <button type="button" onclick="document.getElementById('schedulePrintModal').close()" class="text-zinc-400 hover:text-white">&times;</button>
     </div>
@@ -400,6 +400,12 @@
                 <label class="text-xs text-zinc-400 block">Margins (inches)
                     <input id="printMarginIn" type="number" min="0.15" max="1" step="0.05" value="0.35" class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm">
                 </label>
+                <label class="text-xs text-zinc-400 block">Print scale (%)
+                    <input id="printScale" type="number" min="50" max="150" value="100" class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm">
+                </label>
+                <label class="flex items-center gap-2"><input id="printFitToPage" type="checkbox" class="rounded border-zinc-600"> Fit table to page width</label>
+                <label class="flex items-center gap-2"><input id="printRepeatHeader" type="checkbox" class="rounded border-zinc-600" checked> Repeat column headers on each page</label>
+                <label class="flex items-center gap-2"><input id="printPageNumbers" type="checkbox" class="rounded border-zinc-600"> Page numbers in footer</label>
                 <label class="text-xs text-zinc-400 block">Columns to print
                     <select id="printColumnMode" class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm">
                         <option value="screen" selected>All columns (match screen layout)</option>
@@ -420,7 +426,8 @@
                     </label>
                 </div>
                 <label class="flex items-center gap-2"><input id="printGridLines" type="checkbox" class="rounded border-zinc-600" checked> Show cell grid lines</label>
-                <label class="flex items-center gap-2"><input id="printWbsColors" type="checkbox" class="rounded border-zinc-600" checked> WBS hierarchy colors (blue / green / yellow)</label>
+                <label class="flex items-center gap-2"><input id="printWbsColors" type="checkbox" class="rounded border-zinc-600" checked> WBS hierarchy row colors</label>
+                <label class="flex items-center gap-2"><input id="printColorBars" type="checkbox" class="rounded border-zinc-600" checked> Color Gantt bars</label>
             </div>
             <div class="space-y-2 border border-zinc-700 rounded-md p-3">
                 <p class="text-xs font-semibold text-emerald-400 uppercase tracking-wide">Gantt chart appearance</p>
