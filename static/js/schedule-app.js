@@ -2862,7 +2862,7 @@
         queueChartOverlay();
         gantt.render();
         queueGridHeaderSync();
-        setSaveStatus('Ready');
+        applyCellAlignToDom();
         pushUndoState();
         updateDataDateMarker();
         updateDeadlineMarkers();
