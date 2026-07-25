@@ -575,9 +575,13 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     border-color: var(--sched-border) !important;
     color: var(--sched-text) !important;
 }
-.gantt_cell, .gantt_tree_content, .gantt_grid_head_cell {
+.gantt_cell, .gantt_tree_content {
     font-size: 13px !important;
     line-height: 1.35 !important;
+}
+.gantt_grid_head_cell {
+    font-size: 11px !important;
+    line-height: 42px !important;
 }
 
 /* Column headers — single row, fixed height (do not match timeline 88px) */
