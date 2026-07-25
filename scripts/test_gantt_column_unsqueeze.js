@@ -35,40 +35,64 @@ async function main() {
         });
         gantt.config.grid_width = expected;
 
-        const applyFlex = () => {
+        const applyLayout = () => {
             const cols = gantt.config.columns;
-            const total = cols.reduce((s, c) => s + (allDefs[c.name] || parseInt(c.width, 10) || 0), 0);
-            document.querySelectorAll('.gantt_grid_head_cell').forEach((cell, i) => {
-                const w = allDefs[cols[i]?.name] || parseInt(cols[i]?.width, 10) || 80;
-                cell.style.width = w + 'px';
-                cell.style.minWidth = w + 'px';
-                cell.style.maxWidth = w + 'px';
-                cell.style.flex = `0 0 ${w}px`;
+            const colMetrics = [];
+            let left = 0;
+            cols.forEach(col => {
+                const w = allDefs[col.name] || parseInt(col.width, 10) || 80;
+                colMetrics.push({ w, left });
+                left += w;
             });
+            const total = left;
             const head = document.querySelector('.gantt_grid_head');
             if (head) {
+                head.style.position = 'relative';
                 head.style.width = total + 'px';
                 head.style.minWidth = total + 'px';
             }
+            document.querySelectorAll('.gantt_grid_head_cell').forEach((cell, i) => {
+                const m = colMetrics[i];
+                if (!m) return;
+                cell.style.position = 'absolute';
+                cell.style.left = m.left + 'px';
+                cell.style.width = m.w + 'px';
+                cell.style.minWidth = m.w + 'px';
+                cell.style.maxWidth = m.w + 'px';
+            });
             document.querySelectorAll('.gantt_grid_data .gantt_row').forEach(row => {
                 row.style.width = total + 'px';
                 row.style.minWidth = total + 'px';
                 row.querySelectorAll(':scope > .gantt_cell').forEach((cell, i) => {
-                    const w = allDefs[cols[i]?.name] || parseInt(cols[i]?.width, 10) || 80;
-                    cell.style.width = w + 'px';
-                    cell.style.minWidth = w + 'px';
-                    cell.style.maxWidth = w + 'px';
-                    cell.style.flex = `0 0 ${w}px`;
+                    const m = colMetrics[i];
+                    if (!m) return;
+                    cell.style.position = 'absolute';
+                    cell.style.left = m.left + 'px';
+                    cell.style.top = '0';
+                    cell.style.height = '100%';
+                    cell.style.width = m.w + 'px';
                 });
+            });
+            [document.querySelector('.gantt_grid_data'), document.querySelector('.gantt_grid_scale')].forEach(host => {
+                if (!host) return;
+                let s = host.querySelector('.sched-grid-scroll-sentinel');
+                if (!s) {
+                    s = document.createElement('div');
+                    s.className = 'sched-grid-scroll-sentinel';
+                    host.appendChild(s);
+                }
+                s.style.cssText = 'position:absolute;left:0;top:0;height:1px;width:' + total + 'px;visibility:hidden;pointer-events:none';
             });
             return total;
         };
-        const total = applyFlex();
+        const total = applyLayout();
         const row = document.querySelector('.gantt_grid_data .gantt_row');
         const cells = [...row.querySelectorAll(':scope > .gantt_cell')];
         const cellSum = cells.reduce((s, c) => s + c.offsetWidth, 0);
         const gridData = document.querySelector('.gantt_grid_data');
         const overlayW = 660;
+        const canScroll = (gridData?.scrollWidth || 0) > overlayW + 20
+            || (gridData?.scrollWidth || 0) > (gridData?.clientWidth || 0) + 20;
         return {
             expected,
             total,
@@ -77,7 +101,7 @@ async function main() {
             gridDataScroll: gridData?.scrollWidth || 0,
             gridDataClient: gridData?.clientWidth || 0,
             overlayW,
-            canScroll: (gridData?.scrollWidth || 0) > overlayW + 20,
+            canScroll,
             squeezed: cellSum < expected - 20
         };
     });
