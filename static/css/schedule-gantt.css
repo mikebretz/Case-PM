@@ -332,53 +332,55 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 }
 .schedule-overlay-mode #gantt_here .gantt_task_scale {
     height: auto !important;
-    min-height: 88px !important;
-}
-.schedule-overlay-mode #gantt_here .gantt_row.sched-summary-row,
-.schedule-overlay-mode #gantt_here .gantt_row.cpm_project_row {
-    min-height: 48px !important;
+    min-height: 52px !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_row,
 .schedule-overlay-mode #gantt_here .gantt_task_row {
-    min-height: 32px !important;
+    min-height: 22px !important;
+    max-height: 22px !important;
+    height: 22px !important;
 }
 .gantt_grid_data .gantt_row.sched-summary-row,
 .gantt_grid_data .gantt_row.cpm_project_row.sched-parent-row {
     font-weight: 600;
 }
 
-/* Primavera WBS hierarchy — full-row colors for summary levels */
-.gantt_grid_data .gantt_row.sched-wbs-l0 {
-    background: #1e3a5f !important;
-    color: #fff !important;
+/* Primavera WBS hierarchy — full-row colors (grid + chart) */
+.gantt_grid_data .gantt_row.sched-wbs-l0,
+.gantt_task_row.sched-wbs-l0 {
+    background: #00b0f0 !important;
+    color: #000 !important;
     font-weight: 700;
 }
-.gantt_grid_data .gantt_row.sched-wbs-l1 {
-    background: #2d6a2e !important;
-    color: #fff !important;
+.gantt_grid_data .gantt_row.sched-wbs-l1,
+.gantt_task_row.sched-wbs-l1 {
+    background: #92d050 !important;
+    color: #000 !important;
     font-weight: 700;
 }
-.gantt_grid_data .gantt_row.sched-wbs-l2 {
-    background: #c9a227 !important;
-    color: #1a1a1a !important;
+.gantt_grid_data .gantt_row.sched-wbs-l2,
+.gantt_task_row.sched-wbs-l2 {
+    background: #ffff00 !important;
+    color: #000 !important;
     font-weight: 700;
 }
-.gantt_grid_data .gantt_row.sched-wbs-l3 {
-    background: #4a6fa5 !important;
-    color: #fff !important;
+.gantt_grid_data .gantt_row.sched-wbs-l3,
+.gantt_task_row.sched-wbs-l3 {
+    background: #bdd7ee !important;
+    color: #000 !important;
     font-weight: 600;
 }
-.schedule-page-root.schedule-theme-dark .gantt_grid_data .gantt_row.sched-wbs-l0 {
-    background: #1e3a5f !important;
-    color: #f0f6ff !important;
+.gantt_grid_data .gantt_row[class*="sched-wbs-l"] .gantt_cell,
+.gantt_grid_data .gantt_row[class*="sched-wbs-l"] .gantt_tree_content,
+.gantt_task_row[class*="sched-wbs-l"] .gantt_task_cell {
+    background: transparent !important;
+    color: inherit !important;
+    border-color: rgba(0, 0, 0, 0.12) !important;
 }
-.schedule-page-root.schedule-theme-dark .gantt_grid_data .gantt_row.sched-wbs-l1 {
-    background: #2d6a2e !important;
-    color: #f0fff0 !important;
-}
-.schedule-page-root.schedule-theme-dark .gantt_grid_data .gantt_row.sched-wbs-l2 {
-    background: #b8860b !important;
-    color: #1a1a1a !important;
+.gantt_grid_data .gantt_row.sched-wbs-l0 .gantt_tree_icon,
+.gantt_grid_data .gantt_row.sched-wbs-l1 .gantt_tree_icon,
+.gantt_grid_data .gantt_row.sched-wbs-l2 .gantt_tree_icon {
+    filter: none !important;
 }
 
 .gantt_task_line.cpm_summary,
@@ -391,11 +393,11 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 }
 .gantt_task_line.sched-wbs-l0.cpm_summary,
 .gantt_task_line.sched-wbs-l0.sched-summary-bar {
-    background: #1e3a5f !important;
+    background: #000 !important;
 }
 .gantt_task_line.sched-wbs-l1.cpm_summary,
 .gantt_task_line.sched-wbs-l1.sched-summary-bar {
-    background: #2d6a2e !important;
+    background: #000 !important;
 }
 .gantt_task_line.sched-wbs-l2.cpm_summary,
 .gantt_task_line.sched-wbs-l2.sched-summary-bar {
@@ -594,39 +596,39 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     line-height: 40px !important;
 }
 
-/* ─── Excel-style grid: headers aligned with timeline scale ─── */
+/* ─── Excel-style grid: compact headers aligned with timeline ─── */
 .gantt_grid_scale {
-    height: 88px !important;
-    min-height: 88px !important;
-    max-height: 88px !important;
-    overflow: visible !important;
+    height: 52px !important;
+    min-height: 52px !important;
+    max-height: 52px !important;
+    overflow: hidden !important;
     position: relative !important;
     z-index: 25 !important;
-    background: var(--sched-surface) !important;
-    border-bottom: 2px solid var(--sched-border-strong) !important;
+    background: #d9d9d9 !important;
+    border-bottom: 1px solid #a6a6a6 !important;
 }
 .gantt_grid_scale .gantt_grid_head {
     position: relative !important;
-    height: 88px !important;
+    height: 52px !important;
     width: 100% !important;
 }
 .gantt_grid_scale .gantt_grid_head_cell {
-    height: 44px !important;
-    line-height: 44px !important;
-    top: 44px !important;
+    height: 26px !important;
+    line-height: 26px !important;
+    top: 26px !important;
     font-size: 11px !important;
     font-weight: 700 !important;
-    letter-spacing: 0.02em !important;
+    letter-spacing: 0 !important;
     text-transform: none;
-    background: var(--sched-surface-raised) !important;
-    color: var(--sched-text-strong) !important;
-    border-right: 1px solid var(--sched-border-strong) !important;
-    border-bottom: 1px solid var(--sched-border-strong) !important;
+    background: #d9d9d9 !important;
+    color: #000 !important;
+    border-right: 1px solid #a6a6a6 !important;
+    border-bottom: 1px solid #a6a6a6 !important;
     overflow: hidden !important;
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
     box-sizing: border-box !important;
-    padding: 0 6px !important;
+    padding: 0 4px !important;
 }
 .gantt_grid_scale::before {
     content: '';
@@ -634,52 +636,58 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     left: 0;
     right: 0;
     top: 0;
-    height: 44px;
-    background: var(--sched-surface) !important;
-    border-bottom: 1px solid var(--sched-border) !important;
+    height: 26px;
+    background: #ececec !important;
+    border-bottom: 1px solid #a6a6a6 !important;
     pointer-events: none;
     z-index: 0;
 }
 .gantt_grid_data .gantt_row {
-    border-bottom: 1px solid var(--sched-border) !important;
+    height: 22px !important;
+    min-height: 22px !important;
+    max-height: 22px !important;
+    border-bottom: 1px solid #d0d0d0 !important;
+    background: #fff !important;
 }
 .gantt_grid_data .gantt_cell {
     position: relative !important;
-    border-right: 1px solid var(--sched-border) !important;
+    height: 22px !important;
+    line-height: 22px !important;
+    border-right: 1px solid #d0d0d0 !important;
     box-sizing: border-box !important;
-    padding: 0 6px !important;
+    padding: 0 4px !important;
     overflow: hidden !important;
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
+    font-size: 11px !important;
 }
 .gantt_grid_data .gantt_cell .gantt_tree_content {
     overflow: hidden !important;
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
 }
-/* Timeline scale — two rows (month + day) */
+/* Timeline scale — two compact rows matching grid header */
 .gantt_task_scale {
     height: auto !important;
-    min-height: 88px !important;
+    min-height: 52px !important;
+    max-height: 52px !important;
 }
 .gantt_scale_cell {
-    height: 44px !important;
-    line-height: 44px !important;
+    height: 26px !important;
+    line-height: 26px !important;
     font-size: 11px !important;
     font-weight: 600 !important;
-    letter-spacing: 0.04em !important;
-    color: var(--sched-text-muted) !important;
-    background: var(--sched-bg) !important;
-    border-color: var(--sched-border) !important;
+    letter-spacing: 0 !important;
+    color: #333 !important;
+    background: #ececec !important;
+    border-color: #a6a6a6 !important;
 }
-.gantt_scale_line { border-color: var(--sched-border) !important; }
-/* Second scale row (days) */
 .gantt_task_scale .gantt_scale_line:last-child .gantt_scale_cell,
 .gantt_task_scale .gantt_scale_line:nth-child(2) .gantt_scale_cell {
-    font-size: 12px !important;
+    font-size: 11px !important;
     font-weight: 700 !important;
-    color: var(--sched-text-strong) !important;
-    letter-spacing: 0.02em !important;
+    color: #000 !important;
+    background: #d9d9d9 !important;
 }
 
 /* Faint full-row selection — MS Project blue highlight */
@@ -734,16 +742,16 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     color: var(--sched-text) !important;
     border-color: var(--sched-border) !important;
 }
-.gantt_grid_data .gantt_row,
-.gantt_grid_data .gantt_row.cpm_project_row,
-.gantt_grid_data .gantt_row.gantt_project {
-    background-color: var(--sched-bg) !important;
-    color: var(--sched-text) !important;
-    border-color: var(--sched-border) !important;
+.gantt_grid_data .gantt_row:not([class*="sched-wbs-l"]),
+.gantt_grid_data .gantt_row.cpm_project_row:not([class*="sched-wbs-l"]),
+.gantt_grid_data .gantt_row.gantt_project:not([class*="sched-wbs-l"]) {
+    background-color: #fff !important;
+    color: #000 !important;
+    border-color: #d0d0d0 !important;
 }
-.gantt_grid_data .gantt_row.odd {
-    background-color: var(--sched-row-alt) !important;
-    color: var(--sched-text) !important;
+.gantt_grid_data .gantt_row.odd:not([class*="sched-wbs-l"]) {
+    background-color: #fff !important;
+    color: #000 !important;
 }
 .gantt_grid_data .gantt_row:hover,
 .gantt_grid_data .gantt_row.cpm_project_row:hover,
@@ -755,15 +763,19 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 .gantt_task_row:hover .gantt_task_cell {
     background-color: var(--sched-row-hover) !important;
 }
-.gantt_tree_content, .gantt_grid_head, .gantt_grid_head_cell {
-    background-color: var(--sched-surface-raised) !important;
-    color: var(--sched-text-muted) !important;
-}
 .gantt_cell, .gantt_grid_head_cell {
-    border-color: var(--sched-border) !important;
-    color: var(--sched-text) !important;
+    border-color: #d0d0d0 !important;
+    color: #000 !important;
     background-color: transparent !important;
     box-sizing: border-box !important;
+}
+.gantt_tree_content, .gantt_grid_head, .gantt_grid_head_cell {
+    background-color: #d9d9d9 !important;
+    color: #000 !important;
+}
+.gantt_grid_data .gantt_cell,
+.gantt_grid_data .gantt_row .gantt_tree_content {
+    background-color: transparent !important;
 }
 .gantt_grid_data .gantt_row:hover .gantt_cell {
     color: var(--sched-text-strong) !important;
@@ -937,51 +949,59 @@ body.sched-col-resizing * {
 
 .gantt_tree_icon.gantt_open, .gantt_tree_icon.gantt_close { filter: invert(0.75); }
 
-/* ─── Timeline — open field (Primavera-style, no cell boxes) ─── */
+/* ─── Timeline — open field, compact rows aligned with grid ─── */
 .gantt_task, .gantt_task_bg, .gantt_data_area, .gantt_bars_area {
-    background-color: var(--sched-chart-bg, #1a1a1a) !important;
+    background-color: #fff !important;
 }
 .gantt_task_row, .gantt_task_row.odd,
 .gantt_task_row.gantt_project, .gantt_task_row.cpm_project_row {
-    background-color: var(--sched-surface) !important;
+    height: 22px !important;
+    min-height: 22px !important;
+    max-height: 22px !important;
+    background-color: #fff !important;
     border: none !important;
-    border-bottom: 1px solid var(--sched-border) !important;
+    border-bottom: 1px solid #d0d0d0 !important;
 }
 .gantt_task_row.odd,
 .gantt_task_row.odd .gantt_task_cell {
-    background-color: var(--sched-row-alt) !important;
+    background-color: #fff !important;
 }
 .gantt_task_row .gantt_task_cell {
+    height: 22px !important;
     background-color: inherit !important;
 }
 .gantt_task_scale, .gantt_scale_cell {
-    background-color: #18181b !important;
-    color: #a1a1aa !important;
-    border-color: #3f3f46 !important;
+    background-color: #ececec !important;
+    color: #333 !important;
+    border-color: #a6a6a6 !important;
 }
-.gantt_scale_line { border-color: #3f3f46 !important; }
+.gantt_scale_line { border-color: #a6a6a6 !important; }
 .gantt_task_cell {
     border-top: none !important;
     border-bottom: none !important;
     border-left: none !important;
-    border-right: 1px dotted rgba(140, 140, 150, 0.45) !important;
+    border-right: 1px dotted rgba(120, 120, 120, 0.45) !important;
     background: transparent !important;
-}
-.schedule-page-root.schedule-theme-light .gantt_task_cell {
-    border-right-color: rgba(120, 120, 130, 0.55) !important;
 }
 .gantt_task_bg {
     background-image: repeating-linear-gradient(
         to right,
         transparent,
-        transparent calc(var(--sched-grid-col-width, 32px) - 1px),
-        rgba(140, 140, 150, 0.35) calc(var(--sched-grid-col-width, 32px) - 1px),
-        rgba(140, 140, 150, 0.35) var(--sched-grid-col-width, 32px)
+        transparent calc(var(--sched-grid-col-width, 28px) - 1px),
+        rgba(120, 120, 120, 0.35) calc(var(--sched-grid-col-width, 28px) - 1px),
+        rgba(120, 120, 120, 0.35) var(--sched-grid-col-width, 28px)
     ) !important;
-    background-color: var(--sched-chart-bg, #1a1a1a) !important;
+    background-color: #fff !important;
 }
 .gantt_task_row.sched-summary-timeline-row {
-    background: transparent !important;
+    background: inherit !important;
+}
+.gantt_task_line {
+    margin-top: 0 !important;
+}
+.gantt_task_line.cpm_loe {
+    height: 4px !important;
+    margin-top: 9px !important;
 }
 
 /* ─── Gantt bars: colors from task_style inline (display settings + per-activity) ─── */
