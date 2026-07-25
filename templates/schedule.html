@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="https://cdn.dhtmlx.com/gantt/edge/dhtmlxgantt.css">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/schedule-gantt.css') }}">
 
-<div class="schedule-page-root schedule-theme-light" data-schedule-theme="light">
+<div class="schedule-page-root schedule-theme-dark" data-schedule-theme="dark">
     <div id="scheduleChrome" class="no-print schedule-chrome">
         <!-- Title bar (MS Project–style) -->
         <header class="schedule-titlebar">
@@ -190,7 +190,7 @@
     <!-- Gantt (fills remaining viewport) -->
     <div id="ganttViewPanel" class="schedule-panel flex-1 min-h-0 overflow-hidden flex flex-col">
         <div id="schedulePrintSheet" class="schedule-print-sheet no-screen" aria-hidden="true"></div>
-        <div id="scheduleGanttHost" class="flex-1 min-h-0 relative">
+        <div id="scheduleGanttHost" class="schedule-gantt-host flex-1 min-h-0 relative">
             <div id="gantt_here"></div>
             <div id="scheduleOverlayControls" class="schedule-overlay-controls">
                 <div id="scheduleChartResizer" class="schedule-chart-resizer" title="Drag to resize chart — task columns show in the exposed area on the left" role="separator" aria-orientation="vertical"></div>

@@ -3,28 +3,29 @@
 .schedule-page-root {
     --sched-font: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
     font-family: var(--sched-font);
-    --sched-bg: #ffffff;
-    --sched-surface: #f3f2f1;
-    --sched-surface-raised: #faf9f8;
-    --sched-border: #edebe9;
-    --sched-border-strong: #d2d0ce;
-    --sched-text: #323130;
-    --sched-text-muted: #605e5c;
-    --sched-text-strong: #201f1e;
-    --sched-accent: #0078d4;
-    --sched-accent-hover: #106ebe;
-    --sched-accent-soft: #deecf9;
-    --sched-chart-bg: #ffffff;
-    --sched-scroll-bg: #faf9f8;
-    --sched-row-hover: #f3f2f1;
-    --sched-row-alt: #faf9f8;
-    --sched-selection: #cce4f7;
-    --sched-selection-border: #0078d4;
-    --sched-toolbar-bg: #ffffff;
-    --sched-panel-bg: #ffffff;
-    --sched-ribbon-bg: #faf9f8;
-    --sched-critical: #c50f1f;
-    --sched-success: #107c10;
+    /* Dark theme (default) */
+    --sched-bg: #1e1e1e;
+    --sched-surface: #2d2d2d;
+    --sched-surface-raised: #252526;
+    --sched-border: #3e3e42;
+    --sched-border-strong: #505050;
+    --sched-text: #d4d4d4;
+    --sched-text-muted: #9d9d9d;
+    --sched-text-strong: #ffffff;
+    --sched-accent: #3794ff;
+    --sched-accent-hover: #4da3ff;
+    --sched-accent-soft: rgba(55, 148, 255, 0.18);
+    --sched-chart-bg: #1a1a1a;
+    --sched-scroll-bg: #252526;
+    --sched-row-hover: #2a2d2e;
+    --sched-row-alt: #252526;
+    --sched-selection: rgba(55, 148, 255, 0.22);
+    --sched-selection-border: #3794ff;
+    --sched-toolbar-bg: #2d2d2d;
+    --sched-panel-bg: #1e1e1e;
+    --sched-ribbon-bg: #252526;
+    --sched-critical: #f1707b;
+    --sched-success: #6ccb5f;
     color: var(--sched-text);
     background: transparent;
 }
@@ -94,8 +95,31 @@ body:has(.schedule-page-root) #mainContent {
 }
 
 #scheduleChrome { flex-shrink: 0; z-index: 20; }
-#scheduleGanttHost { flex: 1; min-height: 0; overflow: hidden; background: var(--sched-bg); position: relative; isolation: isolate; }
-#gantt_here { width: 100%; height: 100%; position: relative; z-index: 1; }
+#scheduleGanttHost,
+.schedule-gantt-host {
+    flex: 1;
+    min-height: 360px;
+    overflow: hidden;
+    background: var(--sched-bg);
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    flex-direction: column;
+}
+#gantt_here {
+    width: 100%;
+    flex: 1;
+    min-height: 320px;
+    height: 100%;
+    position: relative;
+    z-index: 1;
+}
+#ganttViewPanel {
+    flex: 1 1 auto;
+    min-height: 360px;
+    display: flex;
+    flex-direction: column;
+}
 
 /* Overlay controls layer — resizer visual + host captures drag near boundary */
 .schedule-overlay-controls {
@@ -1283,7 +1307,7 @@ input[type="date"].sched-cell-editor::-webkit-calendar-picker-indicator {
     gap: 1rem;
     padding: 0.5rem 0.25rem 0.35rem;
     border-bottom: 1px solid var(--sched-border);
-    margin-bottom: 0;
+    background: var(--sched-panel-bg);
 }
 .schedule-titlebar-main {
     display: flex;
@@ -1351,6 +1375,7 @@ input[type="date"].sched-cell-editor::-webkit-calendar-picker-indicator {
 .schedule-ribbon-btn-primary:hover {
     background: var(--sched-accent-hover);
     border-color: var(--sched-accent-hover);
+    color: #fff;
 }
 .schedule-ribbon-btn-muted {
     color: var(--sched-text-muted);
@@ -1555,16 +1580,31 @@ input[type="date"].sched-cell-editor::-webkit-calendar-picker-indicator {
     min-height: 24px;
 }
 
-/* Task bars — crisp MS Project look */
-.gantt_task_line.cpm_critical {
-    box-shadow: none !important;
+/* Timeline / chart area — ensure bars are visible on dark background */
+.gantt_task,
+.gantt_task_bg,
+.gantt_data_area,
+.gantt_task_scale,
+.gantt_layout_cell .gantt_task {
+    background-color: var(--sched-chart-bg) !important;
 }
-.gantt_task_progress {
-    opacity: 0.35;
+.gantt_task_cell {
+    border-color: var(--sched-border) !important;
 }
-.gantt_task_content {
+.gantt_task_line {
+    border-radius: 2px !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+.gantt_task_line .gantt_task_content {
+    color: #fff !important;
     font-size: 11px;
     font-weight: 500;
+}
+.gantt_task_link .gantt_link_arrow {
+    border-color: var(--sched-text-muted) !important;
+}
+.gantt_line_wrapper div {
+    background-color: var(--sched-text-muted) !important;
 }
 
 /* Today / data date marker */
@@ -1572,18 +1612,6 @@ input[type="date"].sched-cell-editor::-webkit-calendar-picker-indicator {
 .gantt_marker_area .gantt_marker {
     background-color: var(--sched-accent) !important;
     opacity: 0.65;
-}
-
-/* Scrollbars */
-#gantt_here .gantt_hor_scroll::-webkit-scrollbar-thumb,
-#gantt_here .gantt_scroll_hor::-webkit-scrollbar-thumb {
-    background: var(--sched-border-strong) !important;
-    border-radius: 4px !important;
-    border: 2px solid var(--sched-scroll-bg) !important;
-}
-#gantt_here .gantt_hor_scroll::-webkit-scrollbar-thumb:hover,
-#gantt_here .gantt_scroll_hor::-webkit-scrollbar-thumb:hover {
-    background: var(--sched-text-muted) !important;
 }
 
 /* Secondary panels */
