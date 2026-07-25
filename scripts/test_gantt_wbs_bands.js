@@ -63,7 +63,11 @@ const { chromium } = require('playwright');
             const startRow = items[seg.startIdx].row;
             const endRow = items[seg.endIdx].row;
             const top = startRow.offsetTop;
-            const height = endRow.offsetTop + endRow.offsetHeight - startRow.offsetTop;
+            let endBottom = endRow.offsetTop + endRow.offsetHeight;
+            if (seg.level > 0 && seg.endIdx + 1 < items.length) {
+                endBottom = items[seg.endIdx + 1].row.offsetTop;
+            }
+            const height = endBottom - startRow.offsetTop;
             const band = document.createElement('div');
             band.className = 'sched-wbs-band';
             band.style.cssText = `position:absolute;top:${top}px;left:${seg.level * WBS_GUTTER_WIDTH}px;width:${WBS_GUTTER_WIDTH}px;height:${height}px;background:${seg.color}`;

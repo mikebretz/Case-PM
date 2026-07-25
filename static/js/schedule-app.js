@@ -1790,6 +1790,28 @@
                 cell.classList.toggle('sched-col-active', colIdx >= 0 && i === colIdx);
             });
         });
+        const scale = document.querySelector('#gantt_here .gantt_grid_scale');
+        if (!scale) return;
+        let overlay = scale.querySelector('.sched-col-select-overlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.className = 'sched-col-select-overlay';
+            scale.appendChild(overlay);
+        }
+        if (colIdx < 0) {
+            overlay.style.display = 'none';
+            scale.classList.remove('sched-col-bar-selected');
+            return;
+        }
+        const head = document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell')[colIdx];
+        if (!head) {
+            overlay.style.display = 'none';
+            return;
+        }
+        overlay.style.display = 'block';
+        overlay.style.left = head.offsetLeft + 'px';
+        overlay.style.width = head.offsetWidth + 'px';
+        scale.classList.add('sched-col-bar-selected');
     }
 
     function applyRowHighlight() {
@@ -1879,6 +1901,192 @@
         queueSave();
     }
 
+    function getColumnIndexFromHeaderX(clientX, heads) {
+        const list = heads || document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell');
+        for (let i = 0; i < list.length; i++) {
+            const r = list[i].getBoundingClientRect();
+            if (clientX >= r.left - 2 && clientX < r.right + 2) return i;
+        }
+        return -1;
+    }
+
+    function getColumnLabel(name) {
+        const col = (gantt.config.columns || []).find(c => c.name === name);
+        return col?.label || name || '';
+    }
+
+    function isMovableColumn(col) {
+        if (!col) return false;
+        return !isAddColumnCol(col) && col.name !== 'hierarchy' && col.name !== 'collapse';
+    }
+
+    function scrollColumnIntoView(colName) {
+        const idx = gantt.config.columns.findIndex(c => c.name === colName);
+        if (idx < 0) return;
+        const head = document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell')[idx];
+        if (!head) return;
+        const left = head.offsetLeft;
+        const right = left + head.offsetWidth;
+        const viewEl = document.querySelector('#gantt_here .gantt_grid_data')
+            || document.querySelector('#gantt_here .gantt_grid_scale');
+        if (!viewEl) return;
+        const viewLeft = viewEl.scrollLeft;
+        const viewRight = viewLeft + viewEl.clientWidth;
+        if (left < viewLeft) preserveGridScrollLeft(Math.max(0, left - 8));
+        else if (right > viewRight) preserveGridScrollLeft(right - viewEl.clientWidth + 8);
+    }
+
+    function selectGridColumn(colName) {
+        if (!colName || isAddColumnCol({ name: colName })) return;
+        gridSelection = { type: 'column', colName };
+        if (typeof gantt.unselectTask === 'function') gantt.unselectTask();
+        highlightGridSelection();
+        scrollColumnIntoView(colName);
+    }
+
+    function removeSelectedColumn() {
+        if (gridSelection.type !== 'column' || !gridSelection.colName) {
+            return showScheduleAlert('Select a column header first, then press Delete or use Columns manager.', 'warning');
+        }
+        const name = gridSelection.colName;
+        if (REQUIRED_COLUMNS.includes(name) || name === 'hierarchy') {
+            return showScheduleAlert('This column cannot be removed.', 'warning');
+        }
+        const label = getColumnLabel(name);
+        if (!confirm(`Remove column "${label}" from the grid?`)) return;
+        removeColumn(name, { refreshManager: false });
+        gridSelection = { type: null };
+        highlightGridSelection();
+    }
+
+    function moveGridColumn(fromIdx, toIdx) {
+        const cols = gantt.config.columns || [];
+        if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0 || fromIdx >= cols.length || toIdx >= cols.length) return;
+        const fromCol = cols[fromIdx];
+        const toCol = cols[toIdx];
+        if (!isMovableColumn(fromCol) || !toCol || isAddColumnCol(toCol)) return;
+        const names = cols.map(c => c.name).filter(n => n !== '_sched_add_col');
+        const [moved] = names.splice(fromIdx, 1);
+        names.splice(toIdx, 0, moved);
+        columnOrder = names;
+        scheduleSettings.column_order = names.slice();
+        gantt.config.columns = buildColumnConfig();
+        if (gridSelection.type === 'column') gridSelection.colName = moved;
+        updateGridWidth();
+        gantt.render();
+        queueSave();
+        logActivity('Moved column', moved);
+    }
+
+    function bindGridHorizontalScrollSync() {
+        const gridData = document.querySelector('#gantt_here .gantt_grid_data');
+        const scale = document.querySelector('#gantt_here .gantt_grid_scale');
+        if (!gridData || !scale || gridData.dataset.hscrollBound) return;
+        gridData.dataset.hscrollBound = '1';
+        const syncFromGrid = () => {
+            if (scale.scrollLeft !== gridData.scrollLeft) scale.scrollLeft = gridData.scrollLeft;
+        };
+        const syncFromScale = () => {
+            if (gridData.scrollLeft !== scale.scrollLeft) gridData.scrollLeft = scale.scrollLeft;
+        };
+        gridData.addEventListener('scroll', syncFromGrid, { passive: true });
+        scale.addEventListener('scroll', syncFromScale, { passive: true });
+    }
+
+    const colReorderDrag = { active: false, fromIdx: -1, toIdx: -1, startX: 0, startY: 0, pending: null };
+
+    function ensureColumnDropIndicator() {
+        const scale = document.querySelector('#gantt_here .gantt_grid_scale');
+        if (!scale) return null;
+        let el = scale.querySelector('.sched-col-drop-indicator');
+        if (!el) {
+            el = document.createElement('div');
+            el.className = 'sched-col-drop-indicator';
+            scale.appendChild(el);
+        }
+        return el;
+    }
+
+    function positionColumnDropIndicator(colIdx) {
+        const indicator = ensureColumnDropIndicator();
+        if (!indicator) return;
+        if (colIdx < 0) {
+            indicator.style.display = 'none';
+            return;
+        }
+        const heads = document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell');
+        const head = heads[colIdx];
+        const scale = head?.closest('.gantt_grid_scale');
+        if (!head || !scale) {
+            indicator.style.display = 'none';
+            return;
+        }
+        indicator.style.display = 'block';
+        indicator.style.left = head.offsetLeft + 'px';
+    }
+
+    function clearColumnDropIndicator() {
+        const indicator = document.querySelector('#gantt_here .sched-col-drop-indicator');
+        if (indicator) indicator.style.display = 'none';
+    }
+
+    function bindColumnReorderDrag() {
+        if (bindColumnReorderDrag.done) return;
+        bindColumnReorderDrag.done = true;
+        const host = document.getElementById('gantt_here');
+        if (!host) return;
+
+        host.addEventListener('mousedown', e => {
+            if (colResizeDrag.active || columnResizeInProgress) return;
+            const scale = e.target.closest('.gantt_grid_scale');
+            if (!scale) return;
+            if (e.target.closest('.gantt_grid_column_resize_wrap') || e.target.closest('.sched-add-col-btn')) return;
+
+            const heads = Array.from(scale.querySelectorAll('.gantt_grid_head_cell'));
+            const idx = getColumnIndexFromHeaderX(e.clientX, heads);
+            if (idx < 0) return;
+            const col = gantt.config.columns[idx];
+            if (!isMovableColumn(col)) return;
+            if (gridSelection.type !== 'column' || gridSelection.colName !== col.name) return;
+
+            const head = heads[idx];
+            if (head) {
+                const rect = head.getBoundingClientRect();
+                if (e.clientY >= rect.top && rect.right - e.clientX <= 8) return;
+            }
+
+            colReorderDrag.pending = { fromIdx: idx, startX: e.clientX, startY: e.clientY };
+        }, true);
+
+        document.addEventListener('mousemove', e => {
+            if (colReorderDrag.pending && !colReorderDrag.active) {
+                const dx = Math.abs(e.clientX - colReorderDrag.pending.startX);
+                const dy = Math.abs(e.clientY - colReorderDrag.pending.startY);
+                if (dx > 5 || dy > 5) {
+                    colReorderDrag.active = true;
+                    colReorderDrag.fromIdx = colReorderDrag.pending.fromIdx;
+                    document.body.classList.add('sched-col-dragging');
+                }
+            }
+            if (!colReorderDrag.active) return;
+            const heads = document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell');
+            const idx = getColumnIndexFromHeaderX(e.clientX, heads);
+            colReorderDrag.toIdx = idx;
+            positionColumnDropIndicator(idx);
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (colReorderDrag.active) {
+                const { fromIdx, toIdx } = colReorderDrag;
+                if (toIdx >= 0 && toIdx !== fromIdx) moveGridColumn(fromIdx, toIdx);
+                clearColumnDropIndicator();
+                colReorderDrag.active = false;
+                document.body.classList.remove('sched-col-dragging');
+            }
+            colReorderDrag.pending = null;
+        });
+    }
+
     function bindGridSelectionHandlers() {
         if (bindGridSelectionHandlers.done) return;
         bindGridSelectionHandlers.done = true;
@@ -1886,20 +2094,28 @@
         if (!host) return;
 
         host.addEventListener('click', e => {
-            const head = e.target.closest('.gantt_grid_head_cell');
-            if (head && !e.target.closest('.gantt_grid_column_resize_wrap')) {
-                const scale = head.closest('.gantt_grid_scale');
-                if (!scale) return;
+            if (e.target.closest('.gantt_grid_column_resize_wrap') || e.target.closest('.sched-add-col-btn')) return;
+            const scale = e.target.closest('.gantt_grid_scale');
+            if (!scale) return;
+
+            const scaleRect = scale.getBoundingClientRect();
+            if (e.clientY < scaleRect.top || e.clientY > scaleRect.bottom) return;
+
+            const heads = Array.from(scale.querySelectorAll('.gantt_grid_head_cell'));
+            const idx = getColumnIndexFromHeaderX(e.clientX, heads);
+            if (idx < 0) return;
+
+            const head = heads[idx];
+            const col = gantt.config.columns[idx];
+            if (!col || isAddColumnCol(col)) return;
+
+            if (head) {
                 const rect = head.getBoundingClientRect();
-                if (rect.right - e.clientX <= 8) return;
-                const heads = Array.from(scale.querySelectorAll('.gantt_grid_head_cell'));
-                const idx = heads.indexOf(head);
-                const col = gantt.config.columns[idx];
-                if (!col || isAddColumnCol(col) || e.target.closest('.sched-add-col-btn')) return;
-                gridSelection = { type: 'column', colName: col.name };
-                highlightGridSelection();
-                e.stopPropagation();
+                if (e.clientY >= rect.top && rect.right - e.clientX <= 8) return;
             }
+
+            selectGridColumn(col.name);
+            e.stopPropagation();
         }, true);
     }
 
@@ -2209,6 +2425,8 @@
 
     function bindColumnResizeEnhancements() {
         bindColumnResizeDrag();
+        bindColumnReorderDrag();
+        bindGridHorizontalScrollSync();
         ensureColumnResizeGrips();
         ensureAddColumnHeader();
     }
@@ -2605,7 +2823,11 @@
             const startRow = items[seg.startIdx].row;
             const endRow = items[seg.endIdx].row;
             const top = startRow.offsetTop - scrollTop;
-            const height = endRow.offsetTop + endRow.offsetHeight - startRow.offsetTop;
+            let endBottom = endRow.offsetTop + endRow.offsetHeight;
+            if (seg.level > 0 && seg.endIdx + 1 < items.length) {
+                endBottom = items[seg.endIdx + 1].row.offsetTop;
+            }
+            const height = endBottom - startRow.offsetTop;
             const band = document.createElement('div');
             band.className = 'sched-wbs-band';
             band.dataset.wbsLevel = String(seg.level);
@@ -3363,6 +3585,11 @@
         if (!ganttReady) return;
 
         if (e.key === 'Delete' || e.key === 'Backspace') {
+            if (gridSelection.type === 'column' && gridSelection.colName) {
+                e.preventDefault();
+                removeSelectedColumn();
+                return;
+            }
             e.preventDefault();
             deleteSelected();
             return;
@@ -4343,11 +4570,13 @@
             if (!visibleCols.length) {
                 visible.innerHTML = '<p class="text-zinc-500 text-sm">No columns visible.</p>';
             } else {
-                visible.innerHTML = visibleCols.map(col => {
-                    const required = REQUIRED_COLUMNS.includes(col.name);
+                visible.innerHTML = `<p class="text-xs text-zinc-500 mb-2">Click a header to select a column. Drag a selected column header to reorder. Press Delete to remove the selected column.</p>`
+                    + visibleCols.map(col => {
+                    const required = REQUIRED_COLUMNS.includes(col.name) || col.name === 'hierarchy';
                     const label = col.label || col.name;
-                    return `<div class="flex items-center justify-between gap-2 px-3 py-2 rounded-md bg-zinc-800/80 border border-zinc-700">
-                        <span class="text-sm">${label}</span>
+                    const selected = gridSelection.type === 'column' && gridSelection.colName === col.name;
+                    return `<div class="flex items-center justify-between gap-2 px-3 py-2 rounded-md border ${selected ? 'border-emerald-500 bg-emerald-950/40' : 'bg-zinc-800/80 border-zinc-700'}">
+                        <button type="button" class="text-sm text-left flex-1 hover:text-emerald-300" onclick="ScheduleApp.selectGridColumn('${col.name}')">${label}</button>
                         ${required
                             ? '<span class="text-[0.65rem] text-zinc-500">Required</span>'
                             : `<button type="button" class="text-xs text-red-400 hover:text-red-300 px-2 py-1" onclick="ScheduleApp.removeColumn('${col.name}')">Remove</button>`}
@@ -4391,8 +4620,8 @@
         if (!managerMode) dlg.showModal();
     }
 
-    function removeColumn(name) {
-        if (REQUIRED_COLUMNS.includes(name)) {
+    function removeColumn(name, opts) {
+        if (REQUIRED_COLUMNS.includes(name) || name === 'hierarchy') {
             showScheduleAlert('Activity Name is required and cannot be removed.', 'warning');
             return;
         }
@@ -4404,7 +4633,7 @@
         gantt.render();
         queueSave();
         logActivity('Removed column', name);
-        showColumnManager();
+        if (opts?.refreshManager !== false) showColumnManager();
     }
 
     function addFieldColumn(mapTo) {
@@ -5217,7 +5446,7 @@
         const barHeader = showInlineBars ? `<th class="print-bar-cell" style="width:${barTablePct.toFixed(2)}%">Schedule Bars</th>` : '';
         const colHeaders = visibleCols.map(({ col, width: colW }) => {
             const pct = ((colW / visibleTextW) * textTablePct).toFixed(3);
-            const label = col.label || col.name || '';
+            const label = col.name === 'hierarchy' ? '' : (col.label || col.name || '');
             const align = getPrintColumnAlignClass(col);
             const hierarchyCls = col.name === 'hierarchy' ? ' print-col-hierarchy' : '';
             return `<th class="print-col-${col.name}${align}${hierarchyCls}" style="width:${pct}%">${label}</th>`;
@@ -5398,10 +5627,31 @@
         deliver();
     }
 
+    function hideAllOptionalColumns() {
+        const keep = new Set(['hierarchy', 'collapse', 'wbs', 'activity_id', 'text', 'duration', 'start_date', 'end_date']);
+        let hidden = 0;
+        (gantt.config.columns || []).forEach(c => {
+            if (keep.has(c.name) || REQUIRED_COLUMNS.includes(c.name) || isAddColumnCol(c)) return;
+            if (!hiddenColumns.includes(c.name)) {
+                hiddenColumns.push(c.name);
+                hidden++;
+            }
+        });
+        customColumns = customColumns.filter(c => keep.has(c.map_to || c.name));
+        gantt.config.columns = buildColumnConfig();
+        gridSelection = { type: null };
+        updateGridWidth();
+        gantt.render();
+        queueSave();
+        showScheduleAlert(hidden ? `Hidden ${hidden} optional columns. Use + or Columns to add them back.` : 'Only standard columns are visible.', 'success');
+        document.getElementById('scheduleColumnManagerModal')?.close();
+    }
+
     function showAllOptionalColumns() {
         if (typeof CasePMScheduleFields === 'undefined') {
             return showScheduleAlert('Field catalog not loaded.', 'error');
         }
+        if (!confirm('Add all optional schedule fields as columns? You can remove them later from the Columns manager or by selecting a column and pressing Delete.')) return;
         const existing = new Set((gantt.config.columns || []).map(c => c.name));
         let added = 0;
         CasePMScheduleFields.FIELDS.forEach(f => {
@@ -5508,11 +5758,11 @@
         toggleCriticalPath, toggleCriticalFilter, setBaseline, showBaselineManager, activateBaseline, deleteBaseline,
         undo, redo, fitScheduleView, scrollToToday, panTimeline, resetTimelineCalendar, filterTasks, exportCsv, focusTimelineOnTask,
         runSchedule, switchScheduleView, renderCalendarView, renderLookAhead, focusActivity, sortByStartDate, exportXer, exportMsProjectXml,
-        showAllOptionalColumns, showFeaturesChecklist, showKeyboardShortcuts,
+        showAllOptionalColumns, hideAllOptionalColumns, showFeaturesChecklist, showKeyboardShortcuts,
         exportJson, importFile, printGantt, printLookAhead, showPrintSetup, savePrintSettings, setPrintColumnToggle,
         showHeaderFooterSetup, saveHeaderFooterSettings, onHeaderLogoSelected, clearHeaderLogo,
         saveSchedule,
-        loadSchedule, loadP6DemoSchedule, clearSchedule, showColumnManager, showAddColumnDialog, removeColumn, addFieldColumn, queueSave,
+        loadSchedule, loadP6DemoSchedule, clearSchedule, showColumnManager, showAddColumnDialog, removeColumn, removeSelectedColumn, selectGridColumn, hideAllOptionalColumns, addFieldColumn, queueSave,
         setGridCellAlignH, setGridCellAlignV, setGridFontSize, setGridRowHeight, saveBarSettingsAsDefaults,
         runResourceLeveling, showResourceLeveling, renderPortfolio, resetColumnWidths, renderBaselineComparison,
         restoreBaseline, toggleScheduleTheme: () => window.ScheduleExtras?.toggleTheme(),
