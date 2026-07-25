@@ -655,6 +655,7 @@
     document.getElementById('statSubCard1')?.classList.toggle('hidden', tab !== 'subs');
     document.getElementById('statSubCard2')?.classList.toggle('hidden', tab !== 'subs');
     if (tab === 'subs') renderSubCoTable();
+    if (global.CasePMChangeOrdersHelp?.setContextFromTab) global.CasePMChangeOrdersHelp.setContextFromTab(tab);
   }
 
   function populateSelect(id, options, selected) {
@@ -2047,6 +2048,7 @@
     editSubCo: id => api(`/api/change-orders/${id}`).then(r => openModal('sub', r)).catch(e => alert(e.message)),
     onSubCoKindChange,
     onLinkedCommitmentChange,
+    openHelp: (section) => (global.CasePMChangeOrdersHelp?.open || (() => {}))(section),
   };
 
   document.addEventListener('DOMContentLoaded', init);
