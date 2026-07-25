@@ -1060,6 +1060,41 @@ body.schedule-chart-resizing {
     background: rgba(55, 148, 255, 0.22) !important;
     box-shadow: inset 0 0 0 1px var(--sched-accent) !important;
 }
+.gantt_grid_scale.sched-col-bar-selected::before {
+    box-shadow: inset 0 -2px 0 var(--sched-accent);
+}
+.sched-col-drop-indicator {
+    position: absolute;
+    top: 0;
+    width: 3px;
+    height: 52px;
+    background: var(--sched-accent);
+    z-index: 200;
+    pointer-events: none;
+    display: none;
+}
+body.sched-col-dragging .gantt_grid_head_cell,
+body.sched-col-dragging .gantt_grid_scale {
+    cursor: grabbing !important;
+}
+.schedule-overlay-mode #gantt_here .gantt_grid_scale {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    cursor: default !important;
+}
+.schedule-overlay-mode #gantt_here .gantt_grid_data {
+    overflow-x: auto !important;
+}
+.sched-col-select-overlay {
+    position: absolute;
+    top: 0;
+    height: 52px;
+    background: rgba(55, 148, 255, 0.16);
+    box-shadow: inset 0 0 0 1px var(--sched-accent);
+    pointer-events: none;
+    z-index: 24;
+    display: none;
+}
 #gantt_here .gantt_grid_scale .gantt_grid_head {
     position: relative !important;
 }
