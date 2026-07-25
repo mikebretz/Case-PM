@@ -124,6 +124,9 @@ body:has(.schedule-page-root) #mainContent {
     height: 100%;
     position: relative;
     z-index: 1;
+    --sched-grid-header-top: 26px;
+    --sched-grid-header-label: 52px;
+    --sched-grid-header-total: 78px;
 }
 #ganttViewPanel {
     flex: 1 1 auto;
@@ -769,24 +772,29 @@ body.schedule-chart-resizing {
 
 /* ─── Excel-style grid: compact headers aligned with timeline ─── */
 .gantt_grid_scale {
-    height: 52px !important;
-    min-height: 52px !important;
-    max-height: 52px !important;
-    overflow: hidden !important;
+    height: var(--sched-grid-header-total, 78px) !important;
+    min-height: var(--sched-grid-header-total, 78px) !important;
+    max-height: var(--sched-grid-header-total, 78px) !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    scrollbar-width: none;
     position: relative !important;
     z-index: 25 !important;
     background: var(--sched-surface-raised) !important;
     border-bottom: 1px solid var(--sched-border-strong) !important;
 }
+.gantt_grid_scale::-webkit-scrollbar {
+    display: none;
+}
 .gantt_grid_scale .gantt_grid_head {
     position: relative !important;
-    height: 52px !important;
+    height: var(--sched-grid-header-total, 78px) !important;
     width: 100% !important;
 }
 .gantt_grid_scale .gantt_grid_head_cell {
-    height: 26px !important;
-    line-height: 26px !important;
-    top: 26px !important;
+    height: var(--sched-grid-header-label, 52px) !important;
+    line-height: var(--sched-grid-header-label, 52px) !important;
+    top: var(--sched-grid-header-top, 26px) !important;
     font-size: 11px !important;
     font-weight: 700 !important;
     letter-spacing: 0 !important;
@@ -807,11 +815,18 @@ body.schedule-chart-resizing {
     left: 0;
     right: 0;
     top: 0;
-    height: 26px;
+    height: var(--sched-grid-header-top, 26px);
     background: var(--sched-surface) !important;
     border-bottom: 1px solid var(--sched-border) !important;
     pointer-events: none;
     z-index: 0;
+}
+.gantt_grid_data {
+    overflow-x: auto !important;
+    scrollbar-width: none;
+}
+.gantt_grid_data::-webkit-scrollbar {
+    display: none;
 }
 .gantt_grid_data .gantt_row {
     border: none !important;
@@ -837,13 +852,13 @@ body.schedule-chart-resizing {
 /* Timeline scale — two compact rows matching grid header (P6-style) */
 .gantt_task_scale {
     height: auto !important;
-    min-height: 52px !important;
-    max-height: 52px !important;
+    min-height: var(--sched-grid-header-total, 78px) !important;
+    max-height: var(--sched-grid-header-total, 78px) !important;
 }
 /* Dark theme (default): charcoal headers, light date labels */
 .schedule-page-root:not(.schedule-theme-light) .gantt_scale_cell {
-    height: 26px !important;
-    line-height: 26px !important;
+    height: calc(var(--sched-grid-header-total, 78px) / 2) !important;
+    line-height: calc(var(--sched-grid-header-total, 78px) / 2) !important;
     font-size: 11px !important;
     font-weight: 600 !important;
     letter-spacing: 0 !important;
@@ -865,8 +880,8 @@ body.schedule-chart-resizing {
 }
 /* Light theme: P6-style light gray headers */
 .schedule-page-root.schedule-theme-light .gantt_scale_cell {
-    height: 26px !important;
-    line-height: 26px !important;
+    height: calc(var(--sched-grid-header-total, 78px) / 2) !important;
+    line-height: calc(var(--sched-grid-header-total, 78px) / 2) !important;
     font-size: 11px !important;
     font-weight: 600 !important;
     letter-spacing: 0 !important;
@@ -1119,7 +1134,7 @@ body.schedule-chart-resizing {
     position: absolute;
     top: 0;
     width: 3px;
-    height: 52px;
+    height: var(--sched-grid-header-total, 78px);
     background: var(--sched-accent);
     z-index: 200;
     pointer-events: none;
@@ -1130,10 +1145,11 @@ body.sched-col-dragging .gantt_grid_scale {
     cursor: grabbing !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_scale {
-    overflow: hidden !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_data {
-    overflow-x: hidden !important;
+    overflow-x: auto !important;
     overflow-y: auto !important;
 }
 #gantt_here [data-cell-id="gridScroll"] {
@@ -1148,8 +1164,8 @@ body.sched-col-dragging .gantt_grid_scale {
 }
 .sched-col-select-overlay {
     position: absolute;
-    top: 0;
-    height: 52px;
+    top: var(--sched-grid-header-top, 26px);
+    height: var(--sched-grid-header-label, 52px);
     background: rgba(55, 148, 255, 0.16);
     box-shadow: inset 0 0 0 1px var(--sched-accent);
     pointer-events: none;
@@ -1206,8 +1222,8 @@ body.sched-col-dragging .gantt_grid_scale {
 
 /* Column resize handles — Excel-style on header border */
 .gantt_grid_scale .gantt_grid_column_resize_wrap {
-    top: 0 !important;
-    height: 52px !important;
+    top: var(--sched-grid-header-top, 26px) !important;
+    height: var(--sched-grid-header-label, 52px) !important;
     cursor: col-resize !important;
     z-index: 140 !important;
     pointer-events: auto !important;
