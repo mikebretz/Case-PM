@@ -14,7 +14,7 @@ html, body { margin: 0; height: 100%; background: #1e1e1e; }
 </head>
 <body>
 <div class="schedule-page-root schedule-theme-dark">
-  <div id="scheduleGanttHost" class="schedule-gantt-host schedule-split-mode">
+  <div id="scheduleGanttHost" class="schedule-gantt-host schedule-overlay-mode">
     <div id="gantt_here"></div>
     <div id="scheduleOverlayControls" class="schedule-overlay-controls">
       <div id="scheduleChartResizer" class="schedule-chart-resizer"></div>
@@ -32,6 +32,7 @@ gantt.config.scale_height = 52;
 gantt.config.keep_grid_width = false;
 gantt.config.grid_elastic_columns = false;
 gantt.config.show_links = true;
+gantt.config.scroll_size = 16;
 gantt.getTaskHeight = () => 24;
 gantt.config.columns = [
   { name: 'hierarchy', label: '', width: 56, resize: false, template: () => '' },
@@ -43,17 +44,16 @@ gantt.config.columns = [
 ];
 const gridW = gantt.config.columns.reduce((s, c) => s + c.width, 0);
 const hostW = 1400;
-const gridPaneW = Math.max(gridW + 8, 660);
-const timelineW = Math.max(320, hostW - gridPaneW - 24);
+const gridOverlayW = 660;
 gantt.config.layout = {
   css: 'gantt_container',
   cols: [
-    { width: gridPaneW, min_width: gridW + 8, rows: [
+    { width: gridOverlayW, min_width: 120, rows: [
       { view: 'grid', scrollX: 'gridScroll', scrollY: 'scrollVer' },
       { view: 'scrollbar', id: 'gridScroll', height: 20 }
     ]},
-    { resizer: true, width: 6 },
-    { width: timelineW, min_width: 220, rows: [
+    { width: 0, min_width: 0, max_width: 0 },
+    { width: hostW, min_width: hostW, rows: [
       { view: 'timeline', scrollX: 'scrollHor', scrollY: 'scrollVer' },
       { view: 'scrollbar', id: 'scrollHor', height: 20 }
     ]},
@@ -67,7 +67,7 @@ gantt.config.scales = [
 ];
 gantt.init('gantt_here');
 document.getElementById('gantt_here').style.setProperty('--sched-grid-min-width', gridW + 'px');
-document.getElementById('gantt_here').style.setProperty('--sched-grid-overlay-w', gridPaneW + 'px');
+document.getElementById('gantt_here').style.setProperty('--sched-grid-overlay-w', gridOverlayW + 'px');
 gantt.parse({
   data: [
     { id: 1, text: 'Pipe Repairs & Improvement 12', type: 'project', open: true, start_date: '2023-06-05', end_date: '2023-07-28', duration: 0 },
