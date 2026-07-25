@@ -99,6 +99,7 @@ gantt.config.scales = [
 gantt.init('gantt_here');
 document.getElementById('gantt_here').style.setProperty('--sched-grid-min-width', gridW + 'px');
 document.getElementById('gantt_here').style.setProperty('--sched-grid-overlay-w', gridOverlayW + 'px');
+document.getElementById('gantt_here').style.setProperty('--sched-chart-left', gridOverlayW + 'px');
 gantt.parse({
   data: [
     { id: 1, text: 'Pipe Repairs & Improvement 12', type: 'project', open: true, start_date: '2023-06-05', end_date: '2023-07-28', duration: 0 },
