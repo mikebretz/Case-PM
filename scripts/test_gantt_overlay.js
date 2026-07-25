@@ -17,11 +17,14 @@ async function main() {
     const before = await page.evaluate(() => {
         const timeline = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(3)');
         const grid = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1)');
+        const resizer = document.querySelector('#gantt_here .gantt_resizer, #gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(2)');
         const bars = [...document.querySelectorAll('#gantt_here .gantt_task_line')];
         const gridRight = grid?.getBoundingClientRect().right || 0;
         return {
             timelineW: timeline?.getBoundingClientRect().width || 0,
             gridW: grid?.getBoundingClientRect().width || 0,
+            resizerW: resizer?.getBoundingClientRect().width || 0,
+            resizerPointerEvents: resizer ? getComputedStyle(resizer).pointerEvents : '',
             barsInChart: bars.filter(b => b.getBoundingClientRect().left >= gridRight - 4).length
         };
     });
@@ -52,12 +55,13 @@ async function main() {
     const result = {
         before,
         after,
+        resizerUsable: before.resizerW >= 3 && before.resizerPointerEvents !== 'none',
         gridGrew: after.gridW > before.gridW + 50,
         timelineShrunk: after.timelineW < before.timelineW - 40,
         barsStillVisible: after.barsInChart >= 1
     };
     console.log(JSON.stringify(result, null, 2));
-    if (!result.gridGrew || !result.timelineShrunk || !result.barsStillVisible) process.exit(1);
+    if (!result.resizerUsable || !result.gridGrew || !result.timelineShrunk || !result.barsStillVisible) process.exit(1);
     await browser.close();
 }
 

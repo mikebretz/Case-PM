@@ -299,36 +299,35 @@ body.schedule-chart-resizing {
 
 /* Split layout: grid + chart side-by-side (P6 style) */
 .schedule-split-mode #scheduleOverlayControls {
-    display: block !important;
+    display: none !important;
 }
 .schedule-split-mode #scheduleChartResizer {
-    display: block !important;
+    display: none !important;
+}
+.schedule-split-mode #gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1) {
+    background: var(--sched-bg) !important;
+    z-index: 2 !important;
+    border-right: none !important;
+}
+.schedule-split-mode #gantt_here .gantt_resizer,
+.schedule-split-mode #gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(2) {
     width: 5px !important;
-    margin-left: -3px !important;
+    min-width: 5px !important;
+    max-width: 5px !important;
+    flex: 0 0 5px !important;
+    overflow: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    cursor: col-resize !important;
     background: #1a6dbd !important;
     border-left: 1px solid #0d4a8f !important;
     border-right: 1px solid #2d8ae8 !important;
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
-    z-index: 220 !important;
+    z-index: 25 !important;
 }
-.schedule-split-mode #scheduleChartResizer:hover,
-.schedule-split-mode #scheduleChartResizer:active {
+.schedule-split-mode #gantt_here .gantt_resizer:hover,
+.schedule-split-mode #gantt_here .gantt_resizer:active {
     background: #2d8ae8 !important;
-}
-.schedule-split-mode #gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1) {
-    border-right: 3px solid #1a6dbd !important;
-    background: var(--sched-bg) !important;
-    z-index: 2 !important;
-}
-.schedule-split-mode #gantt_here .gantt_resizer,
-.schedule-split-mode #gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(2) {
-    width: 0 !important;
-    min-width: 0 !important;
-    max-width: 0 !important;
-    flex: 0 0 0 !important;
-    overflow: hidden !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
 }
 .schedule-overlay-mode #scheduleOverlayControls,
 .schedule-overlay-mode #scheduleChartResizer {
