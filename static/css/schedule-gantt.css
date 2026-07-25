@@ -510,6 +510,9 @@ body.schedule-chart-resizing {
     background-color: var(--wbs-slot-color, inherit);
     pointer-events: none;
 }
+.sched-hierarchy-cell {
+    overflow: hidden !important;
+}
 .sched-wbs-indents {
     position: absolute;
     inset: 0;
@@ -518,7 +521,7 @@ body.schedule-chart-resizing {
     align-items: stretch;
     height: 100%;
     min-height: 100%;
-    overflow: visible;
+    overflow: hidden;
     pointer-events: none;
 }
 .sched-wbs-gutter {
@@ -1171,6 +1174,15 @@ body.sched-col-dragging .gantt_grid_scale {
 .schedule-overlay-mode #gantt_here .gantt_grid_data {
     overflow-x: scroll !important;
     overflow-y: auto !important;
+    scrollbar-width: thin;
+}
+.schedule-overlay-mode #gantt_here .gantt_grid_data::-webkit-scrollbar {
+    display: block;
+    height: 10px;
+}
+.schedule-overlay-mode #gantt_here .gantt_grid_data::-webkit-scrollbar-thumb {
+    background: var(--sched-border-strong);
+    border-radius: 4px;
 }
 #gantt_here [data-cell-id="gridScroll"] {
     overflow-x: auto !important;
@@ -1206,14 +1218,20 @@ body.sched-col-dragging .gantt_grid_scale {
 #gantt_here .gantt_grid_scale .gantt_grid_column_resize_wrap {
     position: absolute !important;
 }
-#gantt_here .sched-col-resize-trailing {
+/* Custom column resize grips — one per resizable column, aligned to column border */
+#gantt_here .sched-col-resize-grip {
     position: absolute !important;
-    top: 0 !important;
-    height: 100% !important;
+    top: var(--sched-grid-header-top, 26px) !important;
+    height: var(--sched-grid-header-label, 39px) !important;
     width: 10px !important;
     margin-left: -5px !important;
+    cursor: col-resize !important;
     z-index: 150 !important;
     pointer-events: auto !important;
+}
+#gantt_here .gantt_grid_scale > .gantt_grid_column_resize_wrap:not(.sched-col-resize-grip) {
+    display: none !important;
+    pointer-events: none !important;
 }
 .sched-add-col-header {
     padding: 0 !important;
@@ -1682,12 +1700,10 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
     .schedule-print-table tr.print-summary.sched-wbs-l2 { background: #ffff00 !important; color: #000 !important; }
     .schedule-print-table tr.print-summary.sched-wbs-l3 { background: #ffc000 !important; color: #000 !important; }
     .print-col-hierarchy {
-        width: 56px !important;
-        min-width: 56px !important;
-        max-width: 56px !important;
         padding: 0 !important;
         vertical-align: top !important;
-        border: none !important;
+        border-left: none !important;
+        border-right: none !important;
     }
     .print-schedule-wrap .schedule-print-table td.print-col-hierarchy,
     .print-schedule-wrap .schedule-print-table th.print-col-hierarchy {
@@ -1701,8 +1717,6 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         min-height: var(--print-row-height, 16px);
     }
     .print-wbs-gutter {
-        width: 10px;
-        min-width: 10px;
         flex-shrink: 0;
         height: 100%;
         min-height: 100%;
