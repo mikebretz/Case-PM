@@ -42,8 +42,8 @@
         progress_bar_color: '#eca06c',
         complete_bar_color: '#6ccb5f',
         milestone_color: '#3794ff',
-        link_color: '#c00000',
-        link_width: 2,
+        link_color: '#b0b0b0',
+        link_width: 1,
         active_baseline_index: -1,
         show_baseline_bars: true,
         show_bar_labels: true,
@@ -51,10 +51,10 @@
         default_cell_align: { h: 'left', v: 'middle' },
         column_align: {},
         default_cell_style: { font_size: 11 },
-        default_row_height: 22,
+        default_row_height: 24,
         default_bar_height: 12,
-        summary_row_height: 22,
-        summary_bar_height: 8
+        summary_row_height: 24,
+        summary_bar_height: 10
     };
     if (!scheduleSettings.print_settings) {
         scheduleSettings.print_settings = {
@@ -359,22 +359,40 @@
     function buildP6DemoSchedule() {
         const tasks = [
             { id: 1, text: 'Pipe Repairs & Improvement 12', type: 'project', open: true, start_date: '2023-06-05', end_date: '2023-07-28', duration: 0, progress: 0 },
-            { id: 2, parent: 1, text: 'Demolition Piping', open: true, start_date: '2023-06-05', end_date: '2023-06-20', duration: 11, progress: 0.45 },
-            { id: 10, parent: 2, text: 'Thrustblock', open: true, start_date: '2023-06-05', end_date: '2023-06-15', duration: 8, progress: 0.3 },
-            { id: 3, parent: 10, text: 'Project Management', activity_id: 'A1010', start_date: '2023-06-05', end_date: '2023-07-15', duration: 28, progress: 0.35 },
-            { id: 4, parent: 10, text: 'Remove Existing Piping', activity_id: 'A1020', start_date: '2023-06-08', end_date: '2023-06-18', duration: 8, progress: 0.6 },
-            { id: 5, parent: 2, text: 'Demolition Complete', activity_id: 'A1030', type: 'milestone', start_date: '2023-06-20', end_date: '2023-06-20', duration: 0, progress: 0 },
-            { id: 6, parent: 1, text: 'Piping', open: true, start_date: '2023-06-12', end_date: '2023-07-25', duration: 31, progress: 0.2 },
-            { id: 7, parent: 6, text: 'Install New Piping', activity_id: 'A2010', start_date: '2023-06-12', end_date: '2023-07-10', duration: 20, progress: 0.25 },
-            { id: 8, parent: 6, text: 'Pressure Test', activity_id: 'A2020', start_date: '2023-07-11', end_date: '2023-07-18', duration: 6, progress: 0 },
-            { id: 9, parent: 6, text: 'Piping Complete', activity_id: 'A2030', type: 'milestone', start_date: '2023-07-25', end_date: '2023-07-25', duration: 0, progress: 0 }
+            { id: 2, parent: 1, text: 'Start Project', activity_id: 'A1000', type: 'milestone', start_date: '2023-06-05', end_date: '2023-06-05', duration: 0, progress: 1 },
+            { id: 3, parent: 1, text: 'Contract Award Date', activity_id: 'A1005', type: 'milestone', start_date: '2023-06-05', end_date: '2023-06-05', duration: 0, progress: 1 },
+            { id: 4, parent: 1, text: 'Demolition Piping', open: true, start_date: '2023-06-05', end_date: '2023-06-20', duration: 11, progress: 0.45 },
+            { id: 5, parent: 4, text: 'Thrustblock', open: true, start_date: '2023-06-05', end_date: '2023-06-15', duration: 8, progress: 0.3 },
+            { id: 6, parent: 5, text: 'Project Management', activity_id: 'A1010', start_date: '2023-06-05', end_date: '2023-07-15', duration: 28, progress: 0.35 },
+            { id: 7, parent: 5, text: 'Site Mobilization', activity_id: 'A1015', start_date: '2023-06-05', end_date: '2023-06-09', duration: 3, progress: 1 },
+            { id: 8, parent: 5, text: 'Remove Existing Piping', activity_id: 'A1020', start_date: '2023-06-08', end_date: '2023-06-18', duration: 8, progress: 0.6 },
+            { id: 9, parent: 5, text: 'Remove Thrust Blocks', activity_id: 'A1025', start_date: '2023-06-10', end_date: '2023-06-15', duration: 4, progress: 0.5 },
+            { id: 10, parent: 4, text: 'Demolition Complete', activity_id: 'A1030', type: 'milestone', start_date: '2023-06-20', end_date: '2023-06-20', duration: 0, progress: 0 },
+            { id: 11, parent: 1, text: 'Piping', open: true, start_date: '2023-06-12', end_date: '2023-07-25', duration: 31, progress: 0.2 },
+            { id: 12, parent: 11, text: 'Procure Pipe Materials', activity_id: 'A2005', start_date: '2023-06-12', end_date: '2023-06-25', duration: 9, progress: 0.8 },
+            { id: 13, parent: 11, text: 'Install New Piping', activity_id: 'A2010', start_date: '2023-06-20', end_date: '2023-07-10', duration: 15, progress: 0.25 },
+            { id: 14, parent: 11, text: 'Install Thrust Blocks', activity_id: 'A2015', start_date: '2023-06-22', end_date: '2023-07-05', duration: 9, progress: 0.15 },
+            { id: 15, parent: 11, text: 'Pressure Test', activity_id: 'A2020', start_date: '2023-07-11', end_date: '2023-07-18', duration: 6, progress: 0 },
+            { id: 16, parent: 11, text: 'Piping Complete', activity_id: 'A2030', type: 'milestone', start_date: '2023-07-25', end_date: '2023-07-25', duration: 0, progress: 0 },
+            { id: 17, parent: 1, text: 'Restoration & Cleanup', open: true, start_date: '2023-07-18', end_date: '2023-07-28', duration: 8, progress: 0 },
+            { id: 18, parent: 17, text: 'Backfill & Restore Surfaces', activity_id: 'A3010', start_date: '2023-07-18', end_date: '2023-07-24', duration: 5, progress: 0 },
+            { id: 19, parent: 17, text: 'Final Inspection', activity_id: 'A3020', start_date: '2023-07-25', end_date: '2023-07-27', duration: 2, progress: 0 },
+            { id: 20, parent: 1, text: 'Project Completion Date', activity_id: 'A9999', type: 'milestone', start_date: '2023-07-28', end_date: '2023-07-28', duration: 0, progress: 0 }
         ];
         const links = [
-            { id: 1, source: 3, target: 4, type: '0' },
-            { id: 2, source: 4, target: 5, type: '0' },
-            { id: 3, source: 5, target: 7, type: '0' },
-            { id: 4, source: 7, target: 8, type: '0' },
-            { id: 5, source: 8, target: 9, type: '0' }
+            { id: 1, source: 2, target: 6, type: '0' },
+            { id: 2, source: 6, target: 7, type: '0' },
+            { id: 3, source: 7, target: 8, type: '0' },
+            { id: 4, source: 8, target: 9, type: '0' },
+            { id: 5, source: 9, target: 10, type: '0' },
+            { id: 6, source: 10, target: 12, type: '0' },
+            { id: 7, source: 12, target: 13, type: '0' },
+            { id: 8, source: 13, target: 14, type: '0' },
+            { id: 9, source: 14, target: 15, type: '0' },
+            { id: 10, source: 15, target: 16, type: '0' },
+            { id: 11, source: 16, target: 18, type: '0' },
+            { id: 12, source: 18, target: 19, type: '0' },
+            { id: 13, source: 19, target: 20, type: '0' }
         ];
         return { data: tasks, links, customColumns: [], hiddenColumns: ['wbs', 'predecessors', 'successors', 'link_lag', 'progress', 'resource', 'owner', 'total_float', 'constraint_type', 'bar_color'], columnWidths: {}, columnOrder: [] };
     }
@@ -573,11 +591,15 @@
     }
 
     function positionChartResizerVisual() {
-        const handle = document.getElementById('scheduleChartResizer');
         const host = document.getElementById('scheduleGanttHost');
-        const ganttHost = document.getElementById('gantt_here');
+        const handle = document.getElementById('scheduleChartResizer');
         if (!handle || !host) return;
+        if (host.classList.contains('schedule-split-mode')) {
+            handle.classList.add('hidden');
+            return;
+        }
         handle.classList.remove('hidden');
+        const ganttHost = document.getElementById('gantt_here');
         if (host.classList.contains('schedule-overlay-mode') && ganttHost) {
             const chartLeft = ganttHost.style.getPropertyValue('--sched-chart-left');
             if (chartLeft) {
@@ -628,21 +650,10 @@
             }
 
             gantt.config.grid_width = gridW;
-            gantt.config.keep_grid_width = true;
+            gantt.config.keep_grid_width = false;
 
             const cells = root.querySelectorAll(':scope > .gantt_layout_cell');
-            const gridCell = cells[0];
-            const nativeResizer = cells[1];
-            const timelineCell = cells[2];
             const gridPaneW = Math.max(220, hostW - timelineW - 8);
-
-            root.style.position = '';
-            if (gridCell) gridCell.style.cssText = '';
-            if (nativeResizer) nativeResizer.style.cssText = '';
-            if (timelineCell) {
-                timelineCell.style.cssText = '';
-                ensureTimelineOverlayWidgets(timelineCell);
-            }
 
             if (gantt.config.layout?.cols?.[0]) {
                 gantt.config.layout.cols[0].width = gridPaneW;
@@ -652,6 +663,8 @@
                 gantt.config.layout.cols[2].width = Math.max(220, timelineW);
                 gantt.config.layout.cols[2].min_width = 220;
             }
+            const timelineCell = cells[2];
+            if (timelineCell) ensureTimelineOverlayWidgets(timelineCell);
 
             syncLayoutTimelineWidth();
 
@@ -691,6 +704,8 @@
         overlayDrag.bound = true;
 
         document.addEventListener('mousedown', e => {
+            const host = document.getElementById('scheduleGanttHost');
+            if (host?.classList.contains('schedule-split-mode')) return;
             const handle = document.getElementById('scheduleChartResizer');
             if (!handle || (e.target !== handle && !handle.contains(e.target))) return;
             overlayDrag.active = true;
@@ -735,6 +750,7 @@
         host?.classList.add('schedule-split-mode');
         bindChartResizer();
         bindColumnResizeDrag();
+        bindLayoutResizePersistence();
 
         if (!initGanttLayout.resizeBound) {
             initGanttLayout.resizeBound = true;
@@ -1277,7 +1293,7 @@
     }
 
     function applyP6RowMetrics() {
-        const baseRow = 22;
+        const baseRow = 24;
         const barH = 12;
         scheduleSettings.default_row_height = baseRow;
         scheduleSettings.default_bar_height = barH;
@@ -1790,13 +1806,61 @@
         return wrapIdx < (gantt.config.columns || []).length ? wrapIdx : -1;
     }
 
-    const colResizeDrag = { active: false, colIndex: -1, startX: 0, startW: 0 }; /* legacy — native dhtmlx resize used */
+    const colResizeDrag = { active: false, colIndex: -1, startX: 0, startW: 0 };
 
     function bindColumnResizeDrag() {
         if (bindColumnResizeDrag.done) return;
         bindColumnResizeDrag.done = true;
         const host = document.getElementById('gantt_here');
         if (!host) return;
+
+        host.addEventListener('mousedown', e => {
+            const grip = e.target.closest('.gantt_grid_column_resize, .gantt_grid_column_resize_wrap');
+            if (!grip) return;
+            const wrap = grip.closest('.gantt_grid_column_resize_wrap') || grip;
+            const colIndex = getColumnIndexFromResizeWrap(wrap);
+            if (colIndex < 0 || !gantt.config.columns[colIndex] || gantt.config.columns[colIndex].resize === false) return;
+            e.preventDefault();
+            e.stopPropagation();
+            colResizeDrag.active = true;
+            colResizeDrag.colIndex = colIndex;
+            colResizeDrag.startX = e.clientX;
+            colResizeDrag.startW = parseInt(gantt.config.columns[colIndex].width, 10) || 80;
+            const grid = document.querySelector('#gantt_here .gantt_grid_data');
+            columnResizeScrollLeft = grid ? grid.scrollLeft : 0;
+            document.body.classList.add('sched-col-resizing');
+        }, true);
+
+        let resizeRaf = null;
+        document.addEventListener('mousemove', e => {
+            if (!colResizeDrag.active) return;
+            const col = gantt.config.columns[colResizeDrag.colIndex];
+            if (!col) return;
+            const dx = e.clientX - colResizeDrag.startX;
+            const newW = Math.max(col.min_width || 40, Math.min(640, colResizeDrag.startW + dx));
+            col.width = newW;
+            columnWidths[col.name] = newW;
+            gantt.config.grid_width = getColumnsTotalWidth();
+            lastGridWidthKey = '';
+            preserveGridScrollLeft(columnResizeScrollLeft);
+            if (!resizeRaf) {
+                resizeRaf = requestAnimationFrame(() => {
+                    resizeRaf = null;
+                    if (typeof gantt.setSizes === 'function') gantt.setSizes();
+                });
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (!colResizeDrag.active) return;
+            const idx = colResizeDrag.colIndex;
+            const col = gantt.config.columns[idx];
+            if (col) handleColumnResize(idx, col, col.width, true, true);
+            colResizeDrag.active = false;
+            colResizeDrag.colIndex = -1;
+            columnResizeScrollLeft = null;
+            document.body.classList.remove('sched-col-resizing');
+        });
 
         host.addEventListener('dblclick', e => {
             const wrap = e.target.closest('.gantt_grid_column_resize_wrap');
@@ -1822,7 +1886,7 @@
             column.width = w;
             if (gantt.config.columns[index]) gantt.config.columns[index].width = w;
         }
-        gantt.config.keep_grid_width = true;
+        gantt.config.keep_grid_width = false;
         gantt.config.grid_width = getColumnsTotalWidth();
         if (reflow) {
             lastGridWidthKey = '';
@@ -2218,7 +2282,11 @@
             { name: 'wbs', label: 'WBS', width: 58, align: 'center', resize: true, template: t => wbsCode(t) },
             { name: 'activity_id', label: 'Activity ID', width: 72, align: 'center', resize: true, editor: { type: 'sched_text', map_to: 'activity_id' }, template: t => t.activity_id || '' },
             { name: 'text', label: 'Activity Name', tree: false, width: 240, min_width: 120, resize: true, editor: { type: 'sched_text', map_to: 'text' }, template: activityNameTemplate },
-            { name: 'duration', label: 'Original Duration', align: 'center', width: 64, min_width: 52, resize: true, editor: { type: 'sched_number', map_to: 'duration', min: 0, max: 9999 } },
+            { name: 'duration', label: 'Original Duration', align: 'center', width: 64, min_width: 52, resize: true, editor: { type: 'sched_number', map_to: 'duration', min: 0, max: 9999 }, template: t => {
+                if (t.type === 'project') return '';
+                const d = Number(t.duration);
+                return (Number.isFinite(d) ? d.toFixed(2) : '0.00') + 'd';
+            } },
             { name: 'start_date', label: 'Start', align: 'center', width: 108, min_width: 96, resize: true, editor: { type: 'sched_date', map_to: 'start_date' }, template: t => formatDateSafe(t.start_date) },
             { name: 'end_date', label: 'Finish', align: 'center', width: 108, min_width: 96, resize: true, editor: { type: 'sched_date', map_to: 'end_date' }, template: t => formatDateSafe(t.end_date) },
             { name: 'predecessors', label: 'Predecessors', width: 118, min_width: 80, resize: true, editor: { type: 'pred_string', map_to: 'auto' }, template: predTemplate },
@@ -2443,7 +2511,7 @@
         gantt.config.show_errors = false;
         gantt.config.highlight_critical_path = true;
         gantt.config.grid_elastic_columns = false;
-        gantt.config.keep_grid_width = true;
+        gantt.config.keep_grid_width = false;
         gantt.config.round_dnd_dates = false;
         gantt.config.drag_timeline = { useKey: false };
         gantt.config.drag_move = true;
@@ -2652,11 +2720,10 @@
         gantt.attachEvent('onTaskDblClick', function (id, e) {
             const target = e.target || e.srcElement;
             if (target.closest?.('.sched-tree-btn') || target.closest?.('.gantt_tree_icon')) return true;
-            if (target.closest?.('.gantt_grid')) {
-                if (window.ScheduleActivityModal) {
-                    ScheduleActivityModal.open(id);
-                    return false;
-                }
+            if (target.closest?.('.sched-floating-cell-editor')) return true;
+            if (window.ScheduleActivityModal) {
+                ScheduleActivityModal.open(id);
+                return false;
             }
             return true;
         });
@@ -2670,7 +2737,6 @@
             sanitizeTaskDates(task);
             if (task.progress > 1) task.progress = Math.min(1, task.progress / 100);
             applyTaskBarColor(task);
-            gantt.refreshTask(id);
             pushUndoState();
             queueSave();
         });
@@ -2685,8 +2751,6 @@
             queueSave();
             if (mode === 'move' || mode === 'resize' || mode === 'progress') {
                 runSchedule({ skipScroll: true });
-            } else {
-                queueGanttLayoutSync();
             }
             refreshTimelinePanBar();
         });
@@ -2711,7 +2775,6 @@
         });
         gantt.attachEvent('onGanttRender', () => {
             refreshWbsCodes();
-            syncColumnWidthsToConfig();
             updateStatusBar();
             updateDeadlineMarkers();
             ensureTimelineScrollbar();
@@ -2721,7 +2784,6 @@
             bindGridSelectionHandlers();
             applyCellAlignToDom();
             updateAlignToolbarButtons();
-            positionChartResizerVisual();
         });
 
         document.addEventListener('keydown', onScheduleKeyDown);
@@ -3028,11 +3090,11 @@
     function applyGanttDisplayStyles() {
         const s = scheduleSettings;
         const root = document.documentElement;
-        const linkColor = s.link_color || '#c00000';
+        const linkColor = s.link_color || '#b0b0b0';
         root.style.setProperty('--gantt-link-color', linkColor);
-        root.style.setProperty('--gantt-link-width', (s.link_width || 2) + 'px');
+        root.style.setProperty('--gantt-link-width', (s.link_width || 1) + 'px');
         if (ganttReady) {
-            gantt.config.link_line_width = s.link_width || 2;
+            gantt.config.link_line_width = s.link_width || 1;
             gantt.render();
         }
     }
@@ -4432,7 +4494,7 @@
             const y2 = rowY(ti);
             const midX = Math.max(x1 + 1.5, Math.min(x1 + 3, x2 - 1));
             const crit = gantt.config.highlight_critical_path && (isTaskCritical(src) || isTaskCritical(tgt));
-            const stroke = crit ? '#c00000' : '#c00000';
+            const stroke = crit ? '#808080' : (scheduleSettings.link_color || '#b0b0b0');
             paths += `<path d="M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}" fill="none" stroke="${stroke}" stroke-width="1.2" stroke-linejoin="miter" stroke-linecap="square"/>`;
             paths += `<polygon points="${x2},${y2} ${x2 - 1.2},${y2 - 0.5} ${x2 - 1.2},${y2 + 0.5}" fill="${stroke}"/>`;
         });
@@ -4472,7 +4534,7 @@
         const splitTotal = Math.max(exposedW + timelineW, 1);
         const showLinks = ps.include_predecessor_links !== false;
         const printFontPt = parseInt(ps.font_size_pt, 10) || 8;
-        const printRowH = parseInt(ps.row_height_px, 10) || 16;
+        const printRowH = gantt.config.row_height || parseInt(ps.row_height_px, 10) || 24;
         const chartWidthPct = parseInt(ps.chart_width_pct, 10);
         const textTablePct = showInlineBars
             ? (chartWidthPct >= 30 && chartWidthPct <= 80 ? 100 - chartWidthPct : (exposedW / splitTotal) * 100)
@@ -4545,7 +4607,7 @@
                 const y1 = (si + 0.5) / rowIdx * 100;
                 const y2 = (ti + 0.5) / rowIdx * 100;
                 const midX = Math.max(x1 + 1.5, Math.min(x1 + 3, x2 - 1));
-                chartLines += `<path d="M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}" fill="none" stroke="#c00000" stroke-width="0.8" stroke-linejoin="miter"/>`;
+                chartLines += `<path d="M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}" fill="none" stroke="${scheduleSettings.link_color || '#b0b0b0'}" stroke-width="0.8" stroke-linejoin="miter"/>`;
             });
             chartBlock = `<div class="print-gantt-chart"><h3 class="print-chart-title">Schedule Chart</h3>${timescale}
                 <svg class="print-chart-svg" viewBox="0 0 100 100" preserveAspectRatio="none" style="height:${chartH}px">${chartLines}${chartBars}</svg></div>`;

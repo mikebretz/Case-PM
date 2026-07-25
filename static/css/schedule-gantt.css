@@ -299,6 +299,10 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 .sched-color-editor { width: 100%; height: 28px; padding: 0; border: none; background: transparent; }
 
 /* Split layout: native dhtmlx grid + chart panes (P6-style alignment) */
+.schedule-split-mode #scheduleOverlayControls,
+.schedule-split-mode #scheduleChartResizer {
+    display: none !important;
+}
 .schedule-split-mode #gantt_here .gantt_grid,
 .schedule-split-mode #gantt_here .gantt_grid_scale,
 .schedule-split-mode #gantt_here .gantt_grid_data {
@@ -496,13 +500,17 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     color: var(--sched-text-strong) !important;
 }
 
-/* Native dhtmlx split resizer between grid and chart */
-#gantt_here .gantt_resizer {
-    background: var(--sched-border-strong) !important;
-    width: 6px !important;
-    min-width: 6px !important;
+/* Native dhtmlx split resizer between grid and chart — single divider */
+#gantt_here .gantt_resizer,
+#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(2) {
+    background: #1a1a1a !important;
+    width: 3px !important;
+    min-width: 3px !important;
+    max-width: 3px !important;
     cursor: col-resize !important;
     z-index: 20 !important;
+    border-left: 1px solid #000 !important;
+    border-right: 1px solid #333 !important;
 }
 #gantt_here .gantt_hor_scroll,
 #gantt_here .gantt_scroll_hor {
@@ -638,7 +646,7 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
     font-size: 11px !important;
-    line-height: 21px !important;
+    line-height: 23px !important;
 }
 .gantt_grid_data .gantt_cell .gantt_tree_content {
     overflow: hidden !important;
@@ -920,9 +928,9 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 
 /* ─── Timeline — rows aligned 1:1 with grid (dhtmlx row_height drives layout) ─── */
 #gantt_here {
-    --sched-row-h: 22px;
-    --gantt-link-color: #c00000;
-    --gantt-link-width: 2px;
+    --sched-row-h: 24px;
+    --gantt-link-color: #b0b0b0;
+    --gantt-link-width: 1px;
 }
 #gantt_here .gantt_grid_data .gantt_row,
 #gantt_here .gantt_task_row {
@@ -953,6 +961,7 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 .gantt_task_row .gantt_task_cell {
     background-color: inherit !important;
     border: none !important;
+    border-bottom: 1px dotted rgba(160, 160, 160, 0.35) !important;
     box-sizing: border-box !important;
 }
 .gantt_task_scale, .gantt_scale_cell {
@@ -1034,12 +1043,16 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 }
 .gantt_task_progress { background-color: rgba(0, 0, 0, 0.35) !important; }
 
-/* Predecessor links — P6-style solid red dependency lines */
+/* Predecessor links — P6-style light gray dependency lines */
 .gantt_task_link .gantt_line_wrapper div {
-    background-color: var(--gantt-link-color, #c00000) !important;
+    background-color: var(--gantt-link-color, #b0b0b0) !important;
 }
+.gantt_link_arrow_right { border-left-color: var(--gantt-link-color, #b0b0b0) !important; }
+.gantt_link_arrow_left { border-right-color: var(--gantt-link-color, #b0b0b0) !important; }
+.gantt_link_arrow_up { border-bottom-color: var(--gantt-link-color, #b0b0b0) !important; }
+.gantt_link_arrow_down { border-top-color: var(--gantt-link-color, #b0b0b0) !important; }
 .gantt_task_link.cpm_link_critical .gantt_line_wrapper div {
-    background-color: #c00000 !important;
+    background-color: var(--gantt-link-color, #b0b0b0) !important;
 }
 .gantt_link_arrow_right { border-left-color: var(--gantt-link-color, #c00000) !important; }
 .gantt_link_arrow_left { border-right-color: var(--gantt-link-color, #c00000) !important; }
