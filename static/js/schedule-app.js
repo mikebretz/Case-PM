@@ -34,6 +34,7 @@
     let customColumns = [];
     let hiddenColumns = [];
     let columnWidths = {};
+    let columnDefWidths = {};
     let wbsCodeMap = new Map();
     let scheduleSettings = {
         data_date: typeof CasePMSchedule !== 'undefined' ? CasePMSchedule.formatDate(new Date()) : '',
@@ -487,12 +488,20 @@
     let columnOrder = [];
     let overlayApplyTimer = null;
 
+    function resolveColumnWidth(col) {
+        if (!col) return 80;
+        if (col.name === '_sched_add_col') {
+            return parseInt(columnWidths[col.name] || columnDefWidths[col.name] || 36, 10) || 36;
+        }
+        const saved = columnWidths[col.name];
+        if (saved != null && saved !== '') return parseInt(saved, 10) || 80;
+        if (columnDefWidths[col.name] != null) return columnDefWidths[col.name];
+        return parseInt(col.width, 10) || 80;
+    }
+
     function getColumnsTotalWidth() {
         if (!gantt.config.columns) return 900;
-        return gantt.config.columns.reduce((sum, col) => {
-            if (col.name === '_sched_add_col') return sum + (parseInt(col.width, 10) || 36);
-            return sum + (parseInt(col.width, 10) || 0);
-        }, 0);
+        return gantt.config.columns.reduce((sum, col) => sum + resolveColumnWidth(col), 0);
     }
 
     function isAddColumnCol(col) {
@@ -504,7 +513,7 @@
         const metrics = [];
         let left = 0;
         cols.forEach(col => {
-            const w = parseInt(col.width, 10) || 80;
+            const w = resolveColumnWidth(col);
             metrics.push({ name: col.name, width: w, left, col });
             left += w;
         });
@@ -524,8 +533,9 @@
         chrome.style.minWidth = total + 'px';
     }
 
-    function applyMetricToCell(cell, m, col) {
+    function applyMetricToCell(cell, m, col, opts) {
         if (!cell || !m) return;
+        const isHead = opts?.head === true;
         cell.style.position = 'absolute';
         cell.style.left = m.left + 'px';
         cell.style.right = 'auto';
@@ -536,6 +546,10 @@
         cell.style.flexGrow = '0';
         cell.style.flexShrink = '0';
         cell.style.boxSizing = 'border-box';
+        if (!isHead) {
+            cell.style.top = '0';
+            cell.style.height = '100%';
+        }
         if (col) cell.classList.toggle('sched-add-col-cell', isAddColumnCol(col));
     }
 
@@ -557,6 +571,29 @@
         }, 0);
     }
 
+    function ensureGridScrollWidthSentinel(total) {
+        const gridData = document.querySelector('#gantt_here .gantt_grid_data');
+        const gridScale = document.querySelector('#gantt_here .gantt_grid_scale');
+        [gridData, gridScale].forEach(host => {
+            if (!host) return;
+            let sentinel = host.querySelector(':scope > .sched-grid-scroll-sentinel');
+            if (!sentinel) {
+                sentinel = document.createElement('div');
+                sentinel.className = 'sched-grid-scroll-sentinel';
+                sentinel.setAttribute('aria-hidden', 'true');
+                host.appendChild(sentinel);
+            }
+            sentinel.style.width = total + 'px';
+            sentinel.style.height = '1px';
+            sentinel.style.position = 'absolute';
+            sentinel.style.left = '0';
+            sentinel.style.top = '0';
+            sentinel.style.pointerEvents = 'none';
+            sentinel.style.visibility = 'hidden';
+            sentinel.style.zIndex = '-1';
+        });
+    }
+
     function enforceGridColumnExtents() {
         if (!ganttReady) return;
         const cols = gantt.config.columns || [];
@@ -568,17 +605,21 @@
 
         const gridHead = document.querySelector('#gantt_here .gantt_grid_scale .gantt_grid_head');
         const gridScale = document.querySelector('#gantt_here .gantt_grid_scale');
+        const gridData = document.querySelector('#gantt_here .gantt_grid_data');
         if (gridHead) {
             gridHead.style.width = total + 'px';
             gridHead.style.minWidth = total + 'px';
             gridHead.style.maxWidth = 'none';
         }
         if (gridScale) {
-            gridScale.style.overflowX = 'hidden';
-            gridScale.style.overflowY = 'hidden';
+            gridScale.style.maxWidth = 'none';
+        }
+        if (gridData) {
+            gridData.style.maxWidth = 'none';
         }
 
         ensureGridHeaderChrome(total);
+        ensureGridScrollWidthSentinel(total);
 
         const headCells = document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell');
         const headCount = Math.min(headCells.length, cols.length);
@@ -586,7 +627,7 @@
             const m = metrics[i];
             const col = cols[i];
             if (!m) continue;
-            applyMetricToCell(headCells[i], m, col);
+            applyMetricToCell(headCells[i], m, col, { head: true });
             if (col?.name === '_sched_add_col') headCells[i].classList.add('sched-add-col-header');
         }
 
@@ -594,12 +635,15 @@
             row.style.width = total + 'px';
             row.style.minWidth = total + 'px';
             row.style.maxWidth = 'none';
-            row.style.position = 'relative';
             const cells = row.querySelectorAll(':scope > .gantt_cell');
             const cellCount = Math.min(cells.length, cols.length);
             for (let i = 0; i < cellCount; i++) {
                 applyMetricToCell(cells[i], metrics[i], cols[i]);
             }
+        });
+
+        metrics.forEach((m, i) => {
+            if (cols[i]) cols[i].width = m.width;
         });
 
         syncGridScrollContentWidth(total);
@@ -3320,7 +3364,10 @@
                 delete copy.editor;
             }
             return copy;
-        }).concat([getAddColumnDef()]);
+        }).concat([getAddColumnDef()]).map(c => {
+            if (c.name) columnDefWidths[c.name] = parseInt(c.width, 10) || 80;
+            return c;
+        });
     }
 
     function findGridCell(taskId, colName) {
