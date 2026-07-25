@@ -369,7 +369,7 @@
             { id: 9, parent: 5, text: 'Remove Thrust Blocks', activity_id: 'A1025', start_date: '2023-06-10', end_date: '2023-06-15', duration: 4, progress: 0.5 },
             { id: 10, parent: 4, text: 'Piping', open: true, start_date: '2023-06-12', end_date: '2023-07-25', duration: 31, progress: 0.2 },
             { id: 11, parent: 10, text: 'Procure Pipe Materials', activity_id: 'A2005', start_date: '2023-06-12', end_date: '2023-06-25', duration: 9, progress: 0.8 },
-            { id: 12, parent: 10, text: 'Install New Piping', activity_id: 'A2010', start_date: '2023-06-20', end_date: '2023-07-10', duration: 15, progress: 0.25 },
+            { id: 12, parent: 10, text: 'Install Piping & Couplings', activity_id: 'A2010', start_date: '2023-06-20', end_date: '2023-07-10', duration: 15, progress: 0.25 },
             { id: 13, parent: 10, text: 'Install Thrust Blocks', activity_id: 'A2015', start_date: '2023-06-22', end_date: '2023-07-05', duration: 9, progress: 0.15 },
             { id: 14, parent: 10, text: 'Pressure Test', activity_id: 'A2020', start_date: '2023-07-11', end_date: '2023-07-18', duration: 6, progress: 0 },
             { id: 15, parent: 4, text: 'Demolition Complete', activity_id: 'A1030', type: 'milestone', start_date: '2023-06-20', end_date: '2023-06-20', duration: 0, progress: 0 },
@@ -381,18 +381,19 @@
         ];
         const links = [
             { id: 1, source: 2, target: 6, type: '0' },
-            { id: 2, source: 6, target: 7, type: '0' },
-            { id: 3, source: 7, target: 8, type: '0' },
-            { id: 4, source: 8, target: 9, type: '0' },
-            { id: 5, source: 9, target: 15, type: '0' },
-            { id: 6, source: 15, target: 11, type: '0' },
-            { id: 7, source: 11, target: 12, type: '0' },
-            { id: 8, source: 12, target: 13, type: '0' },
-            { id: 9, source: 13, target: 14, type: '0' },
-            { id: 10, source: 14, target: 16, type: '0' },
-            { id: 11, source: 16, target: 18, type: '0' },
-            { id: 12, source: 18, target: 19, type: '0' },
-            { id: 13, source: 19, target: 20, type: '0' }
+            { id: 2, source: 3, target: 7, type: '0' },
+            { id: 3, source: 6, target: 7, type: '0' },
+            { id: 4, source: 7, target: 8, type: '0' },
+            { id: 5, source: 8, target: 9, type: '0' },
+            { id: 6, source: 9, target: 15, type: '0' },
+            { id: 7, source: 15, target: 11, type: '0' },
+            { id: 8, source: 11, target: 12, type: '0' },
+            { id: 9, source: 12, target: 13, type: '0' },
+            { id: 10, source: 13, target: 14, type: '0' },
+            { id: 11, source: 14, target: 16, type: '0' },
+            { id: 12, source: 16, target: 18, type: '0' },
+            { id: 13, source: 18, target: 19, type: '0' },
+            { id: 14, source: 19, target: 20, type: '0' }
         ];
         return {
             data: tasks,
@@ -401,7 +402,16 @@
             hiddenColumns: ['wbs', 'predecessors', 'successors', 'link_lag', 'progress', 'resource', 'owner', 'total_float', 'constraint_type', 'bar_color', 'collapse'],
             columnWidths: {},
             columnOrder: ['hierarchy', 'activity_id', 'text', 'duration', 'start_date', 'end_date'],
-            settings: { timeline_pct: 0.48, default_row_height: 24, default_bar_height: 16, link_color: '#b0b0b0' }
+            settings: {
+                timeline_pct: 0.48,
+                grid_overlay_width_px: 548,
+                default_row_height: 24,
+                default_bar_height: 16,
+                link_color: '#c00000',
+                link_width: 1,
+                timescale: 'day',
+                data_date: '2023-06-15'
+            }
         };
     }
 
@@ -511,6 +521,21 @@
         return ordered;
     }
 
+    function getGridOverlayWidth() {
+        const hostW = document.getElementById('gantt_here')?.offsetWidth
+            || document.getElementById('scheduleGanttHost')?.clientWidth
+            || 1200;
+        const colsW = getColumnsTotalWidth();
+        if (scheduleSettings.grid_overlay_width_px >= 180) {
+            return Math.max(200, Math.min(hostW - 120, scheduleSettings.grid_overlay_width_px));
+        }
+        if (scheduleSettings.timeline_width_px >= 180) {
+            return Math.max(200, Math.min(hostW - 120, hostW - scheduleSettings.timeline_width_px));
+        }
+        const gridPct = 1 - (scheduleSettings.timeline_pct ?? 0.48);
+        return Math.max(colsW + 4, Math.min(hostW - 120, Math.round(hostW * gridPct)));
+    }
+
     function getTimelineWidth() {
         return getTimelineDomWidth();
     }
@@ -519,6 +544,10 @@
         const hostW = document.getElementById('gantt_here')?.offsetWidth
             || document.getElementById('scheduleGanttHost')?.clientWidth
             || 1200;
+        const host = document.getElementById('scheduleGanttHost');
+        if (host?.classList.contains('schedule-overlay-mode')) {
+            return Math.max(220, hostW - getGridOverlayWidth());
+        }
         if (scheduleSettings.timeline_width_px >= 180) {
             return Math.max(200, Math.min(hostW - 120, scheduleSettings.timeline_width_px));
         }
@@ -527,9 +556,15 @@
     }
 
     function syncLayoutTimelineWidth() {
+        const hostW = document.getElementById('gantt_here')?.offsetWidth || 1000;
+        const host = document.getElementById('scheduleGanttHost');
+        if (host?.classList.contains('schedule-overlay-mode')) {
+            if (gantt.config.layout?.cols?.[2]) gantt.config.layout.cols[2].width = hostW;
+            return;
+        }
         const w = scheduleSettings.timeline_width_px >= 180
             ? scheduleSettings.timeline_width_px
-            : Math.max(240, Math.round((document.getElementById('gantt_here')?.offsetWidth || 1000) * (scheduleSettings.timeline_pct ?? 0.75)));
+            : Math.max(240, Math.round(hostW * (scheduleSettings.timeline_pct ?? 0.75)));
         if (gantt.config.layout?.cols?.[2]) gantt.config.layout.cols[2].width = w;
     }
 
@@ -646,14 +681,18 @@
         const gridW = getColumnsTotalWidth();
         const host = document.getElementById('gantt_here');
         const hostW = host?.clientWidth || root.clientWidth || 1200;
-        const timelineW = getTimelineWidth();
-        const overlayKey = `${hostW}|${timelineW}`;
+        const isOverlay = document.getElementById('scheduleGanttHost')?.classList.contains('schedule-overlay-mode');
+        const gridOverlayW = isOverlay ? getGridOverlayWidth() : Math.max(220, hostW - getTimelineWidth() - 8);
+        const timelineW = isOverlay ? hostW : getTimelineWidth();
+        const overlayKey = `${hostW}|${gridOverlayW}|${isOverlay}`;
         const gridKey = String(gridW);
 
         layoutSyncInProgress = true;
         try {
             if (host) {
                 host.style.setProperty('--sched-grid-min-width', gridW + 'px');
+                host.style.setProperty('--sched-grid-overlay-w', gridOverlayW + 'px');
+                host.style.setProperty('--sched-chart-left', gridOverlayW + 'px');
                 host.style.setProperty('--sched-timeline-width', timelineW + 'px');
             }
 
@@ -661,15 +700,14 @@
             gantt.config.keep_grid_width = false;
 
             const cells = root.querySelectorAll(':scope > .gantt_layout_cell');
-            const gridPaneW = Math.max(220, hostW - timelineW - 8);
 
             if (gantt.config.layout?.cols?.[0]) {
-                gantt.config.layout.cols[0].width = gridPaneW;
+                gantt.config.layout.cols[0].width = gridOverlayW;
                 gantt.config.layout.cols[0].min_width = 200;
             }
             if (gantt.config.layout?.cols?.[2]) {
-                gantt.config.layout.cols[2].width = Math.max(220, timelineW);
-                gantt.config.layout.cols[2].min_width = 220;
+                gantt.config.layout.cols[2].width = isOverlay ? hostW : Math.max(220, timelineW);
+                gantt.config.layout.cols[2].min_width = isOverlay ? hostW : 220;
             }
             const timelineCell = cells[2];
             if (timelineCell) ensureTimelineOverlayWidgets(timelineCell);
@@ -713,14 +751,12 @@
 
         document.addEventListener('mousedown', e => {
             const host = document.getElementById('scheduleGanttHost');
-            if (host?.classList.contains('schedule-split-mode')) return;
+            if (!host?.classList.contains('schedule-overlay-mode')) return;
             const handle = document.getElementById('scheduleChartResizer');
             if (!handle || (e.target !== handle && !handle.contains(e.target))) return;
             overlayDrag.active = true;
             overlayDrag.startX = e.clientX;
-            overlayDrag.startW = scheduleSettings.timeline_width_px >= 180
-                ? scheduleSettings.timeline_width_px
-                : getTimelineWidth();
+            overlayDrag.startW = getGridOverlayWidth();
             document.body.classList.add('schedule-chart-resizing');
             e.preventDefault();
             e.stopPropagation();
@@ -731,10 +767,11 @@
             const hostEl = document.getElementById('gantt_here');
             if (!hostEl) return;
             const rect = hostEl.getBoundingClientRect();
-            const dx = overlayDrag.startX - e.clientX;
-            const timelineW = Math.max(220, Math.min(rect.width - 120, overlayDrag.startW + dx));
-            scheduleSettings.timeline_width_px = timelineW;
-            scheduleSettings.timeline_pct = timelineW / rect.width;
+            const dx = e.clientX - overlayDrag.startX;
+            const gridW = Math.max(200, Math.min(rect.width - 120, overlayDrag.startW + dx));
+            scheduleSettings.grid_overlay_width_px = gridW;
+            scheduleSettings.timeline_width_px = null;
+            scheduleSettings.timeline_pct = 1 - (gridW / rect.width);
             syncGanttLayout();
         });
 
@@ -751,6 +788,8 @@
         bindLayoutResizePersistence.done = true;
         document.addEventListener('mouseup', () => {
             if (!ganttReady) return;
+            const host = document.getElementById('scheduleGanttHost');
+            if (host?.classList.contains('schedule-overlay-mode')) return;
             const root = document.querySelector('#gantt_here .gantt_layout_root');
             if (!root) return;
             const timelineCell = root.querySelectorAll(':scope > .gantt_layout_cell')[2];
@@ -773,8 +812,8 @@
             scheduleSettings.timeline_width_px = null;
         }
         const host = document.getElementById('scheduleGanttHost');
-        host?.classList.remove('schedule-overlay-mode');
-        host?.classList.add('schedule-split-mode');
+        host?.classList.remove('schedule-split-mode');
+        host?.classList.add('schedule-overlay-mode');
         bindChartResizer();
         bindColumnResizeDrag();
         bindLayoutResizePersistence();
@@ -1584,6 +1623,10 @@
     function getActiveRowTaskId() {
         if (gridSelection.type === 'row' || gridSelection.type === 'cell') return gridSelection.taskId;
         return gantt.getSelectedId();
+    }
+
+    function getActiveTaskId() {
+        return getActiveRowTaskId() || null;
     }
 
     function applyColumnHighlight() {
@@ -2619,22 +2662,22 @@
 
         const gridW = getColumnsTotalWidth();
         const hostW = document.getElementById('gantt_here')?.offsetWidth || 1000;
-        const timelineW = Math.max(320, Math.round(hostW * (scheduleSettings.timeline_pct ?? 0.45)));
+        const gridOverlayW = Math.max(gridW + 4, Math.round(hostW * 0.52));
         gantt.config.layout = {
             css: 'gantt_container',
             cols: [
                 {
-                    width: Math.max(220, hostW - timelineW - 8),
+                    width: gridOverlayW,
                     min_width: 200,
                     rows: [
                         { view: 'grid', scrollX: 'gridScroll', scrollY: 'scrollVer' },
                         { view: 'scrollbar', id: 'gridScroll', height: 20 }
                     ]
                 },
-                { resizer: true, width: 6 },
+                { width: 0, min_width: 0, max_width: 0 },
                 {
-                    width: timelineW,
-                    min_width: 220,
+                    width: hostW,
+                    min_width: hostW,
                     rows: [
                         { view: 'timeline', scrollX: 'scrollHor', scrollY: 'scrollVer' },
                         { view: 'scrollbar', id: 'scrollHor', height: 20 }
@@ -2877,6 +2920,7 @@
             bindGridSelectionHandlers();
             applyCellAlignToDom();
             updateAlignToolbarButtons();
+            positionChartResizerVisual();
         });
 
         document.addEventListener('keydown', onScheduleKeyDown);
@@ -3031,9 +3075,11 @@
         gantt.clearAll();
         gantt.parse({ data: payload.data, links: payload.links || [] });
         sanitizeAllTaskDates();
+        runSchedule({ skipScroll: true });
         baselines = payload.baselines || [];
         if (payload.settings) scheduleSettings = Object.assign(scheduleSettings, payload.settings);
         applyP6RowMetrics();
+        applyGanttDisplayStyles();
         if (!scheduleSettings.theme) scheduleSettings.theme = 'dark';
         if (window.ScheduleExtras) ScheduleExtras.applyThemeFromSettings();
         if (!scheduleSettings.print_settings) {
@@ -3192,7 +3238,7 @@
     }
 
     function openActivityDetail() {
-        const id = gantt.getSelectedId();
+        const id = getActiveTaskId();
         if (!id) return showScheduleAlert('Select an activity first.', 'warning');
         if (window.ScheduleActivityModal) ScheduleActivityModal.open(id);
     }
@@ -3461,7 +3507,7 @@
 
     // ─── Toolbar ───
     function resolveAddParent() {
-        let parent = gantt.getSelectedId();
+        let parent = getActiveTaskId();
         if (!parent || !gantt.isTaskExists(parent)) {
             parent = null;
             gantt.eachTask(t => {
@@ -3480,7 +3526,7 @@
     }
 
     function duplicateSelected() {
-        const id = gantt.getSelectedId();
+        const id = getActiveTaskId();
         if (!id || !gantt.isTaskExists(id)) return showScheduleAlert('Select an activity to duplicate.', 'warning');
         const src = gantt.getTask(id);
         if (src.type === 'project') return showScheduleAlert('Select a task or milestone to duplicate, not a summary row.', 'warning');
@@ -3543,7 +3589,11 @@
     }
 
     function deleteSelected() {
-        const ids = gantt.getSelectedTasks ? gantt.getSelectedTasks() : [gantt.getSelectedId()].filter(Boolean);
+        let ids = gantt.getSelectedTasks ? gantt.getSelectedTasks() : [];
+        if (!ids.length) {
+            const active = getActiveTaskId();
+            if (active) ids = [active];
+        }
         if (!ids.length) return showScheduleAlert('Select one or more activities first.', 'warning');
         if (!confirm('Delete selected activities and their relationships?')) return;
         ids.forEach(id => { if (gantt.isTaskExists(id)) gantt.deleteTask(id); });
@@ -3569,7 +3619,7 @@
     }
 
     function indentSelected() {
-        const id = gantt.getSelectedId();
+        const id = getActiveTaskId();
         if (!id) return showScheduleAlert('Select an activity to indent.', 'warning');
         const parent = gantt.getParent(id);
         const prev = gantt.getPrevSibling(id);
@@ -3584,6 +3634,7 @@
         gantt.moveTask(id, childCount, prev);
         gantt.open(prev);
         gantt.refreshTask(prev);
+        gridSelection = { type: 'row', taskId: id };
         gantt.selectTask(id);
         refreshWbsCodes();
         gantt.render();
@@ -3599,7 +3650,7 @@
     }
 
     function outdentSelected() {
-        const id = gantt.getSelectedId();
+        const id = getActiveTaskId();
         if (!id) return showScheduleAlert('Select an activity to outdent.', 'warning');
         const rootId = getRootProjectId();
         if (rootId != null && String(id) === String(rootId)) {
@@ -3607,13 +3658,14 @@
         }
         const parent = gantt.getParent(id);
         if (!parent || parent === 0) return showScheduleAlert('Activity is already at top level.', 'warning');
-        const grandParent = gantt.getParent(parent) || 0;
-        if (grandParent === 0 || grandParent === '0') {
-            return showScheduleAlert('Cannot outdent past the project summary — all activities must stay under the main construction task.', 'warning');
+        if (rootId != null && String(parent) === String(rootId)) {
+            return showScheduleAlert('Cannot outdent past the project summary.', 'warning');
         }
+        const grandParent = gantt.getParent(parent) || 0;
         const insertAt = gantt.getTaskIndex(parent) + 1;
         gantt.moveTask(id, insertAt, grandParent);
         demoteSummaryIfEmpty(parent);
+        gridSelection = { type: 'row', taskId: id };
         gantt.selectTask(id);
         refreshWbsCodes();
         gantt.render();
@@ -3629,7 +3681,7 @@
     }
 
     function unlinkSelected() {
-        const id = gantt.getSelectedId();
+        const id = getActiveTaskId();
         if (!id) return;
         const links = [...(gantt.getTask(id).$source || []), ...(gantt.getTask(id).$target || [])];
         links.forEach(lid => gantt.deleteLink(lid));

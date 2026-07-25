@@ -37,18 +37,26 @@ async function main() {
         const overlay = document.getElementById('scheduleGanttHost')?.classList.contains('schedule-overlay-mode');
         const split = document.getElementById('scheduleGanttHost')?.classList.contains('schedule-split-mode');
         const linkSegs = document.querySelectorAll('#gantt_here .gantt_task_link .gantt_line_wrapper div').length;
-        return { rowHeights, taskHeights, gaps, align, resizeWraps, overlay, split, linkSegs, rowHeight: window.gantt?.config?.row_height };
+        const timelineCell = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(3)');
+        const timelineLeft = timelineCell ? timelineCell.getBoundingClientRect().left : 0;
+        const hostLeft = document.getElementById('gantt_here')?.getBoundingClientRect().left || 0;
+        const timelineFullWidth = timelineCell ? timelineCell.getBoundingClientRect().width : 0;
+        const hostWidth = document.getElementById('gantt_here')?.clientWidth || 0;
+        return { rowHeights, taskHeights, gaps, align, resizeWraps, overlay, split, linkSegs, rowHeight: window.gantt?.config?.row_height, timelineLeft, hostLeft, timelineFullWidth, hostWidth };
     });
 
     console.log(JSON.stringify(metrics, null, 2));
 
     const maxGap = Math.max(...metrics.gaps, 0);
     const maxAlign = Math.max(...metrics.align.map(a => Math.abs(a || 0)), 0);
-    const ok = !metrics.overlay && metrics.split && metrics.resizeWraps > 0
-        && maxGap <= 0.5 && maxAlign <= 1 && metrics.rowHeight === 22;
+    const timelineStartsAtHost = Math.abs(metrics.timelineLeft - metrics.hostLeft) <= 2;
+    const timelineIsFullWidth = metrics.timelineFullWidth >= metrics.hostWidth - 24;
+    const ok = metrics.overlay && !metrics.split && metrics.resizeWraps > 0
+        && maxGap <= 0.5 && maxAlign <= 1 && metrics.rowHeight === 24
+        && timelineStartsAtHost && timelineIsFullWidth;
 
     if (!ok) {
-        console.error('LAYOUT CHECK FAILED', { maxGap, maxAlign, ok });
+        console.error('LAYOUT CHECK FAILED', { maxGap, maxAlign, timelineStartsAtHost, timelineIsFullWidth, ok });
         process.exit(1);
     }
     console.log('LAYOUT CHECK PASSED');

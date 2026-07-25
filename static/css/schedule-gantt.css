@@ -143,14 +143,16 @@ body:has(.schedule-page-root) #mainContent {
     position: absolute;
     top: 0;
     bottom: 0;
-    width: 4px;
-    margin-left: -2px;
+    width: 5px;
+    margin-left: -3px;
     z-index: 210;
     cursor: col-resize;
     pointer-events: auto;
     touch-action: none;
-    background: var(--sched-border-strong);
-    box-shadow: none;
+    background: #1a6dbd;
+    border-left: 1px solid #0d4a8f;
+    border-right: 1px solid #2d8ae8;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
 }
 .schedule-chart-resizer.hidden { display: none; }
 .schedule-chart-resizer:hover,
@@ -162,7 +164,7 @@ body.schedule-chart-resizing {
     cursor: col-resize !important;
     user-select: none !important;
 }
-body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
+body.schedule-chart-resizing .schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) {
     pointer-events: none !important;
 }
 
@@ -302,6 +304,69 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 .schedule-split-mode #scheduleOverlayControls,
 .schedule-split-mode #scheduleChartResizer {
     display: none !important;
+}
+/* Overlay layout: grid floats over full-width chart; separator overlays boundary */
+.schedule-overlay-mode #scheduleOverlayControls {
+    display: block !important;
+}
+.schedule-overlay-mode #scheduleChartResizer {
+    display: block !important;
+    width: 5px !important;
+    margin-left: -3px !important;
+    background: #1a6dbd !important;
+    border-left: 1px solid #0d4a8f !important;
+    border-right: 1px solid #2d8ae8 !important;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+    z-index: 220 !important;
+}
+.schedule-overlay-mode #scheduleChartResizer:hover,
+.schedule-overlay-mode #scheduleChartResizer:active {
+    background: #2d8ae8 !important;
+}
+.schedule-overlay-mode #gantt_here .gantt_layout_root {
+    position: relative !important;
+}
+.schedule-overlay-mode #gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1) {
+    position: relative !important;
+    z-index: 30 !important;
+    flex: 0 0 var(--sched-grid-overlay-w, 520px) !important;
+    width: var(--sched-grid-overlay-w, 520px) !important;
+    min-width: 200px !important;
+    max-width: calc(100% - 120px) !important;
+    background: var(--sched-bg) !important;
+    border-right: 3px solid #1a6dbd !important;
+    box-shadow: 4px 0 8px rgba(0, 0, 0, 0.35);
+}
+.schedule-overlay-mode #gantt_here .gantt_resizer,
+.schedule-overlay-mode #gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(2) {
+    display: none !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    flex: 0 0 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    overflow: hidden !important;
+}
+.schedule-overlay-mode #gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(3) {
+    position: absolute !important;
+    left: 0 !important;
+    right: 16px !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    width: auto !important;
+    max-width: none !important;
+    z-index: 1 !important;
+}
+.schedule-overlay-mode #gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(4) {
+    position: relative !important;
+    z-index: 25 !important;
+}
+.schedule-overlay-mode #gantt_here .gantt_grid,
+.schedule-overlay-mode #gantt_here .gantt_grid_scale,
+.schedule-overlay-mode #gantt_here .gantt_grid_data {
+    background: var(--sched-bg) !important;
 }
 .schedule-split-mode #gantt_here .gantt_grid,
 .schedule-split-mode #gantt_here .gantt_grid_scale,
