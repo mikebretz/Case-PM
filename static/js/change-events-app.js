@@ -812,6 +812,7 @@
   CO.switchTab = function (tab) {
     if (['events', 'rfqs', 'cors', 'cpcos', 'erp'].includes(tab)) {
       switchExtTab(tab);
+      if (global.CasePMChangeOrdersHelp?.setContextFromTab) global.CasePMChangeOrdersHelp.setContextFromTab(tab);
       return;
     }
     return origSwitch.call(CO, tab);
