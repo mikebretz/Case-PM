@@ -206,6 +206,9 @@
                     <th class="px-4 py-3 text-left text-zinc-400 font-medium">To</th>
                     <th class="px-4 py-3 text-left text-zinc-400 font-medium">Drawing</th>
                     <th class="px-4 py-3 text-left text-zinc-400 font-medium">Spec</th>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">RFI Manager</th>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">Responsible Contractor</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium">Days Out</th>
                     <th class="px-4 py-3 text-center text-zinc-400 font-medium">Priority</th>
                     <th class="px-4 py-3 text-center text-zinc-400 font-medium">Status</th>
                     <th class="px-4 py-3 text-center text-zinc-400 font-medium">Ball in Court</th>
@@ -215,7 +218,7 @@
                 </tr>
             </thead>
             <tbody id="rfiTableBody" class="divide-y divide-zinc-800">
-                <tr><td colspan="12" class="px-6 py-12 text-center text-zinc-500">Loading RFIs…</td></tr>
+                <tr><td colspan="15" class="px-6 py-12 text-center text-zinc-500">Loading RFIs…</td></tr>
             </tbody>
         </table>
     </div>
@@ -302,8 +305,8 @@
                 </select>
             </div>
             <div>
-                <label class="block text-sm text-zinc-400 mb-1">Due Date</label>
-                <input type="date" id="modalRfiDueDate" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                <label class="block text-sm text-zinc-400 mb-1">Due Date <span class="text-red-400">*</span></label>
+                <input type="date" id="modalRfiDueDate" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" required>
             </div>
         </div>
 
@@ -313,8 +316,8 @@
         </div>
 
         <div class="mb-4">
-            <label class="block text-sm text-zinc-400 mb-1">Question / Description</label>
-            <textarea id="modalRfiQuestion" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm resize-y" placeholder="Detailed question for the design team…"></textarea>
+            <label class="block text-sm text-zinc-400 mb-1">Question <span class="text-red-400">*</span></label>
+            <textarea id="modalRfiQuestion" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm resize-y" placeholder="Detailed question for the design team…" required></textarea>
         </div>
 
         <div id="rfiAttachmentsSection" class="mb-5 rfi-attachments-card">
@@ -381,16 +384,19 @@
                 <input type="text" id="modalRfiContractor" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
             </div>
             <div>
-                <label class="block text-sm text-zinc-400 mb-1">RFI Manager</label>
-                <input type="text" id="modalRfiManager" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                <label class="block text-sm text-zinc-400 mb-1">RFI Manager <span class="text-red-400">*</span></label>
+                <select id="modalRfiManager" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                    <option value="">— Select from Project Directory —</option>
+                </select>
             </div>
             <div>
-                <label class="block text-sm text-zinc-400 mb-1">Assignees <span class="text-zinc-600">(comma-separated)</span></label>
-                <input type="text" id="modalRfiAssignees" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="Architect, MEP Engineer">
+                <label class="block text-sm text-zinc-400 mb-1">Assignees <span class="text-red-400">*</span></label>
+                <select id="modalRfiAssignees" multiple size="4" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm min-h-[6rem]"></select>
+                <p class="text-[10px] text-zinc-500 mt-1">Hold Ctrl/Cmd to select multiple people.</p>
             </div>
             <div>
-                <label class="block text-sm text-zinc-400 mb-1">Distribution List <span class="text-zinc-600">(comma-separated)</span></label>
-                <input type="text" id="modalRfiDistribution" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="PM, Superintendent, Owner Rep">
+                <label class="block text-sm text-zinc-400 mb-1">Distribution List</label>
+                <select id="modalRfiDistribution" multiple size="4" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm min-h-[6rem]"></select>
             </div>
         </div>
 
@@ -402,6 +408,22 @@
             <div>
                 <label class="block text-sm text-zinc-400 mb-1">Spec Section</label>
                 <input type="text" id="modalRfiSpec" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm font-mono" placeholder="26 05 19">
+            </div>
+            <div>
+                <label class="block text-sm text-zinc-400 mb-1">Reference</label>
+                <input type="text" id="modalRfiReference" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="Free-text reference tag">
+            </div>
+            <div>
+                <label class="block text-sm text-zinc-400 mb-1">Cost Code</label>
+                <input type="text" id="modalRfiCostCode" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm font-mono" placeholder="01-100">
+            </div>
+            <div>
+                <label class="block text-sm text-zinc-400 mb-1">Project Stage</label>
+                <select id="modalRfiProjectStage" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                    <option value="">— Select —</option>
+                    <option>Preconstruction</option><option>Construction</option><option>Closeout</option>
+                    <option>Warranty</option><option>Other</option>
+                </select>
             </div>
             <div>
                 <label class="block text-sm text-zinc-400 mb-1">Discipline</label>

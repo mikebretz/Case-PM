@@ -1088,6 +1088,12 @@ class RFI(db.Model):
     submitted_at = db.Column(db.DateTime)
     location_description = db.Column(db.String(300))
     discipline = db.Column(db.String(80))
+    rfi_manager_user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    ball_in_court_user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    reference = db.Column(db.String(200))
+    cost_code = db.Column(db.String(100))
+    project_stage = db.Column(db.String(100))
+    date_initiated = db.Column(db.DateTime)
 
 
 class Drawing(db.Model):
@@ -4043,7 +4049,8 @@ def api_rfi_dashboard():
 @app.route('/api/rfis', methods=['GET'])
 @login_required
 def api_list_rfis():
-    from rfi_persistence import rfi_to_dict, get_linked_records
+    from rfi_persistence import rfi_to_dict, get_linked_records, user_can_access_private_rfi
+    from developer_tools import is_admin_or_developer
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
@@ -4055,25 +4062,31 @@ def api_list_rfis():
     if priority:
         q = q.filter_by(priority=priority)
     rfis = q.order_by(RFI.created_at.desc()).all()
+    privileged = is_admin_or_developer(current_user)
     result = []
     for rfi in rfis:
+        if not user_can_access_private_rfi(current_user, rfi, is_privileged=privileged):
+            continue
         linked_cos, linked_pcos = get_linked_records(rfi.id, ChangeOrder, PotentialChangeOrder)
-        result.append(rfi_to_dict(rfi, linked_cos, linked_pcos))
+        result.append(rfi_to_dict(rfi, linked_cos, linked_pcos, User=User))
     return jsonify({'rfis': result})
 
 
 @app.route('/api/rfis/<int:rfi_id>', methods=['GET'])
 @login_required
 def api_get_rfi(rfi_id):
-    from rfi_persistence import rfi_to_dict, get_linked_records
+    from rfi_persistence import rfi_to_dict, get_linked_records, user_can_access_private_rfi
     from financial_security import require_financial_project_access
+    from developer_tools import is_admin_or_developer
     rfi = RFI.query.get_or_404(rfi_id)
     try:
         require_financial_project_access(current_user, rfi.project_id, Project)
     except (ValueError, PermissionError) as exc:
         return jsonify({'error': str(exc)}), 403
+    if not user_can_access_private_rfi(current_user, rfi, is_privileged=is_admin_or_developer(current_user)):
+        return jsonify({'error': 'This private RFI is not visible to your account'}), 403
     linked_cos, linked_pcos = get_linked_records(rfi.id, ChangeOrder, PotentialChangeOrder)
-    payload = rfi_to_dict(rfi, linked_cos, linked_pcos)
+    payload = rfi_to_dict(rfi, linked_cos, linked_pcos, User=User)
     payload['attachments'] = _enrich_rfi_attachments(rfi_id, payload.get('attachments') or [])
     return jsonify(payload)
 
@@ -4081,7 +4094,7 @@ def api_get_rfi(rfi_id):
 @app.route('/api/rfis', methods=['POST'])
 @login_required
 def api_create_rfi():
-    from rfi_persistence import apply_rfi_fields, rfi_to_dict
+    from rfi_persistence import apply_rfi_fields, rfi_to_dict, validate_rfi_open_fields
     from document_module_security import assert_rfi_create_allowed
     try:
         assert_rfi_create_allowed(current_user)
@@ -4110,12 +4123,15 @@ def api_create_rfi():
         )
         apply_rfi_fields(rfi, body, is_create=True)
         if body.get('create_as_open'):
+            validate_rfi_open_fields(rfi)
             rfi.status = 'Open'
             rfi.submitted_at = datetime.utcnow()
-            rfi.ball_in_court_role = 'Assignee'
+            rfi.date_initiated = datetime.utcnow()
+            from rfi_persistence import _set_ball_in_court
+            _set_ball_in_court(rfi, 'Assignee')
         db.session.add(rfi)
         db.session.commit()
-        return jsonify({'ok': True, 'rfi': rfi_to_dict(rfi)})
+        return jsonify({'ok': True, 'rfi': rfi_to_dict(rfi, User=User)})
     except (ValueError, PermissionError) as exc:
         db.session.rollback()
         return jsonify({'error': str(exc)}), 403
@@ -4141,7 +4157,7 @@ def api_update_rfi(rfi_id):
     apply_rfi_fields(rfi, body)
     db.session.commit()
     linked_cos, linked_pcos = get_linked_records(rfi.id, ChangeOrder, PotentialChangeOrder)
-    return jsonify({'ok': True, 'rfi': rfi_to_dict(rfi, linked_cos, linked_pcos)})
+    return jsonify({'ok': True, 'rfi': rfi_to_dict(rfi, linked_cos, linked_pcos, User=User)})
 
 
 @app.route('/api/rfis/<int:rfi_id>', methods=['DELETE'])
@@ -4199,10 +4215,11 @@ def api_rfi_workflow(rfi_id):
             'comment': body.get('comment') or body.get('body') or '',
             'is_official': bool(body.get('is_official')),
             'attachments': body.get('attachments') or [],
+            'response_id': body.get('response_id'),
         })
         db.session.commit()
         linked_cos, linked_pcos = get_linked_records(rfi.id, ChangeOrder, PotentialChangeOrder)
-        return jsonify({'ok': True, 'rfi': rfi_to_dict(rfi, linked_cos, linked_pcos)})
+        return jsonify({'ok': True, 'rfi': rfi_to_dict(rfi, linked_cos, linked_pcos, User=User)})
     except ValueError as exc:
         db.session.rollback()
         return jsonify({'error': str(exc)}), 400

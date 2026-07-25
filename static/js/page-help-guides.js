@@ -222,16 +222,16 @@ global.CasePMPageHelpGuides = {
 
   rfis: singleGuide(
     'RFIs',
-    'Request for Information — formal questions that need a written answer.',
+    'Request for Information — formal questions that need a written answer (Procore-style Ball in Court).',
     [
-      ['Create an RFI', 'Click <strong>New RFI</strong>. Enter subject, question, spec section, and due date.'],
-      ['Assign parties', 'Set <strong>From</strong>, <strong>To</strong> (architect/engineer), and <strong>Ball in Court</strong>. Attach drawings or photos.'],
-      ['Submit', 'Move from Draft to <strong>Open</strong> so the design team receives it. Due date starts the clock.'],
-      ['Track responses', 'Watch status and Ball in Court. Use reminders before due dates pass.'],
-      ['Official answer', 'When the architect responds, record the answer text and attach the signed PDF if required.'],
-      ['Close', 'Set status to <strong>Closed</strong> when the field can proceed. Link related change events if scope changed.'],
-      ['Cost impact', 'If the answer adds cost or time, create a <strong>Change Event</strong> — do not rely on the RFI alone for budget changes.'],
-      ['Settings', 'Default RFI numbering and reply days live under <strong>Program Settings → Numbering</strong> and workflow tabs.'],
+      ['Required to open', 'Subject, question, assignees, due date, and <strong>RFI Manager</strong> are required before an RFI can be opened.'],
+      ['Create Draft or Open', 'Use <strong>Save Draft</strong> to keep the ball with the RFI Manager, or <strong>Save &amp; Open</strong> to notify assignees immediately.'],
+      ['Ball in Court', 'Tracks who owns the RFI: Manager reviews drafts; assignees respond when open; ball returns to the manager after each reply.'],
+      ['Assign from directory', 'Pick the RFI Manager, assignees, and distribution list from the <strong>Project Directory</strong> so notifications reach the right people.'],
+      ['Respond', 'Assignees submit responses in Procore, email, or Case PM. Each reply is logged; the manager reviews all answers.'],
+      ['Official answer', 'The RFI Manager marks one response as the <strong>Official Response</strong>, then closes the RFI when the field can proceed.'],
+      ['Private RFIs', 'Private RFIs are visible only to the creator, manager, assignees, and distribution — not the full project team.'],
+      ['Cost impact', 'If the answer affects scope, cost, or schedule, create a <strong>Change Event</strong> — the RFI alone does not change the budget.'],
     ],
     'fa-circle-question'
   ),

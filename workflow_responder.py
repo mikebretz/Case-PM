@@ -17,10 +17,15 @@ ACTION_META = {
         'style': 'secondary',
     },
     'submit_answer': {
-        'label': 'Submit Answer',
+        'label': 'Submit Response',
         'requires_comment': True,
         'style': 'primary',
-        'is_official': True,
+        'is_official': False,
+    },
+    'mark_official': {
+        'label': 'Mark Official Response',
+        'requires_comment': False,
+        'style': 'primary',
     },
     'submit': {
         'label': 'Send for Review',
@@ -41,6 +46,16 @@ ACTION_META = {
         'label': 'Return to RFI Manager',
         'requires_comment': False,
         'style': 'secondary',
+    },
+    'reopen': {
+        'label': 'Reopen RFI',
+        'requires_comment': False,
+        'style': 'secondary',
+    },
+    'void': {
+        'label': 'Void RFI',
+        'requires_comment': False,
+        'style': 'danger',
     },
     'approve': {
         'label': 'Approve',
@@ -96,13 +111,15 @@ def _action_dict(action_key):
 
 
 def get_rfi_allowed_actions(rfi, user):
-    from rfi_persistence import BALL_IN_COURT_BY_STATUS
+    from rfi_persistence import BALL_IN_COURT_BY_STATUS, _parse_json
 
     actions = []
     status = rfi.status or 'Open'
     ball = getattr(rfi, 'ball_in_court_role', None) or BALL_IN_COURT_BY_STATUS.get(status)
     can_act = user_can_act_on_rfi_ball(user, ball)
     is_staff = cw.user_portal_type(user) == 'staff' or user.role == 'Admin'
+    responses = _parse_json(getattr(rfi, 'responses_json', None), [])
+    has_responses = bool(responses)
 
     if status == 'Draft' and (can_act or is_staff):
         actions.append('submit')
@@ -111,16 +128,24 @@ def get_rfi_allowed_actions(rfi, user):
         actions.append('submit_answer')
         actions.append('respond')
 
-    if status == 'Answered' and ball == 'RFI Manager' and can_act:
-        actions.append('close')
-        actions.append('return_to_assignee')
+    if ball == 'RFI Manager' and (can_act or is_staff):
+        if has_responses and status in ('Under Review', 'Open', 'Awaiting Response', 'Answered'):
+            actions.append('mark_official')
+        if status == 'Answered':
+            actions.append('close')
+            actions.append('return_to_assignee')
+        elif status in ('Under Review', 'Open', 'Awaiting Response'):
+            actions.append('return_to_assignee')
 
     if is_staff and status not in ('Closed', 'Void', 'Draft'):
         if ball == 'Assignee' and 'return_to_manager' not in actions:
             actions.append('return_to_manager')
-        if status not in ('Answered',) and ball == 'RFI Manager' and 'return_to_assignee' not in actions:
-            if status in ('Under Review',):
-                actions.append('return_to_assignee')
+
+    if is_staff and status == 'Closed':
+        actions.append('reopen')
+
+    if is_staff and status not in ('Void', 'Closed'):
+        actions.append('void')
 
     seen = set()
     ordered = []
@@ -298,7 +323,7 @@ def notify_rfi_ball_in_court(rfi, User, title=None, description=None):
 
 
 def execute_rfi_action(rfi, action, user, User, body=None):
-    from rfi_persistence import add_response, workflow_rfi, get_linked_records
+    from rfi_persistence import add_response, workflow_rfi, get_linked_records, mark_response_official
 
     body = body or {}
     action = (action or '').lower()
@@ -306,48 +331,54 @@ def execute_rfi_action(rfi, action, user, User, body=None):
     allowed = {a['action'] for a in get_rfi_allowed_actions(rfi, user)}
     is_staff = cw.user_portal_type(user) == 'staff' or user.role == 'Admin'
 
-    if action == 'submit_answer':
-        action = 'respond'
-        body = {**body, 'is_official': True}
+    if action == 'mark_official':
+        if action not in allowed and not is_staff:
+            raise ValueError('You cannot mark the official response right now.')
+        response_id = body.get('response_id')
+        if response_id is None:
+            raise ValueError('response_id is required to mark the official answer.')
+        mark_response_official(rfi, response_id, user.id)
+        notify_rfi_update(
+            rfi, User,
+            title=f'{rfi.number} — official answer recorded',
+            description=rfi.official_answer or 'The RFI manager marked an official response.',
+            actor_id=user.id,
+            event='ball',
+        )
+        notify_rfi_ball_in_court(
+            rfi, User,
+            title=f'{rfi.number} — review and close',
+            description='Official answer recorded. Close the RFI when the field can proceed.',
+        )
+        return 'mark_official'
 
-    if action == 'respond':
+    if action == 'respond' or action == 'submit_answer':
         comment = (body.get('comment') or body.get('body') or '').strip()
         if not comment:
             raise ValueError('A comment is required.')
-        if body.get('is_official') and 'submit_answer' not in allowed and not is_staff:
-            raise ValueError('You cannot submit the official answer right now.')
-        if not body.get('is_official') and 'respond' not in allowed and 'submit_answer' not in allowed:
-            if not is_staff:
-                raise ValueError('You cannot add comments on this RFI right now.')
+        respond_key = 'submit_answer' if action == 'submit_answer' else 'respond'
+        if respond_key not in allowed and not is_staff:
+            raise ValueError('You cannot add comments on this RFI right now.')
         add_response(rfi, {
             'body': comment,
-            'is_official': bool(body.get('is_official')),
+            'is_official': False,
             'attachments': body.get('attachments') or [],
         }, user.id, user_name)
-        if body.get('is_official'):
-            notify_rfi_update(
-                rfi, User,
-                title=f'{rfi.number} — official answer submitted',
-                description=comment[:500],
-                actor_id=user.id,
-                event='ball',
-            )
-            notify_rfi_ball_in_court(
-                rfi, User,
-                title=f'{rfi.number} — review answer and close',
-                description='An official answer was submitted. Please review and close the RFI when complete.',
-            )
-        else:
-            notify_rfi_update(
-                rfi, User,
-                title=f'{rfi.number} — new comment',
-                description=comment[:500],
-                actor_id=user.id,
-            )
-        return 'respond'
+        notify_rfi_update(
+            rfi, User,
+            title=f'{rfi.number} — new response',
+            description=comment[:500],
+            actor_id=user.id,
+        )
+        notify_rfi_ball_in_court(
+            rfi, User,
+            title=f'{rfi.number} — review response',
+            description='A response was submitted. Review replies and mark the official answer when ready.',
+        )
+        return action
 
     if action not in allowed and not (is_staff and action in (
-        'submit', 'close', 'return_to_assignee', 'return_to_manager', 'reopen',
+        'submit', 'close', 'return_to_assignee', 'return_to_manager', 'reopen', 'void', 'mark_official',
     )):
         raise ValueError('This action is not available for your role.')
 
@@ -374,6 +405,19 @@ def execute_rfi_action(rfi, action, user, User, body=None):
         )
     elif action in ('return_to_assignee', 'return_to_manager'):
         notify_rfi_ball_in_court(rfi, User)
+    elif action == 'reopen':
+        notify_rfi_ball_in_court(
+            rfi, User,
+            title=f'{rfi.number} — reopened',
+            description=rfi.question or rfi.subject or 'This RFI was reopened for additional review.',
+        )
+    elif action == 'void':
+        notify_rfi_update(
+            rfi, User,
+            title=f'{rfi.number} — voided',
+            description='This RFI was voided and is no longer active.',
+            actor_id=user.id,
+        )
 
     if getattr(rfi, 'ball_in_court_role', None) != old_ball and action != 'submit':
         notify_rfi_ball_in_court(rfi, User)
