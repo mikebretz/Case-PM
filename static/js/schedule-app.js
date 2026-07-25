@@ -68,6 +68,14 @@
             chart_width_pct: 58,
             print_wbs_colors: true,
             print_bar_labels: false,
+            print_column_mode: 'screen',
+            print_grid_lines: true,
+            print_timescale: 'week',
+            print_show_nonwork: false,
+            print_critical_color: '#c00000',
+            print_summary_style: 'primavera',
+            paper_size: 'letter',
+            margin_in: 0.35,
             include_schedule_chart: false,
             include_evm: false,
             include_footer: true,
@@ -462,79 +470,21 @@
         if (gantt.config.layout?.cols?.[2]) gantt.config.layout.cols[2].width = w;
     }
 
-    function syncGridTableWidth() {
+    function syncGridColumnsFromConfig() {
         if (!ganttReady || !gantt.config.columns) return;
+        syncColumnWidthsToConfig();
         const total = getColumnsTotalWidth();
         gantt.config.grid_width = total;
         const host = document.getElementById('gantt_here');
         if (host) host.style.setProperty('--sched-grid-min-width', total + 'px');
+        if (typeof gantt.setSizes === 'function') gantt.setSizes();
+    }
+
+    function syncGridTableWidth() {
+        syncGridColumnsFromConfig();
     }
 
     let headerSyncTimer = null;
-    let lastHeaderWidthsKey = '';
-
-    function columnWidthsKey() {
-        return (gantt.config.columns || []).map(c => `${c.name}:${parseInt(c.width, 10) || 80}`).join('|');
-    }
-
-    function applyColumnWidthToCell(cell, w) {
-        if (!cell) return;
-        cell.style.width = w + 'px';
-        cell.style.minWidth = w + 'px';
-        cell.style.maxWidth = w + 'px';
-    }
-
-    function applyGridColumnWidthStyles() {
-        if (!ganttReady || !gantt.config.columns) return;
-        syncColumnWidthsToConfig();
-        const key = columnWidthsKey();
-        const cols = gantt.config.columns;
-        const styleEl = document.getElementById('sched-grid-col-widths');
-        if (styleEl) {
-            let css = '';
-            cols.forEach((col, i) => {
-                const w = parseInt(col.width, 10) || 80;
-                const n = i + 1;
-                css += `#gantt_here .gantt_grid_scale .gantt_grid_head_cell:nth-child(${n}),`;
-                css += `#gantt_here .gantt_grid_data .gantt_row > .gantt_cell:nth-child(${n}){`;
-                css += `width:${w}px;min-width:${w}px;max-width:${w}px;}`;
-            });
-            styleEl.textContent = css;
-        }
-        if (key !== lastHeaderWidthsKey) {
-            lastHeaderWidthsKey = key;
-            document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell').forEach((cell, i) => {
-                if (i < cols.length) applyColumnWidthToCell(cell, parseInt(cols[i].width, 10) || 80);
-            });
-            document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
-                row.querySelectorAll(':scope > .gantt_cell').forEach((cell, i) => {
-                    if (i < cols.length) applyColumnWidthToCell(cell, parseInt(cols[i].width, 10) || 80);
-                });
-            });
-        }
-        syncColumnResizeHandlePositions();
-    }
-
-    function syncColumnResizeHandlePositions() {
-        if (!ganttReady || !gantt.config.columns) return;
-        const scale = document.querySelector('#gantt_here .gantt_grid_scale');
-        if (!scale) return;
-        scale.style.position = 'relative';
-        const scaleRect = scale.getBoundingClientRect();
-        const headCells = scale.querySelectorAll('.gantt_grid_head_cell');
-        const wraps = scale.querySelectorAll('.gantt_grid_column_resize_wrap');
-        wraps.forEach((wrap, i) => {
-            const cell = headCells[i];
-            if (!cell) return;
-            const cellRect = cell.getBoundingClientRect();
-            const left = cellRect.right - scaleRect.left - 2;
-            wrap.style.position = 'absolute';
-            wrap.style.left = Math.max(0, Math.round(left)) + 'px';
-            wrap.style.top = '0';
-            wrap.style.height = '100%';
-            wrap.style.marginLeft = '0';
-        });
-    }
 
     function syncColumnWidthsToConfig() {
         if (!ganttReady || !gantt.config.columns) return;
@@ -547,17 +497,18 @@
         });
     }
 
-    function queueColumnResizeHandleSync() {
-        requestAnimationFrame(syncColumnResizeHandlePositions);
-    }
+    function queueColumnResizeHandleSync() { /* native dhtmlx handles resize grips */ }
 
     function syncGridHeaderAlignment() {
-        applyGridColumnWidthStyles();
+        syncGridColumnsFromConfig();
     }
 
     function queueGridHeaderSync() {
         clearTimeout(headerSyncTimer);
-        headerSyncTimer = setTimeout(applyGridColumnWidthStyles, 32);
+        headerSyncTimer = setTimeout(() => {
+            syncGridColumnsFromConfig();
+            applyCellAlignToDom();
+        }, 32);
     }
 
     function ensureTimelineOverlayWidgets(timelineCell) {
@@ -1680,44 +1631,42 @@
     function getPrintVisibleGridColumns(ps) {
         const opts = ps || scheduleSettings.print_settings || {};
         const cols = gantt.config.columns || [];
-        const host = document.getElementById('gantt_here');
-        const headCells = document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell');
-        if (!host || !headCells.length) {
-            return cols
-                .filter(c => c.name !== 'collapse')
-                .filter(c => !(opts.print_hide_wbs && c.name === 'wbs'))
-                .filter(c => !(opts.print_hide_id && c.name === 'activity_id'))
-                .map((col, index) => ({ col, index, width: parseInt(col.width, 10) || 80 }));
+        const baseFilter = c => {
+            if (c.name === 'collapse') return false;
+            if (opts.print_hide_wbs && c.name === 'wbs') return false;
+            if (opts.print_hide_id && c.name === 'activity_id') return false;
+            if (opts.print_hide_color && c.name === 'bar_color') return false;
+            return true;
+        };
+        const mapCols = list => list.map((col, index) => ({
+            col,
+            index,
+            width: parseInt(col.width, 10) || 80
+        }));
+
+        if (opts.print_column_mode !== 'visible_only') {
+            return mapCols(cols.filter(baseFilter));
         }
-        const hostRect = host.getBoundingClientRect();
-        const gridView = document.querySelector('#gantt_here .gantt_grid_data')
-            || document.querySelector('#gantt_here .gantt_grid_scale');
-        const viewRect = gridView?.getBoundingClientRect() || hostRect;
+
+        const headCells = document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell');
+        const host = document.getElementById('gantt_here');
+        if (!host || !headCells.length) return mapCols(cols.filter(baseFilter));
+
+        const viewRect = (document.querySelector('#gantt_here .gantt_grid_data') || host).getBoundingClientRect();
         const viewLeft = viewRect.left;
         const exposedRight = getExposedGridRightEdge();
         const visible = [];
         cols.forEach((col, index) => {
-            if (col.name === 'collapse') return;
-            if (opts.print_hide_wbs && col.name === 'wbs') return;
-            if (opts.print_hide_id && col.name === 'activity_id') return;
+            if (!baseFilter(col)) return;
             const cell = headCells[index];
             if (!cell) return;
             const rect = cell.getBoundingClientRect();
-            const width = rect.width;
-            if (width < 4) return;
-            const fullyVisible = rect.left >= viewLeft - 0.5 && rect.right <= exposedRight + 0.5;
-            if (!fullyVisible) return;
-            visible.push({ col, index, width });
+            if (rect.width < 4) return;
+            if (rect.left >= viewLeft - 0.5 && rect.right <= exposedRight + 0.5) {
+                visible.push({ col, index, width: rect.width });
+            }
         });
-        if (!visible.length) {
-            return cols
-                .filter(c => c.name !== 'collapse' && c.name !== 'bar_color')
-                .filter(c => !(opts.print_hide_wbs && c.name === 'wbs'))
-                .filter(c => !(opts.print_hide_id && c.name === 'activity_id'))
-                .slice(0, 8)
-                .map((col, index) => ({ col, index, width: parseInt(col.width, 10) || 80 }));
-        }
-        return visible;
+        return visible.length ? visible : mapCols(cols.filter(baseFilter));
     }
 
     function renderPrintCellHtml(task, col) {
@@ -1736,7 +1685,7 @@
         return String(val);
     }
 
-    const colResizeDrag = { active: false, colIndex: -1, startX: 0, startW: 0 };
+    const colResizeDrag = { active: false };
 
     function bindColumnResizeEnhancements() {
         if (bindColumnResizeEnhancements.done) return;
@@ -1744,56 +1693,9 @@
         const host = document.getElementById('gantt_here');
         if (!host) return;
 
-        const onColMove = e => {
-            if (!colResizeDrag.active || colResizeDrag.colIndex < 0) return;
-            const col = gantt.config.columns[colResizeDrag.colIndex];
-            if (!col) return;
-            const delta = e.clientX - colResizeDrag.startX;
-            const newW = Math.max(col.min_width || 50, Math.min(520, colResizeDrag.startW + delta));
-            handleColumnResize(colResizeDrag.colIndex, col, newW, false, true);
-            preserveGridScrollLeft(columnResizeScrollLeft);
-        };
-
-        const endColResize = () => {
-            if (!colResizeDrag.active) return;
-            const idx = colResizeDrag.colIndex;
-            colResizeDrag.active = false;
-            if (idx >= 0 && gantt.config.columns[idx]) {
-                handleColumnResize(idx, gantt.config.columns[idx], gantt.config.columns[idx].width, true, true);
-            }
-            colResizeDrag.colIndex = -1;
-            columnResizeScrollLeft = null;
-        };
-
-        host.addEventListener('mousedown', e => {
-            const tick = e.target.closest('.gantt_grid_column_resize, .gantt_grid_column_resize_wrap');
-            if (!tick) return;
-            const wrap = tick.closest('.gantt_grid_column_resize_wrap') || tick;
-            const scale = wrap.closest('.gantt_grid_scale');
-            if (!scale) return;
-            const boundary = getExposedGridRightEdge();
-            if (wrap.getBoundingClientRect().left > boundary - 4) return;
-            const wraps = Array.from(scale.querySelectorAll('.gantt_grid_column_resize_wrap'));
-            const colIndex = wraps.indexOf(wrap);
-            if (colIndex < 0 || !gantt.config.columns[colIndex] || gantt.config.columns[colIndex].resize === false) return;
-            const grid = document.querySelector('#gantt_here .gantt_grid_data');
-            columnResizeScrollLeft = grid ? grid.scrollLeft : 0;
-            colResizeDrag.active = true;
-            colResizeDrag.colIndex = colIndex;
-            colResizeDrag.startX = e.clientX;
-            colResizeDrag.startW = parseInt(gantt.config.columns[colIndex].width, 10) || 80;
-            e.preventDefault();
-            e.stopPropagation();
-        }, true);
-
-        document.addEventListener('mousemove', onColMove);
-        document.addEventListener('mouseup', endColResize);
-
         host.addEventListener('dblclick', e => {
             const wrap = e.target.closest('.gantt_grid_column_resize_wrap');
             if (!wrap) return;
-            const boundary = getExposedGridRightEdge();
-            if (wrap.getBoundingClientRect().left > boundary - 4) return;
             const scale = wrap.closest('.gantt_grid_scale');
             if (!scale) return;
             const wraps = Array.from(scale.querySelectorAll('.gantt_grid_column_resize_wrap'));
@@ -1806,30 +1708,24 @@
     }
 
     function handleColumnResize(index, column, new_width, persist, reflow) {
-        const w = parseInt(new_width, 10) || 80;
+        const w = Math.max(column?.min_width || 50, Math.min(520, parseInt(new_width, 10) || 80));
         if (column && column.name) {
             columnWidths[column.name] = w;
             column.width = w;
             if (gantt.config.columns[index]) gantt.config.columns[index].width = w;
         }
         if (reflow) {
-            lastHeaderWidthsKey = '';
-            applyGridColumnWidthStyles();
-            syncGridTableWidth();
+            syncGridColumnsFromConfig();
             queueChartOverlay();
             applyCellAlignToDom();
             if (persist) queueSave();
-        } else {
-            queueColumnResizeHandleSync();
         }
     }
 
     function resetColumnWidths() {
         columnWidths = {};
         gantt.config.columns = buildColumnConfig();
-        syncGridTableWidth();
-        lastHeaderWidthsKey = '';
-        applyGridColumnWidthStyles();
+        syncGridColumnsFromConfig();
         gantt.render();
         queueSave();
         showScheduleAlert('Column widths reset to defaults.', 'success');
@@ -2381,7 +2277,6 @@
             closeFloatingEditor();
             syncColumnWidthsToConfig();
             gantt.refreshTask(id);
-            lastHeaderWidthsKey = '';
             queueGridHeaderSync();
         };
         input.addEventListener('keydown', e => {
@@ -2674,10 +2569,8 @@
         gantt.attachEvent('onColumnResizeStart', function () {
             const grid = document.querySelector('#gantt_here .gantt_grid_data');
             columnResizeScrollLeft = grid ? grid.scrollLeft : 0;
-            const styleEl = document.getElementById('sched-grid-col-widths');
-            if (styleEl) styleEl.textContent = '';
         });
-        gantt.attachEvent('onColumnResize', function (index, column, new_width) {
+        gantt.attachEvent('onColumnResize', function () {
             preserveGridScrollLeft(columnResizeScrollLeft);
         });
         gantt.attachEvent('onColumnResizeEnd', function (index, column, new_width) {
@@ -2694,7 +2587,6 @@
             refreshTimelinePanBar();
             bindColumnResizeEnhancements();
             bindGridSelectionHandlers();
-            queueGridHeaderSync();
             applyCellAlignToDom();
             updateAlignToolbarButtons();
             applyRowHeightsToDom();
@@ -2858,8 +2750,18 @@
         if (window.ScheduleExtras) ScheduleExtras.applyThemeFromSettings();
         if (!scheduleSettings.print_settings) {
             scheduleSettings.print_settings = {
-                include_summary: true, include_activity_table: true, include_inline_bars: true,
-                include_schedule_chart: false, include_evm: false, include_footer: true
+                include_summary: true,
+                include_activity_table: true,
+                include_inline_bars: true,
+                include_predecessor_links: true,
+                orientation: 'landscape',
+                font_size_pt: 8,
+                row_height_px: 16,
+                chart_width_pct: 58,
+                print_wbs_colors: true,
+                include_schedule_chart: false,
+                include_evm: false,
+                include_footer: true
             };
         }
         ensureHeaderFooterSettings();
@@ -4265,13 +4167,19 @@
         document.getElementById('printIncludeFooter').checked = !!ps.include_footer;
         const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
         setVal('printOrientation', ps.orientation || 'landscape');
+        setVal('printPaperSize', ps.paper_size || 'letter');
+        setVal('printMarginIn', ps.margin_in ?? 0.35);
+        setVal('printColumnMode', ps.print_column_mode || 'screen');
         setVal('printFontSize', ps.font_size_pt || 8);
         setVal('printRowHeight', ps.row_height_px || 16);
         setVal('printChartWidthPct', ps.chart_width_pct || 58);
-        const wbsColors = document.getElementById('printWbsColors');
-        if (wbsColors) wbsColors.checked = ps.print_wbs_colors !== false;
-        const barLabels = document.getElementById('printBarLabels');
-        if (barLabels) barLabels.checked = ps.print_bar_labels === true;
+        setVal('printTimescale', ps.print_timescale || 'week');
+        setVal('printCriticalColor', ps.print_critical_color || '#c00000');
+        const setChk = (id, v) => { const el = document.getElementById(id); if (el) el.checked = v; };
+        setChk('printWbsColors', ps.print_wbs_colors !== false);
+        setChk('printBarLabels', ps.print_bar_labels === true);
+        setChk('printGridLines', ps.print_grid_lines !== false);
+        setChk('printShowNonwork', ps.print_show_nonwork === true);
         updatePrintColumnToggleUI();
         const vis = getPrintVisibleGridColumns(ps);
         const hint = document.getElementById('printVisibleColHint');
@@ -4297,11 +4205,18 @@
             include_evm: document.getElementById('printIncludeEvm')?.checked === true,
             include_footer: document.getElementById('printIncludeFooter')?.checked === true,
             orientation: document.getElementById('printOrientation')?.value || 'landscape',
+            paper_size: document.getElementById('printPaperSize')?.value || 'letter',
+            margin_in: parseFloat(document.getElementById('printMarginIn')?.value) || 0.35,
+            print_column_mode: document.getElementById('printColumnMode')?.value || 'screen',
             font_size_pt: parseInt(document.getElementById('printFontSize')?.value, 10) || 8,
             row_height_px: parseInt(document.getElementById('printRowHeight')?.value, 10) || 16,
             chart_width_pct: parseInt(document.getElementById('printChartWidthPct')?.value, 10) || 58,
+            print_timescale: document.getElementById('printTimescale')?.value || 'week',
+            print_critical_color: document.getElementById('printCriticalColor')?.value || '#c00000',
             print_wbs_colors: document.getElementById('printWbsColors')?.checked !== false,
             print_bar_labels: document.getElementById('printBarLabels')?.checked === true,
+            print_grid_lines: document.getElementById('printGridLines')?.checked !== false,
+            print_show_nonwork: document.getElementById('printShowNonwork')?.checked === true,
             print_hide_wbs: scheduleSettings.print_settings?.print_hide_wbs === true,
             print_hide_id: scheduleSettings.print_settings?.print_hide_id === true,
             header_footer: hf
@@ -4312,12 +4227,13 @@
         printGantt();
     }
 
-    function buildPrintTimescale(startMs, span) {
-        const ticks = 10;
+    function buildPrintTimescale(startMs, span, mode) {
+        const ticks = mode === 'day' ? 14 : (mode === 'month' ? 6 : 10);
+        const stepMs = mode === 'day' ? 86400000 : (mode === 'month' ? (span / ticks) : (span / ticks));
         let cells = '';
         for (let i = 0; i <= ticks; i++) {
             const pct = (i / ticks) * 100;
-            const d = new Date(startMs + (span * i / ticks));
+            const d = new Date(startMs + (mode === 'day' ? stepMs * i : (span * i / ticks)));
             cells += `<span class="print-ts-label" style="left:${pct}%">${formatDateShort(d)}</span>`;
         }
         return `<div class="print-timescale">${cells}</div>`;
@@ -4382,7 +4298,7 @@
         const startMs = scheduleStartMs - PRINT_CHART_PAD_DAYS * DAY_MS;
         const endMs = scheduleEndMs + PRINT_CHART_PAD_DAYS * DAY_MS;
         const span = Math.max(endMs - startMs, DAY_MS);
-        const timescale = buildPrintTimescale(startMs, span);
+        const timescale = buildPrintTimescale(startMs, span, ps.print_timescale || 'week');
         const showInlineBars = ps.include_inline_bars !== false;
         const showTable = ps.include_activity_table !== false;
         const showChart = ps.include_schedule_chart === true;
@@ -4549,7 +4465,8 @@
                 ? `<svg class="print-inline-links" viewBox="0 0 100 100" preserveAspectRatio="none">${buildPrintLinkPaths(rowMap, rowIdx, startMs, span)}</svg>`
                 : '';
             const wbsCls = ps.print_wbs_colors === false ? ' print-no-wbs-colors' : '';
-            return `<div class="print-schedule-wrap${wbsCls}" style="--print-font-size:${printFontPt}pt;--print-row-height:${printRowH}px;--print-chart-width:${barTablePct.toFixed(2)}%" data-print-orientation="${ps.orientation || 'landscape'}">
+            const gridCls = ps.print_grid_lines !== false ? ' print-show-grid' : '';
+            return `<div class="print-schedule-wrap${wbsCls}${gridCls}" style="--print-font-size:${printFontPt}pt;--print-row-height:${printRowH}px;--print-chart-width:${barTablePct.toFixed(2)}%" data-print-orientation="${ps.orientation || 'landscape'}">
                 ${linkSvg}
                 <table class="schedule-print-table schedule-print-table-compact schedule-print-table-visible-cols">
                 <thead><tr>
@@ -4596,7 +4513,8 @@
             pageStyle.id = 'sched-print-page-style';
             document.head.appendChild(pageStyle);
         }
-        pageStyle.textContent = `@media print { @page { size: ${orient}; margin: 0.35in 0.45in; } }`;
+        const margin = parseFloat(ps.margin_in) || 0.35;
+        pageStyle.textContent = `@media print { @page { size: ${orient}; margin: ${margin}in; } }`;
         const deliver = () => {
             document.body.classList.toggle('printing-gantt-show-footer', sheet.dataset.printFooter === '1');
             document.body.classList.toggle('printing-gantt-portrait', orient === 'portrait');
