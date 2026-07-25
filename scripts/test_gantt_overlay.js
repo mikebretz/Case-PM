@@ -31,7 +31,6 @@ async function main() {
         const host = document.getElementById('gantt_here');
         const overlayW = 720;
         host.style.setProperty('--sched-grid-overlay-w', overlayW + 'px');
-        host.style.setProperty('--sched-chart-left', overlayW + 'px');
         const grid = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1)');
         if (grid) grid.style.setProperty('width', overlayW + 'px', 'important');
     });
@@ -40,15 +39,10 @@ async function main() {
     const after = await page.evaluate(() => {
         const timeline = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(3)');
         const grid = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1)');
-        const host = document.getElementById('gantt_here');
         const bars = [...document.querySelectorAll('#gantt_here .gantt_task_line')];
-        const hostRect = host?.getBoundingClientRect();
-        const timelineRect = timeline?.getBoundingClientRect();
         return {
-            timelineW: timelineRect?.width || 0,
-            timelineLeft: timelineRect?.left || 0,
+            timelineW: timeline?.getBoundingClientRect().width || 0,
             gridW: grid?.getBoundingClientRect().width || 0,
-            hostLeft: hostRect?.left || 0,
             barsInChart: bars.filter(b => b.getBoundingClientRect().width > 0).length
         };
     });
@@ -56,13 +50,13 @@ async function main() {
     const result = {
         before,
         after,
+        timelineStable: Math.abs(after.timelineW - before.timelineW) < 8,
         gridGrew: after.gridW > before.gridW + 50,
-        timelineFollowsDivider: Math.abs(after.timelineLeft - (after.hostLeft + 720)) <= 12,
-        timelineFillsChartPane: before.timelineW >= before.hostW - 720,
+        timelineFullWidth: before.timelineW >= before.hostW - 24,
         barsStillVisible: after.barsInChart >= 1
     };
     console.log(JSON.stringify(result, null, 2));
-    if (!result.gridGrew || !result.timelineFollowsDivider || !result.timelineFillsChartPane || !result.barsStillVisible) process.exit(1);
+    if (!result.timelineStable || !result.gridGrew || !result.timelineFullWidth || !result.barsStillVisible) process.exit(1);
     await browser.close();
 }
 

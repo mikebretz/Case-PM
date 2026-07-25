@@ -47,11 +47,14 @@ async function main() {
         const bars = [...document.querySelectorAll('#gantt_here .gantt_task_line')];
         const overlayW = 660;
         const barsInChart = bars.filter(b => b.getBoundingClientRect().left >= hostLeft + overlayW - 8).length;
+        const gridInner = document.querySelector('#gantt_here .gantt_grid');
+        const gridContentW = gridInner?.getBoundingClientRect().width || 0;
         return {
             rowHeights, taskHeights, gaps, align, resizeWraps, overlay, split, linkSegs,
             rowHeight: window.gantt?.config?.row_height,
             timelineLeft, hostLeft, timelineWidth, hostWidth,
-            visibleHeads, barsInChart, barCount: bars.length
+            visibleHeads, barsInChart, barCount: bars.length,
+            gridContentW
         };
     });
 
@@ -59,18 +62,19 @@ async function main() {
 
     const maxGap = Math.max(...metrics.gaps, 0);
     const maxAlign = Math.max(...metrics.align.map(a => Math.abs(a || 0)), 0);
-    const overlayW = 660;
-    const timelineStartsAtDivider = Math.abs(metrics.timelineLeft - (metrics.hostLeft + overlayW)) <= 12;
-    const timelineFillsChartPane = metrics.timelineWidth >= metrics.hostWidth - overlayW - 32;
+    const timelineStartsAtHost = Math.abs(metrics.timelineLeft - metrics.hostLeft) <= 2;
+    const timelineIsFullWidth = metrics.timelineWidth >= metrics.hostWidth - 24;
     const ok = metrics.overlay && !metrics.split && metrics.resizeWraps > 0
         && maxGap <= 0.5 && maxAlign <= 1 && metrics.rowHeight === 24
-        && timelineStartsAtDivider && timelineFillsChartPane
-        && metrics.visibleHeads >= 5 && metrics.barsInChart >= 1;
+        && timelineStartsAtHost && timelineIsFullWidth
+        && metrics.visibleHeads >= 5 && metrics.barsInChart >= 1
+        && metrics.gridContentW >= 600;
 
     if (!ok) {
         console.error('LAYOUT CHECK FAILED', {
-            maxGap, maxAlign, timelineStartsAtDivider, timelineFillsChartPane,
-            visibleHeads: metrics.visibleHeads, barsInChart: metrics.barsInChart, ok
+            maxGap, maxAlign, timelineStartsAtHost, timelineIsFullWidth,
+            visibleHeads: metrics.visibleHeads, barsInChart: metrics.barsInChart,
+            gridContentW: metrics.gridContentW, ok
         });
         process.exit(1);
     }

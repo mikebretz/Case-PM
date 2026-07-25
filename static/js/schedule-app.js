@@ -641,16 +641,27 @@
         if (!ganttReady) return;
         restoreColumnWidthsFromConfig();
         const cols = gantt.config.columns || [];
-        const { columns: metrics, total } = getColumnLayoutMetrics();
+        const total = getColumnsTotalWidth();
         gantt.config.grid_width = total;
         gantt.config.keep_grid_width = true;
 
         const headCells = document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell');
-        const headCount = Math.min(headCells.length, metrics.length);
-        for (let i = 0; i < headCount; i++) {
-            applyMetricToCell(headCells[i], metrics[i], cols[i], { head: true });
-            if (cols[i]?.name === '_sched_add_col') headCells[i].classList.add('sched-add-col-header');
-        }
+        headCells.forEach((cell, i) => {
+            const col = cols[i];
+            if (!col) return;
+            const w = resolveColumnWidth(col);
+            cell.style.position = '';
+            cell.style.left = '';
+            cell.style.top = '';
+            cell.style.height = '';
+            cell.style.width = w + 'px';
+            cell.style.minWidth = w + 'px';
+            cell.style.maxWidth = w + 'px';
+            cell.style.flex = `0 0 ${w}px`;
+            cell.style.flexGrow = '0';
+            cell.style.flexShrink = '0';
+            if (col.name === '_sched_add_col') cell.classList.add('sched-add-col-header');
+        });
 
         const gridHead = document.querySelector('#gantt_here .gantt_grid_scale .gantt_grid_head');
         if (gridHead) {
@@ -661,14 +672,14 @@
         }
         const gridScale = document.querySelector('#gantt_here .gantt_grid_scale');
         if (gridScale) {
-            gridScale.style.width = '100%';
-            gridScale.style.minWidth = '0';
+            gridScale.style.width = total + 'px';
+            gridScale.style.minWidth = total + 'px';
             gridScale.style.maxWidth = 'none';
         }
         const gridData = document.querySelector('#gantt_here .gantt_grid_data');
         if (gridData) {
-            gridData.style.width = '100%';
-            gridData.style.minWidth = '0';
+            gridData.style.width = total + 'px';
+            gridData.style.minWidth = total + 'px';
             gridData.style.maxWidth = 'none';
         }
 
@@ -676,26 +687,35 @@
             row.style.width = total + 'px';
             row.style.minWidth = total + 'px';
             row.style.maxWidth = 'none';
-            const cells = row.querySelectorAll(':scope > .gantt_cell');
-            const cellCount = Math.min(cells.length, metrics.length);
-            for (let i = 0; i < cellCount; i++) {
-                applyMetricToCell(cells[i], metrics[i], cols[i]);
-            }
+            row.querySelectorAll(':scope > .gantt_cell').forEach((cell, i) => {
+                const col = cols[i];
+                if (!col) return;
+                const w = resolveColumnWidth(col);
+                cell.style.position = '';
+                cell.style.left = '';
+                cell.style.top = '';
+                cell.style.height = '';
+                cell.style.width = w + 'px';
+                cell.style.minWidth = w + 'px';
+                cell.style.maxWidth = w + 'px';
+                cell.style.flex = `0 0 ${w}px`;
+                cell.style.flexGrow = '0';
+                cell.style.flexShrink = '0';
+                cell.classList.toggle('sched-add-col-cell', isAddColumnCol(col));
+            });
         });
 
         const gridInner = document.querySelector('#gantt_here .gantt_grid');
         if (gridInner) {
-            gridInner.style.width = '100%';
-            gridInner.style.minWidth = '0';
+            gridInner.style.width = total + 'px';
+            gridInner.style.minWidth = total + 'px';
             gridInner.style.maxWidth = 'none';
         }
         const host = document.getElementById('gantt_here');
         if (host) host.style.setProperty('--sched-grid-min-width', total + 'px');
 
         syncGridScrollContentWidth(total);
-        ensureGridScrollWidthSentinel(total);
         ensureAllColumnResizeGrips();
-        if (isOverlayMode()) syncOverlayGridScrollState();
     }
 
     function syncGridScrollContentWidth(totalWidth) {
@@ -758,48 +778,24 @@
     }
 
     function getGridPaneWidth() {
-        return getVisibleGridPaneWidth();
+        return getGridOverlayWidth();
     }
 
-    /** User divider position (saved preference). */
     function getGridOverlayWidth() {
         const hostW = document.getElementById('gantt_here')?.offsetWidth
             || document.getElementById('scheduleGanttHost')?.clientWidth
             || 1200;
-        const scrollW = gantt.config?.scroll_size || 16;
-        const minOverlay = 0;
-        const maxOverlay = Math.max(0, hostW - scrollW);
-        const clamp = w => Math.max(minOverlay, Math.min(maxOverlay, w));
-        if (scheduleSettings.grid_overlay_width_px != null && scheduleSettings.grid_overlay_width_px >= 0) {
-            return clamp(scheduleSettings.grid_overlay_width_px);
+        const minChartW = 280;
+        const minOverlay = 120;
+        const maxOverlay = Math.max(minOverlay, hostW - minChartW);
+        if (scheduleSettings.grid_overlay_width_px != null && scheduleSettings.grid_overlay_width_px >= minOverlay) {
+            return Math.max(minOverlay, Math.min(maxOverlay, scheduleSettings.grid_overlay_width_px));
         }
         if (scheduleSettings.timeline_width_px >= 180) {
-            return clamp(hostW - scheduleSettings.timeline_width_px);
+            return Math.max(minOverlay, Math.min(maxOverlay, hostW - scheduleSettings.timeline_width_px));
         }
         const gridPct = 1 - (scheduleSettings.timeline_pct ?? 0.48);
-        return clamp(Math.round(hostW * gridPct));
-    }
-
-    /**
-     * Visible grid pane width in overlay mode: always at least the sum of column widths
-     * so every column is shown without a horizontal scrollbar.
-     */
-    function getVisibleGridPaneWidth() {
-        const colsW = getColumnsTotalWidth();
-        if (!isOverlayMode()) return Math.max(colsW, getGridOverlayWidth());
-        const hostW = document.getElementById('gantt_here')?.clientWidth
-            || document.getElementById('scheduleGanttHost')?.clientWidth
-            || 1200;
-        const scrollW = gantt.config?.scroll_size || 16;
-        const minChartW = 160;
-        const userW = getGridOverlayWidth();
-        const maxPane = Math.max(colsW, hostW - scrollW - minChartW);
-        return Math.min(maxPane, Math.max(colsW, userW));
-    }
-
-    function getGridLayoutColWidth() {
-        if (isOverlayMode()) return getVisibleGridPaneWidth();
-        return getGridOverlayWidth();
+        return Math.max(minOverlay, Math.min(maxOverlay, Math.round(hostW * gridPct)));
     }
 
     function getTimelineWidth() {
@@ -819,7 +815,7 @@
 
     function getTimelineScrollMargin(fraction) {
         if (isOverlayMode()) {
-            return getVisibleGridPaneWidth() + 32;
+            return getGridOverlayWidth() + 32;
         }
         const viewW = getTimelineDomWidth();
         if (fraction != null) return Math.round(viewW * fraction);
@@ -834,9 +830,11 @@
 
         const hostW = host.clientWidth;
         const colsW = getColumnsTotalWidth();
-        const overlayW = getVisibleGridPaneWidth();
+        const minChartW = 280;
+        const overlayW = Math.max(120, Math.min(hostW - minChartW, getGridOverlayWidth()));
 
         const scrollW = gantt.config.scroll_size || 16;
+        const chartW = Math.max(hostW - scrollW, 200);
 
         host.style.setProperty('--sched-grid-overlay-w', overlayW + 'px');
         host.style.setProperty('--sched-chart-left', overlayW + 'px');
@@ -870,34 +868,24 @@
             'z-index': '30',
             flex: 'none',
             overflow: 'hidden',
-            background: 'transparent',
+            background: 'var(--sched-bg, #1e1e1e)',
             'box-sizing': 'border-box',
             border: 'none',
-            'border-right': 'none',
             'box-shadow': 'none',
             'pointer-events': 'auto'
         });
 
-        const gridInner = gridCell?.querySelector('.gantt_grid');
-        if (gridInner) {
-            gridInner.style.minWidth = '0';
-            gridInner.style.width = '100%';
-            gridInner.style.maxWidth = 'none';
-        }
-
-        const chartLeft = Math.max(0, overlayW);
-        const chartPaneW = Math.max(120, hostW - chartLeft - scrollW);
         setOverlayElStyle(timelineCell, {
             position: 'absolute',
-            left: chartLeft + 'px',
+            left: '0',
             top: '0',
             bottom: '0',
             right: scrollW + 'px',
-            width: chartPaneW + 'px',
-            'min-width': chartPaneW + 'px',
+            width: chartW + 'px',
+            'min-width': chartW + 'px',
             'max-width': 'none',
             height: '100%',
-            'z-index': '40',
+            'z-index': '1',
             flex: 'none',
             overflow: 'hidden',
             'box-sizing': 'border-box',
@@ -923,40 +911,24 @@
             overflow: 'hidden'
         });
 
-        positionChartResizerVisual();
-        syncOverlayGridScrollState();
-    }
-
-    function syncOverlayGridScrollState() {
-        if (!isOverlayMode()) return;
-        const colsW = getColumnsTotalWidth();
-        const paneW = getVisibleGridPaneWidth();
-        const hideHScroll = paneW >= colsW - 2;
-        const gridScale = document.querySelector('#gantt_here .gantt_grid_scale');
-        const gridData = document.querySelector('#gantt_here .gantt_grid_data');
-        const scrollHost = document.querySelector('#gantt_here [data-cell-id="gridScroll"]');
-        [gridScale, gridData].forEach(el => {
-            if (!el) return;
-            el.style.overflowX = hideHScroll ? 'hidden' : 'auto';
-            if (hideHScroll) el.scrollLeft = 0;
-        });
-        if (scrollHost) {
-            scrollHost.style.display = hideHScroll ? 'none' : '';
-            scrollHost.style.height = hideHScroll ? '0' : '20px';
-            scrollHost.style.minHeight = hideHScroll ? '0' : '20px';
-            scrollHost.style.flex = hideHScroll ? '0 0 0' : '0 0 20px';
-            scrollHost.style.overflow = hideHScroll ? 'hidden' : 'auto';
+        const gridInner = gridCell?.querySelector('.gantt_grid');
+        if (gridInner) {
+            gridInner.style.minWidth = colsW + 'px';
+            gridInner.style.width = colsW + 'px';
+            gridInner.style.maxWidth = 'none';
         }
+
+        positionChartResizerVisual();
     }
 
     function syncLayoutTimelineWidth() {
         const hostW = document.getElementById('gantt_here')?.offsetWidth || 1000;
         if (isOverlayMode()) {
-            if (gantt.config.layout?.cols?.[0]) gantt.config.layout.cols[0].width = getGridLayoutColWidth();
+            if (gantt.config.layout?.cols?.[0]) gantt.config.layout.cols[0].width = getGridOverlayWidth();
             if (gantt.config.layout?.cols?.[2]) gantt.config.layout.cols[2].width = hostW;
             return;
         }
-        const gridPaneW = isOverlay ? getVisibleGridPaneWidth() : getGridOverlayWidth();
+        const gridPaneW = getGridOverlayWidth();
         const timelineW = Math.max(240, hostW - gridPaneW - 24);
         if (gantt.config.layout?.cols?.[0]) gantt.config.layout.cols[0].width = gridPaneW;
         if (gantt.config.layout?.cols?.[2]) gantt.config.layout.cols[2].width = timelineW;
@@ -1034,7 +1006,7 @@
         handle.classList.remove('hidden');
         const hostRect = host.getBoundingClientRect();
         const hostW = hostRect.width || host.clientWidth;
-        const overlayW = getVisibleGridPaneWidth();
+        const overlayW = getGridOverlayWidth();
         handle.style.left = Math.max(0, overlayW - 3) + 'px';
         handle.style.right = 'auto';
     }
@@ -1058,7 +1030,7 @@
         const host = document.getElementById('gantt_here');
         const hostW = host?.clientWidth || root.clientWidth || 1200;
         const isOverlay = isOverlayMode();
-        const gridPaneW = isOverlay ? getVisibleGridPaneWidth() : getGridOverlayWidth();
+        const gridPaneW = getGridOverlayWidth();
         const timelineW = isOverlay ? hostW : Math.max(240, hostW - gridPaneW - 24);
         const sizeKey = `${hostW}|${gridW}|${gridPaneW}|${isOverlay}`;
         const gridKey = String(gridW);
@@ -1078,8 +1050,8 @@
             const cells = root.querySelectorAll(':scope > .gantt_layout_cell');
 
             if (gantt.config.layout?.cols?.[0]) {
-                gantt.config.layout.cols[0].width = isOverlay ? getGridLayoutColWidth() : gridPaneW;
-                gantt.config.layout.cols[0].min_width = isOverlay ? 0 : Math.max(gridW + 8, 200);
+                gantt.config.layout.cols[0].width = gridPaneW;
+                gantt.config.layout.cols[0].min_width = isOverlay ? 120 : Math.max(gridW + 8, 200);
             }
             if (gantt.config.layout?.cols?.[2]) {
                 gantt.config.layout.cols[2].width = isOverlay ? hostW : timelineW;
@@ -1089,7 +1061,7 @@
             const timelineCell = cells[2];
             if (timelineCell) ensureTimelineOverlayWidgets(timelineCell);
             const gridInner = gridCell?.querySelector('.gantt_grid');
-            if (gridInner) {
+            if (gridInner && !isOverlay) {
                 gridInner.style.minWidth = '0';
                 gridInner.style.width = '100%';
                 gridInner.style.maxWidth = 'none';
@@ -1142,7 +1114,7 @@
                 const hostEl = document.getElementById('gantt_here');
                 const hostRect = hostEl?.getBoundingClientRect();
                 if (hostRect) {
-                    const dividerX = hostRect.left + getVisibleGridPaneWidth();
+                    const dividerX = hostRect.left + getGridOverlayWidth();
                     nearDivider = e.clientY >= hostRect.top && e.clientY <= hostRect.bottom
                         && Math.abs(e.clientX - dividerX) <= 12;
                 }
@@ -1150,7 +1122,7 @@
             if (!onHandle && !nearDivider) return;
             overlayDrag.active = true;
             overlayDrag.startX = e.clientX;
-            overlayDrag.startW = getVisibleGridPaneWidth();
+            overlayDrag.startW = getGridOverlayWidth();
             document.body.classList.add('schedule-chart-resizing');
             e.preventDefault();
             e.stopPropagation();
@@ -1164,7 +1136,7 @@
             const dx = e.clientX - overlayDrag.startX;
             const scrollW = gantt.config?.scroll_size || 16;
             const maxW = Math.max(0, rect.width - scrollW);
-            const gridW = Math.max(0, Math.min(maxW, overlayDrag.startW + dx));
+            const gridW = Math.max(120, Math.min(rect.width - 280, overlayDrag.startW + dx));
             scheduleSettings.grid_overlay_width_px = gridW;
             scheduleSettings.timeline_width_px = null;
             scheduleSettings.timeline_pct = 1 - (gridW / rect.width);
@@ -1185,7 +1157,7 @@
         const host = document.getElementById('scheduleGanttHost');
         if (!host?.classList.contains('schedule-overlay-mode')) return;
         const overlayW = getGridOverlayWidth();
-        if (overlayW >= 0 && Math.abs((scheduleSettings.grid_overlay_width_px || 0) - overlayW) > 4) {
+        if (overlayW >= 120 && Math.abs((scheduleSettings.grid_overlay_width_px || 0) - overlayW) > 4) {
             scheduleSettings.grid_overlay_width_px = overlayW;
             const hostW = document.getElementById('gantt_here')?.clientWidth;
             if (hostW) scheduleSettings.timeline_pct = 1 - (overlayW / hostW);
@@ -2474,7 +2446,7 @@
 
     function getExposedGridWidth() {
         if (isOverlayMode()) {
-            return getVisibleGridPaneWidth();
+            return getGridOverlayWidth();
         }
         const host = document.getElementById('gantt_here');
         if (!host) return 600;
@@ -3588,12 +3560,13 @@
 
         const gridW = getColumnsTotalWidth();
         const hostW = document.getElementById('gantt_here')?.offsetWidth || 1000;
+        const gridPaneW = Math.max(120, scheduleSettings.grid_overlay_width_px || Math.round(hostW * 0.45));
         gantt.config.grid_width = gridW;
         gantt.config.layout = {
             css: 'gantt_container',
             cols: [
                 {
-                    width: gridW,
+                    width: gridPaneW,
                     min_width: 0,
                     rows: [
                         { view: 'grid', scrollX: 'gridScroll', scrollY: 'scrollVer' },
@@ -3977,13 +3950,9 @@
         if (!ganttReady) return;
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => {
-            if (isOverlayMode()) {
-                syncGanttLayout();
-            } else {
-                if (typeof gantt.setSizes === 'function') gantt.setSizes();
-                gantt.render();
-                syncGanttLayout();
-            }
+            if (typeof gantt.setSizes === 'function') gantt.setSizes();
+            gantt.render();
+            syncGanttLayout();
             refreshTimelinePanBar();
         }, 80);
     }
