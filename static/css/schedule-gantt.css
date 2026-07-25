@@ -594,12 +594,12 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     line-height: 40px !important;
 }
 
-/* ─── Excel-style grid: clear headers, cell borders, aligned with timeline ─── */
+/* ─── Excel-style grid: headers aligned with timeline scale ─── */
 .gantt_grid_scale {
     height: 88px !important;
     min-height: 88px !important;
     max-height: 88px !important;
-    overflow: hidden !important;
+    overflow: visible !important;
     position: relative !important;
     z-index: 25 !important;
     background: var(--sched-surface) !important;
@@ -611,9 +611,9 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     width: 100% !important;
 }
 .gantt_grid_scale .gantt_grid_head_cell {
-    height: 40px !important;
-    line-height: 40px !important;
-    top: 46px !important;
+    height: 44px !important;
+    line-height: 44px !important;
+    top: 44px !important;
     font-size: 11px !important;
     font-weight: 700 !important;
     letter-spacing: 0.02em !important;
@@ -634,7 +634,7 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     left: 0;
     right: 0;
     top: 0;
-    height: 46px;
+    height: 44px;
     background: var(--sched-surface) !important;
     border-bottom: 1px solid var(--sched-border) !important;
     pointer-events: none;
@@ -644,6 +644,7 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     border-bottom: 1px solid var(--sched-border) !important;
 }
 .gantt_grid_data .gantt_cell {
+    position: relative !important;
     border-right: 1px solid var(--sched-border) !important;
     box-sizing: border-box !important;
     padding: 0 6px !important;
@@ -841,15 +842,19 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     position: absolute;
     left: 0;
     top: 0;
-    width: 100%;
-    height: 100%;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: auto;
     z-index: 40;
     display: flex;
     align-items: stretch;
-    background: #27272a;
-    border: 2px solid #10b981;
+    background: var(--sched-bg);
+    border: 2px solid var(--sched-accent);
     box-sizing: border-box;
     overflow: hidden;
+    margin: 0;
+    padding: 0;
 }
 .sched-floating-cell-editor .sched-cell-editor {
     flex: 1;
@@ -902,10 +907,18 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     overflow-x: auto !important;
 }
 
-/* Column resize handles — Excel-style on header bottom border */
+/* Column resize handles — Excel-style on header border */
 .gantt_grid_column_resize_wrap {
     cursor: col-resize !important;
-    z-index: 60 !important;
+    z-index: 80 !important;
+    pointer-events: auto !important;
+}
+body.sched-col-resizing {
+    cursor: col-resize !important;
+    user-select: none !important;
+}
+body.sched-col-resizing * {
+    cursor: col-resize !important;
 }
 .gantt_grid_column_resize_wrap .gantt_grid_column_resize {
     background-color: var(--sched-border-strong) !important;
@@ -930,8 +943,16 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 }
 .gantt_task_row, .gantt_task_row.odd,
 .gantt_task_row.gantt_project, .gantt_task_row.cpm_project_row {
-    background-color: transparent !important;
+    background-color: var(--sched-surface) !important;
     border: none !important;
+    border-bottom: 1px solid var(--sched-border) !important;
+}
+.gantt_task_row.odd,
+.gantt_task_row.odd .gantt_task_cell {
+    background-color: var(--sched-row-alt) !important;
+}
+.gantt_task_row .gantt_task_cell {
+    background-color: inherit !important;
 }
 .gantt_task_scale, .gantt_scale_cell {
     background-color: #18181b !important;
@@ -1086,6 +1107,17 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         background: #fff !important;
         color: #111 !important;
         padding: 0;
+    }
+    body.printing-gantt-fit-page .print-schedule-wrap.print-fit-page,
+    body.printing-gantt-fit-page .schedule-print-table {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+    body.printing-gantt-fit-page .schedule-print-table {
+        table-layout: fixed;
+    }
+    .print-schedule-wrap.print-repeat-header .schedule-print-table thead {
+        display: table-header-group;
     }
     .schedule-print-header {
         font-family: Arial, Helvetica, sans-serif;
