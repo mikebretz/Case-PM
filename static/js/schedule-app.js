@@ -3,6 +3,9 @@
     'use strict';
 
     const STORAGE_KEY = 'casepm_schedule_v5';
+    const GRID_HEADER_TOP_H = 26;
+    const GRID_HEADER_LABEL_H = 52;
+    const GRID_HEADER_TOTAL_H = GRID_HEADER_TOP_H + GRID_HEADER_LABEL_H;
     const LINK_TYPES = { FS: '0', SS: '1', FF: '2', SF: '3' };
     const LINK_LABELS = { '0': 'FS', '1': 'SS', '2': 'FF', '3': 'SF' };
 
@@ -553,6 +556,52 @@
         if (host) host.style.setProperty('--sched-grid-min-width', total + 'px');
 
         syncGridScrollContentWidth(total);
+        syncColumnLeftPositions();
+    }
+
+    function syncColumnLeftPositions() {
+        if (!ganttReady) return;
+        const cols = gantt.config.columns || [];
+        let left = 0;
+        document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell').forEach((cell, i) => {
+            const w = parseInt(cols[i]?.width, 10) || parseInt(cell.style.width, 10) || 80;
+            cell.style.left = left + 'px';
+            left += w;
+        });
+
+        document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
+            let rowLeft = 0;
+            row.querySelectorAll(':scope > .gantt_cell').forEach((cell, i) => {
+                const w = parseInt(cols[i]?.width, 10) || parseInt(cell.style.width, 10) || 80;
+                cell.style.left = rowLeft + 'px';
+                rowLeft += w;
+            });
+        });
+
+        const scaleHead = document.querySelector('#gantt_here .gantt_grid_scale .gantt_grid_head');
+        if (scaleHead) {
+            scaleHead.querySelectorAll('.gantt_grid_column_resize_wrap').forEach(wrap => {
+                const colIndex = getColumnIndexFromResizeWrap(wrap);
+                if (colIndex < 0) return;
+                let edge = 0;
+                for (let i = 0; i <= colIndex; i++) {
+                    edge += parseInt(cols[i]?.width, 10) || 80;
+                }
+                wrap.style.left = Math.max(0, edge - 5) + 'px';
+            });
+        }
+
+        const trailing = document.querySelector('#gantt_here .sched-col-resize-trailing');
+        if (trailing) {
+            let edge = 0;
+            cols.forEach(col => {
+                if (col.resize === false || isAddColumnCol(col)) return;
+                edge += parseInt(col.width, 10) || 80;
+            });
+            trailing.style.left = Math.max(0, edge - 5) + 'px';
+        }
+
+        applyColumnHighlight();
     }
 
     function syncGridScrollContentWidth(totalWidth) {
@@ -712,6 +761,17 @@
             'box-shadow': '4px 0 8px rgba(0,0,0,0.35)',
             'pointer-events': 'auto'
         });
+
+        const gridData = gridCell?.querySelector('.gantt_grid_data');
+        const gridScale = gridCell?.querySelector('.gantt_grid_scale');
+        if (gridData) {
+            gridData.style.overflowX = 'auto';
+            gridData.style.overflowY = 'auto';
+        }
+        if (gridScale) {
+            gridScale.style.overflowX = 'auto';
+            gridScale.style.overflowY = 'hidden';
+        }
 
         setOverlayElStyle(timelineCell, {
             position: 'absolute',
@@ -1218,7 +1278,8 @@
 
     function updateScaleHeight() {
         const rows = (gantt.config.scales || []).length || 2;
-        gantt.config.scale_height = Math.max(52, rows * 26);
+        const timelineRowH = GRID_HEADER_TOTAL_H / 2;
+        gantt.config.scale_height = Math.max(GRID_HEADER_TOTAL_H, rows * timelineRowH);
     }
 
     function getTimelinePanMetrics() {
@@ -1572,13 +1633,16 @@
         if (!ganttReady) return;
         gantt.config.row_height = baseRow;
         gantt.config.bar_height = barH;
-        gantt.config.scale_height = 52;
+        gantt.config.scale_height = GRID_HEADER_TOTAL_H;
         gantt.getTaskHeight = () => baseRow;
         const host = document.getElementById('gantt_here');
         if (host) {
             host.style.setProperty('--sched-row-h', baseRow + 'px');
             host.style.setProperty('--sched-bar-h', barH + 'px');
             host.style.setProperty('--sched-summary-bar-h', (scheduleSettings.summary_bar_height || 12) + 'px');
+            host.style.setProperty('--sched-grid-header-total', GRID_HEADER_TOTAL_H + 'px');
+            host.style.setProperty('--sched-grid-header-top', GRID_HEADER_TOP_H + 'px');
+            host.style.setProperty('--sched-grid-header-label', GRID_HEADER_LABEL_H + 'px');
         }
     }
 
@@ -1857,7 +1921,9 @@
             return;
         }
         overlay.style.display = 'block';
-        overlay.style.left = head.offsetLeft + 'px';
+        const scaleRect = scale.getBoundingClientRect();
+        const headRect = head.getBoundingClientRect();
+        overlay.style.left = (headRect.left - scaleRect.left) + 'px';
         overlay.style.width = head.offsetWidth + 'px';
         scale.classList.add('sched-col-bar-selected');
     }
@@ -2040,7 +2106,10 @@
             });
         };
         targets.forEach(el => {
-            el.addEventListener('scroll', () => syncScroll(el, el.scrollLeft), { passive: true });
+            el.addEventListener('scroll', () => {
+                syncScroll(el, el.scrollLeft);
+                if (el === gridData || el === scale) applyColumnHighlight();
+            }, { passive: true });
         });
         syncGridScrollContentWidth();
     }
@@ -2151,7 +2220,8 @@
             if (!scale) return;
 
             const scaleRect = scale.getBoundingClientRect();
-            if (e.clientY < scaleRect.top || e.clientY > scaleRect.bottom) return;
+            const labelRowTop = scaleRect.top + GRID_HEADER_TOP_H;
+            if (e.clientY < labelRowTop || e.clientY > scaleRect.bottom) return;
 
             const heads = Array.from(scale.querySelectorAll('.gantt_grid_head_cell'));
             const idx = getColumnIndexFromHeaderX(e.clientX, heads);
@@ -3313,7 +3383,7 @@
         gantt.config.row_height = 22;
         gantt.config.bar_height = 12;
         applyP6RowMetrics();
-        gantt.config.scale_height = 52;
+        gantt.config.scale_height = GRID_HEADER_TOTAL_H;
         updateScaleHeight();
         gantt.config.scroll_size = 16;
         gantt.config.fit_tasks = false;
@@ -3518,19 +3588,15 @@
             }
             if (target.closest?.('.gantt_tree_icon')) return true;
             if (target.closest?.('.gantt_grid_data .gantt_cell')) {
-                const pos = locateGridCell(target);
-                if (pos) {
-                    gridSelection = { type: 'cell', taskId: pos.id, colName: pos.column };
-                    highlightGridSelection();
-                    if (gantt.getSelectedId()) gantt.unselectTask(gantt.getSelectedId());
-                } else {
-                    gridSelection = { type: 'row', taskId: id };
-                    highlightGridSelection();
+                if (typeof gantt.unselectTask === 'function' && gantt.getSelectedId()) {
+                    gantt.unselectTask(gantt.getSelectedId());
                 }
+                gridSelection = { type: null };
+                highlightGridSelection();
                 return false;
             }
             gantt.selectTask(id);
-            gridSelection = { type: 'row', taskId: id };
+            gridSelection = { type: null };
             highlightGridSelection();
             return true;
         });
@@ -3838,36 +3904,29 @@
     async function loadSchedule() {
         const projectId = getSelectedProjectId();
         const params = new URLSearchParams(window.location.search);
-        const forceOff = params.get('schedule_demo') === 'off';
         setSaveStatus('Loading…');
 
-        if (!forceOff) {
+        if (params.get('schedule_demo') === 'p6') {
             loadP6DemoSchedule();
             return;
         }
 
-        if (params.get('schedule_demo') === 'p6') {
-            loadSchedulePayload(buildP6DemoSchedule());
-            setSaveStatus('P6 demo schedule loaded');
-            return;
-        }
-
-        try {
-            const res = await fetch(`/api/schedule?project_id=${projectId}`);
-            if (res.ok) {
-                const json = await res.json();
-                if (json.payload && json.payload.data && json.payload.data.length) {
-                    if (isBareProjectSchedule(json.payload)) {
-                        loadP6DemoSchedule();
-                        return;
-                    }
-                    if (loadSchedulePayload(json.payload)) {
-                        setSaveStatus('Loaded from server');
-                        return;
+        if (projectId > 0) {
+            try {
+                const res = await fetch(`/api/schedule?project_id=${projectId}`);
+                if (res.ok) {
+                    const json = await res.json();
+                    if (json.payload?.data?.length) {
+                        if (!isBareProjectSchedule(json.payload)) {
+                            if (loadSchedulePayload(json.payload)) {
+                                setSaveStatus('Loaded from server');
+                                return;
+                            }
+                        }
                     }
                 }
-            }
-        } catch (e) { /* local fallback */ }
+            } catch (e) { /* local fallback */ }
+        }
 
         const local = localStorage.getItem(`${STORAGE_KEY}_${projectId}`);
         if (local) {
@@ -3892,7 +3951,6 @@
     function loadP6DemoSchedule() {
         loadSchedulePayload(buildP6DemoSchedule());
         setSaveStatus('P6 demo schedule loaded');
-        queueSave();
     }
 
     async function clearSchedule() {
@@ -3920,18 +3978,31 @@
     async function saveSchedule() {
         if (!ganttReady) return;
         const projectId = getSelectedProjectId();
+        if (!projectId) {
+            setSaveStatus('No project');
+            showScheduleAlert('Select a project before saving the schedule.', 'warning');
+            return;
+        }
+        setSaveStatus('Saving…');
         const payload = serializeSchedule();
         localStorage.setItem(`${STORAGE_KEY}_${projectId}`, JSON.stringify(payload));
         try {
-            await fetch('/api/schedule', {
+            const res = await fetch('/api/schedule', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ project_id: projectId, payload })
             });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                setSaveStatus('Save failed');
+                showScheduleAlert(err.error || 'Could not save schedule to the server.', 'error');
+                return;
+            }
             setSaveStatus('Saved');
             logActivity('Saved schedule', `${countTasks()} activities`);
         } catch (e) {
             setSaveStatus('Saved locally');
+            showScheduleAlert('Saved locally only — server unreachable.', 'warning');
         }
     }
 
@@ -3970,6 +4041,9 @@
                 host.style.setProperty('--sched-row-h', rowH + 'px');
                 host.style.setProperty('--sched-bar-h', barH + 'px');
                 host.style.setProperty('--sched-summary-bar-h', summaryBarH + 'px');
+                host.style.setProperty('--sched-grid-header-total', GRID_HEADER_TOTAL_H + 'px');
+                host.style.setProperty('--sched-grid-header-top', GRID_HEADER_TOP_H + 'px');
+                host.style.setProperty('--sched-grid-header-label', GRID_HEADER_LABEL_H + 'px');
             }
             gantt.render();
         }
