@@ -333,7 +333,8 @@ body.schedule-chart-resizing {
     width: var(--sched-grid-overlay-w, 520px) !important;
     min-width: 0 !important;
     max-width: none !important;
-    overflow: hidden !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
     background: var(--sched-bg) !important;
     border-right: 3px solid #1a6dbd !important;
     box-shadow: 4px 0 8px rgba(0, 0, 0, 0.35);
@@ -416,6 +417,11 @@ body.schedule-chart-resizing {
 .gantt_grid_data .gantt_row .sched-hierarchy-cell {
     background-color: transparent !important;
     z-index: 2 !important;
+    border-bottom: none !important;
+}
+.gantt_grid_data .gantt_row .sched-hierarchy-cell .sched-wbs-indents {
+    height: 100%;
+    min-height: 100%;
 }
 .gantt_grid_data .gantt_row[class*="sched-wbs-l"] .sched-hierarchy-cell {
     background-color: transparent !important;
@@ -441,7 +447,16 @@ body.schedule-chart-resizing {
     min-width: 14px;
     flex-shrink: 0;
     height: 100%;
+    min-height: 100%;
     display: inline-block;
+    box-sizing: border-box;
+    border: none !important;
+}
+.sched-wbs-slot-active {
+    height: 100%;
+    min-height: 100%;
+    align-self: stretch;
+    opacity: 1;
 }
 .sched-wbs-indents {
     position: absolute;
@@ -1078,12 +1093,16 @@ body.sched-col-dragging .gantt_grid_scale {
     cursor: grabbing !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_scale {
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    cursor: default !important;
+    overflow: visible !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_data {
+    overflow-x: visible !important;
+    overflow-y: auto !important;
+}
+#gantt_here .gantt_hor_scroll,
+#gantt_here [data-cell-id="gridScroll"] {
     overflow-x: auto !important;
+    min-width: 100%;
 }
 .sched-col-select-overlay {
     position: absolute;

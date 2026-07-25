@@ -9,80 +9,56 @@ const { chromium } = require('playwright');
     await page.waitForSelector('.gantt_task_line');
     await page.waitForTimeout(300);
 
-    await page.evaluate(() => {
+    const result = await page.evaluate(() => {
         const WBS_GUTTER_COLORS = ['#0070c0', '#00b050', '#ffff00', '#ffc000'];
-        const WBS_GUTTER_WIDTH = 14;
-        function isDescendantOf(task, ancestorId) {
+        function getWbsLevel(task) {
+            const level = Number(task.$level);
+            return Number.isFinite(level) ? Math.max(0, level) : 0;
+        }
+        function isSummaryTask(task) {
+            return task && (task.type === 'project' || gantt.hasChild(task.id));
+        }
+        function taskShowsGutterLevel(task, gutterLevel) {
+            if (gutterLevel === 0) return true;
+            const maxLevel = WBS_GUTTER_COLORS.length - 1;
+            const levelFor = t => Math.min(getWbsLevel(t), maxLevel);
+            if (isSummaryTask(task) && levelFor(task) === gutterLevel) return true;
             let pid = task.parent;
             while (pid != null && pid !== 0 && pid !== '0') {
-                if (String(pid) === String(ancestorId)) return true;
-                pid = gantt.getTask(pid).parent;
+                if (!gantt.isTaskExists(pid)) break;
+                const p = gantt.getTask(pid);
+                if (isSummaryTask(p) && levelFor(p) === gutterLevel) return true;
+                pid = p.parent;
             }
-            return String(task.id) === String(ancestorId);
+            return false;
         }
-        function getSubtreeEndIdx(items, startIdx) {
-            const { task, level } = items[startIdx];
-            let endIdx = startIdx;
-            for (let j = startIdx + 1; j < items.length; j++) {
-                if (isDescendantOf(items[j].task, task.id)) endIdx = j;
-                else if (items[j].level <= level) break;
-            }
-            return endIdx;
-        }
-        function computeWbsBandSegments(items) {
-            const segments = [];
-            const projIdx = items.findIndex(it => it.task.type === 'project');
-            if (projIdx >= 0) {
-                segments.push({ level: 0, startIdx: projIdx, endIdx: items.length - 1, color: WBS_GUTTER_COLORS[0] });
-            }
-            for (let i = 0; i < items.length; i++) {
-                const { task, level } = items[i];
-                if (level < 1 || gantt.hasChild(task.id) === false && task.type !== 'project') continue;
-                if (!(task.type === 'project' || gantt.hasChild(task.id))) continue;
-                const bandLevel = Math.min(level, WBS_GUTTER_COLORS.length - 1);
-                segments.push({ level: bandLevel, startIdx: i, endIdx: getSubtreeEndIdx(items, i), color: WBS_GUTTER_COLORS[bandLevel] });
-            }
-            return segments;
-        }
-        const gridData = document.querySelector('#gantt_here .gantt_grid_data');
-        let layer = gridData.querySelector('.sched-wbs-gutter-layer');
-        if (!layer) {
-            layer = document.createElement('div');
-            layer.className = 'sched-wbs-gutter-layer';
-            gridData.appendChild(layer);
-        }
-        const rows = [...gridData.querySelectorAll('.gantt_row')];
-        const items = rows.map(row => {
+
+        const rows = [...document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row')];
+        const checks = rows.map(row => {
             const id = gantt.locate(row);
             const task = gantt.getTask(id);
-            return { row, task, level: task.$level };
+            const hierCell = row.querySelector('.sched-hierarchy-cell') || row.querySelector('.gantt_cell');
+            const activeSlots = hierCell ? [...hierCell.querySelectorAll('.sched-wbs-slot-active, [class*="sched-wbs-slot"][style*="background"]')] : [];
+            const expected = WBS_GUTTER_COLORS.map((_, i) => taskShowsGutterLevel(task, i));
+            const expectedCount = expected.filter(Boolean).length;
+            return {
+                id,
+                text: task.text,
+                expectedCount,
+                activeCount: activeSlots.length,
+                blue: taskShowsGutterLevel(task, 0),
+                green: taskShowsGutterLevel(task, 1),
+                yellow: taskShowsGutterLevel(task, 2)
+            };
         });
-        const segments = computeWbsBandSegments(items);
-        layer.innerHTML = '';
-        segments.forEach(seg => {
-            const startRow = items[seg.startIdx].row;
-            const endRow = items[seg.endIdx].row;
-            const top = startRow.offsetTop;
-            let endBottom = endRow.offsetTop + endRow.offsetHeight;
-            if (seg.level > 0 && seg.endIdx + 1 < items.length) {
-                endBottom = items[seg.endIdx + 1].row.offsetTop;
-            }
-            const height = endBottom - startRow.offsetTop;
-            const band = document.createElement('div');
-            band.className = 'sched-wbs-band';
-            band.style.cssText = `position:absolute;top:${top}px;left:${seg.level * WBS_GUTTER_WIDTH}px;width:${WBS_GUTTER_WIDTH}px;height:${height}px;background:${seg.color}`;
-            layer.appendChild(band);
-        });
-        window.__wbsTest = { segmentCount: segments.length, bands: [...layer.querySelectorAll('.sched-wbs-band')].map(b => ({
-            level: b.dataset.wbsLevel,
-            height: b.offsetHeight,
-            color: b.style.background || b.style.backgroundColor
-        })) };
-    });
 
-    const result = await page.evaluate(() => window.__wbsTest);
+        return {
+            rowChecks: checks,
+            allRowsMatch: checks.every(c => c.expectedCount === c.activeCount),
+            leafUnderYellow: checks.filter(c => c.yellow && !c.green === false && c.text === 'Project Management')
+        };
+    });
     console.log(JSON.stringify(result, null, 2));
-    const blue = await page.$('.sched-wbs-band[style*="#0070c0"], .sched-wbs-band[style*="rgb(0, 112, 192)"]');
-    if (!result || result.segmentCount < 2 || !blue) process.exit(1);
+    if (!result.allRowsMatch) process.exit(1);
     await browser.close();
 })();
