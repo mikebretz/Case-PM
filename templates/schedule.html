@@ -187,9 +187,6 @@
         </div>
     </div>
 
-    <style id="sched-grid-col-widths"></style>
-
-    <!-- Gantt (fills remaining viewport) -->
     <div id="ganttViewPanel" class="schedule-view-panel schedule-panel flex-1 min-h-0 overflow-hidden flex flex-col">
         <div id="schedulePrintSheet" class="schedule-print-sheet no-screen" aria-hidden="true"></div>
         <div id="scheduleGanttHost" class="schedule-gantt-host flex-1 min-h-0 relative">
@@ -364,46 +361,87 @@
 </dialog>
 
 <!-- Print setup -->
-<dialog id="schedulePrintModal" class="rounded-md w-full max-w-lg p-0 text-white shadow-2xl" style="background:#18181b;border:1px solid #3f3f46;">
+<dialog id="schedulePrintModal" class="rounded-md w-full max-w-2xl p-0 text-white shadow-2xl" style="background:#18181b;border:1px solid #3f3f46;">
     <div class="px-4 py-3 border-b border-zinc-700 flex justify-between items-center">
         <div>
-            <h3 class="font-semibold text-sm">Print Setup</h3>
-            <p class="text-xs text-zinc-500">Choose what to include in the schedule printout</p>
+            <h3 class="font-semibold text-sm">Print Setup — Schedule / Gantt</h3>
+            <p class="text-xs text-zinc-500">P6-style layout: match your screen or customize the printout</p>
         </div>
         <button type="button" onclick="document.getElementById('schedulePrintModal').close()" class="text-zinc-400 hover:text-white">&times;</button>
     </div>
-    <div class="p-4 space-y-2 text-sm">
-        <label class="flex items-center gap-2"><input id="printIncludeSummary" type="checkbox" class="rounded border-zinc-600" checked> Project summary header</label>
-        <label class="flex items-center gap-2"><input id="printIncludeTable" type="checkbox" class="rounded border-zinc-600" checked> Activity table</label>
-        <label class="flex items-center gap-2"><input id="printIncludeInlineBars" type="checkbox" class="rounded border-zinc-600" checked> Inline Gantt bars in table</label>
-        <label class="flex items-center gap-2"><input id="printIncludeLinks" type="checkbox" class="rounded border-zinc-600" checked> Predecessor link lines on chart</label>
-        <label class="flex items-center gap-2"><input id="printIncludeChart" type="checkbox" class="rounded border-zinc-600"> Separate schedule chart (off by default)</label>
-        <label class="flex items-center gap-2"><input id="printIncludeEvm" type="checkbox" class="rounded border-zinc-600"> EVM columns (CPI/SPI) + project rollup</label>
-        <label class="flex items-center gap-2"><input id="printIncludeFooter" type="checkbox" class="rounded border-zinc-600"> Print footer line</label>
-        <div class="border-t border-zinc-700 pt-2 mt-2 space-y-2">
-            <p class="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Page layout</p>
-            <div class="grid grid-cols-2 gap-3">
-                <label class="text-xs text-zinc-400">Orientation
+    <div class="p-4 space-y-3 text-sm max-h-[75vh] overflow-auto">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="space-y-2 border border-zinc-700 rounded-md p-3">
+                <p class="text-xs font-semibold text-emerald-400 uppercase tracking-wide">What to print</p>
+                <label class="flex items-center gap-2"><input id="printIncludeSummary" type="checkbox" class="rounded border-zinc-600" checked> Project summary header</label>
+                <label class="flex items-center gap-2"><input id="printIncludeTable" type="checkbox" class="rounded border-zinc-600" checked> Activity table (grid)</label>
+                <label class="flex items-center gap-2"><input id="printIncludeInlineBars" type="checkbox" class="rounded border-zinc-600" checked> Gantt chart (inline bars)</label>
+                <label class="flex items-center gap-2"><input id="printIncludeLinks" type="checkbox" class="rounded border-zinc-600" checked> Predecessor link lines</label>
+                <label class="flex items-center gap-2"><input id="printIncludeChart" type="checkbox" class="rounded border-zinc-600"> Separate full-width chart below table</label>
+                <label class="flex items-center gap-2"><input id="printIncludeEvm" type="checkbox" class="rounded border-zinc-600"> EVM columns + rollup</label>
+                <label class="flex items-center gap-2"><input id="printIncludeFooter" type="checkbox" class="rounded border-zinc-600"> Footer band</label>
+            </div>
+            <div class="space-y-2 border border-zinc-700 rounded-md p-3">
+                <p class="text-xs font-semibold text-emerald-400 uppercase tracking-wide">Page setup</p>
+                <label class="text-xs text-zinc-400 block">Paper
+                    <select id="printPaperSize" class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm">
+                        <option value="letter">Letter (8.5×11)</option>
+                        <option value="legal">Legal</option>
+                        <option value="tabloid">Tabloid (11×17)</option>
+                        <option value="a4">A4</option>
+                    </select>
+                </label>
+                <label class="text-xs text-zinc-400 block">Orientation
                     <select id="printOrientation" class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm">
                         <option value="landscape" selected>Landscape</option>
                         <option value="portrait">Portrait</option>
                     </select>
                 </label>
-                <label class="text-xs text-zinc-400">Font size (pt)
-                    <input id="printFontSize" type="number" min="6" max="12" value="8" class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm">
+                <label class="text-xs text-zinc-400 block">Margins (inches)
+                    <input id="printMarginIn" type="number" min="0.15" max="1" step="0.05" value="0.35" class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm">
                 </label>
-                <label class="text-xs text-zinc-400">Row height (px)
-                    <input id="printRowHeight" type="number" min="12" max="28" value="16" class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm">
-                </label>
-                <label class="text-xs text-zinc-400">Chart width (%)
-                    <input id="printChartWidthPct" type="number" min="30" max="80" value="58" class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm">
+                <label class="text-xs text-zinc-400 block">Columns to print
+                    <select id="printColumnMode" class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm">
+                        <option value="screen" selected>All columns (match screen layout)</option>
+                        <option value="visible_only">Only columns visible left of chart</option>
+                    </select>
                 </label>
             </div>
-            <label class="flex items-center gap-2"><input id="printWbsColors" type="checkbox" class="rounded border-zinc-600" checked> WBS hierarchy colors (blue / green / yellow)</label>
-            <label class="flex items-center gap-2"><input id="printBarLabels" type="checkbox" class="rounded border-zinc-600"> Show activity names on bars</label>
         </div>
-        <div class="border-t border-zinc-700 pt-2 mt-2 space-y-3">
-            <p class="text-xs text-zinc-500">Task columns print exactly as shown — only columns <strong>100% visible</strong> left of the chart divider are included (MS Project style).</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="space-y-2 border border-zinc-700 rounded-md p-3">
+                <p class="text-xs font-semibold text-emerald-400 uppercase tracking-wide">Grid / table appearance</p>
+                <div class="grid grid-cols-2 gap-2">
+                    <label class="text-xs text-zinc-400">Font (pt)
+                        <input id="printFontSize" type="number" min="6" max="12" value="8" class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm">
+                    </label>
+                    <label class="text-xs text-zinc-400">Row height (px)
+                        <input id="printRowHeight" type="number" min="12" max="28" value="16" class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm">
+                    </label>
+                </div>
+                <label class="flex items-center gap-2"><input id="printGridLines" type="checkbox" class="rounded border-zinc-600" checked> Show cell grid lines</label>
+                <label class="flex items-center gap-2"><input id="printWbsColors" type="checkbox" class="rounded border-zinc-600" checked> WBS hierarchy colors (blue / green / yellow)</label>
+            </div>
+            <div class="space-y-2 border border-zinc-700 rounded-md p-3">
+                <p class="text-xs font-semibold text-emerald-400 uppercase tracking-wide">Gantt chart appearance</p>
+                <label class="text-xs text-zinc-400 block">Chart width (% of page)
+                    <input id="printChartWidthPct" type="number" min="25" max="85" value="58" class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm">
+                </label>
+                <label class="text-xs text-zinc-400 block">Timescale ticks
+                    <select id="printTimescale" class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm">
+                        <option value="day">Daily</option>
+                        <option value="week" selected>Weekly</option>
+                        <option value="month">Monthly</option>
+                    </select>
+                </label>
+                <label class="flex items-center gap-2"><input id="printBarLabels" type="checkbox" class="rounded border-zinc-600"> Activity names on bars</label>
+                <label class="flex items-center gap-2"><input id="printShowNonwork" type="checkbox" class="rounded border-zinc-600"> Shade weekends / non-work days</label>
+                <label class="text-xs text-zinc-400 block">Critical path color
+                    <input id="printCriticalColor" type="color" value="#c00000" class="mt-1 w-full h-9 bg-zinc-800 border border-zinc-700 rounded">
+                </label>
+            </div>
+        </div>
+        <div class="border-t border-zinc-700 pt-2 space-y-2">
             <p id="printVisibleColHint" class="text-xs text-emerald-400"></p>
             <div class="flex flex-wrap items-center gap-2">
                 <span class="text-xs text-zinc-400 w-24">WBS column</span>
@@ -415,6 +453,7 @@
                 <button type="button" id="printIdOn" class="schedule-toolbar-btn text-xs active-tool" onclick="ScheduleApp.setPrintColumnToggle('id', true)">Print</button>
                 <button type="button" id="printIdOff" class="schedule-toolbar-btn text-xs" onclick="ScheduleApp.setPrintColumnToggle('id', false)">Skip</button>
             </div>
+            <button type="button" class="text-xs text-sky-400 hover:text-sky-300" onclick="ScheduleApp.showHeaderFooterSetup()">Edit print header &amp; footer…</button>
         </div>
     </div>
     <div class="px-4 py-3 border-t border-zinc-700 flex justify-end gap-2">
