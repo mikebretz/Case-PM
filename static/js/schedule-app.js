@@ -42,7 +42,7 @@
         progress_bar_color: '#eca06c',
         complete_bar_color: '#6ccb5f',
         milestone_color: '#3794ff',
-        link_color: '#9d9d9d',
+        link_color: '#c00000',
         link_width: 2,
         active_baseline_index: -1,
         show_baseline_bars: true,
@@ -51,10 +51,10 @@
         default_cell_align: { h: 'left', v: 'middle' },
         column_align: {},
         default_cell_style: { font_size: 11 },
-        default_row_height: 24,
-        default_bar_height: 14,
-        summary_row_height: 24,
-        summary_bar_height: 10
+        default_row_height: 22,
+        default_bar_height: 12,
+        summary_row_height: 22,
+        summary_bar_height: 8
     };
     if (!scheduleSettings.print_settings) {
         scheduleSettings.print_settings = {
@@ -353,15 +353,16 @@
         }
     }
 
-    const WBS_GUTTER_COLORS = ['#00b0f0', '#92d050', '#ffff00', '#ffc000'];
+    const WBS_GUTTER_COLORS = ['#0070c0', '#00b050', '#ffff00', '#ffc000'];
     const WBS_GUTTER_WIDTH = 14;
 
     function buildP6DemoSchedule() {
         const tasks = [
             { id: 1, text: 'Pipe Repairs & Improvement 12', type: 'project', open: true, start_date: '2023-06-05', end_date: '2023-07-28', duration: 0, progress: 0 },
             { id: 2, parent: 1, text: 'Demolition Piping', open: true, start_date: '2023-06-05', end_date: '2023-06-20', duration: 11, progress: 0.45 },
-            { id: 3, parent: 2, text: 'Project Management', activity_id: 'A1010', start_date: '2023-06-05', end_date: '2023-07-15', duration: 28, progress: 0.35 },
-            { id: 4, parent: 2, text: 'Remove Existing Piping', activity_id: 'A1020', start_date: '2023-06-08', end_date: '2023-06-18', duration: 8, progress: 0.6 },
+            { id: 10, parent: 2, text: 'Thrustblock', open: true, start_date: '2023-06-05', end_date: '2023-06-15', duration: 8, progress: 0.3 },
+            { id: 3, parent: 10, text: 'Project Management', activity_id: 'A1010', start_date: '2023-06-05', end_date: '2023-07-15', duration: 28, progress: 0.35 },
+            { id: 4, parent: 10, text: 'Remove Existing Piping', activity_id: 'A1020', start_date: '2023-06-08', end_date: '2023-06-18', duration: 8, progress: 0.6 },
             { id: 5, parent: 2, text: 'Demolition Complete', activity_id: 'A1030', type: 'milestone', start_date: '2023-06-20', end_date: '2023-06-20', duration: 0, progress: 0 },
             { id: 6, parent: 1, text: 'Piping', open: true, start_date: '2023-06-12', end_date: '2023-07-25', duration: 31, progress: 0.2 },
             { id: 7, parent: 6, text: 'Install New Piping', activity_id: 'A2010', start_date: '2023-06-12', end_date: '2023-07-10', duration: 20, progress: 0.25 },
@@ -1308,9 +1309,9 @@
 
     function refreshGanttRowMetrics() {
         if (!ganttReady) return;
-        const baseRow = scheduleSettings.default_row_height || 24;
+        const baseRow = scheduleSettings.default_row_height || 22;
         gantt.config.row_height = baseRow;
-        gantt.config.bar_height = scheduleSettings.default_bar_height || 14;
+        gantt.config.bar_height = scheduleSettings.default_bar_height || 12;
         gantt.getTaskHeight = () => baseRow;
         const host = document.getElementById('gantt_here');
         if (host) host.style.setProperty('--sched-row-h', baseRow + 'px');
@@ -1779,6 +1780,37 @@
         return String(val);
     }
 
+    function getColumnIndexFromResizeWrap(wrap) {
+        const scale = wrap?.closest('.gantt_grid_scale');
+        if (!scale) return -1;
+        const wrapRect = wrap.getBoundingClientRect();
+        const headCells = Array.from(scale.querySelectorAll('.gantt_grid_head_cell'));
+        let bestIdx = -1;
+        let bestDist = Infinity;
+        headCells.forEach((cell, i) => {
+            const col = gantt.config.columns[i];
+            if (!col || col.resize === false) return;
+            const r = cell.getBoundingClientRect();
+            const dist = Math.abs(wrapRect.left + wrapRect.width / 2 - r.right);
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestIdx = i;
+            }
+        });
+        if (bestIdx >= 0) return bestIdx;
+        const wraps = Array.from(scale.querySelectorAll('.gantt_grid_column_resize_wrap'));
+        const wrapIdx = wraps.indexOf(wrap);
+        if (wrapIdx < 0) return -1;
+        let colIdx = 0;
+        for (let i = 0; i < (gantt.config.columns || []).length; i++) {
+            const col = gantt.config.columns[i];
+            if (col.resize === false) continue;
+            if (colIdx === wrapIdx) return i;
+            colIdx++;
+        }
+        return wrapIdx < (gantt.config.columns || []).length ? wrapIdx : -1;
+    }
+
     const colResizeDrag = { active: false, colIndex: -1, startX: 0, startW: 0 };
 
     function bindColumnResizeDrag() {
@@ -1791,10 +1823,7 @@
             const grip = e.target.closest('.gantt_grid_column_resize, .gantt_grid_column_resize_wrap');
             if (!grip) return;
             const wrap = grip.closest('.gantt_grid_column_resize_wrap') || grip;
-            const scale = wrap.closest('.gantt_grid_scale');
-            if (!scale) return;
-            const wraps = Array.from(scale.querySelectorAll('.gantt_grid_column_resize_wrap'));
-            const colIndex = wraps.indexOf(wrap);
+            const colIndex = getColumnIndexFromResizeWrap(wrap);
             if (colIndex < 0 || !gantt.config.columns[colIndex] || gantt.config.columns[colIndex].resize === false) return;
             e.preventDefault();
             e.stopPropagation();
@@ -1807,18 +1836,25 @@
             document.body.classList.add('sched-col-resizing');
         }, true);
 
+        let resizeRaf = null;
         document.addEventListener('mousemove', e => {
             if (!colResizeDrag.active) return;
             const col = gantt.config.columns[colResizeDrag.colIndex];
             if (!col) return;
             const dx = e.clientX - colResizeDrag.startX;
-            const newW = Math.max(col.min_width || 50, Math.min(640, colResizeDrag.startW + dx));
+            const newW = Math.max(col.min_width || 40, Math.min(640, colResizeDrag.startW + dx));
             col.width = newW;
             columnWidths[col.name] = newW;
             gantt.config.grid_width = getColumnsTotalWidth();
             lastGridWidthKey = '';
             preserveGridScrollLeft(columnResizeScrollLeft);
-            if (typeof gantt.setSizes === 'function') gantt.setSizes();
+            if (!resizeRaf) {
+                resizeRaf = requestAnimationFrame(() => {
+                    resizeRaf = null;
+                    if (typeof gantt.setSizes === 'function') gantt.setSizes();
+                    gantt.render();
+                });
+            }
         });
 
         document.addEventListener('mouseup', () => {
@@ -2116,9 +2152,10 @@
     function hierarchyIndentTemplate(task) {
         const level = getWbsLevel(task);
         const isSummary = isSummaryTask(task);
-        const gutterCount = isSummary ? level + 1 : Math.max(1, level);
+        const maxGutters = 4;
+        const gutterCount = isSummary ? Math.min(level + 1, maxGutters) : Math.min(Math.max(1, level), maxGutters);
         let html = '<div class="sched-wbs-indents">';
-        for (let i = 0; i < gutterCount && i <= 3; i++) {
+        for (let i = 0; i < gutterCount; i++) {
             const color = WBS_GUTTER_COLORS[i] || WBS_GUTTER_COLORS[3];
             const isActive = isSummary && i === level;
             const cls = isActive ? 'sched-wbs-gutter-active' : 'sched-wbs-gutter-line';
@@ -2465,18 +2502,18 @@
         gantt.config.skip_off_time = false;
         gantt.config.duration_unit = 'day';
         gantt.config.time_step = 1440;
-        gantt.config.row_height = 24;
-        gantt.config.bar_height = 14;
+        gantt.config.row_height = 22;
+        gantt.config.bar_height = 12;
         updateRowHeightsForLabels();
-        gantt.getTaskHeight = () => scheduleSettings.default_row_height || 24;
+        gantt.getTaskHeight = () => scheduleSettings.default_row_height || 22;
         gantt.config.scale_height = 52;
         updateScaleHeight();
-        gantt.config.scroll_size = 20;
+        gantt.config.scroll_size = 16;
         gantt.config.fit_tasks = false;
         gantt.config.show_errors = false;
         gantt.config.highlight_critical_path = true;
         gantt.config.grid_elastic_columns = false;
-        gantt.config.keep_grid_width = true;
+        gantt.config.keep_grid_width = false;
         gantt.config.round_dnd_dates = false;
         gantt.config.drag_timeline = { useKey: false };
         gantt.config.drag_move = true;
@@ -2491,6 +2528,8 @@
         gantt.config.keyboard_navigation = false;
         gantt.config.show_task_cells = false;
         gantt.config.show_links = true;
+        gantt.config.link_line_width = scheduleSettings.link_width || 2;
+        gantt.config.link_attribute = 'data-link-id';
 
         gantt.config.min_column_width = 50;
         applyTimescaleScales(scheduleSettings.timescale || 'day');
@@ -2621,8 +2660,12 @@
             return '';
         };
 
-        gantt.templates.link_class = function () {
-            return 'cpm_schedule_link';
+        gantt.templates.link_class = function (link) {
+            const src = gantt.isTaskExists(link.source) ? gantt.getTask(link.source) : null;
+            const tgt = gantt.isTaskExists(link.target) ? gantt.getTask(link.target) : null;
+            const crit = gantt.config.highlight_critical_path && src && tgt
+                && (isTaskCritical(src) || isTaskCritical(tgt));
+            return crit ? 'cpm_schedule_link cpm_link_critical' : 'cpm_schedule_link';
         };
 
         applyGanttDisplayStyles();
@@ -3051,9 +3094,13 @@
     function applyGanttDisplayStyles() {
         const s = scheduleSettings;
         const root = document.documentElement;
-        root.style.setProperty('--gantt-link-color', s.link_color || '#94a3b8');
+        const linkColor = s.link_color || '#c00000';
+        root.style.setProperty('--gantt-link-color', linkColor);
         root.style.setProperty('--gantt-link-width', (s.link_width || 2) + 'px');
-        if (ganttReady) gantt.render();
+        if (ganttReady) {
+            gantt.config.link_line_width = s.link_width || 2;
+            gantt.render();
+        }
     }
 
     function applyTimescaleScales(scale) {
@@ -4432,8 +4479,11 @@
         return `<div class="print-bar print-bar-task${crit ? ' print-bar-critical' : ''}" style="left:${left}%;width:${width}%;background:${color}"></div>`;
     }
 
-    function buildPrintLinkPaths(rowMap, rowIdx, startMs, span) {
+    function buildPrintLinkPaths(rowMap, rowIdx, startMs, span, headerRowCount) {
         if (!rowIdx) return '';
+        const headerRows = headerRowCount || 1;
+        const totalRows = rowIdx + headerRows;
+        const rowY = i => ((headerRows + i + 0.5) / totalRows) * 100;
         let paths = '';
         gantt.getLinks().forEach(link => {
             if (!gantt.isTaskExists(link.source) || !gantt.isTaskExists(link.target)) return;
@@ -4444,13 +4494,13 @@
             if (si == null || ti == null) return;
             const x1 = ((toGanttDate(src.end_date)?.getTime() || startMs) - startMs) / span * 100;
             const x2 = ((toGanttDate(tgt.start_date)?.getTime() || startMs) - startMs) / span * 100;
-            const y1 = ((si + 0.5) / rowIdx) * 100;
-            const y2 = ((ti + 0.5) / rowIdx) * 100;
-            const midX = Math.min(x1 + 1.5, x2 - 0.5);
+            const y1 = rowY(si);
+            const y2 = rowY(ti);
+            const midX = Math.max(x1 + 1.5, Math.min(x1 + 3, x2 - 1));
             const crit = gantt.config.highlight_critical_path && (isTaskCritical(src) || isTaskCritical(tgt));
-            const stroke = crit ? '#c00000' : '#444';
-            paths += `<path d="M ${x1} ${y1} H ${midX} V ${y2} H ${x2}" fill="none" stroke="${stroke}" stroke-width="0.4"/>`;
-            paths += `<polygon points="${x2},${y2} ${x2 - 0.7},${y2 - 0.4} ${x2 - 0.7},${y2 + 0.4}" fill="${stroke}"/>`;
+            const stroke = crit ? '#c00000' : '#c00000';
+            paths += `<path d="M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}" fill="none" stroke="${stroke}" stroke-width="1.2" stroke-linejoin="miter" stroke-linecap="square"/>`;
+            paths += `<polygon points="${x2},${y2} ${x2 - 1.2},${y2 - 0.5} ${x2 - 1.2},${y2 + 0.5}" fill="${stroke}"/>`;
         });
         return paths;
     }
@@ -4558,7 +4608,10 @@
                 if (si == null || ti == null) return;
                 const x1 = ((toGanttDate(src.end_date)?.getTime() || startMs) - startMs) / span * 100;
                 const x2 = ((toGanttDate(tgt.start_date)?.getTime() || startMs) - startMs) / span * 100;
-                chartLines += `<line x1="${x1}" y1="${(si + 0.5) / rowIdx * 100}" x2="${x2}" y2="${(ti + 0.5) / rowIdx * 100}" stroke="#444" stroke-width="0.4"/>`;
+                const y1 = (si + 0.5) / rowIdx * 100;
+                const y2 = (ti + 0.5) / rowIdx * 100;
+                const midX = Math.max(x1 + 1.5, Math.min(x1 + 3, x2 - 1));
+                chartLines += `<path d="M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}" fill="none" stroke="#c00000" stroke-width="0.8" stroke-linejoin="miter"/>`;
             });
             chartBlock = `<div class="print-gantt-chart"><h3 class="print-chart-title">Schedule Chart</h3>${timescale}
                 <svg class="print-chart-svg" viewBox="0 0 100 100" preserveAspectRatio="none" style="height:${chartH}px">${chartLines}${chartBars}</svg></div>`;
@@ -4638,8 +4691,9 @@
         })();
 
         const tableBlock = showTable && visibleCols.length ? (() => {
+            const headerRowCount = 1 + (showInlineBars && visibleCols.length ? 1 : 0);
             const linkSvg = (showLinks && showInlineBars && rowIdx)
-                ? `<svg class="print-inline-links" viewBox="0 0 100 100" preserveAspectRatio="none">${buildPrintLinkPaths(rowMap, rowIdx, startMs, span)}</svg>`
+                ? `<svg class="print-inline-links" viewBox="0 0 100 100" preserveAspectRatio="none">${buildPrintLinkPaths(rowMap, rowIdx, startMs, span, headerRowCount)}</svg>`
                 : '';
             const wbsCls = ps.print_wbs_colors === false ? ' print-no-wbs-colors' : '';
             const gridCls = ps.print_grid_lines !== false ? ' print-show-grid' : '';
