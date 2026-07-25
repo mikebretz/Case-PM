@@ -474,6 +474,7 @@
         if (!cell) return;
         cell.style.setProperty('width', w + 'px', 'important');
         cell.style.setProperty('min-width', w + 'px', 'important');
+        cell.style.setProperty('max-width', w + 'px', 'important');
     }
 
     function applySingleColumnWidth(colIndex, width) {
@@ -542,6 +543,8 @@
             });
         });
         syncColumnResizeHandlePositions();
+        applyCellAlignToDom();
+        if (typeof gantt.setSizes === 'function') gantt.setSizes();
     }
 
     function queueColumnResizeHandleSync() {
@@ -1937,10 +1940,13 @@
     }
 
     function getWbsLevelClass(task) {
-        if (!task) return '';
-        if (!isParentTask(task) && task.type !== 'project') return '';
+        if (!task || task.type !== 'project') return '';
         const level = Math.min(getWbsLevel(task), 3);
         return `sched-wbs-l${level}`;
+    }
+
+    function isSummaryTask(task) {
+        return task && task.type === 'project';
     }
 
     function getColumnDefaultAlign(colName) {
@@ -2505,13 +2511,7 @@
 
         gantt.templates.task_class = function (start, end, task) {
             const classes = [];
-            if (task.type === 'project') {
-                classes.push('cpm_summary', 'sched-summary-bar');
-                const wbsCls = getWbsLevelClass(task);
-                if (wbsCls) classes.push(wbsCls);
-                return classes.join(' ');
-            }
-            if (isParentTask(task)) {
+            if (isSummaryTask(task)) {
                 classes.push('cpm_summary', 'sched-summary-bar');
                 const wbsCls = getWbsLevelClass(task);
                 if (wbsCls) classes.push(wbsCls);
@@ -2835,6 +2835,7 @@
         scheduleSettings.column_order = columnOrder.slice();
         normalizeTaskDates(payload.data);
         gantt.config.columns = buildColumnConfig();
+        ensureDefaultColumnAlignments();
         updateGridWidth();
         gantt.clearAll();
         gantt.parse({ data: payload.data, links: payload.links || [] });
@@ -4285,9 +4286,8 @@
         if (task.type === 'milestone') {
             return `<div class="print-milestone" style="left:${left}%"></div>`;
         }
-        if (isParentTask(task) || task.type === 'project') {
-            const wbsCls = getWbsLevelClass(task) || 'sched-wbs-l1';
-            return `<div class="print-bar print-bar-summary ${wbsCls}" style="left:${left}%;width:${width}%"></div>`;
+        if (isSummaryTask(task)) {
+            return `<div class="print-bar print-bar-summary ${getWbsLevelClass(task) || 'sched-wbs-l0'}" style="left:${left}%;width:${width}%"></div>`;
         }
         const crit = gantt.config.highlight_critical_path && isTaskCritical(task);
         return `<div class="print-bar print-bar-task${crit ? ' print-bar-critical' : ''}" style="left:${left}%;width:${width}%;background:${color}"></div>`;
@@ -4357,7 +4357,7 @@
                 const evmExtra = showEvm && !visibleCols.some(v => v.col.name === 'cpi')
                     ? `<td class="c print-col-cpi" style="width:${(textTablePct / visibleCols.length * 0.5).toFixed(2)}%">${t.cpi != null ? t.cpi : '—'}</td><td class="c print-col-spi" style="width:${(textTablePct / visibleCols.length * 0.5).toFixed(2)}%">${t.spi != null ? t.spi : '—'}</td>`
                     : '';
-                const summary = isParentTask(t) || t.type === 'project';
+                const summary = isSummaryTask(t);
                 const wbsCls = getWbsLevelClass(t);
                 const barCell = showInlineBars
                     ? `<td class="print-bar-cell" style="width:${barTablePct.toFixed(2)}%"><div class="print-bar-track">${buildPrintBarMarkup(t, startMs, span)}</div></td>`
