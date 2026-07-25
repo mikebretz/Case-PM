@@ -414,10 +414,34 @@ body.schedule-chart-resizing {
     border-bottom: none !important;
 }
 .gantt_grid_data .gantt_row .sched-hierarchy-cell {
-    background-color: var(--sched-bg) !important;
+    background-color: transparent !important;
+    z-index: 2 !important;
 }
 .gantt_grid_data .gantt_row[class*="sched-wbs-l"] .sched-hierarchy-cell {
     background-color: transparent !important;
+}
+.sched-wbs-gutter-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 56px;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+    overflow: visible;
+}
+.sched-wbs-band {
+    position: absolute;
+    box-sizing: border-box;
+    pointer-events: none;
+    z-index: 1;
+}
+.sched-wbs-slot {
+    width: 14px;
+    min-width: 14px;
+    flex-shrink: 0;
+    height: 100%;
+    display: inline-block;
 }
 .sched-wbs-indents {
     position: absolute;
@@ -1047,6 +1071,37 @@ body.schedule-chart-resizing {
     margin-left: -5px !important;
     z-index: 150 !important;
     pointer-events: auto !important;
+}
+.sched-add-col-header {
+    padding: 0 !important;
+    text-align: center !important;
+    overflow: visible !important;
+}
+.sched-add-col-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    margin: 0 auto;
+    padding: 0;
+    border: 1px solid var(--sched-border-strong);
+    border-radius: 3px;
+    background: var(--sched-surface);
+    color: var(--sched-text);
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+}
+.sched-add-col-btn:hover {
+    background: var(--sched-accent);
+    border-color: var(--sched-accent);
+    color: #fff;
+}
+.gantt_grid_data .gantt_cell.sched-add-col-cell {
+    border-right: none !important;
+    background: transparent !important;
 }
 
 .gantt_hor_scroll {
