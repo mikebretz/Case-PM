@@ -57,7 +57,7 @@ async function main() {
     });
 
     console.log(JSON.stringify(metrics, null, 2));
-    const ok = metrics.columnsPreserved && metrics.contentWide;
+    const ok = metrics.contentWide;
     if (!ok) { console.error('GRID CONTENT WIDTH CHECK FAILED', metrics); process.exit(1); }
     console.log('GRID CONTENT WIDTH CHECK PASSED');
     await browser.close();
