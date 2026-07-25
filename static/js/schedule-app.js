@@ -37,17 +37,17 @@
         calendar: 'standard',
         lookahead_days: 14,
         timescale: 'day',
-        default_bar_color: '#0078d4',
-        critical_bar_color: '#c50f1f',
-        progress_bar_color: '#ca5010',
-        complete_bar_color: '#107c10',
-        milestone_color: '#0078d4',
-        link_color: '#605e5c',
+        default_bar_color: '#3794ff',
+        critical_bar_color: '#f1707b',
+        progress_bar_color: '#eca06c',
+        complete_bar_color: '#6ccb5f',
+        milestone_color: '#3794ff',
+        link_color: '#9d9d9d',
         link_width: 2,
         active_baseline_index: -1,
         show_baseline_bars: true,
         show_bar_labels: true,
-        theme: 'light',
+        theme: 'dark',
         default_cell_align: { h: 'left', v: 'middle' },
         column_align: {},
         default_cell_style: { font_size: 11 },
@@ -329,7 +329,7 @@
         }
         const sub = document.getElementById('scheduleProjectSubtitle');
         if (sub) {
-            const meta = getScheduleProjectMeta();
+            const meta = getProjectMeta();
             sub.textContent = meta.label || 'Gantt chart · CPM · baselines';
         }
     }
@@ -2632,8 +2632,8 @@
         bindColumnResizeEnhancements();
         bindGridSelectionHandlers();
         syncScheduleProjectContext();
-        queueGridHeaderSync();
         resizeGanttHost();
+        queueGridHeaderSync();
         window.addEventListener('resize', resizeGanttHost);
     }
 
@@ -2696,6 +2696,7 @@
     }
 
     function resizeGanttHost() {
+        const panel = document.getElementById('ganttViewPanel');
         const host = document.getElementById('scheduleGanttHost');
         const chrome = document.getElementById('scheduleChrome');
         if (!host || !chrome) return;
@@ -2704,11 +2705,15 @@
         const footer = document.querySelector('#mainContent + div, .border-t.border-zinc-800');
         const footerH = footer ? footer.offsetHeight : 40;
         const statusH = status ? status.offsetHeight + 8 : 0;
-        const h = Math.max(300, window.innerHeight - top - statusH - footerH - 12);
+        const h = Math.max(360, window.innerHeight - top - statusH - footerH - 12);
+        if (panel) panel.style.minHeight = h + 'px';
         host.style.height = h + 'px';
+        const ganttEl = document.getElementById('gantt_here');
+        if (ganttEl) ganttEl.style.height = h + 'px';
         if (!ganttReady) return;
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => {
+            if (typeof gantt.setSizes === 'function') gantt.setSizes();
             gantt.render();
             applyChartOverlay();
             refreshTimelinePanBar();
@@ -2761,7 +2766,7 @@
         sanitizeAllTaskDates();
         baselines = payload.baselines || [];
         if (payload.settings) scheduleSettings = Object.assign(scheduleSettings, payload.settings);
-        if (!scheduleSettings.theme) scheduleSettings.theme = 'light';
+        if (!scheduleSettings.theme) scheduleSettings.theme = 'dark';
         if (window.ScheduleExtras) ScheduleExtras.applyThemeFromSettings();
         if (!scheduleSettings.print_settings) {
             scheduleSettings.print_settings = {
@@ -4516,8 +4521,10 @@
         applyTimescaleScales(scheduleSettings.timescale || 'day');
         updateRowHeightsForLabels();
         gantt.render();
+        resizeGanttHost();
         requestAnimationFrame(() => {
             syncScheduleProjectContext();
+            resizeGanttHost();
             applyChartOverlay();
             scrollToToday();
             queueGridHeaderSync();
