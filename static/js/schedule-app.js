@@ -404,7 +404,7 @@
             columnOrder: ['hierarchy', 'activity_id', 'text', 'duration', 'start_date', 'end_date'],
             settings: {
                 timeline_pct: 0.48,
-                grid_overlay_width_px: 548,
+                grid_overlay_width_px: 660,
                 default_row_height: 24,
                 default_bar_height: 16,
                 link_color: '#c00000',
@@ -525,6 +525,22 @@
         return document.getElementById('scheduleGanttHost')?.classList.contains('schedule-overlay-mode');
     }
 
+    function setOverlayElStyle(el, props) {
+        if (!el) return;
+        Object.entries(props).forEach(([key, val]) => {
+            el.style.setProperty(key, val, 'important');
+        });
+    }
+
+    function getTimelineScrollMargin(fraction) {
+        if (isOverlayMode()) {
+            return getGridOverlayWidth() + 32;
+        }
+        const viewW = getTimelineDomWidth();
+        if (fraction != null) return Math.round(viewW * fraction);
+        return Math.round(viewW / 2);
+    }
+
     function applyOverlayDomLayout() {
         if (!isOverlayMode()) return;
         const host = document.getElementById('gantt_here');
@@ -532,9 +548,14 @@
         if (!host || !root) return;
 
         const hostW = host.clientWidth;
-        const overlayW = getGridOverlayWidth();
-        const scrollW = gantt.config.scroll_size || 16;
         const colsW = getColumnsTotalWidth();
+        const minChartW = 280;
+        let overlayW = getGridOverlayWidth();
+        overlayW = Math.max(colsW + 12, Math.min(hostW - minChartW, overlayW));
+        scheduleSettings.grid_overlay_width_px = overlayW;
+
+        const scrollW = gantt.config.scroll_size || 16;
+        const chartW = Math.max(hostW - scrollW, 200);
 
         host.style.setProperty('--sched-grid-overlay-w', overlayW + 'px');
         host.style.setProperty('--sched-chart-left', overlayW + 'px');
@@ -545,63 +566,76 @@
         const timelineCell = cells[2];
         const verScroll = cells[3];
 
-        if (resizerCell) {
-            resizerCell.style.cssText = 'display:none!important;width:0!important;min-width:0!important;max-width:0!important;flex:0 0 0!important;padding:0!important;margin:0!important;border:none!important;overflow:hidden!important;';
-        }
+        setOverlayElStyle(resizerCell, {
+            display: 'none',
+            width: '0',
+            'min-width': '0',
+            'max-width': '0',
+            flex: '0 0 0',
+            padding: '0',
+            margin: '0',
+            border: 'none',
+            overflow: 'hidden'
+        });
 
-        if (gridCell) {
-            gridCell.style.cssText = [
-                'position:absolute',
-                'left:0',
-                'top:0',
-                'bottom:0',
-                `width:${overlayW}px`,
-                'z-index:30',
-                'flex:none',
-                'overflow:hidden',
-                'background:var(--sched-bg,#1e1e1e)',
-                'box-sizing:border-box',
-                'border-right:3px solid #1a6dbd',
-                'box-shadow:4px 0 8px rgba(0,0,0,0.35)',
-                'pointer-events:auto'
-            ].join('!important;') + '!important;';
-            const gridInner = gridCell.querySelector('.gantt_grid');
-            if (gridInner) {
-                gridInner.style.minWidth = colsW + 'px';
-            }
-        }
+        setOverlayElStyle(gridCell, {
+            position: 'absolute',
+            left: '0',
+            top: '0',
+            bottom: '0',
+            width: overlayW + 'px',
+            height: '100%',
+            'z-index': '30',
+            flex: 'none',
+            overflow: 'hidden',
+            background: 'var(--sched-bg, #1e1e1e)',
+            'box-sizing': 'border-box',
+            'border-right': '3px solid #1a6dbd',
+            'box-shadow': '4px 0 8px rgba(0,0,0,0.35)',
+            'pointer-events': 'auto'
+        });
 
-        if (timelineCell) {
-            const chartW = Math.max(hostW - scrollW, 200);
-            timelineCell.style.cssText = [
-                'position:absolute',
-                'left:0',
-                'top:0',
-                'bottom:0',
-                `right:${scrollW}px`,
-                `width:${chartW}px`,
-                'min-width:' + chartW + 'px',
-                'max-width:none',
-                'z-index:1',
-                'flex:none',
-                'overflow:hidden',
-                'box-sizing:border-box',
-                'pointer-events:auto'
-            ].join('!important;') + '!important;';
-        }
+        setOverlayElStyle(timelineCell, {
+            position: 'absolute',
+            left: '0',
+            top: '0',
+            bottom: '0',
+            right: scrollW + 'px',
+            width: chartW + 'px',
+            'min-width': chartW + 'px',
+            'max-width': 'none',
+            height: '100%',
+            'z-index': '1',
+            flex: 'none',
+            overflow: 'hidden',
+            'box-sizing': 'border-box',
+            'pointer-events': 'auto'
+        });
 
-        if (verScroll) {
-            verScroll.style.cssText = [
-                'position:relative',
-                'z-index:25',
-                'flex:0 0 ' + scrollW + 'px',
-                'width:' + scrollW + 'px',
-                'min-width:' + scrollW + 'px',
-                'margin-left:auto'
-            ].join('!important;') + '!important;';
-        }
+        setOverlayElStyle(verScroll, {
+            position: 'relative',
+            'z-index': '25',
+            flex: '0 0 ' + scrollW + 'px',
+            width: scrollW + 'px',
+            'min-width': scrollW + 'px',
+            height: '100%',
+            'margin-left': 'auto'
+        });
 
-        root.style.cssText = 'position:relative!important;width:100%!important;height:100%!important;display:flex!important;flex-direction:row!important;overflow:hidden!important;';
+        setOverlayElStyle(root, {
+            position: 'relative',
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            'flex-direction': 'row',
+            overflow: 'hidden'
+        });
+
+        const gridInner = gridCell?.querySelector('.gantt_grid');
+        if (gridInner) {
+            gridInner.style.minWidth = colsW + 'px';
+            gridInner.style.width = colsW + 'px';
+        }
 
         positionChartResizerVisual();
     }
@@ -611,14 +645,16 @@
             || document.getElementById('scheduleGanttHost')?.clientWidth
             || 1200;
         const colsW = getColumnsTotalWidth();
+        const minChartW = 280;
+        const maxOverlay = Math.max(200, hostW - minChartW);
         if (scheduleSettings.grid_overlay_width_px >= 180) {
-            return Math.max(200, Math.min(hostW - 120, scheduleSettings.grid_overlay_width_px));
+            return Math.max(colsW + 12, Math.min(maxOverlay, scheduleSettings.grid_overlay_width_px));
         }
         if (scheduleSettings.timeline_width_px >= 180) {
-            return Math.max(200, Math.min(hostW - 120, hostW - scheduleSettings.timeline_width_px));
+            return Math.max(colsW + 12, Math.min(maxOverlay, hostW - scheduleSettings.timeline_width_px));
         }
         const gridPct = 1 - (scheduleSettings.timeline_pct ?? 0.48);
-        return Math.max(colsW + 4, Math.min(hostW - 120, Math.round(hostW * gridPct)));
+        return Math.max(colsW + 12, Math.min(maxOverlay, Math.round(hostW * gridPct)));
     }
 
     function getTimelineWidth() {
@@ -860,6 +896,7 @@
             if (!overlayDrag.active) return;
             overlayDrag.active = false;
             document.body.classList.remove('schedule-chart-resizing');
+            jumpToScheduleTasks();
             queueSave();
         });
     }
@@ -1249,8 +1286,7 @@
         const d = toGanttDate(date);
         if (!d) return;
         applyRollingCalendarRange(false);
-        const viewW = getTimelineDomWidth();
-        const margin = marginPx != null ? marginPx : Math.round(viewW / 2);
+        const margin = marginPx != null ? marginPx : getTimelineScrollMargin(0.5);
         const apply = () => {
             let x = null;
             try {
@@ -3162,6 +3198,10 @@
         runSchedule({ skipScroll: true });
         baselines = payload.baselines || [];
         if (payload.settings) scheduleSettings = Object.assign(scheduleSettings, payload.settings);
+        const loadedColsW = getColumnsTotalWidth();
+        if (!scheduleSettings.grid_overlay_width_px || scheduleSettings.grid_overlay_width_px < loadedColsW + 12) {
+            scheduleSettings.grid_overlay_width_px = loadedColsW + 12;
+        }
         applyP6RowMetrics();
         applyGanttDisplayStyles();
         if (!scheduleSettings.theme) scheduleSettings.theme = 'dark';
@@ -3206,6 +3246,7 @@
                 gantt.render();
                 jumpToScheduleTasks();
                 syncGanttLayout();
+                applyOverlayDomLayout();
             }, 150);
         }
         return true;
@@ -3385,7 +3426,7 @@
             const d = toGanttDate(t.start_date);
             if (d) target = d;
         });
-        if (target) scrollTimelineToDate(target, getTimelineWidth() / 3);
+        if (target) scrollTimelineToDate(target, getTimelineScrollMargin());
         else scrollToToday();
     }
 
