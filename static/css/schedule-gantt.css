@@ -406,9 +406,12 @@ body.schedule-chart-resizing {
 .sched-hierarchy-cell {
     position: relative !important;
     padding: 0 !important;
-    overflow: hidden !important;
+    overflow: visible !important;
     vertical-align: top !important;
     height: 100% !important;
+    border: none !important;
+    border-right: none !important;
+    border-bottom: none !important;
 }
 .gantt_grid_data .gantt_row .sched-hierarchy-cell {
     background-color: var(--sched-bg) !important;
@@ -421,9 +424,11 @@ body.schedule-chart-resizing {
     inset: 0;
     display: flex;
     flex-direction: row;
-    align-items: stretch;
+    align-items: flex-start;
     height: 100%;
     min-height: 100%;
+    overflow: visible;
+    pointer-events: none;
 }
 .sched-wbs-gutter {
     width: 14px;
@@ -432,15 +437,28 @@ body.schedule-chart-resizing {
     height: 100%;
     min-height: 100%;
     box-sizing: border-box;
-    border-right: 1px solid rgba(0, 0, 0, 0.12);
+    border: none !important;
 }
-.sched-wbs-gutter-line {
-    background-color: var(--wbs-color) !important;
-    opacity: 0.9;
+.sched-wbs-gutter-spacer {
+    background: transparent !important;
 }
 .sched-wbs-gutter-active {
     background-color: var(--wbs-color) !important;
     opacity: 1;
+    position: relative;
+    z-index: 2;
+}
+.sched-wbs-gutter-span {
+    position: absolute;
+    top: 0;
+    z-index: 3;
+    min-height: 0;
+    pointer-events: none;
+}
+.sched-wbs-indents .sched-wbs-gutter-active:not(.sched-wbs-gutter-span) {
+    align-self: stretch;
+    height: 100%;
+    min-height: calc(100% + 1px);
 }
 .sched-wbs-header-label {
     font-weight: 700;
@@ -1011,10 +1029,24 @@ body.schedule-chart-resizing {
     box-shadow: inset 0 0 0 1px var(--sched-accent) !important;
 }
 .gantt_grid_data .gantt_cell.sched-col-active {
-    background: rgba(55, 148, 255, 0.12) !important;
+    background: rgba(55, 148, 255, 0.14) !important;
+    box-shadow: inset 0 0 0 1px rgba(55, 148, 255, 0.45);
 }
 .gantt_grid_scale .gantt_grid_head_cell.sched-col-active {
-    background: rgba(55, 148, 255, 0.18) !important;
+    background: rgba(55, 148, 255, 0.22) !important;
+    box-shadow: inset 0 0 0 1px var(--sched-accent) !important;
+}
+#gantt_here .gantt_grid_scale .gantt_grid_head {
+    position: relative !important;
+}
+#gantt_here .sched-col-resize-trailing {
+    position: absolute !important;
+    top: 0 !important;
+    height: 100% !important;
+    width: 10px !important;
+    margin-left: -5px !important;
+    z-index: 150 !important;
+    pointer-events: auto !important;
 }
 
 .gantt_hor_scroll {
@@ -1447,16 +1479,21 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
     .schedule-print-table td.r,
     .schedule-print-table th.r { text-align: right; }
     .schedule-print-table tr.print-summary { font-weight: 700; }
-    .schedule-print-table tr.print-summary.sched-wbs-l0 { background: #1e3a5f; color: #fff; }
-    .schedule-print-table tr.print-summary.sched-wbs-l1 { background: #2d6a2e; color: #fff; }
-    .schedule-print-table tr.print-summary.sched-wbs-l2 { background: #c9a227; color: #1a1a1a; }
-    .schedule-print-table tr.print-summary.sched-wbs-l3 { background: #4a6fa5; color: #fff; }
+    .schedule-print-table tr.print-summary.sched-wbs-l0 { background: #0070c0 !important; color: #fff !important; }
+    .schedule-print-table tr.print-summary.sched-wbs-l1 { background: #00b050 !important; color: #fff !important; }
+    .schedule-print-table tr.print-summary.sched-wbs-l2 { background: #ffff00 !important; color: #000 !important; }
+    .schedule-print-table tr.print-summary.sched-wbs-l3 { background: #ffc000 !important; color: #000 !important; }
     .print-col-hierarchy {
         width: 56px !important;
         min-width: 56px !important;
         max-width: 56px !important;
         padding: 0 !important;
         vertical-align: top !important;
+        border: none !important;
+    }
+    .print-schedule-wrap .schedule-print-table td.print-col-hierarchy,
+    .print-schedule-wrap .schedule-print-table th.print-col-hierarchy {
+        border: none !important;
     }
     .print-wbs-indents {
         display: flex;
@@ -1472,11 +1509,13 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         height: 100%;
         min-height: 100%;
         box-sizing: border-box;
+        border: none !important;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
-    .print-wbs-gutter-line { opacity: 0.9; }
-    .print-wbs-gutter-active { opacity: 1; }
+    .print-wbs-gutter-spacer {
+        background: transparent !important;
+    }
     .print-no-wbs-colors .print-wbs-gutter,
     .print-no-wbs-colors .print-col-hierarchy { display: none !important; }
     .schedule-print-table tr.print-summary:not(.sched-wbs-l0):not(.sched-wbs-l1):not(.sched-wbs-l2):not(.sched-wbs-l3) {
@@ -1532,10 +1571,10 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         background: #1a1a1a;
         clip-path: polygon(6px 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 6px 100%, 0 50%);
     }
-    .print-bar-summary.sched-wbs-l0 { background: #1e3a5f; }
-    .print-bar-summary.sched-wbs-l1 { background: #2d6a2e; }
-    .print-bar-summary.sched-wbs-l2 { background: #c9a227; }
-    .print-bar-summary.sched-wbs-l3 { background: #4a6fa5; }
+    .print-bar-summary.sched-wbs-l0 { background: #0070c0 !important; }
+    .print-bar-summary.sched-wbs-l1 { background: #00b050 !important; }
+    .print-bar-summary.sched-wbs-l2 { background: #ffff00 !important; }
+    .print-bar-summary.sched-wbs-l3 { background: #ffc000 !important; }
     .print-bar-task { border-radius: 0; }
     .print-bar-critical { background: #c00000 !important; }
     .print-milestone {

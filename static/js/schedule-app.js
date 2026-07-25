@@ -727,6 +727,7 @@
         headerSyncTimer = setTimeout(() => {
             syncGridColumnsFromConfig();
             applyCellAlignToDom();
+            ensureColumnResizeGrips();
         }, 32);
     }
 
@@ -1798,10 +1799,12 @@
             scheduleSettings.column_align[sel.colName][axis] = value;
             gantt.eachTask(t => {
                 if (t.cell_align?.[sel.colName]) {
-                    delete t.cell_align[sel.colName];
+                    delete t.cell_align[sel.colName][axis];
+                    if (!Object.keys(t.cell_align[sel.colName]).length) delete t.cell_align[sel.colName];
                     if (!Object.keys(t.cell_align).length) delete t.cell_align;
                 }
             });
+            applyCellAlignToDom();
         } else if (sel.type === 'cell' && sel.taskId && gantt.isTaskExists(sel.taskId)) {
             const task = gantt.getTask(sel.taskId);
             if (!task.cell_align) task.cell_align = {};
@@ -1839,6 +1842,8 @@
             if (head && !e.target.closest('.gantt_grid_column_resize_wrap')) {
                 const scale = head.closest('.gantt_grid_scale');
                 if (!scale) return;
+                const rect = head.getBoundingClientRect();
+                if (rect.right - e.clientX <= 8) return;
                 const heads = Array.from(scale.querySelectorAll('.gantt_grid_head_cell'));
                 const idx = heads.indexOf(head);
                 const col = gantt.config.columns[idx];
@@ -1976,6 +1981,10 @@
     }
 
     function getColumnIndexFromResizeWrap(wrap) {
+        if (wrap?.dataset?.colIndex != null) {
+            const idx = parseInt(wrap.dataset.colIndex, 10);
+            if (!Number.isNaN(idx)) return idx;
+        }
         const scale = wrap?.closest('.gantt_grid_scale');
         if (!scale) return -1;
         const wrapRect = wrap.getBoundingClientRect();
@@ -2010,6 +2019,54 @@
 
     let columnResizeInProgress = false;
 
+    function ensureColumnResizeGrips() {
+        if (!ganttReady) return;
+        const scale = document.querySelector('#gantt_here .gantt_grid_scale .gantt_grid_head');
+        if (!scale) return;
+        scale.querySelectorAll('.sched-col-resize-trailing').forEach(el => el.remove());
+
+        const cols = gantt.config.columns || [];
+        let lastIdx = -1;
+        for (let i = cols.length - 1; i >= 0; i--) {
+            if (cols[i].resize !== false) { lastIdx = i; break; }
+        }
+        if (lastIdx < 0) return;
+
+        const headCells = scale.querySelectorAll('.gantt_grid_head_cell');
+        const lastCell = headCells[lastIdx];
+        if (!lastCell) return;
+
+        const grip = document.createElement('div');
+        grip.className = 'sched-col-resize-trailing gantt_grid_column_resize_wrap';
+        grip.dataset.colIndex = String(lastIdx);
+        grip.innerHTML = '<div class="gantt_grid_column_resize"></div>';
+        scale.appendChild(grip);
+
+        const place = () => {
+            const rect = lastCell.getBoundingClientRect();
+            const scaleRect = scale.getBoundingClientRect();
+            grip.style.left = Math.max(0, rect.right - scaleRect.left - 5) + 'px';
+        };
+        place();
+        if (!ensureColumnResizeGrips.placeBound) {
+            ensureColumnResizeGrips.placeBound = true;
+            window.addEventListener('resize', place);
+        }
+    }
+
+    function startColumnResize(colIndex, clientX) {
+        const col = gantt.config.columns[colIndex];
+        if (!col || col.resize === false) return;
+        columnResizeInProgress = true;
+        colResizeDrag.active = true;
+        colResizeDrag.colIndex = colIndex;
+        colResizeDrag.startX = clientX;
+        colResizeDrag.startW = parseInt(col.width, 10) || 80;
+        const grid = document.querySelector('#gantt_here .gantt_grid_data');
+        columnResizeScrollLeft = grid ? grid.scrollLeft : 0;
+        document.body.classList.add('sched-col-resizing');
+    }
+
     function bindColumnResizeDrag() {
         if (bindColumnResizeDrag.done) return;
         bindColumnResizeDrag.done = true;
@@ -2017,21 +2074,31 @@
         if (!host) return;
 
         host.addEventListener('mousedown', e => {
-            const grip = e.target.closest('.gantt_grid_column_resize, .gantt_grid_column_resize_wrap');
+            const head = e.target.closest('.gantt_grid_head_cell');
+            if (head && !e.target.closest('.gantt_grid_column_resize_wrap')) {
+                const scale = head.closest('.gantt_grid_scale');
+                if (scale) {
+                    const heads = Array.from(scale.querySelectorAll('.gantt_grid_head_cell'));
+                    const idx = heads.indexOf(head);
+                    const col = gantt.config.columns[idx];
+                    const rect = head.getBoundingClientRect();
+                    if (col && col.resize !== false && rect.right - e.clientX <= 8) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        startColumnResize(idx, e.clientX);
+                        return;
+                    }
+                }
+            }
+
+            const grip = e.target.closest('.gantt_grid_column_resize, .gantt_grid_column_resize_wrap, .sched-col-resize-trailing');
             if (!grip) return;
             const wrap = grip.closest('.gantt_grid_column_resize_wrap') || grip;
             const colIndex = getColumnIndexFromResizeWrap(wrap);
             if (colIndex < 0 || !gantt.config.columns[colIndex] || gantt.config.columns[colIndex].resize === false) return;
             e.preventDefault();
             e.stopPropagation();
-            columnResizeInProgress = true;
-            colResizeDrag.active = true;
-            colResizeDrag.colIndex = colIndex;
-            colResizeDrag.startX = e.clientX;
-            colResizeDrag.startW = parseInt(gantt.config.columns[colIndex].width, 10) || 80;
-            const grid = document.querySelector('#gantt_here .gantt_grid_data');
-            columnResizeScrollLeft = grid ? grid.scrollLeft : 0;
-            document.body.classList.add('sched-col-resizing');
+            startColumnResize(colIndex, e.clientX);
         }, true);
 
         let resizeRaf = null;
@@ -2071,6 +2138,8 @@
             gantt.config.grid_width = getColumnsTotalWidth();
             gantt.config.keep_grid_width = false;
             if (typeof gantt.render === 'function') gantt.render();
+            ensureColumnResizeGrips();
+            syncWbsGutterSpans();
             queueSave();
         });
 
@@ -2089,6 +2158,7 @@
 
     function bindColumnResizeEnhancements() {
         bindColumnResizeDrag();
+        ensureColumnResizeGrips();
     }
 
     function handleColumnResize(index, column, new_width, persist, reflow) {
@@ -2358,31 +2428,63 @@
 
     function hierarchyIndentTemplate(task) {
         const level = getWbsLevel(task);
-        const maxGutters = 4;
-        const gutterCount = Math.min(level + 1, maxGutters);
         let html = '<div class="sched-wbs-indents">';
-        for (let i = 0; i < gutterCount; i++) {
-            const color = WBS_GUTTER_COLORS[i] || WBS_GUTTER_COLORS[3];
-            const isActive = i === level;
-            const cls = isActive ? 'sched-wbs-gutter-active' : 'sched-wbs-gutter-line';
-            html += `<span class="sched-wbs-gutter ${cls}" style="--wbs-color:${color}"></span>`;
+        for (let i = 0; i < level; i++) {
+            html += '<span class="sched-wbs-gutter sched-wbs-gutter-spacer"></span>';
         }
+        const color = WBS_GUTTER_COLORS[level] || WBS_GUTTER_COLORS[3];
+        html += `<span class="sched-wbs-gutter sched-wbs-gutter-active" data-wbs-level="${level}" style="--wbs-color:${color}"></span>`;
         html += '</div>';
         return html;
     }
 
     function buildPrintHierarchyGutters(task) {
         const level = getWbsLevel(task);
-        const maxGutters = 4;
-        const gutterCount = Math.min(level + 1, maxGutters);
         let html = '<div class="print-wbs-indents">';
-        for (let i = 0; i < gutterCount; i++) {
-            const color = WBS_GUTTER_COLORS[i] || WBS_GUTTER_COLORS[3];
-            const cls = i === level ? 'print-wbs-gutter-active' : 'print-wbs-gutter-line';
-            html += `<span class="print-wbs-gutter ${cls}" style="background:${color}"></span>`;
+        for (let i = 0; i < level; i++) {
+            html += '<span class="print-wbs-gutter print-wbs-gutter-spacer"></span>';
         }
+        const color = WBS_GUTTER_COLORS[level] || WBS_GUTTER_COLORS[3];
+        html += `<span class="print-wbs-gutter print-wbs-gutter-active" style="background:${color}"></span>`;
         html += '</div>';
         return html;
+    }
+
+    function syncWbsGutterSpans() {
+        if (!ganttReady) return;
+        document.querySelectorAll('#gantt_here .sched-wbs-gutter-active').forEach(g => {
+            g.classList.remove('sched-wbs-gutter-span');
+            g.style.height = '';
+            g.style.left = '';
+        });
+        const rowH = gantt.config.row_height || 24;
+        const rows = Array.from(document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row'));
+        const items = rows.map(row => {
+            let id = null;
+            try { id = gantt.locate(row); } catch (e) { /* ok */ }
+            return id ? { row, id } : null;
+        }).filter(Boolean);
+
+        for (let i = 0; i < items.length; i++) {
+            const { row, id } = items[i];
+            const task = gantt.getTask(id);
+            if (!isSummaryTask(task)) continue;
+            const level = getWbsLevel(task);
+            let lastIdx = i;
+            for (let j = i + 1; j < items.length; j++) {
+                const child = gantt.getTask(items[j].id);
+                if (getWbsLevel(child) <= level) break;
+                lastIdx = j;
+            }
+            const gutter = row.querySelector(`.sched-wbs-gutter-active[data-wbs-level="${level}"]`);
+            if (!gutter) continue;
+            const spanRows = lastIdx - i + 1;
+            if (spanRows > 1) {
+                gutter.classList.add('sched-wbs-gutter-span');
+                gutter.style.height = (spanRows * rowH) + 'px';
+                gutter.style.left = (level * 14) + 'px';
+            }
+        }
     }
 
     function activityNameTemplate(task) {
@@ -3043,6 +3145,8 @@
             applyCellAlignToDom();
             updateAlignToolbarButtons();
             if (isOverlayMode()) applyOverlayDomLayout();
+            syncWbsGutterSpans();
+            ensureColumnResizeGrips();
         });
 
         document.addEventListener('keydown', onScheduleKeyDown);
