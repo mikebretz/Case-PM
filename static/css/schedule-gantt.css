@@ -1,41 +1,80 @@
-/* Case PM Schedule — theme tokens scoped to schedule page only (sidebar/header/footer unchanged) */
+/* Case PM Schedule — MS Project–inspired theme (light default) */
 
 .schedule-page-root {
-    /* Dark theme (default) */
-    --sched-bg: #18181b;
-    --sched-surface: #27272a;
-    --sched-surface-raised: #1c1c1f;
-    --sched-border: #3f3f46;
-    --sched-text: #e4e4e7;
-    --sched-text-muted: #a1a1aa;
-    --sched-text-strong: #f4f4f5;
-    --sched-accent: #10b981;
-    --sched-chart-bg: #0f0f12;
-    --sched-scroll-bg: #18181b;
-    --sched-row-hover: rgba(39, 39, 42, 0.85);
-    --sched-selection: rgba(148, 163, 184, 0.07);
-    --sched-toolbar-bg: #27272a;
-    --sched-panel-bg: #18181b;
+    --sched-font: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    font-family: var(--sched-font);
+    --sched-bg: #ffffff;
+    --sched-surface: #f3f2f1;
+    --sched-surface-raised: #faf9f8;
+    --sched-border: #edebe9;
+    --sched-border-strong: #d2d0ce;
+    --sched-text: #323130;
+    --sched-text-muted: #605e5c;
+    --sched-text-strong: #201f1e;
+    --sched-accent: #0078d4;
+    --sched-accent-hover: #106ebe;
+    --sched-accent-soft: #deecf9;
+    --sched-chart-bg: #ffffff;
+    --sched-scroll-bg: #faf9f8;
+    --sched-row-hover: #f3f2f1;
+    --sched-row-alt: #faf9f8;
+    --sched-selection: #cce4f7;
+    --sched-selection-border: #0078d4;
+    --sched-toolbar-bg: #ffffff;
+    --sched-panel-bg: #ffffff;
+    --sched-ribbon-bg: #faf9f8;
+    --sched-critical: #c50f1f;
+    --sched-success: #107c10;
     color: var(--sched-text);
     background: transparent;
 }
 
-/* Light theme — ready for future toggle; add class schedule-theme-light to .schedule-page-root */
+.schedule-page-root.schedule-theme-dark {
+    --sched-bg: #1e1e1e;
+    --sched-surface: #2d2d2d;
+    --sched-surface-raised: #252526;
+    --sched-border: #3e3e42;
+    --sched-border-strong: #505050;
+    --sched-text: #cccccc;
+    --sched-text-muted: #9d9d9d;
+    --sched-text-strong: #ffffff;
+    --sched-accent: #3794ff;
+    --sched-accent-hover: #4da3ff;
+    --sched-accent-soft: rgba(55, 148, 255, 0.15);
+    --sched-chart-bg: #1e1e1e;
+    --sched-scroll-bg: #252526;
+    --sched-row-hover: #2a2d2e;
+    --sched-row-alt: #252526;
+    --sched-selection: rgba(55, 148, 255, 0.22);
+    --sched-selection-border: #3794ff;
+    --sched-toolbar-bg: #2d2d2d;
+    --sched-panel-bg: #1e1e1e;
+    --sched-ribbon-bg: #252526;
+    color: var(--sched-text);
+}
+
+/* Legacy alias */
 .schedule-page-root.schedule-theme-light {
     --sched-bg: #ffffff;
-    --sched-surface: #f4f4f5;
-    --sched-surface-raised: #fafafa;
-    --sched-border: #d4d4d8;
-    --sched-text: #18181b;
-    --sched-text-muted: #71717a;
-    --sched-text-strong: #09090b;
-    --sched-accent: #059669;
-    --sched-chart-bg: #f8fafc;
-    --sched-scroll-bg: #f4f4f5;
-    --sched-row-hover: rgba(228, 228, 231, 0.9);
-    --sched-selection: rgba(59, 130, 246, 0.08);
-    --sched-toolbar-bg: #f4f4f5;
+    --sched-surface: #f3f2f1;
+    --sched-surface-raised: #faf9f8;
+    --sched-border: #edebe9;
+    --sched-border-strong: #d2d0ce;
+    --sched-text: #323130;
+    --sched-text-muted: #605e5c;
+    --sched-text-strong: #201f1e;
+    --sched-accent: #0078d4;
+    --sched-accent-hover: #106ebe;
+    --sched-accent-soft: #deecf9;
+    --sched-chart-bg: #ffffff;
+    --sched-scroll-bg: #faf9f8;
+    --sched-row-hover: #f3f2f1;
+    --sched-row-alt: #faf9f8;
+    --sched-selection: #cce4f7;
+    --sched-selection-border: #0078d4;
+    --sched-toolbar-bg: #ffffff;
     --sched-panel-bg: #ffffff;
+    --sched-ribbon-bg: #faf9f8;
 }
 
 body:has(.schedule-page-root) #mainContent {
@@ -69,20 +108,20 @@ body:has(.schedule-page-root) #mainContent {
     position: absolute;
     top: 0;
     bottom: 0;
-    width: 5px;
+    width: 4px;
     margin-left: -2px;
     z-index: 210;
     cursor: col-resize;
     pointer-events: auto;
     touch-action: none;
-    background: rgba(16, 185, 129, 0.55);
+    background: var(--sched-border-strong);
     box-shadow: none;
 }
 .schedule-chart-resizer.hidden { display: none; }
 .schedule-chart-resizer:hover,
 .schedule-chart-resizer:active {
-    background: rgba(52, 211, 153, 0.85);
-    box-shadow: 0 0 6px rgba(16, 185, 129, 0.35);
+    background: var(--sched-accent);
+    box-shadow: none;
 }
 body.schedule-chart-resizing {
     cursor: col-resize !important;
@@ -92,24 +131,43 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     pointer-events: none !important;
 }
 
-/* Toolbar uses theme tokens */
+/* Toolbar — MS Project ribbon buttons */
 .schedule-toolbar-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.43rem;
-    padding: 0.5rem 0.79rem;
-    font-size: 1.01rem;
-    border-radius: 0.375rem;
-    background: var(--sched-toolbar-bg);
-    border: 1px solid var(--sched-border);
+    justify-content: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.55rem;
+    min-height: 28px;
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: 0;
+    border-radius: 2px;
+    background: transparent;
+    border: 1px solid transparent;
     color: var(--sched-text);
     white-space: nowrap;
     cursor: pointer;
+    transition: background 0.1s ease, border-color 0.1s ease;
 }
-.schedule-toolbar-btn:hover { filter: brightness(1.12); }
-.schedule-toolbar-btn.active-tool { background: #065f46; border-color: #10b981; color: #fff; }
-.schedule-toolbar-btn-danger { border-color: #7f1d1d; color: #fca5a5; }
-.schedule-toolbar-btn-danger:hover { background: #7f1d1d; color: #fff; }
+.schedule-toolbar-btn:hover {
+    background: var(--sched-row-hover);
+    border-color: var(--sched-border);
+}
+.schedule-toolbar-btn.active-tool {
+    background: var(--sched-accent-soft);
+    border-color: var(--sched-accent);
+    color: var(--sched-accent);
+}
+.schedule-toolbar-btn-compact {
+    padding: 0.35rem 0.45rem;
+    min-width: 28px;
+}
+.schedule-toolbar-btn-danger { color: var(--sched-critical); }
+.schedule-toolbar-btn-danger:hover {
+    background: rgba(197, 15, 31, 0.1);
+    border-color: rgba(197, 15, 31, 0.35);
+}
 #scheduleMainToolbar [data-sched-tool].hidden { display: none !important; }
 #scheduleMoreToolsMenu .schedule-more-tool-item {
   display: flex;
@@ -117,7 +175,6 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
   justify-content: flex-start;
   margin: 0;
 }
-.schedule-view-tab.active-view { background: #27272a; color: #fff; border-radius: 0.375rem; }
 .sched-cal-toolbar { margin-bottom: 0.75rem; }
 .sched-cal-year-grid {
     display: grid;
@@ -182,28 +239,27 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 .sched-cal-bar-mid { border-radius: 0; margin-left: -1px; margin-right: -1px; }
 .sched-cal-more { font-size: 0.5rem; color: #71717a; padding: 0 2px; }
 
-.schedule-view-tab.active-view { background: #27272a; color: #fff; border-radius: 0.375rem; }
 .sched-color-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 2px; border: 1px solid #71717a; }
 
 .sched-tree-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 30px;
-    height: 30px;
-    min-width: 30px;
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
     cursor: pointer;
-    color: #34d399;
-    font-size: 22px;
-    font-weight: 700;
+    color: var(--sched-text-muted);
+    font-size: 14px;
+    font-weight: 600;
     line-height: 1;
     user-select: none;
-    border-radius: 4px;
-    background: rgba(16, 185, 129, 0.12);
+    border-radius: 2px;
+    background: transparent;
 }
 .sched-tree-btn:hover {
-    background: rgba(16, 185, 129, 0.28);
-    color: #6ee7b7;
+    background: var(--sched-row-hover);
+    color: var(--sched-accent);
 }
 .sched-color-editor { width: 100%; height: 28px; padding: 0; border: none; background: transparent; }
 
@@ -290,7 +346,11 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     flex-direction: column !important;
     overflow: hidden !important;
     background: var(--sched-chart-bg) !important;
-    box-shadow: -10px 0 28px rgba(0,0,0,0.55);
+    box-shadow: -2px 0 8px rgba(0, 0, 0, 0.08);
+    border-left: 1px solid var(--sched-border-strong);
+}
+.schedule-page-root.schedule-theme-dark .schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) {
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.45);
 }
 .schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) .gantt_task,
 .schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) .gantt_task_bg,
@@ -338,18 +398,18 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 }
 
 .sched-parent-name {
-    font-weight: 700;
-    color: #f4f4f5;
+    font-weight: 600;
+    color: var(--sched-text-strong);
 }
 .gantt_row.sched-parent-row .gantt_cell,
 .gantt_row.cpm_project_row .gantt_cell {
-    font-weight: 700 !important;
-    color: #f4f4f5 !important;
+    font-weight: 600 !important;
+    color: var(--sched-text-strong) !important;
 }
 
 /* Native dhtmlx split fallback (hidden when overlay active) */
 #gantt_here .gantt_resizer {
-    background: linear-gradient(180deg, rgba(16, 185, 129, 0.35), rgba(16, 185, 129, 0.85), rgba(16, 185, 129, 0.35)) !important;
+    background: var(--sched-border-strong) !important;
     width: 6px !important;
     min-width: 6px !important;
     cursor: col-resize !important;
@@ -372,13 +432,13 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 }
 #gantt_here .gantt_hor_scroll::-webkit-scrollbar-thumb,
 #gantt_here .gantt_scroll_hor::-webkit-scrollbar-thumb {
-    background: var(--sched-accent) !important;
-    border-radius: 6px !important;
+    background: var(--sched-border-strong) !important;
+    border-radius: 4px !important;
     border: 2px solid var(--sched-scroll-bg) !important;
 }
-#gantt_here .gantt_hor_scroll::-webkit-scrollbar-track,
-#gantt_here .gantt_scroll_hor::-webkit-scrollbar-track {
-    background: var(--sched-surface) !important;
+#gantt_here .gantt_hor_scroll::-webkit-scrollbar-thumb:hover,
+#gantt_here .gantt_scroll_hor::-webkit-scrollbar-thumb:hover {
+    background: var(--sched-text-muted) !important;
 }
 
 /* Schedule page dropdowns / date inputs — clearer letterforms (match modal pop-out) */
@@ -443,9 +503,12 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     line-height: 42px !important;
     font-size: 11px !important;
     font-weight: 600 !important;
-    letter-spacing: 0.05em !important;
-    text-transform: uppercase;
+    letter-spacing: 0.01em !important;
+    text-transform: none;
     vertical-align: middle !important;
+    background: var(--sched-surface) !important;
+    color: var(--sched-text-muted) !important;
+    border-bottom: 1px solid var(--sched-border-strong) !important;
 }
 /* Timeline scale — two rows (month + day) must both be visible */
 .gantt_task_scale,
@@ -473,7 +536,7 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     letter-spacing: 0.02em !important;
 }
 
-/* Faint full-row selection — grid + timeline */
+/* Faint full-row selection — MS Project blue highlight */
 .gantt_grid_data .gantt_row.sched-row-active,
 .gantt_grid_data .gantt_row.sched-row-active .gantt_cell,
 .gantt_grid_data .gantt_row.sched-row-active.odd,
@@ -482,8 +545,8 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 .gantt_task_row.sched-row-active .gantt_task_cell,
 .gantt_task_row.sched-row-active.odd,
 .gantt_task_row.sched-row-active.odd .gantt_task_cell {
-    background-color: rgba(113, 113, 122, 0.24) !important;
-    color: #f4f4f5 !important;
+    background-color: var(--sched-selection) !important;
+    color: var(--sched-text-strong) !important;
     box-shadow: none !important;
     outline: none !important;
 }
@@ -492,16 +555,16 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 .gantt_grid_data .gantt_cell.gantt_selected,
 .gantt_grid_data .gantt_row.gantt_selected.odd,
 .gantt_grid_data .gantt_row.gantt_selected.odd .gantt_cell {
-    background-color: rgba(113, 113, 122, 0.24) !important;
-    color: #f4f4f5 !important;
-    box-shadow: none !important;
+    background-color: var(--sched-selection) !important;
+    color: var(--sched-text-strong) !important;
+    box-shadow: inset 3px 0 0 var(--sched-selection-border) !important;
     outline: none !important;
 }
 .gantt_task_row.gantt_selected,
 .gantt_task_row.gantt_selected .gantt_task_cell,
 .gantt_task_row.gantt_selected.odd,
 .gantt_task_row.gantt_selected.odd .gantt_task_cell {
-    background-color: rgba(113, 113, 122, 0.2) !important;
+    background-color: var(--sched-selection) !important;
     box-shadow: none !important;
     outline: none !important;
 }
@@ -518,9 +581,46 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     outline: none !important;
 }
 
-/* Selection & inline edit — stay dark (no white flash) */
+/* ─── Grid — theme-aware (light default) ─── */
+.gantt_grid, .gantt_grid_scale, .gantt_grid_head, .gantt_grid_data,
+.gantt_container, .gantt_layout_cell {
+    background-color: var(--sched-bg) !important;
+    color: var(--sched-text) !important;
+    border-color: var(--sched-border) !important;
+}
+.gantt_grid_data .gantt_row,
+.gantt_grid_data .gantt_row.cpm_project_row,
+.gantt_grid_data .gantt_row.gantt_project {
+    background-color: var(--sched-bg) !important;
+    color: var(--sched-text) !important;
+    border-color: var(--sched-border) !important;
+}
+.gantt_grid_data .gantt_row.odd {
+    background-color: var(--sched-row-alt) !important;
+    color: var(--sched-text) !important;
+}
+.gantt_grid_data .gantt_row:hover,
+.gantt_grid_data .gantt_row.cpm_project_row:hover,
+.gantt_grid_data .gantt_row.gantt_project:hover {
+    background-color: var(--sched-row-hover) !important;
+    color: var(--sched-text-strong) !important;
+}
+.gantt_task_row:hover,
+.gantt_task_row:hover .gantt_task_cell {
+    background-color: var(--sched-row-hover) !important;
+}
+.gantt_tree_content, .gantt_grid_head, .gantt_grid_head_cell {
+    background-color: var(--sched-surface-raised) !important;
+    color: var(--sched-text-muted) !important;
+}
+.gantt_cell, .gantt_grid_head_cell {
+    border-color: var(--sched-border) !important;
+    color: var(--sched-text) !important;
+    background-color: transparent !important;
+    box-sizing: border-box !important;
+}
 .gantt_grid_data .gantt_row:hover .gantt_cell {
-    color: #f4f4f5 !important;
+    color: var(--sched-text-strong) !important;
 }
 .gantt_grid_editor_placeholder,
 .gantt_grid_editor_placeholder input,
@@ -528,52 +628,9 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 .gantt_inline_editor,
 .gantt_inline_editor input,
 .gantt_inline_editor select {
-    background: #27272a !important;
-    color: #fff !important;
-    border: 2px solid #10b981 !important;
-}
-
-/* ─── Grid dark — consistent rows (no white flash on project/summary) ─── */
-.gantt_grid, .gantt_grid_scale, .gantt_grid_head, .gantt_grid_data,
-.gantt_container, .gantt_layout_cell {
-    background-color: #18181b !important;
-    color: #e4e4e7 !important;
-    border-color: #3f3f46 !important;
-}
-.gantt_grid_data .gantt_row,
-.gantt_grid_data .gantt_row.cpm_project_row,
-.gantt_grid_data .gantt_row.gantt_project {
-    background-color: #18181b !important;
-    color: #e4e4e7 !important;
-    border-color: #3f3f46 !important;
-}
-.gantt_grid_data .gantt_row.odd {
-    background-color: #1c1c1f !important;
-    color: #e4e4e7 !important;
-}
-.gantt_grid_data .gantt_row:hover,
-.gantt_grid_data .gantt_row.cpm_project_row:hover,
-.gantt_grid_data .gantt_row.gantt_project:hover {
-    background-color: rgba(39, 39, 42, 0.85) !important;
-    color: #f4f4f5 !important;
-}
-.gantt_task_row:hover,
-.gantt_task_row:hover .gantt_task_cell {
-    background-color: rgba(39, 39, 42, 0.5) !important;
-}
-.gantt_tree_content, .gantt_grid_head, .gantt_grid_head_cell {
-    background-color: #18181b !important;
-    color: #a1a1aa !important;
-}
-.gantt_grid_data .gantt_row,
-.gantt_task_row {
-    min-height: 32px !important;
-}
-.gantt_cell, .gantt_grid_head_cell {
-    border-color: #3f3f46 !important;
-    color: #e4e4e7 !important;
-    background-color: transparent !important;
-    box-sizing: border-box !important;
+    background: var(--sched-bg) !important;
+    color: var(--sched-text-strong) !important;
+    border: 2px solid var(--sched-accent) !important;
 }
 
 /* Keep grid column headers aligned with data cells */
@@ -1201,8 +1258,358 @@ input[type="date"].sched-cell-editor::-webkit-calendar-picker-indicator {
 /* Drag bars on chart */
 .gantt_task_line {
     cursor: grab;
+    border-radius: 2px !important;
 }
 .gantt_task_line.gantt_drag_move,
 .gantt_task_line:active {
     cursor: grabbing;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   MS Project–style chrome: title bar, ribbon, view tabs, status
+   ═══════════════════════════════════════════════════════════════ */
+
+.schedule-chrome {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin-bottom: 0.5rem;
+}
+
+.schedule-titlebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.5rem 0.25rem 0.35rem;
+    border-bottom: 1px solid var(--sched-border);
+    margin-bottom: 0;
+}
+.schedule-titlebar-main {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    min-width: 0;
+}
+.schedule-titlebar-icon {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--sched-accent);
+    color: #fff;
+    border-radius: 4px;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+.schedule-titlebar-heading {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sched-text-strong);
+    line-height: 1.2;
+    margin: 0;
+}
+.schedule-titlebar-sub {
+    font-size: 0.75rem;
+    color: var(--sched-text-muted);
+    margin: 0.1rem 0 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.schedule-titlebar-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+.schedule-ribbon-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.75rem;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid var(--sched-border);
+    border-radius: 2px;
+    background: var(--sched-toolbar-bg);
+    color: var(--sched-text);
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s;
+}
+.schedule-ribbon-btn:hover {
+    background: var(--sched-row-hover);
+    border-color: var(--sched-border-strong);
+}
+.schedule-ribbon-btn-primary {
+    background: var(--sched-accent);
+    border-color: var(--sched-accent);
+    color: #fff;
+}
+.schedule-ribbon-btn-primary:hover {
+    background: var(--sched-accent-hover);
+    border-color: var(--sched-accent-hover);
+}
+.schedule-ribbon-btn-muted {
+    color: var(--sched-text-muted);
+}
+.schedule-save-status {
+    font-size: 11px;
+    color: var(--sched-text-muted);
+    padding: 0 0.5rem;
+    min-width: 4rem;
+}
+
+.schedule-ribbon {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 0;
+    background: var(--sched-ribbon-bg);
+    border: 1px solid var(--sched-border);
+    border-top: none;
+    padding: 0.25rem 0.35rem;
+    margin-bottom: 0.35rem;
+}
+.schedule-ribbon-group {
+    display: flex;
+    flex-direction: column;
+    padding: 0.2rem 0.5rem;
+    border-right: 1px solid var(--sched-border);
+    min-height: 52px;
+}
+.schedule-ribbon-group:last-child {
+    border-right: none;
+}
+.schedule-ribbon-group-tools {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.2rem;
+    padding-top: 0.35rem;
+}
+.schedule-ribbon-label {
+    font-size: 10px;
+    color: var(--sched-text-muted);
+    text-align: center;
+    margin-bottom: 0.15rem;
+    user-select: none;
+    white-space: nowrap;
+}
+.schedule-ribbon-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.15rem;
+    flex: 1;
+}
+.schedule-ribbon-flyout {
+    background: var(--sched-panel-bg);
+    border: 1px solid var(--sched-border-strong);
+    border-radius: 4px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+.schedule-ribbon-overflow {
+    display: none;
+}
+.schedule-ribbon-input {
+    width: 3rem;
+    padding: 0.2rem 0.35rem;
+    font-size: 11px;
+    border: 1px solid var(--sched-border);
+    border-radius: 2px;
+    background: var(--sched-bg);
+    color: var(--sched-text);
+    text-align: center;
+}
+.schedule-timescale-group {
+    display: inline-flex;
+    gap: 1px;
+    background: var(--sched-border);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.schedule-timescale-group .schedule-toolbar-btn {
+    border-radius: 0;
+    border: none;
+    min-width: 26px;
+}
+
+.schedule-viewbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.35rem;
+}
+.schedule-view-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+    border-bottom: 1px solid var(--sched-border-strong);
+}
+.schedule-view-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.85rem;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--sched-text-muted);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    cursor: pointer;
+    transition: color 0.1s, border-color 0.1s;
+}
+.schedule-view-tab:hover {
+    color: var(--sched-text-strong);
+    background: var(--sched-row-hover);
+}
+.schedule-view-tab.active-view {
+    color: var(--sched-accent);
+    border-bottom-color: var(--sched-accent);
+    background: transparent;
+}
+.schedule-view-badge {
+    font-size: 10px;
+    padding: 0.1rem 0.35rem;
+    border-radius: 10px;
+    background: var(--sched-accent-soft);
+    color: var(--sched-accent);
+}
+.schedule-view-badge:empty {
+    display: none;
+}
+
+.schedule-filterbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+.schedule-filter-field {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    position: relative;
+}
+.schedule-filter-field-compact {
+    gap: 0.4rem;
+}
+.schedule-filter-label {
+    font-size: 11px;
+    color: var(--sched-text-muted);
+    white-space: nowrap;
+}
+.schedule-filter-icon {
+    position: absolute;
+    left: 0.5rem;
+    font-size: 11px;
+    color: var(--sched-text-muted);
+    pointer-events: none;
+}
+.schedule-filter-input {
+    font-size: 12px;
+    padding: 0.35rem 0.55rem;
+    border: 1px solid var(--sched-border);
+    border-radius: 2px;
+    background: var(--sched-bg);
+    color: var(--sched-text);
+    min-height: 28px;
+}
+.schedule-filter-input:focus {
+    outline: none;
+    border-color: var(--sched-accent);
+    box-shadow: 0 0 0 1px var(--sched-accent);
+}
+#scheduleFilterInput.schedule-filter-input {
+    padding-left: 1.75rem;
+    width: 11rem;
+}
+.schedule-filter-date,
+.schedule-filter-select {
+    width: auto;
+}
+
+.schedule-panel {
+    background: var(--sched-panel-bg);
+    border: 1px solid var(--sched-border);
+    border-radius: 0;
+}
+
+.schedule-statusbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 11px;
+    color: var(--sched-text-muted);
+    background: var(--sched-surface);
+    border: 1px solid var(--sched-border);
+    border-top: none;
+    min-height: 24px;
+}
+
+/* Task bars — crisp MS Project look */
+.gantt_task_line.cpm_critical {
+    box-shadow: none !important;
+}
+.gantt_task_progress {
+    opacity: 0.35;
+}
+.gantt_task_content {
+    font-size: 11px;
+    font-weight: 500;
+}
+
+/* Today / data date marker */
+.gantt_marker.today,
+.gantt_marker_area .gantt_marker {
+    background-color: var(--sched-accent) !important;
+    opacity: 0.65;
+}
+
+/* Scrollbars */
+#gantt_here .gantt_hor_scroll::-webkit-scrollbar-thumb,
+#gantt_here .gantt_scroll_hor::-webkit-scrollbar-thumb {
+    background: var(--sched-border-strong) !important;
+    border-radius: 4px !important;
+    border: 2px solid var(--sched-scroll-bg) !important;
+}
+#gantt_here .gantt_hor_scroll::-webkit-scrollbar-thumb:hover,
+#gantt_here .gantt_scroll_hor::-webkit-scrollbar-thumb:hover {
+    background: var(--sched-text-muted) !important;
+}
+
+/* Secondary panels */
+.schedule-page-root .bg-zinc-900,
+.schedule-page-root #calendarViewPanel > div,
+.schedule-page-root #lookaheadViewPanel > div,
+.schedule-page-root #traceViewPanel > div,
+.schedule-page-root #portfolioViewPanel > div {
+    background: var(--sched-panel-bg) !important;
+    border-color: var(--sched-border) !important;
+    border-radius: 0 !important;
+    color: var(--sched-text) !important;
+}
+
+.schedule-page-root #traceViewPanel thead {
+    background: var(--sched-surface) !important;
+    color: var(--sched-text-muted) !important;
+}
+.schedule-page-root #traceViewPanel th,
+.schedule-page-root #traceViewPanel td {
+    border-color: var(--sched-border) !important;
+    padding: 0.4rem 0.65rem;
+    font-size: 12px;
+}
+.schedule-page-root #traceViewPanel tbody tr:hover {
+    background: var(--sched-row-hover);
+}
+
+.schedule-view-tab.active-view { background: transparent; }

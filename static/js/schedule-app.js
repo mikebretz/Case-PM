@@ -37,24 +37,24 @@
         calendar: 'standard',
         lookahead_days: 14,
         timescale: 'day',
-        default_bar_color: '#3b82f6',
-        critical_bar_color: '#ef4444',
-        progress_bar_color: '#f59e0b',
-        complete_bar_color: '#71717a',
-        milestone_color: '#8b5cf6',
-        link_color: '#94a3b8',
+        default_bar_color: '#0078d4',
+        critical_bar_color: '#c50f1f',
+        progress_bar_color: '#ca5010',
+        complete_bar_color: '#107c10',
+        milestone_color: '#0078d4',
+        link_color: '#605e5c',
         link_width: 2,
         active_baseline_index: -1,
         show_baseline_bars: true,
         show_bar_labels: true,
-        theme: 'dark',
+        theme: 'light',
         default_cell_align: { h: 'left', v: 'middle' },
         column_align: {},
-        default_cell_style: { font_size: 13 },
-        default_row_height: 32,
-        default_bar_height: 22,
-        summary_row_height: 48,
-        summary_bar_height: 26
+        default_cell_style: { font_size: 11 },
+        default_row_height: 28,
+        default_bar_height: 18,
+        summary_row_height: 32,
+        summary_bar_height: 20
     };
     if (!scheduleSettings.print_settings) {
         scheduleSettings.print_settings = {
@@ -326,6 +326,11 @@
         const ctx = document.getElementById('scheduleProjectContext');
         if (ctx?.dataset?.projectId) {
             localStorage.setItem('casepm_current_project_id', ctx.dataset.projectId);
+        }
+        const sub = document.getElementById('scheduleProjectSubtitle');
+        if (sub) {
+            const meta = getScheduleProjectMeta();
+            sub.textContent = meta.label || 'Gantt chart · CPM · baselines';
         }
     }
 
@@ -2756,7 +2761,7 @@
         sanitizeAllTaskDates();
         baselines = payload.baselines || [];
         if (payload.settings) scheduleSettings = Object.assign(scheduleSettings, payload.settings);
-        if (!scheduleSettings.theme) scheduleSettings.theme = 'dark';
+        if (!scheduleSettings.theme) scheduleSettings.theme = 'light';
         if (window.ScheduleExtras) ScheduleExtras.applyThemeFromSettings();
         if (!scheduleSettings.print_settings) {
             scheduleSettings.print_settings = {

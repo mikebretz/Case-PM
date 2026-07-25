@@ -16,7 +16,7 @@
     function applyThemeFromSettings() {
         const root = document.querySelector('.schedule-page-root');
         if (!root || !api) return;
-        const theme = api.getSettings()?.theme || 'dark';
+        const theme = api.getSettings()?.theme || 'light';
         root.classList.toggle('schedule-theme-dark', theme !== 'light');
         root.classList.toggle('schedule-theme-light', theme === 'light');
         const btn = document.getElementById('scheduleThemeToggleBtn');
