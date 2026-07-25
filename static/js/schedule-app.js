@@ -501,6 +501,7 @@
         const cols = gantt.config.columns || [];
         const total = getColumnsTotalWidth();
         gantt.config.grid_width = total;
+        gantt.config.keep_grid_width = true;
 
         const headCells = document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell');
         headCells.forEach((cell, i) => {
@@ -513,7 +514,23 @@
             cell.style.flex = `0 0 ${w}px`;
         });
 
+        const gridHead = document.querySelector('#gantt_here .gantt_grid_scale .gantt_grid_head');
+        if (gridHead) {
+            gridHead.style.width = total + 'px';
+            gridHead.style.minWidth = total + 'px';
+            gridHead.style.maxWidth = 'none';
+        }
+        const gridScale = document.querySelector('#gantt_here .gantt_grid_scale');
+        if (gridScale) {
+            gridScale.style.width = total + 'px';
+            gridScale.style.minWidth = total + 'px';
+            gridScale.style.maxWidth = 'none';
+        }
+
         document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
+            row.style.width = total + 'px';
+            row.style.minWidth = total + 'px';
+            row.style.maxWidth = 'none';
             row.querySelectorAll(':scope > .gantt_cell').forEach((cell, i) => {
                 const col = cols[i];
                 if (!col) return;
@@ -530,9 +547,27 @@
         if (gridInner) {
             gridInner.style.width = total + 'px';
             gridInner.style.minWidth = total + 'px';
+            gridInner.style.maxWidth = 'none';
         }
         const host = document.getElementById('gantt_here');
         if (host) host.style.setProperty('--sched-grid-min-width', total + 'px');
+
+        syncGridScrollContentWidth(total);
+    }
+
+    function syncGridScrollContentWidth(totalWidth) {
+        const total = totalWidth || getColumnsTotalWidth();
+        const scrollHost = document.querySelector('#gantt_here [data-cell-id="gridScroll"]');
+        if (!scrollHost) return;
+        scrollHost.style.width = '100%';
+        scrollHost.style.overflowX = 'auto';
+        const horScroll = scrollHost.querySelector('.gantt_hor_scroll') || scrollHost;
+        horScroll.style.overflowX = 'auto';
+        const inner = horScroll.querySelector(':scope > div') || horScroll.firstElementChild;
+        if (inner) {
+            inner.style.width = total + 'px';
+            inner.style.minWidth = total + 'px';
+        }
     }
 
     function normalizeHexColor(value) {
@@ -670,8 +705,7 @@
             height: '100%',
             'z-index': '30',
             flex: 'none',
-            'overflow-x': 'auto',
-            'overflow-y': 'hidden',
+            overflow: 'hidden',
             background: 'var(--sched-bg, #1e1e1e)',
             'box-sizing': 'border-box',
             'border-right': '3px solid #1a6dbd',
@@ -876,11 +910,13 @@
 
             syncLayoutTimelineWidth();
 
-            const needsSetSizes = !options.skipSetSizes && sizeKey !== lastOverlayKey && !options.light;
+            const needsSetSizes = !isOverlay && !options.skipSetSizes && sizeKey !== lastOverlayKey && !options.light;
             if (needsSetSizes && typeof gantt.setSizes === 'function') {
                 lastOverlayKey = sizeKey;
                 lastGridWidthKey = gridKey;
                 gantt.setSizes();
+            } else {
+                applyColumnWidthsToDom();
             }
 
             if (isOverlay) applyOverlayDomLayout();
@@ -913,7 +949,18 @@
             const host = document.getElementById('scheduleGanttHost');
             if (!host?.classList.contains('schedule-overlay-mode')) return;
             const handle = document.getElementById('scheduleChartResizer');
-            if (!handle || (e.target !== handle && !handle.contains(e.target))) return;
+            const onHandle = handle && (e.target === handle || handle.contains(e.target));
+            let nearDivider = false;
+            if (!onHandle) {
+                const hostEl = document.getElementById('gantt_here');
+                const hostRect = hostEl?.getBoundingClientRect();
+                if (hostRect) {
+                    const dividerX = hostRect.left + getGridOverlayWidth();
+                    nearDivider = e.clientY >= hostRect.top && e.clientY <= hostRect.bottom
+                        && Math.abs(e.clientX - dividerX) <= 12;
+                }
+            }
+            if (!onHandle && !nearDivider) return;
             overlayDrag.active = true;
             overlayDrag.startX = e.clientX;
             overlayDrag.startW = getGridOverlayWidth();
@@ -1982,12 +2029,11 @@
     function bindGridHorizontalScrollSync() {
         const gridData = document.querySelector('#gantt_here .gantt_grid_data');
         const scale = document.querySelector('#gantt_here .gantt_grid_scale');
-        const gridPane = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1)');
-        const horScroll = document.querySelector('#gantt_here [data-cell-id="gridScroll"] .gantt_hor_scroll')
-            || document.querySelector('#gantt_here [data-cell-id="gridScroll"]');
+        const scrollHost = document.querySelector('#gantt_here [data-cell-id="gridScroll"]');
+        const horScroll = scrollHost?.querySelector('.gantt_hor_scroll') || scrollHost;
         if (!gridData || !scale || gridData.dataset.hscrollBound) return;
         gridData.dataset.hscrollBound = '1';
-        const targets = [gridData, scale, horScroll, gridPane].filter(Boolean);
+        const targets = [gridData, scale, horScroll, scrollHost].filter(Boolean);
         const syncScroll = (source, left) => {
             targets.forEach(el => {
                 if (el !== source && el.scrollLeft !== left) el.scrollLeft = left;
@@ -1996,6 +2042,7 @@
         targets.forEach(el => {
             el.addEventListener('scroll', () => syncScroll(el, el.scrollLeft), { passive: true });
         });
+        syncGridScrollContentWidth();
     }
 
     const colReorderDrag = { active: false, fromIdx: -1, toIdx: -1, startX: 0, startY: 0, pending: null };
@@ -2802,11 +2849,26 @@
         return false;
     }
 
+    function getNextTaskInTree(taskId) {
+        if (!ganttReady) return null;
+        let found = false;
+        let next = null;
+        gantt.eachTask(t => {
+            if (found && next == null) next = t;
+            if (String(t.id) === String(taskId)) found = true;
+        });
+        return next || null;
+    }
+
     function hierarchyIndentTemplate(task) {
+        const nextTask = getNextTaskInTree(task.id);
         let html = '<div class="sched-wbs-indents">';
         for (let i = 0; i < WBS_GUTTER_COLORS.length; i++) {
-            if (taskShowsGutterLevel(task, i)) {
-                html += `<span class="sched-wbs-slot sched-wbs-slot-active" style="background-color:${WBS_GUTTER_COLORS[i]}"></span>`;
+            const active = taskShowsGutterLevel(task, i);
+            const extend = active && nextTask && taskShowsGutterLevel(nextTask, i);
+            if (active) {
+                const color = WBS_GUTTER_COLORS[i];
+                html += `<span class="sched-wbs-slot sched-wbs-slot-active${extend ? ' sched-wbs-slot-extend' : ''}" style="--wbs-slot-color:${color};background-color:${color}"></span>`;
             } else {
                 html += '<span class="sched-wbs-slot"></span>';
             }
@@ -3563,6 +3625,7 @@
             ensureColumnResizeGrips();
             ensureAddColumnHeader();
             bindWbsGutterScrollSync();
+            applyColumnWidthsToDom();
         });
 
         document.addEventListener('keydown', onScheduleKeyDown);
@@ -3725,10 +3788,6 @@
         runSchedule({ skipScroll: true });
         baselines = payload.baselines || [];
         if (payload.settings) scheduleSettings = Object.assign(scheduleSettings, payload.settings);
-        const loadedColsW = getColumnsTotalWidth();
-        if (!scheduleSettings.grid_overlay_width_px || scheduleSettings.grid_overlay_width_px < loadedColsW + 12) {
-            scheduleSettings.grid_overlay_width_px = loadedColsW + 12;
-        }
         applyP6RowMetrics();
         applyGanttDisplayStyles();
         if (!scheduleSettings.theme) scheduleSettings.theme = 'dark';
