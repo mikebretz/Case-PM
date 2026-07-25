@@ -849,6 +849,27 @@ body.schedule-chart-resizing {
     pointer-events: none;
     z-index: 0;
 }
+/* Full-width top header chrome — extends with column content, not viewport */
+#gantt_here .gantt_grid_scale .gantt_grid_head .sched-grid-header-chrome {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: var(--sched-grid-header-top, 26px);
+    min-width: var(--sched-grid-min-width, 640px);
+    background: var(--sched-surface) !important;
+    border-bottom: 1px solid var(--sched-border) !important;
+    pointer-events: none;
+    z-index: 0;
+    box-sizing: border-box;
+}
+#gantt_here .gantt_grid_scale:has(.sched-grid-header-chrome)::before {
+    display: none;
+}
+/* Absolute column layout — headers and cells share the same left/width metrics */
+#gantt_here .gantt_grid_scale .gantt_grid_head_cell,
+#gantt_here .gantt_grid_data .gantt_row > .gantt_cell {
+    position: absolute !important;
+}
 .gantt_grid_data {
     overflow-x: scroll !important;
     overflow-y: auto !important;
@@ -1199,7 +1220,7 @@ body.sched-col-dragging .gantt_grid_scale {
 .sched-col-select-overlay {
     position: absolute;
     top: var(--sched-grid-header-top, 26px);
-    height: var(--sched-grid-header-label, 52px);
+    height: var(--sched-grid-header-label, 39px);
     background: rgba(55, 148, 255, 0.16);
     box-shadow: inset 0 0 0 1px var(--sched-accent);
     pointer-events: none;
@@ -1258,7 +1279,7 @@ body.sched-col-dragging .gantt_grid_scale {
 /* Column resize handles — Excel-style on header border */
 .gantt_grid_scale .gantt_grid_column_resize_wrap {
     top: var(--sched-grid-header-top, 26px) !important;
-    height: var(--sched-grid-header-label, 52px) !important;
+    height: var(--sched-grid-header-label, 39px) !important;
     cursor: col-resize !important;
     z-index: 140 !important;
     pointer-events: auto !important;
