@@ -34,6 +34,7 @@
     let customColumns = [];
     let hiddenColumns = [];
     let columnWidths = {};
+    let columnDefWidths = {};
     let wbsCodeMap = new Map();
     let scheduleSettings = {
         data_date: typeof CasePMSchedule !== 'undefined' ? CasePMSchedule.formatDate(new Date()) : '',
@@ -487,12 +488,29 @@
     let columnOrder = [];
     let overlayApplyTimer = null;
 
+    function resolveColumnWidth(col) {
+        if (!col) return 80;
+        if (col.name === '_sched_add_col') {
+            return parseInt(columnWidths[col.name] || columnDefWidths[col.name] || 36, 10) || 36;
+        }
+        const saved = columnWidths[col.name];
+        if (saved != null && saved !== '') return parseInt(saved, 10) || 80;
+        if (columnDefWidths[col.name] != null) return columnDefWidths[col.name];
+        return parseInt(col.width, 10) || 80;
+    }
+
+    function restoreColumnWidthsFromConfig() {
+        if (!ganttReady || !gantt.config.columns) return;
+        gantt.config.columns.forEach((col, index) => {
+            const w = resolveColumnWidth(col);
+            col.width = w;
+            if (gantt.config.columns[index]) gantt.config.columns[index].width = w;
+        });
+    }
+
     function getColumnsTotalWidth() {
         if (!gantt.config.columns) return 900;
-        return gantt.config.columns.reduce((sum, col) => {
-            if (col.name === '_sched_add_col') return sum + (parseInt(col.width, 10) || 36);
-            return sum + (parseInt(col.width, 10) || 0);
-        }, 0);
+        return gantt.config.columns.reduce((sum, col) => sum + resolveColumnWidth(col), 0);
     }
 
     function isAddColumnCol(col) {
@@ -501,6 +519,7 @@
 
     function applyColumnWidthsToDom() {
         if (!ganttReady) return;
+        restoreColumnWidthsFromConfig();
         const cols = gantt.config.columns || [];
         const total = getColumnsTotalWidth();
         gantt.config.grid_width = total;
@@ -510,7 +529,7 @@
         headCells.forEach((cell, i) => {
             const col = cols[i];
             if (!col) return;
-            const w = parseInt(col.width, 10) || 80;
+            const w = resolveColumnWidth(col);
             cell.style.width = w + 'px';
             cell.style.minWidth = w + 'px';
             cell.style.maxWidth = w + 'px';
@@ -537,7 +556,7 @@
             row.querySelectorAll(':scope > .gantt_cell').forEach((cell, i) => {
                 const col = cols[i];
                 if (!col) return;
-                const w = parseInt(col.width, 10) || 80;
+                const w = resolveColumnWidth(col);
                 cell.style.width = w + 'px';
                 cell.style.minWidth = w + 'px';
                 cell.style.maxWidth = w + 'px';
@@ -711,8 +730,8 @@
             overflow: 'hidden',
             background: 'var(--sched-bg, #1e1e1e)',
             'box-sizing': 'border-box',
-            'border-right': '3px solid #1a6dbd',
-            'box-shadow': '4px 0 8px rgba(0,0,0,0.35)',
+            border: 'none',
+            'box-shadow': 'none',
             'pointer-events': 'auto'
         });
 
@@ -764,7 +783,7 @@
     function syncLayoutTimelineWidth() {
         const hostW = document.getElementById('gantt_here')?.offsetWidth || 1000;
         if (isOverlayMode()) {
-            if (gantt.config.layout?.cols?.[0]) gantt.config.layout.cols[0].width = getGridOverlayWidth();
+            if (gantt.config.layout?.cols?.[0]) gantt.config.layout.cols[0].width = hostW;
             if (gantt.config.layout?.cols?.[2]) gantt.config.layout.cols[2].width = hostW;
             return;
         }
@@ -793,13 +812,7 @@
 
     function syncColumnWidthsToConfig() {
         if (!ganttReady || !gantt.config.columns) return;
-        gantt.config.columns.forEach((col, index) => {
-            const saved = columnWidths[col.name];
-            if (saved) {
-                col.width = saved;
-                gantt.config.columns[index].width = saved;
-            }
-        });
+        restoreColumnWidthsFromConfig();
     }
 
     function queueColumnResizeHandleSync() { /* native dhtmlx handles resize grips */ }
@@ -895,7 +908,7 @@
             const cells = root.querySelectorAll(':scope > .gantt_layout_cell');
 
             if (gantt.config.layout?.cols?.[0]) {
-                gantt.config.layout.cols[0].width = gridPaneW;
+                gantt.config.layout.cols[0].width = isOverlay ? hostW : gridPaneW;
                 gantt.config.layout.cols[0].min_width = isOverlay ? 120 : Math.max(gridW + 8, 200);
             }
             if (gantt.config.layout?.cols?.[2]) {
@@ -3188,14 +3201,18 @@
             cols.push(col);
         });
 
-        return orderColumns(cols).map(c => {
+        const ordered = orderColumns(cols).map(c => {
             const copy = Object.assign({}, c);
             if (copy.editor) {
                 columnEditors.set(copy.name, copy.editor);
                 delete copy.editor;
             }
+            columnDefWidths[copy.name] = parseInt(copy.width, 10) || 80;
             return copy;
-        }).concat([getAddColumnDef()]);
+        });
+        const addCol = getAddColumnDef();
+        columnDefWidths[addCol.name] = parseInt(addCol.width, 10) || 36;
+        return ordered.concat([addCol]);
     }
 
     function findGridCell(taskId, colName) {
@@ -3407,12 +3424,13 @@
         const gridW = getColumnsTotalWidth();
         const hostW = document.getElementById('gantt_here')?.offsetWidth || 1000;
         const gridPaneW = Math.max(120, scheduleSettings.grid_overlay_width_px || Math.round(hostW * 0.45));
+        const overlayInit = document.getElementById('scheduleGanttHost')?.classList.contains('schedule-overlay-mode');
         gantt.config.grid_width = gridW;
         gantt.config.layout = {
             css: 'gantt_container',
             cols: [
                 {
-                    width: gridPaneW,
+                    width: overlayInit ? hostW : gridPaneW,
                     min_width: 120,
                     rows: [
                         { view: 'grid', scrollX: 'gridScroll', scrollY: 'scrollVer' },
@@ -3684,6 +3702,11 @@
             ensureAddColumnHeader();
             bindWbsGutterScrollSync();
             applyColumnWidthsToDom();
+            requestAnimationFrame(() => {
+                restoreColumnWidthsFromConfig();
+                applyColumnWidthsToDom();
+                ensureColumnResizeGrips();
+            });
         });
 
         document.addEventListener('keydown', onScheduleKeyDown);

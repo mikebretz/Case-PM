@@ -357,8 +357,8 @@ body.schedule-chart-resizing {
     max-width: none !important;
     overflow: hidden !important;
     background: var(--sched-bg) !important;
-    border-right: 3px solid #1a6dbd !important;
-    box-shadow: 4px 0 8px rgba(0, 0, 0, 0.35);
+    border: none !important;
+    box-shadow: none !important;
     pointer-events: auto !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1) [data-cell-id="gridScroll"] {
