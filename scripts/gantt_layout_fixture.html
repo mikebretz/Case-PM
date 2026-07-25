@@ -14,26 +14,27 @@ html, body { margin: 0; height: 100%; background: #1e1e1e; }
 </head>
 <body>
 <div class="schedule-page-root schedule-theme-dark">
-  <div id="scheduleGanttHost" class="schedule-gantt-host">
+  <div id="scheduleGanttHost" class="schedule-gantt-host schedule-overlay-mode">
     <div id="gantt_here"></div>
+    <div id="scheduleOverlayControls" class="schedule-overlay-controls">
+      <div id="scheduleChartResizer" class="schedule-chart-resizer"></div>
+    </div>
   </div>
 </div>
 <script src="https://cdn.dhtmlx.com/gantt/edge/dhtmlxgantt.js"></script>
 <script src="../static/js/schedule-cpm.js"></script>
 <script>
-// Minimal bootstrap mirroring schedule-app P6 split mode
-const scheduleSettings = { timeline_pct: 0.45, default_row_height: 22, default_bar_height: 12, link_color: '#c00000', link_width: 2 };
+const scheduleSettings = { timeline_pct: 0.48, grid_overlay_width_px: 548, default_row_height: 24, default_bar_height: 16, link_color: '#c00000', link_width: 1 };
 gantt.config.date_format = '%Y-%m-%d';
-gantt.config.row_height = 22;
-gantt.config.bar_height = 12;
+gantt.config.row_height = 24;
+gantt.config.bar_height = 16;
 gantt.config.scale_height = 52;
-gantt.config.keep_grid_width = true;
+gantt.config.keep_grid_width = false;
 gantt.config.grid_elastic_columns = false;
 gantt.config.show_links = true;
-gantt.getTaskHeight = () => 22;
+gantt.getTaskHeight = () => 24;
 gantt.config.columns = [
   { name: 'hierarchy', label: '', width: 56, resize: false, template: () => '' },
-  { name: 'collapse', label: '', width: 28, resize: false, template: () => '' },
   { name: 'activity_id', label: 'Activity ID', width: 72, resize: true },
   { name: 'text', label: 'Activity Name', width: 240, resize: true },
   { name: 'duration', label: 'Original Duration', width: 64, resize: true },
@@ -42,16 +43,16 @@ gantt.config.columns = [
 ];
 const gridW = gantt.config.columns.reduce((s, c) => s + c.width, 0);
 const hostW = 1400;
-const timelineW = Math.round(hostW * 0.45);
+const gridOverlayW = 548;
 gantt.config.layout = {
   css: 'gantt_container',
   cols: [
-    { width: hostW - timelineW - 8, min_width: 200, rows: [
+    { width: gridOverlayW, min_width: 200, rows: [
       { view: 'grid', scrollX: 'gridScroll', scrollY: 'scrollVer' },
       { view: 'scrollbar', id: 'gridScroll', height: 20 }
     ]},
-    { resizer: true, width: 6 },
-    { width: timelineW, min_width: 220, rows: [
+    { width: 0, min_width: 0, max_width: 0 },
+    { width: hostW, min_width: hostW, rows: [
       { view: 'timeline', scrollX: 'scrollHor', scrollY: 'scrollVer' },
       { view: 'scrollbar', id: 'scrollHor', height: 20 }
     ]},
@@ -61,10 +62,11 @@ gantt.config.layout = {
 gantt.config.grid_width = gridW;
 gantt.config.scales = [
   { unit: 'month', step: 1, format: '%F %Y' },
-  { unit: 'week', step: 1, format: '%d' }
+  { unit: 'day', step: 1, format: '%d' }
 ];
 gantt.init('gantt_here');
-document.getElementById('scheduleGanttHost').classList.add('schedule-split-mode');
+document.getElementById('gantt_here').style.setProperty('--sched-grid-overlay-w', gridOverlayW + 'px');
+document.getElementById('gantt_here').style.setProperty('--sched-chart-left', gridOverlayW + 'px');
 gantt.parse({
   data: [
     { id: 1, text: 'Pipe Repairs & Improvement 12', type: 'project', open: true, start_date: '2023-06-05', end_date: '2023-07-28', duration: 0 },
