@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Verify overlay divider widens grid without shrinking timeline.
+ * Verify split-mode divider widens grid pane while keeping bars visible.
  */
 const path = require('path');
 const { chromium } = require('playwright');
@@ -17,49 +17,47 @@ async function main() {
     const before = await page.evaluate(() => {
         const timeline = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(3)');
         const grid = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1)');
-        const host = document.getElementById('gantt_here');
+        const bars = [...document.querySelectorAll('#gantt_here .gantt_task_line')];
+        const gridRight = grid?.getBoundingClientRect().right || 0;
         return {
             timelineW: timeline?.getBoundingClientRect().width || 0,
             gridW: grid?.getBoundingClientRect().width || 0,
-            hostW: host?.clientWidth || 0,
-            timelineLeft: timeline?.getBoundingClientRect().left || 0,
-            hostLeft: host?.getBoundingClientRect().left || 0
+            barsInChart: bars.filter(b => b.getBoundingClientRect().left >= gridRight - 4).length
         };
     });
 
     await page.evaluate(() => {
-        const host = document.getElementById('gantt_here');
-        const overlayW = 700;
-        host.style.setProperty('--sched-grid-overlay-w', overlayW + 'px');
         const grid = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1)');
         const timeline = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(3)');
-        if (grid) grid.style.setProperty('width', overlayW + 'px', 'important');
-        if (timeline) {
-            timeline.style.setProperty('position', 'absolute', 'important');
-            timeline.style.setProperty('left', '0', 'important');
-            timeline.style.setProperty('width', (host.clientWidth - 16) + 'px', 'important');
-        }
+        const host = document.getElementById('gantt_here');
+        const newGridW = 720;
+        const timelineW = Math.max(240, host.clientWidth - newGridW - 24);
+        if (grid) grid.style.setProperty('width', newGridW + 'px', 'important');
+        if (timeline) timeline.style.setProperty('width', timelineW + 'px', 'important');
     });
     await page.waitForTimeout(100);
 
     const after = await page.evaluate(() => {
         const timeline = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(3)');
         const grid = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1)');
+        const bars = [...document.querySelectorAll('#gantt_here .gantt_task_line')];
+        const gridRight = grid?.getBoundingClientRect().right || 0;
         return {
             timelineW: timeline?.getBoundingClientRect().width || 0,
-            gridW: grid?.getBoundingClientRect().width || 0
+            gridW: grid?.getBoundingClientRect().width || 0,
+            barsInChart: bars.filter(b => b.getBoundingClientRect().left >= gridRight - 4).length
         };
     });
 
     const result = {
         before,
         after,
-        timelineStable: Math.abs(after.timelineW - before.timelineW) < 8,
         gridGrew: after.gridW > before.gridW + 50,
-        timelineFullWidth: before.timelineW >= before.hostW - 24
+        timelineShrunk: after.timelineW < before.timelineW - 40,
+        barsStillVisible: after.barsInChart >= 1
     };
     console.log(JSON.stringify(result, null, 2));
-    if (!result.timelineStable || !result.gridGrew || !result.timelineFullWidth) process.exit(1);
+    if (!result.gridGrew || !result.timelineShrunk || !result.barsStillVisible) process.exit(1);
     await browser.close();
 }
 

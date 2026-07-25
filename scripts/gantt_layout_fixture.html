@@ -14,7 +14,7 @@ html, body { margin: 0; height: 100%; background: #1e1e1e; }
 </head>
 <body>
 <div class="schedule-page-root schedule-theme-dark">
-  <div id="scheduleGanttHost" class="schedule-gantt-host schedule-overlay-mode">
+  <div id="scheduleGanttHost" class="schedule-gantt-host schedule-split-mode">
     <div id="gantt_here"></div>
     <div id="scheduleOverlayControls" class="schedule-overlay-controls">
       <div id="scheduleChartResizer" class="schedule-chart-resizer"></div>
@@ -24,7 +24,7 @@ html, body { margin: 0; height: 100%; background: #1e1e1e; }
 <script src="https://cdn.dhtmlx.com/gantt/edge/dhtmlxgantt.js"></script>
 <script src="../static/js/schedule-cpm.js"></script>
 <script>
-const scheduleSettings = { timeline_pct: 0.48, grid_overlay_width_px: 548, default_row_height: 24, default_bar_height: 16, link_color: '#c00000', link_width: 1 };
+const scheduleSettings = { timeline_pct: 0.48, grid_overlay_width_px: 660, default_row_height: 24, default_bar_height: 16, link_color: '#c00000', link_width: 1 };
 gantt.config.date_format = '%Y-%m-%d';
 gantt.config.row_height = 24;
 gantt.config.bar_height = 16;
@@ -43,16 +43,17 @@ gantt.config.columns = [
 ];
 const gridW = gantt.config.columns.reduce((s, c) => s + c.width, 0);
 const hostW = 1400;
-const gridOverlayW = 548;
+const gridPaneW = Math.max(gridW + 8, 660);
+const timelineW = Math.max(320, hostW - gridPaneW - 24);
 gantt.config.layout = {
   css: 'gantt_container',
   cols: [
-    { width: gridOverlayW, min_width: 200, rows: [
+    { width: gridPaneW, min_width: gridW + 8, rows: [
       { view: 'grid', scrollX: 'gridScroll', scrollY: 'scrollVer' },
       { view: 'scrollbar', id: 'gridScroll', height: 20 }
     ]},
-    { width: 0, min_width: 0, max_width: 0 },
-    { width: hostW, min_width: hostW, rows: [
+    { resizer: true, width: 6 },
+    { width: timelineW, min_width: 220, rows: [
       { view: 'timeline', scrollX: 'scrollHor', scrollY: 'scrollVer' },
       { view: 'scrollbar', id: 'scrollHor', height: 20 }
     ]},
@@ -65,8 +66,8 @@ gantt.config.scales = [
   { unit: 'day', step: 1, format: '%d' }
 ];
 gantt.init('gantt_here');
-document.getElementById('gantt_here').style.setProperty('--sched-grid-overlay-w', gridOverlayW + 'px');
-document.getElementById('gantt_here').style.setProperty('--sched-chart-left', gridOverlayW + 'px');
+document.getElementById('gantt_here').style.setProperty('--sched-grid-min-width', gridW + 'px');
+document.getElementById('gantt_here').style.setProperty('--sched-grid-overlay-w', gridPaneW + 'px');
 gantt.parse({
   data: [
     { id: 1, text: 'Pipe Repairs & Improvement 12', type: 'project', open: true, start_date: '2023-06-05', end_date: '2023-07-28', duration: 0 },
