@@ -521,6 +521,91 @@
         return ordered;
     }
 
+    function isOverlayMode() {
+        return document.getElementById('scheduleGanttHost')?.classList.contains('schedule-overlay-mode');
+    }
+
+    function applyOverlayDomLayout() {
+        if (!isOverlayMode()) return;
+        const host = document.getElementById('gantt_here');
+        const root = host?.querySelector('.gantt_layout_root');
+        if (!host || !root) return;
+
+        const hostW = host.clientWidth;
+        const overlayW = getGridOverlayWidth();
+        const scrollW = gantt.config.scroll_size || 16;
+        const colsW = getColumnsTotalWidth();
+
+        host.style.setProperty('--sched-grid-overlay-w', overlayW + 'px');
+        host.style.setProperty('--sched-chart-left', overlayW + 'px');
+
+        const cells = root.querySelectorAll(':scope > .gantt_layout_cell');
+        const gridCell = cells[0];
+        const resizerCell = cells[1];
+        const timelineCell = cells[2];
+        const verScroll = cells[3];
+
+        if (resizerCell) {
+            resizerCell.style.cssText = 'display:none!important;width:0!important;min-width:0!important;max-width:0!important;flex:0 0 0!important;padding:0!important;margin:0!important;border:none!important;overflow:hidden!important;';
+        }
+
+        if (gridCell) {
+            gridCell.style.cssText = [
+                'position:absolute',
+                'left:0',
+                'top:0',
+                'bottom:0',
+                `width:${overlayW}px`,
+                'z-index:30',
+                'flex:none',
+                'overflow:hidden',
+                'background:var(--sched-bg,#1e1e1e)',
+                'box-sizing:border-box',
+                'border-right:3px solid #1a6dbd',
+                'box-shadow:4px 0 8px rgba(0,0,0,0.35)',
+                'pointer-events:auto'
+            ].join('!important;') + '!important;';
+            const gridInner = gridCell.querySelector('.gantt_grid');
+            if (gridInner) {
+                gridInner.style.minWidth = colsW + 'px';
+            }
+        }
+
+        if (timelineCell) {
+            const chartW = Math.max(hostW - scrollW, 200);
+            timelineCell.style.cssText = [
+                'position:absolute',
+                'left:0',
+                'top:0',
+                'bottom:0',
+                `right:${scrollW}px`,
+                `width:${chartW}px`,
+                'min-width:' + chartW + 'px',
+                'max-width:none',
+                'z-index:1',
+                'flex:none',
+                'overflow:hidden',
+                'box-sizing:border-box',
+                'pointer-events:auto'
+            ].join('!important;') + '!important;';
+        }
+
+        if (verScroll) {
+            verScroll.style.cssText = [
+                'position:relative',
+                'z-index:25',
+                'flex:0 0 ' + scrollW + 'px',
+                'width:' + scrollW + 'px',
+                'min-width:' + scrollW + 'px',
+                'margin-left:auto'
+            ].join('!important;') + '!important;';
+        }
+
+        root.style.cssText = 'position:relative!important;width:100%!important;height:100%!important;display:flex!important;flex-direction:row!important;overflow:hidden!important;';
+
+        positionChartResizerVisual();
+    }
+
     function getGridOverlayWidth() {
         const hostW = document.getElementById('gantt_here')?.offsetWidth
             || document.getElementById('scheduleGanttHost')?.clientWidth
@@ -644,12 +729,10 @@
         handle.classList.remove('hidden');
         const ganttHost = document.getElementById('gantt_here');
         if (host.classList.contains('schedule-overlay-mode') && ganttHost) {
-            const chartLeft = ganttHost.style.getPropertyValue('--sched-chart-left');
-            if (chartLeft) {
-                handle.style.left = `calc(${chartLeft} - 5px)`;
-                handle.style.right = 'auto';
-                return;
-            }
+            const overlayW = getGridOverlayWidth();
+            handle.style.left = Math.max(0, overlayW - 3) + 'px';
+            handle.style.right = 'auto';
+            return;
         }
         const split = document.querySelector('#gantt_here .gantt_layout_root > .gantt_resizer, #gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(2)');
         if (split) {
@@ -681,10 +764,10 @@
         const gridW = getColumnsTotalWidth();
         const host = document.getElementById('gantt_here');
         const hostW = host?.clientWidth || root.clientWidth || 1200;
-        const isOverlay = document.getElementById('scheduleGanttHost')?.classList.contains('schedule-overlay-mode');
+        const isOverlay = isOverlayMode();
         const gridOverlayW = isOverlay ? getGridOverlayWidth() : Math.max(220, hostW - getTimelineWidth() - 8);
         const timelineW = isOverlay ? hostW : getTimelineWidth();
-        const overlayKey = `${hostW}|${gridOverlayW}|${isOverlay}`;
+        const sizeKey = `${hostW}|${gridW}|${isOverlay}`;
         const gridKey = String(gridW);
 
         layoutSyncInProgress = true;
@@ -702,7 +785,7 @@
             const cells = root.querySelectorAll(':scope > .gantt_layout_cell');
 
             if (gantt.config.layout?.cols?.[0]) {
-                gantt.config.layout.cols[0].width = gridOverlayW;
+                gantt.config.layout.cols[0].width = isOverlay ? gridW : gridOverlayW;
                 gantt.config.layout.cols[0].min_width = 200;
             }
             if (gantt.config.layout?.cols?.[2]) {
@@ -714,17 +797,15 @@
 
             syncLayoutTimelineWidth();
 
-            const needsSetSizes = !options.skipSetSizes && (
-                overlayKey !== lastOverlayKey ||
-                gridKey !== lastGridWidthKey
-            );
+            const needsSetSizes = !options.skipSetSizes && sizeKey !== lastOverlayKey;
             if (needsSetSizes && typeof gantt.setSizes === 'function') {
-                lastOverlayKey = overlayKey;
+                lastOverlayKey = sizeKey;
                 lastGridWidthKey = gridKey;
                 gantt.setSizes();
             }
 
-            positionChartResizerVisual();
+            if (isOverlay) applyOverlayDomLayout();
+            else positionChartResizerVisual();
             if (!options.light) {
                 ensureTimelineScrollbar();
                 refreshTimelinePanBar();
@@ -772,7 +853,7 @@
             scheduleSettings.grid_overlay_width_px = gridW;
             scheduleSettings.timeline_width_px = null;
             scheduleSettings.timeline_pct = 1 - (gridW / rect.width);
-            syncGanttLayout();
+            applyOverlayDomLayout();
         });
 
         document.addEventListener('mouseup', () => {
@@ -1964,6 +2045,7 @@
             gantt.config.grid_width = getColumnsTotalWidth();
             gantt.config.keep_grid_width = false;
             if (typeof gantt.render === 'function') gantt.render();
+            if (isOverlayMode()) applyOverlayDomLayout();
             queueSave();
         });
 
@@ -1998,6 +2080,7 @@
             syncGridColumnsFromConfig();
             queueGanttLayoutSync();
             applyCellAlignToDom();
+            if (isOverlayMode()) applyOverlayDomLayout();
             if (persist) queueSave();
         }
     }
@@ -2662,12 +2745,11 @@
 
         const gridW = getColumnsTotalWidth();
         const hostW = document.getElementById('gantt_here')?.offsetWidth || 1000;
-        const gridOverlayW = Math.max(gridW + 4, Math.round(hostW * 0.52));
         gantt.config.layout = {
             css: 'gantt_container',
             cols: [
                 {
-                    width: gridOverlayW,
+                    width: gridW,
                     min_width: 200,
                     rows: [
                         { view: 'grid', scrollX: 'gridScroll', scrollY: 'scrollVer' },
@@ -2920,6 +3002,7 @@
             bindGridSelectionHandlers();
             applyCellAlignToDom();
             updateAlignToolbarButtons();
+            applyOverlayDomLayout();
             positionChartResizerVisual();
         });
 
@@ -3026,6 +3109,7 @@
             if (typeof gantt.setSizes === 'function') gantt.setSizes();
             gantt.render();
             syncGanttLayout();
+            if (isOverlayMode()) applyOverlayDomLayout();
             refreshTimelinePanBar();
         }, 80);
     }
