@@ -346,16 +346,96 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 .gantt_grid_data .gantt_row.cpm_project_row.sched-parent-row {
     font-weight: 600;
 }
+
+/* Primavera WBS hierarchy — grid row tints */
+.gantt_grid_data .gantt_row.sched-wbs-l0 {
+    background: rgba(30, 58, 95, 0.35) !important;
+    color: #e8f0ff !important;
+}
+.gantt_grid_data .gantt_row.sched-wbs-l1 {
+    background: rgba(45, 106, 46, 0.28) !important;
+    color: #e8ffe8 !important;
+}
+.gantt_grid_data .gantt_row.sched-wbs-l2 {
+    background: rgba(184, 134, 11, 0.22) !important;
+    color: #fff8e0 !important;
+}
+.gantt_grid_data .gantt_row.sched-wbs-l3 {
+    background: rgba(74, 111, 165, 0.2) !important;
+}
+.schedule-page-root.schedule-theme-light .gantt_grid_data .gantt_row.sched-wbs-l0 {
+    background: #1e3a5f !important;
+    color: #fff !important;
+}
+.schedule-page-root.schedule-theme-light .gantt_grid_data .gantt_row.sched-wbs-l1 {
+    background: #2d6a2e !important;
+    color: #fff !important;
+}
+.schedule-page-root.schedule-theme-light .gantt_grid_data .gantt_row.sched-wbs-l2 {
+    background: #c9a227 !important;
+    color: #1a1a1a !important;
+}
+.schedule-page-root.schedule-theme-light .gantt_grid_data .gantt_row.sched-wbs-l3 {
+    background: #4a6fa5 !important;
+    color: #fff !important;
+}
+
 .gantt_task_line.cpm_summary,
 .gantt_task_line.sched-summary-bar {
-    border-radius: 3px !important;
+    border-radius: 0 !important;
+    background: #1a1a1a !important;
+    border: none !important;
+    box-shadow: none !important;
+    clip-path: polygon(8px 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 8px 100%, 0 50%);
+}
+.gantt_task_line.sched-wbs-l0.cpm_summary,
+.gantt_task_line.sched-wbs-l0.sched-summary-bar {
+    background: #1e3a5f !important;
+}
+.gantt_task_line.sched-wbs-l1.cpm_summary,
+.gantt_task_line.sched-wbs-l1.sched-summary-bar {
+    background: #2d6a2e !important;
+}
+.gantt_task_line.sched-wbs-l2.cpm_summary,
+.gantt_task_line.sched-wbs-l2.sched-summary-bar {
+    background: #c9a227 !important;
+}
+.gantt_task_line.sched-wbs-l3.cpm_summary,
+.gantt_task_line.sched-wbs-l3.sched-summary-bar {
+    background: #4a6fa5 !important;
 }
 .gantt_task_line.cpm_custom_color,
 .gantt_task_line.cpm_in_progress,
 .gantt_task_line.cpm_complete,
-.gantt_task_line.cpm_critical,
+.gantt_task_line.cpm_critical {
+    border-radius: 0 !important;
+}
 .gantt_task_line.cpm_milestone {
-    border-radius: 3px !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    transform: rotate(0deg);
+}
+.gantt_task_line.cpm_milestone .gantt_task_content {
+    display: none !important;
+}
+.gantt_task_line.cpm_milestone::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    margin: -6px 0 0 -6px;
+    background: #c00000;
+    transform: rotate(45deg);
+    border: 1px solid #1a1a1a;
+}
+.gantt_task_line.cpm_milestone.cpm_critical::before {
+    background: #c00000;
+}
+.gantt_task_line.cpm_milestone:not(.cpm_critical)::before {
+    background: #1a1a1a;
 }
 .schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) {
     position: absolute !important;
@@ -749,10 +829,20 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     overflow: hidden !important;
 }
 
-/* Grid cell alignment — per-cell classes (data rows only; never header cells) */
-.gantt_grid_data .gantt_cell.sched-align-h-left { text-align: left !important; justify-content: flex-start !important; }
-.gantt_grid_data .gantt_cell.sched-align-h-center { text-align: center !important; justify-content: center !important; }
-.gantt_grid_data .gantt_cell.sched-align-h-right { text-align: right !important; justify-content: flex-end !important; }
+/* Grid cell alignment — per-cell classes (data rows + header cells) */
+.gantt_grid_data .gantt_cell.sched-align-h-left,
+.gantt_grid_scale .gantt_grid_head_cell.sched-align-h-left { text-align: left !important; justify-content: flex-start !important; }
+.gantt_grid_data .gantt_cell.sched-align-h-center,
+.gantt_grid_scale .gantt_grid_head_cell.sched-align-h-center { text-align: center !important; justify-content: center !important; }
+.gantt_grid_data .gantt_cell.sched-align-h-right,
+.gantt_grid_scale .gantt_grid_head_cell.sched-align-h-right { text-align: right !important; justify-content: flex-end !important; }
+.gantt_grid_scale .gantt_grid_head_cell.sched-align-h-center,
+.gantt_grid_scale .gantt_grid_head_cell.sched-align-h-right {
+    display: flex !important;
+    align-items: center !important;
+}
+.gantt_grid_scale .gantt_grid_head_cell.sched-align-h-right { justify-content: flex-end !important; }
+.gantt_grid_scale .gantt_grid_head_cell.sched-align-h-center { justify-content: center !important; }
 .gantt_grid_data .gantt_cell.sched-align-h-center .gantt_tree_content,
 .gantt_grid_data .gantt_cell.sched-align-h-right .gantt_tree_content {
     width: 100%;
@@ -803,14 +893,14 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 
 .gantt_tree_icon.gantt_open, .gantt_tree_icon.gantt_close { filter: invert(0.75); }
 
-/* ─── Timeline dark with subtle grid ─── */
+/* ─── Timeline — open field (Primavera-style, no cell boxes) ─── */
 .gantt_task, .gantt_task_bg, .gantt_data_area, .gantt_bars_area {
-    background-color: #0f0f12 !important;
+    background-color: var(--sched-chart-bg, #1a1a1a) !important;
 }
 .gantt_task_row, .gantt_task_row.odd,
 .gantt_task_row.gantt_project, .gantt_task_row.cpm_project_row {
-    background-color: #141417 !important;
-    border-color: #27272a !important;
+    background-color: transparent !important;
+    border: none !important;
 }
 .gantt_task_scale, .gantt_scale_cell {
     background-color: #18181b !important;
@@ -818,7 +908,29 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     border-color: #3f3f46 !important;
 }
 .gantt_scale_line { border-color: #3f3f46 !important; }
-.gantt_task_cell { border-color: #27272a !important; }
+.gantt_task_cell {
+    border-top: none !important;
+    border-bottom: none !important;
+    border-left: none !important;
+    border-right: 1px dotted rgba(140, 140, 150, 0.45) !important;
+    background: transparent !important;
+}
+.schedule-page-root.schedule-theme-light .gantt_task_cell {
+    border-right-color: rgba(120, 120, 130, 0.55) !important;
+}
+.gantt_task_bg {
+    background-image: repeating-linear-gradient(
+        to right,
+        transparent,
+        transparent calc(var(--sched-grid-col-width, 32px) - 1px),
+        rgba(140, 140, 150, 0.35) calc(var(--sched-grid-col-width, 32px) - 1px),
+        rgba(140, 140, 150, 0.35) var(--sched-grid-col-width, 32px)
+    ) !important;
+    background-color: var(--sched-chart-bg, #1a1a1a) !important;
+}
+.gantt_task_row.sched-summary-timeline-row {
+    background: transparent !important;
+}
 
 /* ─── Gantt bars: colors from task_style inline (display settings + per-activity) ─── */
 :root {
@@ -827,8 +939,8 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 }
 /* Only style links via CSS; bar fill/border come from gantt.templates.task_style */
 .gantt_task_line.cpm_summary, .gantt_task_line.gantt_project {
-    background-color: rgba(30, 41, 59, 0.7) !important;
-    border: 2px solid #64748b !important;
+    background-color: #1a1a1a !important;
+    border: none !important;
 }
 /* Per-activity bar colors — task.color + task_style */
 .gantt_task_line.cpm_custom_color,
@@ -1062,21 +1174,36 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         font-size: 7.5pt;
     }
     .schedule-print-table td.c { text-align: center; }
-    .schedule-print-table tr.print-summary { font-weight: 700; background: #f0f0f0; }
-    .print-bar-cell { width: 58%; padding: 2px 4px !important; position: relative; }
-    .print-bar-dates {
-        font-size: 6pt;
-        color: #333;
-        margin-bottom: 1px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+    .schedule-print-table td.r,
+    .schedule-print-table th.r { text-align: right; }
+    .schedule-print-table tr.print-summary { font-weight: 700; }
+    .schedule-print-table tr.print-summary.sched-wbs-l0 { background: #1e3a5f; color: #fff; }
+    .schedule-print-table tr.print-summary.sched-wbs-l1 { background: #2d6a2e; color: #fff; }
+    .schedule-print-table tr.print-summary.sched-wbs-l2 { background: #c9a227; color: #1a1a1a; }
+    .schedule-print-table tr.print-summary.sched-wbs-l3 { background: #4a6fa5; color: #fff; }
+    .schedule-print-table tr.print-summary:not(.sched-wbs-l0):not(.sched-wbs-l1):not(.sched-wbs-l2):not(.sched-wbs-l3) {
+        background: #f0f0f0;
     }
+    .print-bar-cell {
+        width: 58%;
+        padding: 1px 0 !important;
+        position: relative;
+        border-left: 1px solid #999 !important;
+        background-color: #fff;
+        background-image: repeating-linear-gradient(
+            to right,
+            transparent,
+            transparent 9.9%,
+            rgba(120, 120, 120, 0.45) 9.9%,
+            rgba(120, 120, 120, 0.45) 10%
+        );
+    }
+    .print-bar-dates { display: none !important; }
     .print-timescale {
         position: relative;
         height: 14px;
         border-bottom: 1px solid #999;
-        margin-bottom: 2px;
+        margin-bottom: 0;
         background: #eee;
     }
     .print-ts-label {
@@ -1090,16 +1217,37 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
     .print-ts-row td { padding: 0 !important; border-top: none !important; }
     .print-bar-track {
         position: relative;
-        height: 14px;
-        background: #f5f5f5;
-        border: 1px solid #ccc;
+        height: 16px;
+        background: transparent;
+        border: none;
     }
     .print-bar {
         position: absolute;
-        top: 1px;
-        bottom: 1px;
-        border-radius: 2px;
+        top: 3px;
+        height: 10px;
+        border-radius: 0;
         min-width: 2px;
+    }
+    .print-bar-summary {
+        top: 2px;
+        height: 12px;
+        background: #1a1a1a;
+        clip-path: polygon(6px 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 6px 100%, 0 50%);
+    }
+    .print-bar-summary.sched-wbs-l0 { background: #1e3a5f; }
+    .print-bar-summary.sched-wbs-l1 { background: #2d6a2e; }
+    .print-bar-summary.sched-wbs-l2 { background: #c9a227; }
+    .print-bar-summary.sched-wbs-l3 { background: #4a6fa5; }
+    .print-bar-task { border-radius: 0; }
+    .print-bar-critical { background: #c00000 !important; }
+    .print-milestone {
+        position: absolute;
+        top: 4px;
+        width: 10px;
+        height: 10px;
+        margin-left: -5px;
+        background: #1a1a1a;
+        transform: rotate(45deg);
     }
     .print-gantt-chart {
         margin-top: 14px;
@@ -1113,8 +1261,16 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
     }
     .print-chart-svg {
         width: 100%;
-        border: 1px solid #999;
-        background: #fafafa;
+        border: none;
+        border-top: 1px solid #999;
+        background: #fff;
+        background-image: repeating-linear-gradient(
+            to right,
+            transparent,
+            transparent 9.9%,
+            rgba(120, 120, 120, 0.35) 9.9%,
+            rgba(120, 120, 120, 0.35) 10%
+        );
         display: block;
     }
     body.printing-lookahead .no-print,
@@ -1589,11 +1745,15 @@ input[type="date"].sched-cell-editor::-webkit-calendar-picker-indicator {
     background-color: var(--sched-chart-bg) !important;
 }
 .gantt_task_cell {
-    border-color: var(--sched-border) !important;
+    border-top: none !important;
+    border-bottom: none !important;
+    border-left: none !important;
+    border-right: 1px dotted rgba(140, 140, 150, 0.4) !important;
+    background: transparent !important;
 }
 .gantt_task_line {
-    border-radius: 2px !important;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+    border-radius: 0 !important;
+    box-shadow: none !important;
 }
 .gantt_task_line .gantt_task_content {
     color: #fff !important;
