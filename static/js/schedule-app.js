@@ -1428,10 +1428,21 @@
     function getCellAlign(task, colName) {
         const cell = task?.cell_align?.[colName];
         const col = scheduleSettings.column_align?.[colName];
+        const colDef = getColumnDefaultAlign(colName);
         const def = getDefaultCellAlign();
         return normalizeCellAlign({
-            h: cell?.h || col?.h || def.h,
-            v: cell?.v || col?.v || def.v
+            h: cell?.h || col?.h || colDef.h || def.h,
+            v: cell?.v || col?.v || colDef.v || def.v
+        });
+    }
+
+    function getHeaderCellAlign(colName) {
+        const col = scheduleSettings.column_align?.[colName];
+        const colDef = getColumnDefaultAlign(colName);
+        const def = getDefaultCellAlign();
+        return normalizeCellAlign({
+            h: col?.h || colDef.h || def.h,
+            v: col?.v || colDef.v || def.v
         });
     }
 
@@ -1480,6 +1491,13 @@
         document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell').forEach((head, i) => {
             const col = gantt.config.columns[i];
             head.classList.toggle('sched-col-selected', !!(gridSelection.type === 'column' && col && gridSelection.colName === col.name));
+            if (!col) return;
+            const a = getHeaderCellAlign(col.name);
+            head.classList.remove(
+                'sched-align-h-left', 'sched-align-h-center', 'sched-align-h-right',
+                'sched-align-v-top', 'sched-align-v-middle', 'sched-align-v-bottom'
+            );
+            head.classList.add(`sched-align-h-${a.h}`, `sched-align-v-${a.v}`);
         });
     }
 
@@ -1902,14 +1920,43 @@
         return null;
     }
 
-    function formatDateSafe(value) {
+    function formatDateShort(value) {
         const d = toGanttDate(value);
         if (!d) return '—';
-        try {
-            return gantt.templates.format_date(d);
-        } catch (e) {
-            return CasePMSchedule.formatDate(d);
-        }
+        return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+    }
+
+    function formatDateSafe(value) {
+        return formatDateShort(value);
+    }
+
+    function getWbsLevel(task) {
+        if (!task) return 0;
+        const level = Number(task.$level);
+        return Number.isFinite(level) ? Math.max(0, level) : 0;
+    }
+
+    function getWbsLevelClass(task) {
+        if (!task) return '';
+        if (!isParentTask(task) && task.type !== 'project') return '';
+        const level = Math.min(getWbsLevel(task), 3);
+        return `sched-wbs-l${level}`;
+    }
+
+    function getColumnDefaultAlign(colName) {
+        const right = ['duration', 'progress', 'total_float', 'link_lag', 'cpi', 'spi', 'cost'];
+        const center = ['wbs', 'activity_id', 'start_date', 'end_date', 'constraint_type', 'collapse', 'bar_color'];
+        if (right.includes(colName)) return { h: 'right', v: 'middle' };
+        if (center.includes(colName)) return { h: 'center', v: 'middle' };
+        return { h: 'left', v: 'middle' };
+    }
+
+    function ensureDefaultColumnAlignments() {
+        if (!scheduleSettings.column_align) scheduleSettings.column_align = {};
+        (gantt.config.columns || []).forEach(col => {
+            if (!col?.name || scheduleSettings.column_align[col.name]) return;
+            scheduleSettings.column_align[col.name] = Object.assign({}, getColumnDefaultAlign(col.name));
+        });
     }
 
     function coerceTaskDate(value) {
@@ -2436,15 +2483,38 @@
             return true;
         });
 
+        gantt.templates.format_date = function (date) {
+            return formatDateShort(date);
+        };
+
         gantt.templates.grid_row_class = function (start, end, task) {
-            if (isParentTask(task)) return 'cpm_project_row sched-parent-row sched-summary-row';
-            return '';
+            const classes = [];
+            if (isParentTask(task)) classes.push('cpm_project_row', 'sched-parent-row', 'sched-summary-row');
+            const wbsCls = getWbsLevelClass(task);
+            if (wbsCls) classes.push(wbsCls);
+            return classes.join(' ');
+        };
+
+        gantt.templates.task_row_class = function (start, end, task) {
+            const classes = [];
+            const wbsCls = getWbsLevelClass(task);
+            if (wbsCls) classes.push(wbsCls);
+            if (isParentTask(task)) classes.push('sched-summary-timeline-row');
+            return classes.join(' ');
         };
 
         gantt.templates.task_class = function (start, end, task) {
             const classes = [];
             if (task.type === 'project') {
                 classes.push('cpm_summary', 'sched-summary-bar');
+                const wbsCls = getWbsLevelClass(task);
+                if (wbsCls) classes.push(wbsCls);
+                return classes.join(' ');
+            }
+            if (isParentTask(task)) {
+                classes.push('cpm_summary', 'sched-summary-bar');
+                const wbsCls = getWbsLevelClass(task);
+                if (wbsCls) classes.push(wbsCls);
                 return classes.join(' ');
             }
             if (task.type === 'milestone') classes.push('cpm_milestone');
@@ -2470,9 +2540,12 @@
             return task.text || '';
         };
 
-        gantt.templates.rightside_text = function (start, end, task) {
-            if (task.type === 'project' || task.type === 'milestone') return task.type === 'milestone' ? task.text : '';
-            return formatDateSafe(end);
+        gantt.templates.rightside_text = function () {
+            return '';
+        };
+
+        gantt.templates.leftside_text = function () {
+            return '';
         };
 
         gantt.templates.link_class = function () {
@@ -2480,6 +2553,8 @@
         };
 
         applyGanttDisplayStyles();
+
+        ensureDefaultColumnAlignments();
 
         if (window.ScheduleExtras) ScheduleExtras.setupNonWorkTemplates(gantt);
 
@@ -2766,7 +2841,7 @@
         sanitizeAllTaskDates();
         baselines = payload.baselines || [];
         if (payload.settings) scheduleSettings = Object.assign(scheduleSettings, payload.settings);
-        if (!scheduleSettings.theme) scheduleSettings.theme = 'dark';
+        scheduleSettings.theme = 'dark';
         if (window.ScheduleExtras) ScheduleExtras.applyThemeFromSettings();
         if (!scheduleSettings.print_settings) {
             scheduleSettings.print_settings = {
@@ -2922,6 +2997,7 @@
         gantt.config.scales = scales[scale] || scales.day;
         const widthByScale = { day: 32, week: 28, month: 18, quarter: 40 };
         gantt.config.min_column_width = widthByScale[scale] || 32;
+        document.documentElement.style.setProperty('--sched-grid-col-width', (widthByScale[scale] || 32) + 'px');
         updateScaleHeight();
     }
 
@@ -4195,9 +4271,33 @@
         for (let i = 0; i <= ticks; i++) {
             const pct = (i / ticks) * 100;
             const d = new Date(startMs + (span * i / ticks));
-            cells += `<span class="print-ts-label" style="left:${pct}%">${CasePMSchedule.formatDate(d)}</span>`;
+            cells += `<span class="print-ts-label" style="left:${pct}%">${formatDateShort(d)}</span>`;
         }
         return `<div class="print-timescale">${cells}</div>`;
+    }
+
+    function buildPrintBarMarkup(task, startMs, span) {
+        const ts = toGanttDate(task.start_date)?.getTime() || startMs;
+        const te = toGanttDate(task.end_date)?.getTime() || ts;
+        const left = Math.max(0, ((ts - startMs) / span) * 100);
+        const width = Math.max(task.type === 'milestone' ? 0.8 : 1.2, ((te - ts) / span) * 100);
+        const color = resolveBarColor(task);
+        if (task.type === 'milestone') {
+            return `<div class="print-milestone" style="left:${left}%"></div>`;
+        }
+        if (isParentTask(task) || task.type === 'project') {
+            const wbsCls = getWbsLevelClass(task) || 'sched-wbs-l1';
+            return `<div class="print-bar print-bar-summary ${wbsCls}" style="left:${left}%;width:${width}%"></div>`;
+        }
+        const crit = gantt.config.highlight_critical_path && isTaskCritical(task);
+        return `<div class="print-bar print-bar-task${crit ? ' print-bar-critical' : ''}" style="left:${left}%;width:${width}%;background:${color}"></div>`;
+    }
+
+    function getPrintColumnAlignClass(col) {
+        const align = col.align === 'center' ? 'c' : (col.align === 'right' ? 'r' : getColumnDefaultAlign(col.name).h);
+        if (align === 'right' || align === 'r') return ' r';
+        if (align === 'center' || align === 'c') return ' c';
+        return '';
     }
 
     function buildPrintSheet() {
@@ -4244,16 +4344,10 @@
         if (showTable && visibleCols.length) {
             gantt.eachTask(t => {
                 rowMap.set(t.id, rowIdx++);
-                const ts = toGanttDate(t.start_date)?.getTime() || startMs;
-                const te = toGanttDate(t.end_date)?.getTime() || ts;
-                const left = Math.max(0, ((ts - startMs) / span) * 100);
-                const width = Math.max(t.type === 'milestone' ? 0.8 : 1.2, ((te - ts) / span) * 100);
-                const color = resolveBarColor(t);
                 const level = t.$level || 0;
-                const dateLabel = `${formatDateSafe(t.start_date)} – ${formatDateSafe(t.end_date)}`;
                 const cells = visibleCols.map(({ col, width: colW }) => {
                     const pct = ((colW / visibleTextW) * textTablePct).toFixed(3);
-                    const align = col.align === 'center' ? ' c' : '';
+                    const align = getPrintColumnAlignClass(col);
                     const nameCls = col.name === 'text' ? ' print-name' : '';
                     const indent = col.name === 'text' ? ` style="padding-left:${4 + level * 10}px;width:${pct}%"` : ` style="width:${pct}%"`;
                     let content = renderPrintCellHtml(t, col);
@@ -4263,10 +4357,12 @@
                 const evmExtra = showEvm && !visibleCols.some(v => v.col.name === 'cpi')
                     ? `<td class="c print-col-cpi" style="width:${(textTablePct / visibleCols.length * 0.5).toFixed(2)}%">${t.cpi != null ? t.cpi : '—'}</td><td class="c print-col-spi" style="width:${(textTablePct / visibleCols.length * 0.5).toFixed(2)}%">${t.spi != null ? t.spi : '—'}</td>`
                     : '';
+                const summary = isParentTask(t) || t.type === 'project';
+                const wbsCls = getWbsLevelClass(t);
                 const barCell = showInlineBars
-                    ? `<td class="print-bar-cell" style="width:${barTablePct.toFixed(2)}%"><div class="print-bar-dates">${dateLabel}</div><div class="print-bar-track"><div class="print-bar" style="left:${left}%;width:${width}%;background:${color}"></div></div></td>`
+                    ? `<td class="print-bar-cell" style="width:${barTablePct.toFixed(2)}%"><div class="print-bar-track">${buildPrintBarMarkup(t, startMs, span)}</div></td>`
                     : '';
-                rows += `<tr class="${t.type === 'project' ? 'print-summary' : ''}">${cells}${evmExtra}${barCell}</tr>`;
+                rows += `<tr class="${summary ? 'print-summary' : ''}${wbsCls ? ' ' + wbsCls : ''}">${cells}${evmExtra}${barCell}</tr>`;
             });
         }
 
@@ -4306,7 +4402,7 @@
         const colHeaders = visibleCols.map(({ col, width: colW }) => {
             const pct = ((colW / visibleTextW) * textTablePct).toFixed(3);
             const label = col.label || col.name || '';
-            const align = col.align === 'center' ? ' c' : '';
+            const align = getPrintColumnAlignClass(col);
             return `<th class="print-col-${col.name}${align}" style="width:${pct}%">${label}</th>`;
         }).join('');
         const textColCount = visibleCols.length + (evmHeader ? 2 : 0);
