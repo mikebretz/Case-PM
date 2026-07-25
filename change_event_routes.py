@@ -22,6 +22,7 @@ def register_change_event_routes(app, deps):
     ScheduleData = deps['ScheduleData']
     Commitment = deps['Commitment']
     PayAppProjectState = deps['PayAppProjectState']
+    ChangeEventLineItem = deps.get('ChangeEventLineItem')
 
     @app.route('/api/change-events', methods=['GET'])
     @login_required
@@ -61,13 +62,32 @@ def register_change_event_routes(app, deps):
             cor_payload.append(cor_to_dict(c, allocs))
         pcos = PotentialChangeOrder.query.filter_by(change_event_id=ce.id).all()
         pco_payload = []
+        cpco_payload = []
         for p in pcos:
             ctype = getattr(p, 'contract_type', None) or 'Owner'
-            if ctype == 'Subcontract':
-                continue
             allocs = PCOAllocation.query.filter_by(pco_id=p.id).all()
-            pco_payload.append(pco_to_dict(p, allocs))
-        payload = change_event_to_dict(ce, rfqs=rfq_payload, pcos=pco_payload, cors=cor_payload)
+            row = pco_to_dict(p, allocs)
+            if ctype == 'Subcontract':
+                cpco_payload.append(row)
+            else:
+                pco_payload.append(row)
+        from co_persistence import co_to_dict, is_subcontract_co
+        line_items = []
+        if ChangeEventLineItem is not None:
+            from change_event_persistence import change_event_line_item_to_dict
+            rows = ChangeEventLineItem.query.filter_by(change_event_id=ce.id).order_by(
+                ChangeEventLineItem.sort_order.asc(), ChangeEventLineItem.id.asc()
+            ).all()
+            line_items = [change_event_line_item_to_dict(r) for r in rows]
+        commitment_cos = []
+        for co in ChangeOrder.query.filter_by(change_event_id=ce.id, project_id=ce.project_id).all():
+            if is_subcontract_co(co):
+                sco_allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
+                commitment_cos.append(co_to_dict(co, sco_allocs))
+        payload = change_event_to_dict(
+            ce, rfqs=rfq_payload, pcos=pco_payload, cors=cor_payload,
+            line_items=line_items, cpcos=cpco_payload, commitment_cos=commitment_cos,
+        )
         return deps['jsonify'](payload)
 
     @app.route('/api/change-events', methods=['POST'])
@@ -157,6 +177,122 @@ def register_change_event_routes(app, deps):
             )
         db.session.commit()
         return deps['jsonify']({'ok': True, 'new_status': new_status, 'final': final, 'change_event': change_event_to_dict(ce)})
+
+    @app.route('/api/change-events/<int:event_id>/line-items', methods=['PUT'])
+    @login_required
+    def api_save_change_event_line_items(event_id):
+        from change_event_persistence import change_event_to_dict, save_change_event_line_items
+        from financial_security import require_financial_project_access, assert_mutable_change_event
+        if ChangeEventLineItem is None:
+            return deps['jsonify']({'error': 'Line items not available.'}), 500
+        ce = ChangeEvent.query.get_or_404(event_id)
+        try:
+            require_financial_project_access(current_user, ce.project_id, Project)
+            assert_mutable_change_event(ce)
+        except (ValueError, PermissionError) as exc:
+            return deps['jsonify']({'error': str(exc)}), 403
+        body = deps['request'].get_json(silent=True) or {}
+        lines = save_change_event_line_items(ce, body.get('line_items') or [], ChangeEventLineItem, db)
+        db.session.commit()
+        return deps['jsonify']({'ok': True, 'line_items': lines, 'rom_amount': ce.rom_amount})
+
+    @app.route('/api/change-events/<int:event_id>/bulk-create-rfqs', methods=['POST'])
+    @login_required
+    def api_bulk_create_rfqs_from_ce(event_id):
+        from change_event_persistence import bulk_create_rfqs_from_lines, rfq_to_dict
+        from financial_security import require_financial_project_access, assert_mutable_change_event
+        if ChangeEventLineItem is None:
+            return deps['jsonify']({'error': 'Line items not available.'}), 500
+        ce = ChangeEvent.query.get_or_404(event_id)
+        try:
+            require_financial_project_access(current_user, ce.project_id, Project)
+            assert_mutable_change_event(ce)
+        except (ValueError, PermissionError) as exc:
+            return deps['jsonify']({'error': str(exc)}), 403
+        body = deps['request'].get_json(silent=True) or {}
+        try:
+            created = bulk_create_rfqs_from_lines(
+                ce, body.get('line_item_ids') or [],
+                SubcontractorRFQ, RFQAllocation, ChangeEventLineItem, db,
+                generate_next_number, current_user.id,
+            )
+        except ValueError as exc:
+            return deps['jsonify']({'error': str(exc)}), 400
+        db.session.commit()
+        out = []
+        for rfq in created:
+            allocs = RFQAllocation.query.filter_by(rfq_id=rfq.id).all()
+            out.append(rfq_to_dict(rfq, allocs))
+        return deps['jsonify']({'ok': True, 'created': out, 'count': len(out)})
+
+    @app.route('/api/change-events/<int:event_id>/bulk-create-commitment-cos', methods=['POST'])
+    @login_required
+    def api_bulk_create_commitment_cos_from_ce(event_id):
+        from change_event_persistence import bulk_create_commitment_cos_from_lines
+        from co_persistence import co_to_dict
+        from financial_security import require_financial_project_access, assert_mutable_change_event
+        from sage_service import create_and_process_sage_event
+        if ChangeEventLineItem is None:
+            return deps['jsonify']({'error': 'Line items not available.'}), 500
+        ce = ChangeEvent.query.get_or_404(event_id)
+        try:
+            require_financial_project_access(current_user, ce.project_id, Project)
+            assert_mutable_change_event(ce)
+        except (ValueError, PermissionError) as exc:
+            return deps['jsonify']({'error': str(exc)}), 403
+        body = deps['request'].get_json(silent=True) or {}
+        try:
+            created = bulk_create_commitment_cos_from_lines(
+                ce, body.get('line_item_ids') or [],
+                ChangeOrder, ChangeOrderAllocation, ChangeEventLineItem, db,
+                generate_next_number, current_user.id,
+            )
+        except ValueError as exc:
+            return deps['jsonify']({'error': str(exc)}), 400
+        for sco in created:
+            create_and_process_sage_event(
+                SageSyncEvent, Project, db, sco.project_id,
+                'CommitmentChangeOrderDrafted',
+                message=f'Draft commitment CO {sco.number} created from {ce.number}',
+                payload={'change_order_id': sco.id, 'change_event_id': ce.id, 'commitment_type': 'Subcontract'},
+                user_id=current_user.id,
+            )
+        db.session.commit()
+        out = []
+        for sco in created:
+            allocs = ChangeOrderAllocation.query.filter_by(change_order_id=sco.id).all()
+            out.append(co_to_dict(sco, allocs))
+        return deps['jsonify']({'ok': True, 'created': out, 'count': len(out)})
+
+    @app.route('/api/change-events/<int:event_id>/bulk-create-cpcos', methods=['POST'])
+    @login_required
+    def api_bulk_create_cpcos_from_ce(event_id):
+        from change_event_persistence import bulk_create_cpcos_from_lines
+        from co_persistence import pco_to_dict
+        from financial_security import require_financial_project_access, assert_mutable_change_event
+        if ChangeEventLineItem is None:
+            return deps['jsonify']({'error': 'Line items not available.'}), 500
+        ce = ChangeEvent.query.get_or_404(event_id)
+        try:
+            require_financial_project_access(current_user, ce.project_id, Project)
+            assert_mutable_change_event(ce)
+        except (ValueError, PermissionError) as exc:
+            return deps['jsonify']({'error': str(exc)}), 403
+        body = deps['request'].get_json(silent=True) or {}
+        try:
+            created = bulk_create_cpcos_from_lines(
+                ce, body.get('line_item_ids') or [],
+                PotentialChangeOrder, PCOAllocation, ChangeEventLineItem, db,
+                generate_next_number, current_user.id,
+            )
+        except ValueError as exc:
+            return deps['jsonify']({'error': str(exc)}), 400
+        db.session.commit()
+        out = []
+        for pco in created:
+            allocs = PCOAllocation.query.filter_by(pco_id=pco.id).all()
+            out.append(pco_to_dict(pco, allocs))
+        return deps['jsonify']({'ok': True, 'created': out, 'count': len(out)})
 
     @app.route('/api/rfqs', methods=['GET'])
     @login_required
