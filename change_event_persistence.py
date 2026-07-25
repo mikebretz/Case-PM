@@ -49,6 +49,7 @@ CHANGE_EVENT_APPROVAL_CHAIN = (
     {'from_status': 'Pending Review', 'role': 'Project Manager', 'next_status': 'Approved'},
 )
 CPCO_CONTRACT_TYPE = 'Subcontract'
+CE_LINE_STATUSES = ('Open', 'RFQ Draft', 'RFQ Sent', 'Quoted', 'In CPCO', 'In CCO', 'Void')
 
 
 def ensure_change_event_schema(engine, db):
@@ -170,6 +171,35 @@ def ensure_change_event_schema(engine, db):
         '''))
         db.session.commit()
 
+    if 'change_event_line_item' not in tables:
+        db.session.execute(text('''
+            CREATE TABLE change_event_line_item (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                change_event_id INTEGER NOT NULL,
+                sort_order INTEGER DEFAULT 0,
+                description VARCHAR(300),
+                cost_code VARCHAR(30),
+                cost_type VARCHAR(80) DEFAULT 'Subcontract',
+                amount FLOAT DEFAULT 0,
+                quoted_amount FLOAT DEFAULT 0,
+                company_name VARCHAR(200),
+                company_id VARCHAR(64),
+                linked_commitment_ref VARCHAR(80),
+                sov_line_id VARCHAR(64),
+                tax_group VARCHAR(40),
+                status VARCHAR(30) DEFAULT 'Open',
+                linked_rfq_id INTEGER,
+                linked_cpco_id INTEGER,
+                linked_sco_id INTEGER,
+                created_at DATETIME,
+                updated_at DATETIME
+            )
+        '''))
+        db.session.execute(text(
+            'CREATE INDEX IF NOT EXISTS ix_change_event_line_item_ce ON change_event_line_item (change_event_id)'
+        ))
+        db.session.commit()
+
   # Extend existing tables
     _add_columns(inspector, db, 'potential_change_order', {
         'change_event_id': 'INTEGER',
@@ -224,7 +254,7 @@ def _parse_json(raw, default):
         return default
 
 
-def change_event_to_dict(ce, rfqs=None, pcos=None, cors=None):
+def change_event_to_dict(ce, rfqs=None, pcos=None, cors=None, line_items=None, cpcos=None, commitment_cos=None):
     return {
         'id': ce.id,
         'project_id': ce.project_id,
@@ -245,6 +275,9 @@ def change_event_to_dict(ce, rfqs=None, pcos=None, cors=None):
         'rfqs': rfqs or [],
         'pcos': pcos or [],
         'cors': cors or [],
+        'cpcos': cpcos or [],
+        'commitment_cos': commitment_cos or [],
+        'line_items': line_items or [],
         'created_at': ce.created_at.isoformat() if ce.created_at else None,
     }
 
@@ -898,3 +931,307 @@ def notify_rfq_subcontractor(project_id, rfq, User, title=None):
             )
     except Exception:
         pass
+
+
+def change_event_line_item_to_dict(row):
+    return {
+        'id': row.id,
+        'change_event_id': row.change_event_id,
+        'sort_order': row.sort_order or 0,
+        'description': row.description or '',
+        'cost_code': row.cost_code or '',
+        'cost_type': row.cost_type or 'Subcontract',
+        'amount': float(row.amount or 0),
+        'quoted_amount': float(row.quoted_amount or 0),
+        'company_name': row.company_name or '',
+        'company_id': row.company_id or '',
+        'linked_commitment_ref': row.linked_commitment_ref or '',
+        'sov_line_id': row.sov_line_id or '',
+        'tax_group': row.tax_group or '',
+        'status': row.status or 'Open',
+        'linked_rfq_id': row.linked_rfq_id,
+        'linked_cpco_id': row.linked_cpco_id,
+        'linked_sco_id': row.linked_sco_id,
+    }
+
+
+def _line_commitment_group_key(line):
+    ref = (getattr(line, 'linked_commitment_ref', None) or '').strip()
+    cid = str(getattr(line, 'company_id', None) or '').strip()
+    cname = (getattr(line, 'company_name', None) or '').strip().lower()
+    if not ref:
+        raise ValueError('Each line item must have a linked commitment before creating commitment change orders.')
+    if not cid and not cname:
+        raise ValueError('Each line item must have a vendor (company) assigned.')
+    return (ref, cid, cname)
+
+
+def _vendor_group_key(line):
+    ref = (getattr(line, 'linked_commitment_ref', None) or '').strip()
+    cid = str(getattr(line, 'company_id', None) or '').strip()
+    cname = (getattr(line, 'company_name', None) or '').strip().lower()
+    if not cid and not cname:
+        raise ValueError('Each line item must have a vendor (company) assigned.')
+    return (ref, cid, cname)
+
+
+def recompute_change_event_rom(ce, ChangeEventLineItem):
+    rows = ChangeEventLineItem.query.filter_by(change_event_id=ce.id).all()
+    ce.rom_amount = round(sum(float(r.amount or 0) for r in rows), 2)
+
+
+def save_change_event_line_items(ce, lines, ChangeEventLineItem, db):
+    """Replace line items on a change event, preserving workflow links when provided."""
+    existing = {r.id: r for r in ChangeEventLineItem.query.filter_by(change_event_id=ce.id).all()}
+    keep_ids = set()
+    saved_rows = []
+    for idx, item in enumerate(lines or []):
+        raw_id = item.get('id')
+        row = existing.get(int(raw_id)) if raw_id not in (None, '') else None
+        if not row:
+            row = ChangeEventLineItem(change_event_id=ce.id)
+            db.session.add(row)
+        row.sort_order = int(item.get('sort_order', idx))
+        row.description = (item.get('description') or '').strip() or None
+        row.cost_code = (item.get('cost_code') or '').strip() or None
+        row.cost_type = (item.get('cost_type') or 'Subcontract').strip() or 'Subcontract'
+        row.amount = float(item.get('amount') or 0)
+        row.quoted_amount = float(item.get('quoted_amount') or 0)
+        row.company_name = (item.get('company_name') or '').strip() or None
+        row.company_id = (item.get('company_id') or '').strip() or None
+        row.linked_commitment_ref = (item.get('linked_commitment_ref') or '').strip() or None
+        row.sov_line_id = (item.get('sov_line_id') or '').strip() or None
+        row.tax_group = (item.get('tax_group') or '').strip() or None
+        if item.get('linked_rfq_id'):
+            row.linked_rfq_id = int(item['linked_rfq_id'])
+        if item.get('linked_cpco_id'):
+            row.linked_cpco_id = int(item['linked_cpco_id'])
+        if item.get('linked_sco_id'):
+            row.linked_sco_id = int(item['linked_sco_id'])
+        if not row.linked_sco_id and not row.linked_cpco_id and not row.linked_rfq_id:
+            row.status = (item.get('status') or 'Open').strip() or 'Open'
+        db.session.flush()
+        keep_ids.add(row.id)
+        saved_rows.append(row)
+    for old_id, old_row in existing.items():
+        if old_id not in keep_ids and not old_row.linked_sco_id:
+            db.session.delete(old_row)
+    db.session.flush()
+    recompute_change_event_rom(ce, ChangeEventLineItem)
+    saved = ChangeEventLineItem.query.filter_by(change_event_id=ce.id).order_by(
+        ChangeEventLineItem.sort_order.asc(), ChangeEventLineItem.id.asc()
+    ).all()
+    return [change_event_line_item_to_dict(r) for r in saved]
+
+
+def _line_alloc_payload(line):
+    amt = float(getattr(line, 'quoted_amount', 0) or 0) or float(line.amount or 0)
+    return {
+        'cost_code': line.cost_code,
+        'cost_type': line.cost_type or 'Subcontract',
+        'amount': amt,
+        'quoted_amount': float(getattr(line, 'quoted_amount', 0) or 0) or amt,
+        'description': line.description or '',
+        'sov_line_id': line.sov_line_id,
+        'tax_group': line.tax_group,
+    }
+
+
+def bulk_create_rfqs_from_lines(ce, line_ids, SubcontractorRFQ, RFQAllocation, ChangeEventLineItem, db, generate_number_fn, user_id):
+    """Create one draft RFQ per vendor/commitment group from selected CE line items."""
+    ids = [int(i) for i in (line_ids or [])]
+    if not ids:
+        raise ValueError('Select at least one line item.')
+    rows = ChangeEventLineItem.query.filter(
+        ChangeEventLineItem.change_event_id == ce.id,
+        ChangeEventLineItem.id.in_(ids),
+    ).all()
+    if len(rows) != len(ids):
+        raise ValueError('One or more line items were not found on this change event.')
+    for row in rows:
+        if row.linked_rfq_id:
+            raise ValueError(f'Line {row.cost_code or row.id} is already linked to an RFQ.')
+        if row.linked_sco_id:
+            raise ValueError(f'Line {row.cost_code or row.id} is already on a commitment change order.')
+
+    groups = {}
+    for row in rows:
+        key = _vendor_group_key(row)
+        groups.setdefault(key, []).append(row)
+
+    created = []
+    for (_ref, _cid, _cname), group_rows in groups.items():
+        first = group_rows[0]
+        rfq = SubcontractorRFQ(
+            project_id=ce.project_id,
+            change_event_id=ce.id,
+            number=generate_number_fn('RFQ', SubcontractorRFQ, doc_type='rfq', project_id=ce.project_id),
+            title=ce.title or f'RFQ from {ce.number}',
+            description=ce.description or ce.title,
+            status='Draft',
+            company_name=first.company_name,
+            company_id=first.company_id,
+            linked_commitment_ref=first.linked_commitment_ref,
+            ball_in_court_role='Creator',
+            created_by_id=user_id,
+        )
+        db.session.add(rfq)
+        db.session.flush()
+        for row in group_rows:
+            payload = _line_alloc_payload(row)
+            db.session.add(RFQAllocation(
+                rfq_id=rfq.id,
+                cost_code=payload['cost_code'],
+                cost_type=payload['cost_type'],
+                amount=float(row.amount or 0),
+                quoted_amount=payload['quoted_amount'],
+                description=payload['description'],
+                sov_line_id=payload['sov_line_id'],
+                tax_group=payload['tax_group'],
+            ))
+            row.linked_rfq_id = rfq.id
+            row.status = 'RFQ Draft'
+        created.append(rfq)
+    return created
+
+
+def bulk_create_commitment_cos_from_lines(
+    ce,
+    line_ids,
+    ChangeOrder,
+    ChangeOrderAllocation,
+    ChangeEventLineItem,
+    db,
+    generate_number_fn,
+    user_id,
+):
+    """Create one draft commitment change order (SCO/CCO) per vendor+commitment group."""
+    ids = [int(i) for i in (line_ids or [])]
+    if not ids:
+        raise ValueError('Select at least one line item.')
+    rows = ChangeEventLineItem.query.filter(
+        ChangeEventLineItem.change_event_id == ce.id,
+        ChangeEventLineItem.id.in_(ids),
+    ).all()
+    if len(rows) != len(ids):
+        raise ValueError('One or more line items were not found on this change event.')
+    for row in rows:
+        if row.linked_sco_id:
+            raise ValueError(f'Line {row.cost_code or row.id} is already on a commitment change order.')
+
+    groups = {}
+    for row in rows:
+        key = _line_commitment_group_key(row)
+        groups.setdefault(key, []).append(row)
+
+    created = []
+    for (ref, _cid, _cname), group_rows in groups.items():
+        first = group_rows[0]
+        allocs = [_line_alloc_payload(r) for r in group_rows]
+        total = round(sum(float(a['amount'] or 0) for a in allocs), 2)
+        sco = ChangeOrder(
+            project_id=ce.project_id,
+            number=generate_number_fn('SCO', ChangeOrder, doc_type='sub_change_order', project_id=ce.project_id),
+            title=f'{ce.number} — {first.company_name or ref}',
+            description=ce.description or ce.title or f'Commitment change from {ce.number}',
+            amount=total,
+            reason=ce.reason,
+            schedule_impact_days=ce.schedule_impact_days or 0,
+            status='Draft',
+            date=datetime.utcnow().date(),
+            company_name=first.company_name,
+            company_id=first.company_id,
+            contract_type='Subcontract',
+            sub_co_kind='Contract Add',
+            linked_commitment_ref=ref,
+            change_event_id=ce.id,
+            ball_in_court_role='Creator',
+            created_by_id=user_id,
+        )
+        db.session.add(sco)
+        db.session.flush()
+        for item in allocs:
+            db.session.add(ChangeOrderAllocation(
+                change_order_id=sco.id,
+                cost_code=item.get('cost_code'),
+                cost_type=item.get('cost_type') or 'Subcontract',
+                amount=float(item.get('amount') or 0),
+                description=item.get('description') or '',
+                sov_line_id=item.get('sov_line_id'),
+                tax_group=item.get('tax_group'),
+            ))
+        for row in group_rows:
+            row.linked_sco_id = sco.id
+            row.status = 'In CCO'
+        created.append(sco)
+    return created
+
+
+def bulk_create_cpcos_from_lines(
+    ce,
+    line_ids,
+    PotentialChangeOrder,
+    PCOAllocation,
+    ChangeEventLineItem,
+    db,
+    generate_number_fn,
+    user_id,
+):
+    """Create one draft CPCO per vendor+commitment group from selected CE line items."""
+    ids = [int(i) for i in (line_ids or [])]
+    if not ids:
+        raise ValueError('Select at least one line item.')
+    rows = ChangeEventLineItem.query.filter(
+        ChangeEventLineItem.change_event_id == ce.id,
+        ChangeEventLineItem.id.in_(ids),
+    ).all()
+    if len(rows) != len(ids):
+        raise ValueError('One or more line items were not found on this change event.')
+    for row in rows:
+        if row.linked_cpco_id:
+            raise ValueError(f'Line {row.cost_code or row.id} is already linked to a CPCO.')
+        if row.linked_sco_id:
+            raise ValueError(f'Line {row.cost_code or row.id} is already on a commitment change order.')
+
+    groups = {}
+    for row in rows:
+        key = _line_commitment_group_key(row)
+        groups.setdefault(key, []).append(row)
+
+    created = []
+    for (ref, _cid, _cname), group_rows in groups.items():
+        first = group_rows[0]
+        allocs = [_line_alloc_payload(r) for r in group_rows]
+        total = round(sum(float(a['amount'] or 0) for a in allocs), 2)
+        pco = PotentialChangeOrder(
+            project_id=ce.project_id,
+            number=generate_number_fn('CPCO', PotentialChangeOrder, doc_type='cpco'),
+            title=f'{ce.number} — {first.company_name or ref}',
+            description=ce.description or ce.title,
+            estimated_amount=total,
+            status='Pricing',
+            company_name=first.company_name,
+            company_id=first.company_id,
+            linked_commitment_ref=ref,
+            change_event_id=ce.id,
+            contract_type=CPCO_CONTRACT_TYPE,
+            ball_in_court_role='Project Manager',
+            created_by_id=user_id,
+        )
+        db.session.add(pco)
+        db.session.flush()
+        for item in allocs:
+            db.session.add(PCOAllocation(
+                pco_id=pco.id,
+                cost_code=item.get('cost_code'),
+                cost_type=item.get('cost_type') or 'Subcontract',
+                amount=float(item.get('amount') or 0),
+                description=item.get('description') or '',
+                sov_line_id=item.get('sov_line_id'),
+                tax_group=item.get('tax_group'),
+            ))
+        for row in group_rows:
+            row.linked_cpco_id = pco.id
+            row.status = 'In CPCO'
+        created.append(pco)
+    return created

@@ -1281,6 +1281,29 @@ class ChangeEvent(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class ChangeEventLineItem(db.Model):
+    __tablename__ = 'change_event_line_item'
+    id = db.Column(db.Integer, primary_key=True)
+    change_event_id = db.Column(db.Integer, db.ForeignKey('change_event.id'), nullable=False, index=True)
+    sort_order = db.Column(db.Integer, default=0)
+    description = db.Column(db.String(300))
+    cost_code = db.Column(db.String(30))
+    cost_type = db.Column(db.String(80), default='Subcontract')
+    amount = db.Column(db.Float, default=0)
+    quoted_amount = db.Column(db.Float, default=0)
+    company_name = db.Column(db.String(200))
+    company_id = db.Column(db.String(64))
+    linked_commitment_ref = db.Column(db.String(80))
+    sov_line_id = db.Column(db.String(64))
+    tax_group = db.Column(db.String(40))
+    status = db.Column(db.String(30), default='Open')
+    linked_rfq_id = db.Column(db.Integer, nullable=True)
+    linked_cpco_id = db.Column(db.Integer, nullable=True)
+    linked_sco_id = db.Column(db.Integer, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class SubcontractorRFQ(db.Model):
     __tablename__ = 'subcontractor_rfq'
     id = db.Column(db.Integer, primary_key=True)
@@ -16946,6 +16969,7 @@ register_change_event_routes(app, {
     'get_current_project_id': get_current_project_id,
     'generate_next_number': generate_next_number,
     'ChangeEvent': ChangeEvent,
+    'ChangeEventLineItem': ChangeEventLineItem,
     'SubcontractorRFQ': SubcontractorRFQ,
     'RFQAllocation': RFQAllocation,
     'ChangeOrderRequest': ChangeOrderRequest,

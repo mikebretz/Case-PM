@@ -14,6 +14,10 @@
     erpEvents: [],
     billingVariances: [],
     subSovLines: [],
+    commitments: [],
+    ceLineSelection: new Set(),
+    ceVendorFilter: '',
+    activeChangeEventId: null,
   };
 
   function pid() {
@@ -168,6 +172,204 @@
         await loadErpQueue();
       },
     });
+  }
+
+  async function loadCommitments() {
+    const id = pid();
+    if (!id) return;
+    try {
+      const json = await api(`/api/commitments?project_id=${id}`);
+      ext.commitments = (json.commitments || []).filter(c => (c.commitment_type || '').toLowerCase() === 'subcontract');
+    } catch {
+      ext.commitments = [];
+    }
+  }
+
+  function ceLineKey(line) {
+    return String(line.id != null ? line.id : line._tmp);
+  }
+
+  function filteredCeLines(lines) {
+    const vendor = (ext.ceVendorFilter || '').trim().toLowerCase();
+    if (!vendor) return lines || [];
+    return (lines || []).filter(l => (l.company_name || '').toLowerCase().includes(vendor) || (l.linked_commitment_ref || '').toLowerCase().includes(vendor));
+  }
+
+  function toggleCeLineSelection(lineKey, checked) {
+    if (checked) ext.ceLineSelection.add(String(lineKey));
+    else ext.ceLineSelection.delete(String(lineKey));
+  }
+
+  function toggleCeSelectAllLines(eventId, checked) {
+    const e = ext._activeCeDetail;
+    filteredCeLines(e?.line_items || []).forEach(l => {
+      const key = ceLineKey(l);
+      if (checked) ext.ceLineSelection.add(String(key));
+      else ext.ceLineSelection.delete(String(key));
+    });
+    if (eventId) viewChangeEvent(eventId, { preserveSelection: true });
+  }
+
+  function addCeLineRow() {
+    const tbody = document.getElementById('ceLineItemsBody');
+    if (!tbody) return;
+    const tmp = `tmp-${Date.now()}`;
+    const opts = ext.commitments.map(c =>
+      `<option value="${esc(c.number || '')}" data-company="${esc(c.company_name || '')}" data-company-id="${esc(c.company_id || '')}">${esc(c.number)} — ${esc(c.company_name || '')}</option>`
+    ).join('');
+    tbody.insertAdjacentHTML('beforeend', `
+      <tr class="border-b border-zinc-800" data-line-key="${tmp}">
+        <td class="py-2 px-1 text-center"><input type="checkbox" onchange="CasePMChangeOrdersExt.toggleCeLineSelection('${tmp}', this.checked)"></td>
+        <td class="py-2 px-1"><input type="text" class="ce-line-cost w-20 bg-zinc-900 border border-zinc-700 rounded px-1 py-1 text-xs" placeholder="01-0000"></td>
+        <td class="py-2 px-1"><input type="text" class="ce-line-desc w-full min-w-[8rem] bg-zinc-900 border border-zinc-700 rounded px-1 py-1 text-xs" placeholder="Description"></td>
+        <td class="py-2 px-1"><select class="ce-line-commitment bg-zinc-900 border border-zinc-700 rounded px-1 py-1 text-xs min-w-[7rem]"><option value="">—</option>${opts}</select></td>
+        <td class="py-2 px-1"><input type="text" class="ce-line-vendor w-full min-w-[6rem] bg-zinc-900 border border-zinc-700 rounded px-1 py-1 text-xs" placeholder="Vendor"></td>
+        <td class="py-2 px-1 text-right"><input type="number" step="0.01" class="ce-line-amount w-24 bg-zinc-900 border border-zinc-700 rounded px-1 py-1 text-xs text-right" value="0"></td>
+        <td class="py-2 px-1 text-xs text-zinc-500 ce-line-status">Open</td>
+      </tr>`);
+    tbody.querySelectorAll('.ce-line-commitment').forEach(sel => {
+      if (sel.dataset.bound) return;
+      sel.dataset.bound = '1';
+      sel.addEventListener('change', () => {
+        const opt = sel.selectedOptions[0];
+        const row = sel.closest('tr');
+        const vendor = row?.querySelector('.ce-line-vendor');
+        if (vendor && opt?.dataset.company) vendor.value = opt.dataset.company;
+      });
+    });
+  }
+
+  function collectCeLineItemsFromDom() {
+    const rows = [...document.querySelectorAll('#ceLineItemsBody tr[data-line-key]')];
+    return rows.map((row, idx) => {
+      const key = row.dataset.lineKey || '';
+      const commitmentSel = row.querySelector('.ce-line-commitment');
+      const opt = commitmentSel?.selectedOptions?.[0];
+      return {
+        id: key.startsWith('tmp-') ? null : parseInt(key, 10),
+        sort_order: idx,
+        cost_code: row.querySelector('.ce-line-cost')?.value?.trim() || '',
+        description: row.querySelector('.ce-line-desc')?.value?.trim() || '',
+        linked_commitment_ref: commitmentSel?.value?.trim() || '',
+        company_name: row.querySelector('.ce-line-vendor')?.value?.trim() || opt?.dataset?.company || '',
+        company_id: opt?.dataset?.companyId || '',
+        amount: parseFloat(row.querySelector('.ce-line-amount')?.value) || 0,
+        cost_type: 'Subcontract',
+        status: row.querySelector('.ce-line-status')?.textContent?.trim() || 'Open',
+        linked_rfq_id: row.dataset.linkedRfq ? parseInt(row.dataset.linkedRfq, 10) || null : null,
+        linked_cpco_id: row.dataset.linkedCpco ? parseInt(row.dataset.linkedCpco, 10) || null : null,
+        linked_sco_id: row.dataset.linkedSco ? parseInt(row.dataset.linkedSco, 10) || null : null,
+      };
+    });
+  }
+
+  async function saveCeLineItems(eventId) {
+    const lines = collectCeLineItemsFromDom();
+    const json = await api(`/api/change-events/${eventId}/line-items`, {
+      method: 'PUT',
+      body: JSON.stringify({ line_items: lines }),
+    });
+    ext.ceLineSelection.clear();
+    await loadChangeEvents();
+    await viewChangeEvent(eventId);
+    return json;
+  }
+
+  async function bulkCreateFromCe(eventId, action) {
+    const selected = [...ext.ceLineSelection].map(k => parseInt(k, 10)).filter(n => !Number.isNaN(n));
+    if (!selected.length) {
+      alert('Select at least one saved line item (save lines first if you just added new rows).');
+      return;
+    }
+    const routes = {
+      rfqs: '/bulk-create-rfqs',
+      ccos: '/bulk-create-commitment-cos',
+      cpcos: '/bulk-create-cpcos',
+    };
+    const path = routes[action];
+    if (!path) return;
+    const labels = { rfqs: 'draft RFQ(s)', ccos: 'draft commitment change order(s)', cpcos: 'draft CPCO(s)' };
+    if (!(await ceConfirm(`Create ${labels[action]} grouped by vendor and commitment?`, { title: 'Bulk create' }))) return;
+    const json = await api(`/api/change-events/${eventId}${path}`, {
+      method: 'POST',
+      body: JSON.stringify({ line_item_ids: selected }),
+    });
+    ext.ceLineSelection.clear();
+    await Promise.all([loadChangeEvents(), loadRfqs(), loadCpcos(), CO.loadChangeOrders ? CO.loadChangeOrders() : null]);
+    await viewChangeEvent(eventId);
+    if (action === 'ccos' && CO.switchTab) CO.switchTab('subs');
+    if (action === 'cpcos' && CO.switchTab) CO.switchTab('cpcos');
+    if (action === 'rfqs' && CO.switchTab) CO.switchTab('rfqs');
+    alert(`Created ${json.count || 0} ${labels[action]}.`);
+  }
+
+  function renderCeLineItemsTable(e) {
+    const lines = filteredCeLines(e.line_items || []);
+    const allKeys = lines.map(ceLineKey);
+    const allSelected = allKeys.length > 0 && allKeys.every(k => ext.ceLineSelection.has(String(k)));
+    const commitmentOpts = ext.commitments.map(c =>
+      `<option value="${esc(c.number || '')}" data-company="${esc(c.company_name || '')}" data-company-id="${esc(c.company_id || '')}">${esc(c.number)} — ${esc(c.company_name || '')}</option>`
+    ).join('');
+    const rows = lines.map(line => {
+      const key = ceLineKey(line);
+      const selected = ext.ceLineSelection.has(String(key));
+      const commitOpts = `<option value="">—</option>` + ext.commitments.map(c => {
+        const val = c.number || '';
+        const sel = val === (line.linked_commitment_ref || '') ? ' selected' : '';
+        return `<option value="${esc(val)}" data-company="${esc(c.company_name || '')}" data-company-id="${esc(c.company_id || '')}"${sel}>${esc(c.number)} — ${esc(c.company_name || '')}</option>`;
+      }).join('');
+      return `
+        <tr class="border-b border-zinc-800" data-line-key="${key}" data-linked-rfq="${line.linked_rfq_id || ''}" data-linked-cpco="${line.linked_cpco_id || ''}" data-linked-sco="${line.linked_sco_id || ''}">
+          <td class="py-2 px-1 text-center"><input type="checkbox" ${selected ? 'checked' : ''} onchange="CasePMChangeOrdersExt.toggleCeLineSelection('${key}', this.checked)"></td>
+          <td class="py-2 px-1"><input type="text" class="ce-line-cost w-20 bg-zinc-900 border border-zinc-700 rounded px-1 py-1 text-xs" value="${esc(line.cost_code || '')}"></td>
+          <td class="py-2 px-1"><input type="text" class="ce-line-desc w-full min-w-[8rem] bg-zinc-900 border border-zinc-700 rounded px-1 py-1 text-xs" value="${esc(line.description || '')}"></td>
+          <td class="py-2 px-1"><select class="ce-line-commitment bg-zinc-900 border border-zinc-700 rounded px-1 py-1 text-xs min-w-[7rem]">${commitOpts}</select></td>
+          <td class="py-2 px-1"><input type="text" class="ce-line-vendor w-full min-w-[6rem] bg-zinc-900 border border-zinc-700 rounded px-1 py-1 text-xs" value="${esc(line.company_name || '')}"></td>
+          <td class="py-2 px-1 text-right"><input type="number" step="0.01" class="ce-line-amount w-24 bg-zinc-900 border border-zinc-700 rounded px-1 py-1 text-xs text-right" value="${line.amount || 0}"></td>
+          <td class="py-2 px-1 text-xs text-zinc-500 ce-line-status">${esc(line.status || 'Open')}</td>
+        </tr>`;
+    }).join('') || '<tr><td colspan="7" class="py-4 text-center text-zinc-500 text-xs">No line items — add vendor/commitment lines for each subcontractor impacted.</td></tr>';
+
+    return `
+      <div class="mt-6">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <div class="text-xs text-zinc-500 uppercase">Line items (vendor / commitment)</div>
+          <div class="flex flex-wrap gap-2 items-center">
+            <input type="text" placeholder="Filter vendor…" class="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs"
+                   value="${esc(ext.ceVendorFilter)}"
+                   onchange="CasePMChangeOrdersExt.setCeVendorFilter(this.value)">
+            <button type="button" onclick="CasePMChangeOrdersExt.addCeLineRow()" class="px-2 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded">+ Line</button>
+            <button type="button" onclick="CasePMChangeOrdersExt.saveCeLineItems(${e.id})" class="px-2 py-1 text-xs bg-violet-700 hover:bg-violet-600 rounded">Save lines</button>
+          </div>
+        </div>
+        <p class="text-[10px] text-zinc-500 mb-2">Procore-style: one change event, multiple lines per vendor/commitment. Select lines, then bulk-create separate draft RFQs, CPCOs, or commitment COs (one per subcontractor commitment).</p>
+        <div class="flex flex-wrap gap-2 mb-2">
+          <button type="button" onclick="CasePMChangeOrdersExt.bulkCreateFromCe(${e.id}, 'rfqs')" class="px-2 py-1 text-xs bg-sky-800 hover:bg-sky-700 rounded">Add To → RFQs</button>
+          <button type="button" onclick="CasePMChangeOrdersExt.bulkCreateFromCe(${e.id}, 'cpcos')" class="px-2 py-1 text-xs bg-amber-800 hover:bg-amber-700 rounded">Add To → CPCOs</button>
+          <button type="button" onclick="CasePMChangeOrdersExt.bulkCreateFromCe(${e.id}, 'ccos')" class="px-2 py-1 text-xs bg-emerald-800 hover:bg-emerald-700 rounded">Add To → Draft CCOs</button>
+        </div>
+        <div class="overflow-x-auto border border-zinc-800 rounded-lg">
+          <table class="w-full text-xs min-w-[44rem]">
+            <thead class="bg-zinc-900/80 text-zinc-500">
+              <tr>
+                <th class="py-2 px-1 w-8 text-center"><input type="checkbox" ${allSelected ? 'checked' : ''} onchange="CasePMChangeOrdersExt.toggleCeSelectAllLines(${e.id}, this.checked)"></th>
+                <th class="text-left py-2 px-1">Cost code</th>
+                <th class="text-left py-2 px-1">Description</th>
+                <th class="text-left py-2 px-1">Commitment</th>
+                <th class="text-left py-2 px-1">Vendor</th>
+                <th class="text-right py-2 px-1">ROM</th>
+                <th class="text-left py-2 px-1">Status</th>
+              </tr>
+            </thead>
+            <tbody id="ceLineItemsBody">${rows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  function setCeVendorFilter(value) {
+    ext.ceVendorFilter = value || '';
+    if (ext.activeChangeEventId) viewChangeEvent(ext.activeChangeEventId);
   }
 
   async function loadChangeEvents() {
@@ -439,14 +641,20 @@
     await loadErpQueue();
   }
 
-  async function viewChangeEvent(id) {
+  async function viewChangeEvent(id, opts = {}) {
+    if (!opts.preserveSelection) ext.ceLineSelection.clear();
+    ext.activeChangeEventId = id;
+    await loadCommitments();
     const e = await api(`/api/change-events/${id}`);
+    ext._activeCeDetail = e;
     document.getElementById('coDetailDrawer').classList.add('open');
     document.getElementById('coDrawerBackdrop').classList.remove('hidden');
     document.getElementById('drawerTitle').textContent = `${e.number} — ${e.title || 'Change Event'}`;
     const rfqRows = (e.rfqs || []).map(r => `<tr class="border-b border-zinc-800"><td class="py-1 font-mono text-sky-400">${esc(r.number)}</td><td class="py-1">${esc(r.company_name || '—')}</td><td class="py-1 text-center">${statusBadge(r.status)}</td><td class="py-1 text-right font-mono">${fmt(r.quoted_amount)}</td></tr>`).join('') || '<tr><td colspan="4" class="py-3 text-zinc-500">None</td></tr>';
     const corRows = (e.cors || []).map(c => `<tr class="border-b border-zinc-800"><td class="py-1 font-mono text-indigo-400">${esc(c.number)}</td><td class="py-1">${esc(c.title)}</td><td class="py-1 text-center">${statusBadge(c.status)}</td><td class="py-1 text-right font-mono">${fmt(c.amount)}</td></tr>`).join('') || '<tr><td colspan="4" class="py-3 text-zinc-500">None</td></tr>';
     const pcoRows = (e.pcos || []).map(p => `<tr class="border-b border-zinc-800"><td class="py-1 font-mono text-amber-400">${esc(p.number)}</td><td class="py-1">${esc(p.title)}</td><td class="py-1 text-center">${statusBadge(p.status)}</td><td class="py-1 text-right font-mono">${fmt(p.estimated_amount)}</td></tr>`).join('') || '<tr><td colspan="4" class="py-3 text-zinc-500">None</td></tr>';
+    const cpcoRows = (e.cpcos || []).map(p => `<tr class="border-b border-zinc-800"><td class="py-1 font-mono text-amber-400">${esc(p.number)}</td><td class="py-1">${esc(p.company_name || '—')}</td><td class="py-1 text-center">${statusBadge(p.status)}</td><td class="py-1 text-right font-mono">${fmt(p.estimated_amount)}</td></tr>`).join('') || '<tr><td colspan="4" class="py-3 text-zinc-500">None</td></tr>';
+    const ccoRows = (e.commitment_cos || []).map(c => `<tr class="border-b border-zinc-800"><td class="py-1 font-mono text-emerald-400">${esc(c.number)}</td><td class="py-1">${esc(c.company_name || '—')}</td><td class="py-1 text-center">${statusBadge(c.status)}</td><td class="py-1 text-right font-mono">${fmt(c.amount)}</td></tr>`).join('') || '<tr><td colspan="4" class="py-3 text-zinc-500">None</td></tr>';
     const canWorkflow = ['Open', 'Pricing', 'Pending Review'].includes(e.status);
     const reviewBanner = canWorkflow && e.status !== 'Open' ? `
       <div class="mb-6 p-4 rounded-lg bg-emerald-950/50 border-2 border-emerald-600 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -465,9 +673,12 @@
         <p><span class="text-zinc-500">Contingency release</span><br>${e.contingency_release_amount ? fmt(e.contingency_release_amount) : '—'}</p>
         <p><span class="text-zinc-500">Description</span><br>${esc(e.description || '—')}</p>
       </div>
+      ${renderCeLineItemsTable(e)}
       <div class="mt-4"><div class="text-xs text-zinc-500 uppercase mb-2">RFQs</div><table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left">#</th><th class="text-left">Sub</th><th class="text-center">Status</th><th class="text-right">Quote</th></tr></thead><tbody>${rfqRows}</tbody></table></div>
-      <div class="mt-4"><div class="text-xs text-zinc-500 uppercase mb-2">CORs</div><table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left">#</th><th class="text-left">Title</th><th class="text-center">Status</th><th class="text-right">Amount</th></tr></thead><tbody>${corRows}</tbody></table></div>
-      <div class="mt-4"><div class="text-xs text-zinc-500 uppercase mb-2">PCOs</div><table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left">#</th><th class="text-left">Title</th><th class="text-center">Status</th><th class="text-right">ROM</th></tr></thead><tbody>${pcoRows}</tbody></table></div>`;
+      <div class="mt-4"><div class="text-xs text-zinc-500 uppercase mb-2">CPCOs</div><table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left">#</th><th class="text-left">Sub</th><th class="text-center">Status</th><th class="text-right">ROM</th></tr></thead><tbody>${cpcoRows}</tbody></table></div>
+      <div class="mt-4"><div class="text-xs text-zinc-500 uppercase mb-2">Commitment COs (CCO)</div><table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left">#</th><th class="text-left">Sub</th><th class="text-center">Status</th><th class="text-right">Amount</th></tr></thead><tbody>${ccoRows}</tbody></table></div>
+      <div class="mt-4"><div class="text-xs text-zinc-500 uppercase mb-2">CORs (owner)</div><table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left">#</th><th class="text-left">Title</th><th class="text-center">Status</th><th class="text-right">Amount</th></tr></thead><tbody>${corRows}</tbody></table></div>
+      <div class="mt-4"><div class="text-xs text-zinc-500 uppercase mb-2">Owner PCOs</div><table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left">#</th><th class="text-left">Title</th><th class="text-center">Status</th><th class="text-right">ROM</th></tr></thead><tbody>${pcoRows}</tbody></table></div>`;
     document.getElementById('drawerActions').innerHTML = `
       ${e.status === 'Open' ? `<button type="button" onclick="CasePMChangeOrdersExt.ceWorkflow(${e.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit for Pricing</button>` : ''}
       <button type="button" onclick="CasePMChangeOrdersExt.editChangeEvent(${e.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
@@ -555,8 +766,9 @@
   });
 
   global.CasePMChangeOrdersExt = {
-    loadChangeEvents, loadRfqs, loadCors, loadCpcos, loadErpQueue, loadBillingVariance,
+    loadChangeEvents, loadRfqs, loadCors, loadCpcos, loadErpQueue, loadBillingVariance, loadCommitments,
     newChangeEvent, newRfq, newCor, openCeModal, saveCeModal, rfqWorkflow, openRfqQuote, corWorkflow, openCorReviewModal, openCeReviewModal, openErpReviewModal, promoteCpco,
     erpReview, viewChangeEvent, editChangeEvent, ceWorkflow, portalRfqQuote, switchExtTab, ext,
+    addCeLineRow, saveCeLineItems, bulkCreateFromCe, toggleCeLineSelection, toggleCeSelectAllLines, setCeVendorFilter,
   };
 })(window);
