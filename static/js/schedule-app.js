@@ -579,16 +579,6 @@
         });
     }
 
-    function getEffectiveGridPaneWidth(hostW) {
-        const colsW = getColumnsTotalWidth();
-        const minChartW = 280;
-        const minGrid = 120;
-        const maxGrid = Math.max(minGrid, (hostW || 1200) - minChartW);
-        const userW = Math.max(minGrid, Math.min(maxGrid, getGridOverlayWidth()));
-        if (colsW > userW) return Math.min(maxGrid, colsW);
-        return userW;
-    }
-
     function findColumnResizeIndex(clientX, clientY) {
         const scale = document.querySelector('#gantt_here .gantt_grid_scale');
         if (!scale) return -1;
@@ -774,17 +764,18 @@
         const hostW = document.getElementById('gantt_here')?.offsetWidth
             || document.getElementById('scheduleGanttHost')?.clientWidth
             || 1200;
-        const minChartW = 280;
-        const minOverlay = 120;
-        const maxOverlay = Math.max(minOverlay, hostW - minChartW);
-        if (scheduleSettings.grid_overlay_width_px >= minOverlay) {
-            return Math.max(minOverlay, Math.min(maxOverlay, scheduleSettings.grid_overlay_width_px));
+        const scrollW = gantt.config?.scroll_size || 16;
+        const minOverlay = 0;
+        const maxOverlay = Math.max(0, hostW - scrollW);
+        const clamp = w => Math.max(minOverlay, Math.min(maxOverlay, w));
+        if (scheduleSettings.grid_overlay_width_px != null && scheduleSettings.grid_overlay_width_px >= 0) {
+            return clamp(scheduleSettings.grid_overlay_width_px);
         }
         if (scheduleSettings.timeline_width_px >= 180) {
-            return Math.max(minOverlay, Math.min(maxOverlay, hostW - scheduleSettings.timeline_width_px));
+            return clamp(hostW - scheduleSettings.timeline_width_px);
         }
         const gridPct = 1 - (scheduleSettings.timeline_pct ?? 0.48);
-        return Math.max(minOverlay, Math.min(maxOverlay, Math.round(hostW * gridPct)));
+        return clamp(Math.round(hostW * gridPct));
     }
 
     function getTimelineWidth() {
@@ -819,8 +810,7 @@
 
         const hostW = host.clientWidth;
         const colsW = getColumnsTotalWidth();
-        const minChartW = 280;
-        const overlayW = getEffectiveGridPaneWidth(hostW);
+        const overlayW = getGridOverlayWidth();
 
         const scrollW = gantt.config.scroll_size || 16;
         const chartW = Math.max(hostW - scrollW, 200);
@@ -995,7 +985,7 @@
         handle.classList.remove('hidden');
         const hostRect = host.getBoundingClientRect();
         const hostW = hostRect.width || host.clientWidth;
-        const overlayW = isOverlayMode() ? getEffectiveGridPaneWidth(hostW) : getGridOverlayWidth();
+        const overlayW = getGridOverlayWidth();
         handle.style.left = Math.max(0, overlayW - 3) + 'px';
         handle.style.right = 'auto';
     }
@@ -1019,7 +1009,7 @@
         const host = document.getElementById('gantt_here');
         const hostW = host?.clientWidth || root.clientWidth || 1200;
         const isOverlay = isOverlayMode();
-        const gridPaneW = isOverlay ? getEffectiveGridPaneWidth(hostW) : getGridOverlayWidth();
+        const gridPaneW = getGridOverlayWidth();
         const timelineW = isOverlay ? hostW : Math.max(240, hostW - gridPaneW - 24);
         const sizeKey = `${hostW}|${gridW}|${gridPaneW}|${isOverlay}`;
         const gridKey = String(gridW);
@@ -1040,7 +1030,7 @@
 
             if (gantt.config.layout?.cols?.[0]) {
                 gantt.config.layout.cols[0].width = gridPaneW;
-                gantt.config.layout.cols[0].min_width = isOverlay ? 120 : Math.max(gridW + 8, 200);
+                gantt.config.layout.cols[0].min_width = isOverlay ? 0 : Math.max(gridW + 8, 200);
             }
             if (gantt.config.layout?.cols?.[2]) {
                 gantt.config.layout.cols[2].width = isOverlay ? hostW : timelineW;
@@ -1123,7 +1113,9 @@
             if (!hostEl) return;
             const rect = hostEl.getBoundingClientRect();
             const dx = e.clientX - overlayDrag.startX;
-            const gridW = Math.max(120, Math.min(rect.width - 280, overlayDrag.startW + dx));
+            const scrollW = gantt.config?.scroll_size || 16;
+            const maxW = Math.max(0, rect.width - scrollW);
+            const gridW = Math.max(0, Math.min(maxW, overlayDrag.startW + dx));
             scheduleSettings.grid_overlay_width_px = gridW;
             scheduleSettings.timeline_width_px = null;
             scheduleSettings.timeline_pct = 1 - (gridW / rect.width);
@@ -1144,7 +1136,7 @@
         const host = document.getElementById('scheduleGanttHost');
         if (!host?.classList.contains('schedule-overlay-mode')) return;
         const overlayW = getGridOverlayWidth();
-        if (overlayW >= 120 && Math.abs((scheduleSettings.grid_overlay_width_px || 0) - overlayW) > 4) {
+        if (overlayW >= 0 && Math.abs((scheduleSettings.grid_overlay_width_px || 0) - overlayW) > 4) {
             scheduleSettings.grid_overlay_width_px = overlayW;
             const hostW = document.getElementById('gantt_here')?.clientWidth;
             if (hostW) scheduleSettings.timeline_pct = 1 - (overlayW / hostW);
@@ -2433,8 +2425,7 @@
 
     function getExposedGridWidth() {
         if (isOverlayMode()) {
-            const hostW = document.getElementById('gantt_here')?.clientWidth || 1200;
-            return getEffectiveGridPaneWidth(hostW);
+            return getGridOverlayWidth();
         }
         const host = document.getElementById('gantt_here');
         if (!host) return 600;
@@ -3548,14 +3539,16 @@
 
         const gridW = getColumnsTotalWidth();
         const hostW = document.getElementById('gantt_here')?.offsetWidth || 1000;
-        const gridPaneW = Math.max(120, scheduleSettings.grid_overlay_width_px || Math.round(hostW * 0.45));
+        const gridPaneW = scheduleSettings.grid_overlay_width_px != null && scheduleSettings.grid_overlay_width_px >= 0
+            ? scheduleSettings.grid_overlay_width_px
+            : Math.round(hostW * 0.45);
         gantt.config.grid_width = gridW;
         gantt.config.layout = {
             css: 'gantt_container',
             cols: [
                 {
                     width: gridPaneW,
-                    min_width: 120,
+                    min_width: 0,
                     rows: [
                         { view: 'grid', scrollX: 'gridScroll', scrollY: 'scrollVer' },
                         { view: 'scrollbar', id: 'gridScroll', height: 20 }
