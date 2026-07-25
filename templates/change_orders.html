@@ -8,7 +8,6 @@
 <script src="{{ url_for('static', filename='js/casepm-esign.js') }}"></script>
 <script src="{{ url_for('static', filename='js/change-orders-app.js') }}"></script>
 <script src="{{ url_for('static', filename='js/change-events-app.js') }}"></script>
-<script src="{{ url_for('static', filename='js/change-orders-help.js') }}"></script>
 
 <style>
 .co-page {
@@ -85,11 +84,6 @@
   .alloc-sheet .alloc-num { color: #71717a; text-align: center; padding: 0.45rem 0.35rem; width: 2rem; }
   .alloc-sheet .alloc-amt-cell input { text-align: right; font-family: ui-monospace, monospace; }
   .alloc-sheet tfoot td { background: #27272a; border-top: 2px solid #52525b; font-weight: 600; padding: 0.5rem; }
-  #coHelpModal { max-width: 56rem; width: calc(100vw - 2rem); max-height: min(90vh, 820px); overflow: hidden; display: flex; flex-direction: column; }
-  #coHelpModal .co-help-layout { display: grid; grid-template-columns: 11rem 1fr; gap: 0; min-height: 0; flex: 1; }
-  @media (max-width: 640px) { #coHelpModal .co-help-layout { grid-template-columns: 1fr; } #coHelpNav { max-height: 8rem; overflow-y: auto; border-bottom: 1px solid #3f3f46; } }
-  #coHelpBody { overflow-y: auto; max-height: min(70vh, 640px); }
-  .co-help-prose strong { color: #e4e4e7; font-weight: 600; }
 </style>
 
 <div id="coPrintSheet" aria-hidden="true"></div>
@@ -105,9 +99,11 @@
         <div class="text-xs text-zinc-500 hidden sm:block">PCO → CO · Budget · SOV · Sage 300</div>
     </div>
     <div class="flex items-center gap-2 flex-wrap justify-end">
-        <button type="button" onclick="CasePMChangeOrders.openHelp()" class="flex items-center gap-2 px-4 py-2 bg-violet-900/60 hover:bg-violet-800 border border-violet-700/50 rounded-md text-sm h-[38px] text-violet-100" title="Step-by-step guide for this page">
+        {% if show_page_help %}
+        <button type="button" data-casepm-page-help="change_orders" class="flex items-center gap-2 px-4 py-2 bg-violet-900/60 hover:bg-violet-800 border border-violet-700/50 rounded-md text-sm h-[38px] text-violet-100" title="Step-by-step guide for this page">
             <i class="fa-solid fa-circle-question"></i><span class="hidden sm:inline">How to use</span>
         </button>
+        {% endif %}
         <button type="button" onclick="CasePMChangeOrders.exportExcel()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm h-[38px]">
             <i class="fa-solid fa-file-excel"></i><span class="hidden md:inline">Export…</span>
         </button>
@@ -521,24 +517,6 @@
                 <button type="submit" class="px-6 py-2 bg-violet-600 hover:bg-violet-500 rounded-md text-sm font-semibold">Save</button>
             </div>
         </form>
-    </div>
-</dialog>
-
-<!-- CHANGE ORDERS HELP GUIDE -->
-<dialog id="coHelpModal" class="modal bg-zinc-900 border border-zinc-700 rounded-lg p-0 text-white">
-    <div class="p-4 border-b border-zinc-800 flex items-center justify-between flex-shrink-0">
-        <div>
-            <h2 class="text-lg font-semibold flex items-center gap-2">
-                <i class="fa-solid fa-circle-question text-violet-400"></i>
-                Change Orders — How to Use
-            </h2>
-            <p class="text-xs text-zinc-500 mt-0.5">Simple step-by-step guide. Topics match the tabs on this page.</p>
-        </div>
-        <button type="button" onclick="document.getElementById('coHelpModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none px-2" aria-label="Close">&times;</button>
-    </div>
-    <div class="co-help-layout flex-1 min-h-0">
-        <nav id="coHelpNav" class="p-3 border-r border-zinc-800 space-y-1 overflow-y-auto bg-zinc-950/50" aria-label="Help topics"></nav>
-        <div id="coHelpBody" class="p-5"></div>
     </div>
 </dialog>
 

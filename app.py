@@ -936,7 +936,7 @@ def inject_developer_flag():
     ep = request.endpoint or ''
     page_module = ENDPOINT_TO_MODULE.get(ep, 'app')
     if not getattr(current_user, 'is_authenticated', False):
-        return {'is_developer': False, 'developer_unlock_mode': False, 'page_module': page_module, 'is_admin_user': False, 'can_access_module': lambda m, min_access='view': False, 'allowed_modules': {}, 'module_access_levels': {}, 'user_security_flags': {'hide_financials': False, 'client_portal_only': False}, 'security_settings': {'session_timeout_minutes': 60, 'warn_before_logout_minutes': 5}}
+        return {'is_developer': False, 'developer_unlock_mode': False, 'page_module': page_module, 'is_admin_user': False, 'can_access_module': lambda m, min_access='view': False, 'allowed_modules': {}, 'module_access_levels': {}, 'user_security_flags': {'hide_financials': False, 'client_portal_only': False}, 'security_settings': {'session_timeout_minutes': 60, 'warn_before_logout_minutes': 5}, 'show_page_help': False}
     try:
         from developer_tools import is_developer, developer_unlock_active
         dev = is_developer(current_user)
@@ -999,7 +999,20 @@ def inject_developer_flag():
         'security_settings': security_settings,
         'messaging_internal_only': messaging_internal_only,
         'messaging_nav_visible': messaging_nav_visible,
+        'show_page_help': _show_page_help_for_user(current_user, page_module),
     }
+
+
+def _show_page_help_for_user(user, page_module):
+    if not getattr(user, 'is_authenticated', False):
+        return False
+    if (page_module or '') == 'developer':
+        return False
+    try:
+        from document_module_security import is_staff_portal_user
+        return bool(is_staff_portal_user(user))
+    except Exception:
+        return False
 
 
 class DailyLog(db.Model):
