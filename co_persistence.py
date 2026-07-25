@@ -295,6 +295,7 @@ def _allocation_row(a):
             'sov_line_id': a.get('sov_line_id'),
             'tax_group': a.get('tax_group'),
             'retainage_percent': a.get('retainage_percent'),
+            'change_event_line_item_id': a.get('change_event_line_item_id'),
         }
     return {
         'cost_code': a.cost_code,
@@ -304,6 +305,7 @@ def _allocation_row(a):
         'sov_line_id': getattr(a, 'sov_line_id', None),
         'tax_group': getattr(a, 'tax_group', None),
         'retainage_percent': getattr(a, 'retainage_percent', None),
+        'change_event_line_item_id': getattr(a, 'change_event_line_item_id', None),
     }
 
 
@@ -364,6 +366,7 @@ def co_to_dict(co, allocations=None, revisions=None):
         'billed_amount': float(getattr(co, 'billed_amount', 0) or 0),
         'billing_variance': float(getattr(co, 'billing_variance', 0) or 0),
         'is_subcontract': is_subcontract_co(co),
+        'has_editable_sov': True,
         'allocations': [_allocation_row(a) for a in (allocs or [])],
         'created_at': co.created_at.isoformat() if co.created_at else None,
     }
@@ -432,13 +435,10 @@ def pco_to_dict(pco, allocations=None):
         'change_order_id': pco.change_order_id,
         'linked_rfi_id': getattr(pco, 'linked_rfi_id', None),
         'linked_commitment_ref': getattr(pco, 'linked_commitment_ref', None),
+        'linked_cor_id': getattr(pco, 'linked_cor_id', None),
+        'has_editable_sov': True,
         'attachments': _parse_json(getattr(pco, 'attachments_json', None), []),
-        'allocations': [{
-            'cost_code': a.cost_code,
-            'cost_type': getattr(a, 'cost_type', None) or '',
-            'amount': a.amount,
-            'description': getattr(a, 'description', ''),
-        } for a in (allocs or [])],
+        'allocations': [_allocation_row(a) for a in (allocs or [])],
         'updated_at': pco.updated_at.isoformat() if pco.updated_at else None,
     }
 
@@ -550,6 +550,9 @@ def normalize_allocation_rows(allocations):
                 'cost_type': ctype,
                 'amount': amt,
                 'description': desc,
+                'sov_line_id': (item.get('sov_line_id') or '').strip() or None,
+                'tax_group': (item.get('tax_group') or '').strip() or None,
+                'change_event_line_item_id': item.get('change_event_line_item_id'),
             })
     return rows
 
@@ -605,6 +608,8 @@ def save_allocations(AllocationModel, parent_id_field, parent_id, allocations, d
             row.sov_line_id = item.get('sov_line_id')
         if hasattr(row, 'tax_group') and item.get('tax_group'):
             row.tax_group = item.get('tax_group')
+        if hasattr(row, 'change_event_line_item_id') and item.get('change_event_line_item_id'):
+            row.change_event_line_item_id = int(item['change_event_line_item_id'])
         if hasattr(row, 'retainage_percent') and item.get('retainage_percent') is not None:
             row.retainage_percent = float(item.get('retainage_percent'))
         db.session.add(row)
@@ -635,6 +640,9 @@ def promote_pco_to_co(
         'cost_type': getattr(a, 'cost_type', None),
         'amount': a.amount,
         'description': getattr(a, 'description', ''),
+        'sov_line_id': getattr(a, 'sov_line_id', None),
+        'tax_group': getattr(a, 'tax_group', None),
+        'change_event_line_item_id': getattr(a, 'change_event_line_item_id', None),
     } for a in allocs]
     validate_allocations(alloc_payload, require_rows=True, require_amount=True)
 
@@ -675,6 +683,9 @@ def promote_pco_to_co(
                 cost_type=getattr(a, 'cost_type', None) or '',
                 amount=a.amount,
                 description=getattr(a, 'description', '') or '',
+                sov_line_id=getattr(a, 'sov_line_id', None),
+                tax_group=getattr(a, 'tax_group', None),
+                change_event_line_item_id=getattr(a, 'change_event_line_item_id', None),
             ))
     elif pco.cost_code and total:
         db.session.add(ChangeOrderAllocation(

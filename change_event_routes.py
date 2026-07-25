@@ -485,13 +485,13 @@ def register_change_event_routes(app, deps):
         result = []
         for c in cors:
             allocs = CORAllocation.query.filter_by(cor_id=c.id).all()
-            result.append(cor_to_dict(c, allocs))
+            result.append(cor_to_dict(c, allocs, PotentialChangeOrder, PCOAllocation))
         return deps['jsonify']({'cors': result})
 
     @app.route('/api/cors', methods=['POST'])
     @login_required
     def api_create_cor():
-        from change_event_persistence import apply_cor_fields, cor_to_dict, save_generic_allocations
+        from change_event_persistence import apply_cor_fields, cor_to_dict, link_pcos_to_cor, save_generic_allocations
         body = deps['request'].get_json(silent=True) or {}
         project_id = body.get('project_id') or get_current_project_id()
         if not project_id:
@@ -507,17 +507,43 @@ def register_change_event_routes(app, deps):
         apply_cor_fields(cor, body)
         db.session.add(cor)
         db.session.flush()
-        if body.get('allocations'):
+        if body.get('pco_ids'):
+            link_pcos_to_cor(cor, body['pco_ids'], PotentialChangeOrder, PCOAllocation, db)
+        elif body.get('allocations'):
             save_generic_allocations(CORAllocation, 'cor_id', cor.id, body['allocations'], db)
             cor.amount = sum(float(a.get('amount') or 0) for a in body['allocations'])
+        elif body.get('amount') is not None:
+            cor.amount = float(body.get('amount') or 0)
         db.session.commit()
         allocs = CORAllocation.query.filter_by(cor_id=cor.id).all()
-        return deps['jsonify']({'ok': True, 'cor': cor_to_dict(cor, allocs)})
+        return deps['jsonify']({'ok': True, 'cor': cor_to_dict(cor, allocs, PotentialChangeOrder, PCOAllocation)})
+
+    @app.route('/api/cors/<int:cor_id>/link-pcos', methods=['PUT'])
+    @login_required
+    def api_cor_link_pcos(cor_id):
+        from change_event_persistence import cor_to_dict, link_pcos_to_cor
+        from financial_security import require_financial_project_access
+        cor = ChangeOrderRequest.query.get_or_404(cor_id)
+        try:
+            require_financial_project_access(current_user, cor.project_id, Project)
+        except (ValueError, PermissionError) as exc:
+            return deps['jsonify']({'error': str(exc)}), 403
+        if cor.status not in ('Draft', 'Rejected'):
+            return deps['jsonify']({'error': 'Only draft CORs can be repackaged'}), 400
+        body = deps['request'].get_json(silent=True) or {}
+        try:
+            link_pcos_to_cor(cor, body.get('pco_ids') or [], PotentialChangeOrder, PCOAllocation, db)
+            db.session.commit()
+        except ValueError as exc:
+            db.session.rollback()
+            return deps['jsonify']({'error': str(exc)}), 400
+        allocs = CORAllocation.query.filter_by(cor_id=cor.id).all()
+        return deps['jsonify']({'ok': True, 'cor': cor_to_dict(cor, allocs, PotentialChangeOrder, PCOAllocation)})
 
     @app.route('/api/cors/<int:cor_id>/workflow', methods=['POST'])
     @login_required
     def api_cor_workflow(cor_id):
-        from change_event_persistence import cor_workflow_action, cor_to_dict, promote_cor_to_pco, link_change_event_schedule_impact
+        from change_event_persistence import cor_workflow_action, cor_to_dict, finalize_cor_promotion, link_change_event_schedule_impact
         from sage_service import create_and_process_sage_event
         from financial_security import require_financial_project_access
         cor = ChangeOrderRequest.query.get_or_404(cor_id)
@@ -532,6 +558,7 @@ def register_change_event_routes(app, deps):
                 cor, action, current_user, body=body,
                 ChangeOrderRequest=ChangeOrderRequest,
                 CORAllocation=CORAllocation,
+                PotentialChangeOrder=PotentialChangeOrder,
             )
         except ValueError as exc:
             return deps['jsonify']({'error': str(exc)}), 400
@@ -556,10 +583,13 @@ def register_change_event_routes(app, deps):
                     link_change_event_schedule_impact(ScheduleData, Project, db, cor.project_id, ce, cor.number)
             if body.get('promote_pco'):
                 allocs = CORAllocation.query.filter_by(cor_id=cor.id).all()
-                pco = promote_cor_to_pco(cor, allocs, PotentialChangeOrder, PCOAllocation, db, generate_next_number, current_user.id)
+                pco = finalize_cor_promotion(
+                    cor, allocs, PotentialChangeOrder, PCOAllocation, db,
+                    generate_next_number, current_user.id,
+                )
         db.session.commit()
         allocs = CORAllocation.query.filter_by(cor_id=cor.id).all()
-        out = {'ok': True, 'new_status': new_status, 'cor': cor_to_dict(cor, allocs)}
+        out = {'ok': True, 'new_status': new_status, 'cor': cor_to_dict(cor, allocs, PotentialChangeOrder, PCOAllocation)}
         if pco:
             from co_persistence import pco_to_dict
             out['pco'] = pco_to_dict(pco, PCOAllocation.query.filter_by(pco_id=pco.id).all())

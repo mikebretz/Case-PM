@@ -1196,6 +1196,7 @@ class ChangeOrderAllocation(db.Model):
     sov_line_id = db.Column(db.String(64))
     tax_group = db.Column(db.String(40))
     retainage_percent = db.Column(db.Float)
+    change_event_line_item_id = db.Column(db.Integer, nullable=True)
 
 
 class ChangeOrderRevision(db.Model):
@@ -1254,8 +1255,7 @@ class PCOAllocation(db.Model):
     description = db.Column(db.String(200))
     sov_line_id = db.Column(db.String(64))
     tax_group = db.Column(db.String(40))
-    sov_line_id = db.Column(db.String(64))
-    tax_group = db.Column(db.String(40))
+    change_event_line_item_id = db.Column(db.Integer, nullable=True)
 
 
 class ChangeEvent(db.Model):
