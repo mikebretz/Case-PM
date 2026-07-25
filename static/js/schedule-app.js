@@ -556,50 +556,67 @@
         handle.style.right = 'auto';
     }
 
-    function resetGanttLayoutCellStyles() {
-        const root = document.querySelector('#gantt_here .gantt_layout_root');
-        if (!root) return;
-        root.style.position = '';
-        root.querySelectorAll(':scope > .gantt_layout_cell').forEach(cell => {
-            cell.style.cssText = '';
-        });
-    }
+    let layoutSyncInProgress = false;
+    let layoutSyncPending = false;
+    let lastLayoutKey = '';
 
-    function syncGanttLayout() {
+    function syncGanttLayout(options = {}) {
         if (!ganttReady) return;
+        if (layoutSyncInProgress) {
+            layoutSyncPending = true;
+            return;
+        }
+
         const root = document.querySelector('#gantt_here .gantt_layout_root');
         if (!root) return;
-
-        resetGanttLayoutCellStyles();
 
         const gridW = getColumnsTotalWidth();
         const host = document.getElementById('gantt_here');
         const hostW = host?.clientWidth || root.clientWidth || 1200;
         const timelineW = getTimelineWidth();
-        if (host) {
-            host.style.setProperty('--sched-grid-min-width', gridW + 'px');
-            host.style.setProperty('--sched-timeline-width', timelineW + 'px');
-        }
+        const gridPaneW = Math.max(200, Math.min(gridW, hostW - timelineW - 24));
+        const layoutKey = `${gridW}|${gridPaneW}|${timelineW}|${hostW}`;
 
-        gantt.config.grid_width = gridW;
-        if (gantt.config.layout?.cols?.[0]) {
-            gantt.config.layout.cols[0].width = Math.max(200, Math.min(gridW, hostW - timelineW - 24));
-            gantt.config.layout.cols[0].min_width = 160;
-        }
-        if (gantt.config.layout?.cols?.[2]) {
-            gantt.config.layout.cols[2].width = Math.max(220, timelineW);
-            gantt.config.layout.cols[2].min_width = 220;
-        }
+        layoutSyncInProgress = true;
+        try {
+            if (host) {
+                host.style.setProperty('--sched-grid-min-width', gridW + 'px');
+                host.style.setProperty('--sched-timeline-width', timelineW + 'px');
+            }
 
-        const cells = root.querySelectorAll(':scope > .gantt_layout_cell');
-        const timelineCell = cells[2];
-        if (timelineCell) ensureTimelineOverlayWidgets(timelineCell);
+            const layoutChanged = layoutKey !== lastLayoutKey;
+            if (layoutChanged) {
+                lastLayoutKey = layoutKey;
+                gantt.config.grid_width = gridW;
+                if (gantt.config.layout?.cols?.[0]) {
+                    gantt.config.layout.cols[0].width = gridPaneW;
+                    gantt.config.layout.cols[0].min_width = 160;
+                }
+                if (gantt.config.layout?.cols?.[2]) {
+                    gantt.config.layout.cols[2].width = Math.max(220, timelineW);
+                    gantt.config.layout.cols[2].min_width = 220;
+                }
+                syncLayoutTimelineWidth();
+                if (!options.skipSetSizes && typeof gantt.setSizes === 'function') {
+                    gantt.setSizes();
+                }
+            }
 
-        syncLayoutTimelineWidth();
-        if (typeof gantt.setSizes === 'function') gantt.setSizes();
-        positionChartResizerVisual();
-        ensureTimelineScrollbar();
-        refreshTimelinePanBar();
+            const timelineCell = root.querySelectorAll(':scope > .gantt_layout_cell')[2];
+            if (timelineCell) ensureTimelineOverlayWidgets(timelineCell);
+
+            positionChartResizerVisual();
+            if (!options.light) {
+                ensureTimelineScrollbar();
+                refreshTimelinePanBar();
+            }
+        } finally {
+            layoutSyncInProgress = false;
+            if (layoutSyncPending) {
+                layoutSyncPending = false;
+                queueGanttLayoutSync();
+            }
+        }
     }
 
     function queueGanttLayoutSync() {
@@ -2609,7 +2626,7 @@
             bindGridSelectionHandlers();
             applyCellAlignToDom();
             updateAlignToolbarButtons();
-            if (ganttReady) syncGanttLayout();
+            positionChartResizerVisual();
         });
 
         document.addEventListener('keydown', onScheduleKeyDown);
