@@ -120,6 +120,36 @@
             border-top: 1px solid #3f3f46;
             background: #141416;
         }
+        #casepmPageHelpModal:not([open]) { display: none !important; }
+        #casepmPageHelpModal[open] {
+            display: flex;
+            flex-direction: column;
+            max-width: 56rem;
+            width: calc(100vw - 2rem);
+            max-height: min(90vh, 820px);
+            overflow: hidden;
+            padding: 0;
+            border: 1px solid #52525b;
+            background: #18181b;
+            z-index: 100003 !important;
+        }
+        #casepmPageHelpModal[open]::backdrop {
+            background: rgba(0, 0, 0, 0.78);
+        }
+        #casepmPageHelpLayout {
+            display: grid;
+            grid-template-columns: 11rem 1fr;
+            gap: 0;
+            min-height: 0;
+            flex: 1;
+        }
+        #casepmPageHelpLayout.casepm-help-single { grid-template-columns: 1fr; }
+        #casepmPageHelpBody { overflow-y: auto; max-height: min(68vh, 600px); }
+        .casepm-help-prose strong { color: #e4e4e7; font-weight: 600; }
+        @media (max-width: 640px) {
+            #casepmPageHelpLayout { grid-template-columns: 1fr; }
+            #casepmPageHelpNav { max-height: 8rem; overflow-y: auto; border-bottom: 1px solid #3f3f46; }
+        }
         #casepmApprovalResponder #aprActions {
             display: flex;
             flex-wrap: wrap;
@@ -288,6 +318,8 @@
     <script src="{{ static_v('js/casepm-approval-responder.js') }}"></script>
     <script src="{{ static_v('js/casepm-esign.js') }}"></script>
     <script src="{{ static_v('js/casepm-user-profile.js') }}"></script>
+    <script src="{{ static_v('js/page-help-guides.js') }}"></script>
+    <script src="{{ static_v('js/casepm-page-help.js') }}"></script>
     {% if current_user.is_authenticated and is_developer %}
     <script>
         window.CASEPM_IS_DEVELOPER = true;
@@ -298,6 +330,7 @@
     {% endif %}
 </head>
 <body class="bg-zinc-950 text-zinc-200 h-screen overflow-hidden {% if is_sub_portal %}portal-sub{% elif is_architect_portal %}portal-architect{% else %}portal-staff{% endif %}{% if is_sub_vendor_portal %} portal-sub-vendor{% endif %}"
+      data-is-staff-portal="{{ '1' if show_page_help else '0' }}"
       data-page-module="{{ page_module|default('app') }}"
       data-current-user="{{ current_user.full_name if current_user.is_authenticated else '' }}"
       data-current-user-id="{{ current_user.id if current_user.is_authenticated else '' }}"
@@ -431,8 +464,15 @@
             </div>
         </div>
 
-        <!-- Right: User Profile -->
-        <div class="flex items-center gap-3 cursor-pointer flex-shrink-0" onclick="typeof showUserProfileModal === 'function' && showUserProfileModal()" title="User Profile">
+        <!-- Right: Help + User Profile -->
+        <div class="flex items-center gap-3 flex-shrink-0">
+        {% if show_page_help %}
+        <button type="button" id="casepmPageHelpBtn" class="flex items-center gap-2 px-3 py-2 bg-violet-900/50 hover:bg-violet-800 border border-violet-700/40 rounded-lg text-sm text-violet-100 transition-colors" title="How to use this page">
+            <i class="fa-solid fa-circle-question"></i>
+            <span class="hidden md:inline">How to use</span>
+        </button>
+        {% endif %}
+        <div class="flex items-center gap-3 cursor-pointer" onclick="typeof showUserProfileModal === 'function' && showUserProfileModal()" title="User Profile">
             <div class="flex items-center gap-2.5">
                 <div class="w-8 h-8 bg-zinc-700 rounded-full overflow-hidden flex-shrink-0">
                     {% if current_user.is_authenticated and current_user_profile and current_user_profile.profile_image_url %}
@@ -1244,6 +1284,30 @@
     </script>
 
     <script src="{{ static_v('js/presence-client.js') }}"></script>
+
+    {% if show_page_help %}
+    <dialog id="casepmPageHelpModal" class="rounded-lg text-white" aria-labelledby="casepmPageHelpTitle">
+        <div class="p-4 border-b border-zinc-800 flex items-center justify-between flex-shrink-0">
+            <div class="min-w-0 pr-4">
+                <h2 id="casepmPageHelpTitle" class="text-lg font-semibold flex items-center gap-2 truncate">
+                    <i class="fa-solid fa-circle-question text-violet-400 flex-shrink-0"></i>
+                    <span class="truncate">How to use this page</span>
+                </h2>
+                <p id="casepmPageHelpSubtitle" class="text-xs text-zinc-500 mt-0.5 truncate"></p>
+            </div>
+            <button type="button" data-casepm-help-close class="text-zinc-400 hover:text-white text-2xl leading-none px-2 flex-shrink-0" aria-label="Close">&times;</button>
+        </div>
+        <div id="casepmPageHelpLayout" class="casepm-help-layout min-h-0">
+            <nav id="casepmPageHelpNav" class="p-3 border-r border-zinc-800 space-y-1 overflow-y-auto bg-zinc-950/50" aria-label="Help topics"></nav>
+            <div class="p-5 min-h-0 flex flex-col">
+                <div id="casepmPageHelpBody" class="flex-1"></div>
+                <div class="pt-4 mt-2 border-t border-zinc-800 flex justify-end flex-shrink-0">
+                    <button type="button" data-casepm-help-close class="px-5 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Close</button>
+                </div>
+            </div>
+        </div>
+    </dialog>
+    {% endif %}
 
 {% endif %}
 

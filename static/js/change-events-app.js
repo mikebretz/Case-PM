@@ -795,6 +795,8 @@
   }
 
   const TAB_KEYS = { events: 'change_orders_events', rfqs: 'change_orders_rfq', cors: 'change_orders_cor', cpcos: 'change_orders_cpco', erp: 'change_orders_erp' };
+  const TAB_SECTION = { events: 'change-events', rfqs: 'rfq', cors: 'cor', cpcos: 'cpco', erp: 'erp', cos: 'owner-co', pcos: 'pco', subs: 'sub-co' };
+  if (global.CasePMPageHelp) global.CasePMPageHelp.registerTabSectionMap('change_orders', TAB_SECTION);
 
   function switchExtTab(tab) {
     ['events', 'rfqs', 'cors', 'cpcos', 'erp'].forEach(t => {
@@ -812,7 +814,7 @@
   CO.switchTab = function (tab) {
     if (['events', 'rfqs', 'cors', 'cpcos', 'erp'].includes(tab)) {
       switchExtTab(tab);
-      if (global.CasePMChangeOrdersHelp?.setContextFromTab) global.CasePMChangeOrdersHelp.setContextFromTab(tab);
+      if (global.CasePMPageHelp?.setContextFromTab) global.CasePMPageHelp.setContextFromTab(tab);
       return;
     }
     return origSwitch.call(CO, tab);
