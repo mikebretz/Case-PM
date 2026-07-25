@@ -125,8 +125,8 @@ body:has(.schedule-page-root) #mainContent {
     position: relative;
     z-index: 1;
     --sched-grid-header-top: 26px;
-    --sched-grid-header-label: 52px;
-    --sched-grid-header-total: 78px;
+    --sched-grid-header-label: 39px;
+    --sched-grid-header-total: 65px;
 }
 #ganttViewPanel {
     flex: 1 1 auto;
@@ -403,17 +403,29 @@ body.schedule-chart-resizing {
     margin-left: auto !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid {
-    min-width: var(--sched-grid-min-width, 640px) !important;
+    min-width: 0 !important;
     width: 100% !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_scale,
 .schedule-overlay-mode #gantt_here .gantt_grid_data {
     width: 100% !important;
-    min-width: 100% !important;
+    min-width: 0 !important;
+    overflow-x: hidden !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_scale .gantt_grid_head,
 .schedule-overlay-mode #gantt_here .gantt_grid_data .gantt_row {
+    width: var(--sched-grid-min-width, 640px) !important;
     min-width: var(--sched-grid-min-width, 640px) !important;
+    max-width: none !important;
+}
+.schedule-overlay-mode #gantt_here [data-cell-id="gridScroll"] {
+    flex: 0 0 20px !important;
+    min-height: 20px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    z-index: 35 !important;
+    background: var(--sched-scroll-bg) !important;
+    border-top: 1px solid var(--sched-border) !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_column_resize_wrap {
     z-index: 40 !important;
@@ -777,10 +789,10 @@ body.schedule-chart-resizing {
 
 /* ─── Excel-style grid: compact headers aligned with timeline ─── */
 .gantt_grid_scale {
-    height: var(--sched-grid-header-total, 78px) !important;
-    min-height: var(--sched-grid-header-total, 78px) !important;
-    max-height: var(--sched-grid-header-total, 78px) !important;
-    overflow-x: auto !important;
+    height: var(--sched-grid-header-total, 65px) !important;
+    min-height: var(--sched-grid-header-total, 65px) !important;
+    max-height: var(--sched-grid-header-total, 65px) !important;
+    overflow-x: hidden !important;
     overflow-y: hidden !important;
     scrollbar-width: none;
     position: relative !important;
@@ -793,12 +805,14 @@ body.schedule-chart-resizing {
 }
 .gantt_grid_scale .gantt_grid_head {
     position: relative !important;
-    height: var(--sched-grid-header-total, 78px) !important;
-    width: 100% !important;
+    height: var(--sched-grid-header-total, 65px) !important;
+    width: var(--sched-grid-min-width, 640px) !important;
+    min-width: var(--sched-grid-min-width, 640px) !important;
+    max-width: none !important;
 }
 .gantt_grid_scale .gantt_grid_head_cell {
-    height: var(--sched-grid-header-label, 52px) !important;
-    line-height: var(--sched-grid-header-label, 52px) !important;
+    height: var(--sched-grid-header-label, 39px) !important;
+    line-height: var(--sched-grid-header-label, 39px) !important;
     top: var(--sched-grid-header-top, 26px) !important;
     font-size: 11px !important;
     font-weight: 700 !important;
@@ -827,8 +841,14 @@ body.schedule-chart-resizing {
     z-index: 0;
 }
 .gantt_grid_data {
-    overflow-x: auto !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
     scrollbar-width: none;
+}
+.gantt_grid_data .gantt_row {
+    width: var(--sched-grid-min-width, 640px) !important;
+    min-width: var(--sched-grid-min-width, 640px) !important;
+    max-width: none !important;
 }
 .gantt_grid_data::-webkit-scrollbar {
     display: none;
@@ -857,8 +877,8 @@ body.schedule-chart-resizing {
 /* Timeline scale — two compact rows matching grid header (P6-style) */
 .gantt_task_scale {
     height: auto !important;
-    min-height: var(--sched-grid-header-total, 78px) !important;
-    max-height: var(--sched-grid-header-total, 78px) !important;
+    min-height: var(--sched-grid-header-total, 65px) !important;
+    max-height: var(--sched-grid-header-total, 65px) !important;
 }
 /* Dark theme (default): charcoal headers, light date labels */
 .schedule-page-root:not(.schedule-theme-light) .gantt_scale_cell {
@@ -1150,11 +1170,11 @@ body.sched-col-dragging .gantt_grid_scale {
     cursor: grabbing !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_scale {
-    overflow-x: auto !important;
+    overflow-x: hidden !important;
     overflow-y: hidden !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_data {
-    overflow-x: auto !important;
+    overflow-x: hidden !important;
     overflow-y: auto !important;
 }
 #gantt_here [data-cell-id="gridScroll"] {
