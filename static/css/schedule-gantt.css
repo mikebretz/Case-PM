@@ -653,13 +653,37 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
 }
-/* Timeline scale — two compact rows matching grid header */
+/* Timeline scale — two compact rows matching grid header (P6-style) */
 .gantt_task_scale {
     height: auto !important;
     min-height: 52px !important;
     max-height: 52px !important;
 }
-.gantt_scale_cell {
+/* Dark theme (default): charcoal headers, light date labels */
+.schedule-page-root:not(.schedule-theme-light) .gantt_scale_cell {
+    height: 26px !important;
+    line-height: 26px !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0 !important;
+    color: #e8e8e8 !important;
+    background: #3a3a3a !important;
+    border-color: #2a2a2a !important;
+}
+.schedule-page-root:not(.schedule-theme-light) .gantt_task_scale .gantt_scale_line:first-child .gantt_scale_cell {
+    font-weight: 700 !important;
+    color: #ffffff !important;
+    background: #2d2d2d !important;
+}
+.schedule-page-root:not(.schedule-theme-light) .gantt_task_scale .gantt_scale_line:last-child .gantt_scale_cell,
+.schedule-page-root:not(.schedule-theme-light) .gantt_task_scale .gantt_scale_line:nth-child(2) .gantt_scale_cell {
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    color: #d4d4d4 !important;
+    background: #454545 !important;
+}
+/* Light theme: P6-style light gray headers */
+.schedule-page-root.schedule-theme-light .gantt_scale_cell {
     height: 26px !important;
     line-height: 26px !important;
     font-size: 11px !important;
@@ -669,25 +693,21 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     background: #ececec !important;
     border-color: #a6a6a6 !important;
 }
-.gantt_task_scale .gantt_scale_line:last-child .gantt_scale_cell,
-.gantt_task_scale .gantt_scale_line:nth-child(2) .gantt_scale_cell {
+.schedule-page-root.schedule-theme-light .gantt_task_scale .gantt_scale_line:last-child .gantt_scale_cell,
+.schedule-page-root.schedule-theme-light .gantt_task_scale .gantt_scale_line:nth-child(2) .gantt_scale_cell {
     font-size: 11px !important;
     font-weight: 700 !important;
     color: #000 !important;
     background: #d9d9d9 !important;
 }
 
-/* Faint full-row selection — MS Project blue highlight */
+/* Excel-style: no full-row fill on grid click — chart row gets faint highlight only */
 .gantt_grid_data .gantt_row.sched-row-active,
 .gantt_grid_data .gantt_row.sched-row-active .gantt_cell,
 .gantt_grid_data .gantt_row.sched-row-active.odd,
-.gantt_grid_data .gantt_row.sched-row-active.odd .gantt_cell,
-.gantt_task_row.sched-row-active,
-.gantt_task_row.sched-row-active .gantt_task_cell,
-.gantt_task_row.sched-row-active.odd,
-.gantt_task_row.sched-row-active.odd .gantt_task_cell {
-    background-color: var(--sched-selection) !important;
-    color: var(--sched-text-strong) !important;
+.gantt_grid_data .gantt_row.sched-row-active.odd .gantt_cell {
+    background-color: inherit !important;
+    color: inherit !important;
     box-shadow: none !important;
     outline: none !important;
 }
@@ -696,9 +716,23 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 .gantt_grid_data .gantt_cell.gantt_selected,
 .gantt_grid_data .gantt_row.gantt_selected.odd,
 .gantt_grid_data .gantt_row.gantt_selected.odd .gantt_cell {
-    background-color: var(--sched-selection) !important;
-    color: var(--sched-text-strong) !important;
-    box-shadow: inset 3px 0 0 var(--sched-selection-border) !important;
+    background-color: inherit !important;
+    color: inherit !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+.gantt_grid_data .gantt_cell.sched-cell-focus {
+    outline: 2px solid #e87722 !important;
+    outline-offset: -2px !important;
+    z-index: 5 !important;
+    position: relative !important;
+}
+.gantt_task_row.sched-row-active,
+.gantt_task_row.sched-row-active .gantt_task_cell,
+.gantt_task_row.sched-row-active.odd,
+.gantt_task_row.sched-row-active.odd .gantt_task_cell {
+    background-color: rgba(55, 148, 255, 0.08) !important;
+    box-shadow: none !important;
     outline: none !important;
 }
 .gantt_task_row.gantt_selected,
@@ -840,15 +874,13 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     position: absolute;
     left: 0;
     top: 0;
-    right: 0;
-    bottom: 0;
     width: auto;
     height: auto;
     z-index: 40;
     display: flex;
     align-items: stretch;
-    background: var(--sched-bg);
-    border: 2px solid var(--sched-accent);
+    background: inherit;
+    border: 2px solid #e87722;
     box-sizing: border-box;
     overflow: hidden;
     margin: 0;
@@ -861,12 +893,13 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     min-width: 0;
     min-height: 0;
     border: none;
-    background: #27272a;
-    color: #fff;
-    font-size: 13px;
-    padding: 2px 4px;
+    background: inherit;
+    color: inherit;
+    font-size: 11px;
+    padding: 0 4px;
     box-sizing: border-box;
     outline: none;
+    line-height: 21px;
 }
 /* Let dhtmlx position grid rows/cells — do not override position */
 /* Grid cell alignment — text-align only (dhtmlx uses absolute positioning; flex breaks headers) */
@@ -902,12 +935,25 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 }
 
 /* Column resize handles — Excel-style on header border */
+.gantt_grid_scale .gantt_grid_column_resize_wrap {
+    top: 0 !important;
+    height: 52px !important;
+    cursor: col-resize !important;
+    z-index: 140 !important;
+    pointer-events: auto !important;
+    width: 10px !important;
+    margin-left: -5px !important;
+}
 .gantt_grid_column_resize_wrap {
     cursor: col-resize !important;
     z-index: 130 !important;
     pointer-events: auto !important;
     width: 8px !important;
     margin-left: -4px !important;
+}
+body.sched-col-resizing {
+    cursor: col-resize !important;
+    user-select: none !important;
 }
 .gantt_grid_column_resize_wrap .gantt_grid_column_resize {
     background-color: var(--sched-border-strong) !important;
@@ -929,6 +975,8 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 /* ─── Timeline — rows aligned 1:1 with grid (dhtmlx row_height drives layout) ─── */
 #gantt_here {
     --sched-row-h: 24px;
+    --sched-bar-h: 16px;
+    --sched-summary-bar-h: 12px;
     --gantt-link-color: #b0b0b0;
     --gantt-link-width: 1px;
 }
@@ -964,9 +1012,8 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     border-bottom: 1px dotted rgba(160, 160, 160, 0.35) !important;
     box-sizing: border-box !important;
 }
-.gantt_task_scale, .gantt_scale_cell {
+.gantt_task_scale {
     background-color: var(--sched-surface-raised) !important;
-    color: var(--sched-text-muted) !important;
     border-color: var(--sched-border) !important;
 }
 .gantt_scale_line { border-color: var(--sched-border) !important; }
@@ -1002,10 +1049,16 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 .gantt_task_line.cpm_loe {
     height: 4px !important;
 }
+#gantt_here .gantt_task_line:not(.cpm_milestone):not(.cpm_loe) {
+    height: var(--sched-bar-h, 16px) !important;
+    min-height: var(--sched-bar-h, 16px) !important;
+    max-height: var(--sched-bar-h, 16px) !important;
+}
 .gantt_task_line.cpm_summary,
 .gantt_task_line.sched-summary-bar {
-    height: 10px !important;
-    min-height: 10px !important;
+    height: var(--sched-summary-bar-h, 12px) !important;
+    min-height: var(--sched-summary-bar-h, 12px) !important;
+    max-height: var(--sched-summary-bar-h, 12px) !important;
     border-radius: 0 !important;
 }
 
@@ -1054,11 +1107,6 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 .gantt_task_link.cpm_link_critical .gantt_line_wrapper div {
     background-color: var(--gantt-link-color, #b0b0b0) !important;
 }
-.gantt_link_arrow_right { border-left-color: var(--gantt-link-color, #c00000) !important; }
-.gantt_link_arrow_left { border-right-color: var(--gantt-link-color, #c00000) !important; }
-.gantt_link_arrow_up { border-bottom-color: var(--gantt-link-color, #c00000) !important; }
-.gantt_link_arrow_down { border-top-color: var(--gantt-link-color, #c00000) !important; }
-.gantt_task_link.cpm_link_critical .gantt_link_arrow_right { border-left-color: #c00000 !important; }
 
 /* Inline editor */
 .gantt_inline_editor, .gantt_grid_editor_placeholder {
