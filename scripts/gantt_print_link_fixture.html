@@ -36,9 +36,9 @@
         .print-inline-links {
             position: absolute;
             top: 0;
-            left: 0;
-            right: auto;
-            width: 100%;
+            left: var(--print-cols-width, 0);
+            right: 0;
+            width: auto;
             height: 100%;
             pointer-events: none;
             z-index: 20;
@@ -46,8 +46,10 @@
     </style>
 </head>
 <body>
-    <div class="print-schedule-wrap" id="wrap">
-        <svg class="print-inline-links" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+    <div class="print-schedule-wrap" id="wrap" style="--print-cols-width:200px">
+        <svg class="print-inline-links" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <path d="M 40 60 L 43 60 L 43 75 L 55 75" fill="none" stroke="#b0b0b0" stroke-width="1.2"/>
+        </svg>
         <table class="schedule-print-table">
             <colgroup>
                 <col style="width:120px">
@@ -87,6 +89,7 @@
             const wrapRect = wrap.getBoundingClientRect();
             const tableRect = table.getBoundingClientRect();
             const barRect = barCell.getBoundingClientRect();
+            if (barRect.width < 2 || tableRect.height < 2) return;
             svg.style.left = `${Math.max(0, barRect.left - wrapRect.left)}px`;
             svg.style.top = `${Math.max(0, tableRect.top - wrapRect.top)}px`;
             svg.style.width = `${Math.max(1, barRect.width)}px`;
@@ -107,8 +110,8 @@
         const wrap = document.getElementById('wrap');
         const table = wrap.querySelector('.schedule-print-table');
         syncPrintLinkOverlay(wrap);
-        const rowY = getPrintLinkRowY(table);
-        window.__printLinkRowY = rowY;
+        window.__printLinkRowY = getPrintLinkRowY(table);
+        window.__printLinkPathCount = wrap.querySelectorAll('.print-inline-links path').length;
     </script>
 </body>
 </html>
