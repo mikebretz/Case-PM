@@ -352,8 +352,8 @@ body.schedule-chart-resizing {
     bottom: 0 !important;
     z-index: 30 !important;
     flex: none !important;
-    width: var(--sched-grid-overlay-w, 520px) !important;
-    min-width: 0 !important;
+    width: var(--sched-grid-min-width, 520px) !important;
+    min-width: var(--sched-grid-min-width, 520px) !important;
     max-width: none !important;
     overflow: visible !important;
     background: var(--sched-bg) !important;
@@ -382,7 +382,7 @@ body.schedule-chart-resizing {
 }
 .schedule-overlay-mode #gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(3) {
     position: absolute !important;
-    left: var(--sched-chart-left, 520px) !important;
+    left: var(--sched-grid-min-width, 520px) !important;
     top: 0 !important;
     bottom: 0 !important;
     right: 16px !important;
@@ -419,9 +419,26 @@ body.schedule-chart-resizing {
     min-height: 0 !important;
     overflow: hidden !important;
 }
-.schedule-overlay-mode #gantt_here .gantt_grid_column_resize_wrap {
-    z-index: 40 !important;
+.schedule-overlay-mode #gantt_here .gantt_grid_scale .gantt_grid_head_cell,
+.schedule-overlay-mode #gantt_here .gantt_grid_data .gantt_cell {
+    position: absolute !important;
+    flex: none !important;
+}
+.schedule-overlay-mode #gantt_here .gantt_grid_data .gantt_row {
+    position: relative !important;
+}
+.schedule-overlay-mode #gantt_here .gantt_grid_scale .gantt_grid_head {
+    position: relative !important;
+    display: block !important;
+}
+.schedule-overlay-mode #gantt_here .sched-col-grip-layer .sched-col-resize-grip {
+    position: absolute !important;
+    top: var(--sched-grid-header-top, 26px) !important;
+    height: var(--sched-grid-header-label, 39px) !important;
+    width: 10px !important;
+    margin-left: -5px !important;
     pointer-events: auto !important;
+    z-index: 250 !important;
 }
 .schedule-split-mode #scheduleOverlayControls,
 .schedule-split-mode #scheduleChartResizer {
