@@ -529,85 +529,148 @@
         return { columns: metrics, total: left };
     }
 
-    function applyColumnWidthsToDom() {
+    function ensureGridHeaderChrome(total) {
+        const gridHead = document.querySelector('#gantt_here .gantt_grid_scale .gantt_grid_head');
+        if (!gridHead) return;
+        let chrome = gridHead.querySelector('.sched-grid-header-chrome');
+        if (!chrome) {
+            chrome = document.createElement('div');
+            chrome.className = 'sched-grid-header-chrome';
+            gridHead.insertBefore(chrome, gridHead.firstChild);
+        }
+        chrome.style.width = total + 'px';
+        chrome.style.minWidth = total + 'px';
+    }
+
+    function applyMetricToCell(cell, m, col, opts) {
+        if (!cell || !m) return;
+        const isHead = opts?.head === true;
+        cell.style.position = 'absolute';
+        cell.style.left = m.left + 'px';
+        cell.style.right = 'auto';
+        cell.style.width = m.width + 'px';
+        cell.style.minWidth = m.width + 'px';
+        cell.style.maxWidth = m.width + 'px';
+        cell.style.flex = 'none';
+        cell.style.flexGrow = '0';
+        cell.style.flexShrink = '0';
+        cell.style.boxSizing = 'border-box';
+        if (!isHead) {
+            cell.style.top = '0';
+            cell.style.height = '100%';
+        }
+        if (col) cell.classList.toggle('sched-add-col-cell', isAddColumnCol(col));
+    }
+
+    let enforceGridTimer = null;
+    let enforceGridPass = 0;
+
+    function queueEnforceGridColumnExtents() {
+        clearTimeout(enforceGridTimer);
+        enforceGridPass = 0;
+        const run = () => {
+            enforceGridColumnExtents();
+            enforceGridPass += 1;
+            if (enforceGridPass < 5) requestAnimationFrame(run);
+        };
+        enforceGridTimer = setTimeout(() => requestAnimationFrame(run), 0);
+    }
+
+    function ensureGridScrollWidthSentinel(total) {
+        const gridData = document.querySelector('#gantt_here .gantt_grid_data');
+        const gridScale = document.querySelector('#gantt_here .gantt_grid_scale');
+        [gridData, gridScale].forEach(host => {
+            if (!host) return;
+            let sentinel = host.querySelector(':scope > .sched-grid-scroll-sentinel');
+            if (!sentinel) {
+                sentinel = document.createElement('div');
+                sentinel.className = 'sched-grid-scroll-sentinel';
+                sentinel.setAttribute('aria-hidden', 'true');
+                host.appendChild(sentinel);
+            }
+            sentinel.style.width = total + 'px';
+            sentinel.style.height = '1px';
+            sentinel.style.position = 'absolute';
+            sentinel.style.left = '0';
+            sentinel.style.top = '0';
+            sentinel.style.pointerEvents = 'none';
+            sentinel.style.visibility = 'hidden';
+            sentinel.style.zIndex = '-1';
+        });
+    }
+
+    function layoutColumnResizeGrips(metrics) {
+        const scaleHead = document.querySelector('#gantt_here .gantt_grid_scale .gantt_grid_head');
+        if (!scaleHead) return;
+        const list = metrics || getColumnLayoutMetrics().columns;
+        scaleHead.querySelectorAll('.gantt_grid_column_resize_wrap').forEach(wrap => {
+            wrap.style.display = '';
+            wrap.style.pointerEvents = '';
+            const colIndex = getColumnIndexFromResizeWrap(wrap);
+            if (colIndex < 0) return;
+            const m = list[colIndex];
+            if (!m) return;
+            wrap.style.left = Math.max(0, m.left + m.width - 5) + 'px';
+        });
+    }
+
+    function enforceGridColumnExtents() {
         if (!ganttReady) return;
         restoreColumnWidthsFromConfig();
         const cols = gantt.config.columns || [];
-        const total = getColumnsTotalWidth();
+        const { columns: metrics, total } = getColumnLayoutMetrics();
         gantt.config.grid_width = total;
         gantt.config.keep_grid_width = true;
-
-        const applyCellWidth = (cell, w) => {
-            if (!cell) return;
-            cell.style.position = '';
-            cell.style.left = '';
-            cell.style.top = '';
-            cell.style.right = '';
-            cell.style.height = '';
-            cell.style.width = w + 'px';
-            cell.style.minWidth = w + 'px';
-            cell.style.maxWidth = w + 'px';
-            cell.style.flex = `0 0 ${w}px`;
-            cell.style.flexGrow = '0';
-            cell.style.flexShrink = '0';
-        };
-
-        const headCells = document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell');
-        headCells.forEach((cell, i) => {
-            const col = cols[i];
-            if (!col) return;
-            applyCellWidth(cell, resolveColumnWidth(col));
-            if (col.name === '_sched_add_col') cell.classList.add('sched-add-col-header');
-        });
+        const host = document.getElementById('gantt_here');
+        if (host) host.style.setProperty('--sched-grid-min-width', total + 'px');
 
         const gridHead = document.querySelector('#gantt_here .gantt_grid_scale .gantt_grid_head');
+        const gridScale = document.querySelector('#gantt_here .gantt_grid_scale');
+        const gridData = document.querySelector('#gantt_here .gantt_grid_data');
         if (gridHead) {
-            gridHead.style.position = '';
             gridHead.style.width = total + 'px';
             gridHead.style.minWidth = total + 'px';
             gridHead.style.maxWidth = 'none';
         }
-        const gridScale = document.querySelector('#gantt_here .gantt_grid_scale');
-        if (gridScale) {
-            gridScale.style.width = total + 'px';
-            gridScale.style.minWidth = total + 'px';
-            gridScale.style.maxWidth = 'none';
-        }
-        const gridData = document.querySelector('#gantt_here .gantt_grid_data');
-        if (gridData) {
-            gridData.style.width = total + 'px';
-            gridData.style.minWidth = total + 'px';
-            gridData.style.maxWidth = 'none';
+        if (gridScale) gridScale.style.maxWidth = 'none';
+        if (gridData) gridData.style.maxWidth = 'none';
+
+        ensureGridHeaderChrome(total);
+        ensureGridScrollWidthSentinel(total);
+
+        const headCells = document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell');
+        const headCount = Math.min(headCells.length, metrics.length);
+        for (let i = 0; i < headCount; i++) {
+            applyMetricToCell(headCells[i], metrics[i], cols[i], { head: true });
+            if (cols[i]?.name === '_sched_add_col') headCells[i].classList.add('sched-add-col-header');
         }
 
         document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
-            row.style.position = '';
             row.style.width = total + 'px';
             row.style.minWidth = total + 'px';
             row.style.maxWidth = 'none';
-            row.querySelectorAll(':scope > .gantt_cell').forEach((cell, i) => {
-                const col = cols[i];
-                if (!col) return;
-                applyCellWidth(cell, resolveColumnWidth(col));
-                cell.classList.toggle('sched-add-col-cell', isAddColumnCol(col));
-            });
+            const cells = row.querySelectorAll(':scope > .gantt_cell');
+            const cellCount = Math.min(cells.length, metrics.length);
+            for (let i = 0; i < cellCount; i++) {
+                applyMetricToCell(cells[i], metrics[i], cols[i]);
+            }
         });
 
-        const gridInner = document.querySelector('#gantt_here .gantt_grid');
-        if (gridInner) {
-            gridInner.style.width = total + 'px';
-            gridInner.style.minWidth = total + 'px';
-            gridInner.style.maxWidth = 'none';
-        }
-        const host = document.getElementById('gantt_here');
-        if (host) host.style.setProperty('--sched-grid-min-width', total + 'px');
+        metrics.forEach((m, i) => {
+            if (cols[i]) cols[i].width = m.width;
+        });
 
         syncGridScrollContentWidth(total);
-        document.querySelectorAll('#gantt_here .sched-col-grip-layer').forEach(layer => layer.remove());
-        document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_column_resize_wrap').forEach(wrap => {
-            wrap.style.display = '';
-            wrap.style.pointerEvents = '';
-        });
+        layoutColumnResizeGrips(metrics);
+        applyColumnHighlight();
+    }
+
+    function syncGridContentLayout() {
+        queueEnforceGridColumnExtents();
+    }
+
+    function applyColumnWidthsToDom() {
+        syncGridContentLayout();
     }
 
     function findColumnResizeIndex(clientX, clientY) {
@@ -629,16 +692,33 @@
     function syncGridScrollContentWidth(totalWidth) {
         const total = totalWidth || getColumnsTotalWidth();
         const scrollHost = document.querySelector('#gantt_here [data-cell-id="gridScroll"]');
-        if (!scrollHost) return;
-        scrollHost.style.width = '100%';
-        scrollHost.style.overflowX = 'auto';
-        const horScroll = scrollHost.querySelector('.gantt_hor_scroll') || scrollHost;
-        horScroll.style.overflowX = 'auto';
-        const inner = horScroll.querySelector(':scope > div') || horScroll.firstElementChild;
-        if (inner) {
-            inner.style.width = total + 'px';
-            inner.style.minWidth = total + 'px';
+        if (scrollHost) {
+            scrollHost.style.width = '100%';
+            scrollHost.style.overflowX = 'auto';
+            if (isOverlayMode()) {
+                scrollHost.style.display = '';
+                scrollHost.style.visibility = 'visible';
+            }
+            const horScroll = scrollHost.querySelector('.gantt_hor_scroll') || scrollHost;
+            horScroll.style.overflowX = 'auto';
+            horScroll.style.width = '100%';
+            const inner = horScroll.querySelector(':scope > div') || horScroll.firstElementChild;
+            if (inner) {
+                inner.style.width = total + 'px';
+                inner.style.minWidth = total + 'px';
+            }
         }
+        const gridHead = document.querySelector('#gantt_here .gantt_grid_scale .gantt_grid_head');
+        if (gridHead) {
+            gridHead.style.width = total + 'px';
+            gridHead.style.minWidth = total + 'px';
+            gridHead.style.maxWidth = 'none';
+        }
+        document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
+            row.style.width = total + 'px';
+            row.style.minWidth = total + 'px';
+            row.style.maxWidth = 'none';
+        });
     }
 
     function normalizeHexColor(value) {
@@ -821,8 +901,8 @@
 
         const gridInner = gridCell?.querySelector('.gantt_grid');
         if (gridInner) {
-            gridInner.style.minWidth = colsW + 'px';
-            gridInner.style.width = colsW + 'px';
+            gridInner.style.minWidth = '0';
+            gridInner.style.width = '100%';
             gridInner.style.maxWidth = 'none';
         }
 
@@ -970,8 +1050,8 @@
             if (timelineCell) ensureTimelineOverlayWidgets(timelineCell);
             const gridInner = gridCell?.querySelector('.gantt_grid');
             if (gridInner) {
-                gridInner.style.minWidth = gridW + 'px';
-                gridInner.style.width = gridW + 'px';
+                gridInner.style.minWidth = '0';
+                gridInner.style.width = '100%';
                 gridInner.style.maxWidth = 'none';
             }
 
@@ -982,8 +1062,9 @@
                 lastOverlayKey = sizeKey;
                 lastGridWidthKey = gridKey;
                 gantt.setSizes();
+                queueEnforceGridColumnExtents();
             } else {
-                applyColumnWidthsToDom();
+                syncGridContentLayout();
             }
 
             if (isOverlay) applyOverlayDomLayout();
@@ -2542,7 +2623,7 @@
             if (!bindColumnResizeDrag.resizeRaf) {
                 bindColumnResizeDrag.resizeRaf = requestAnimationFrame(() => {
                     bindColumnResizeDrag.resizeRaf = null;
-                    applyColumnWidthsToDom();
+                    enforceGridColumnExtents();
                     if (isOverlayMode()) {
                         applyOverlayDomLayout();
                         positionChartResizerVisual();
@@ -3741,10 +3822,9 @@
             updateAlignToolbarButtons();
             if (isOverlayMode()) applyOverlayDomLayout();
             syncWbsGutterSpans();
-            ensureColumnResizeGrips();
             ensureAddColumnHeader();
             bindWbsGutterScrollSync();
-            applyColumnWidthsToDom();
+            queueEnforceGridColumnExtents();
         });
 
         document.addEventListener('keydown', onScheduleKeyDown);
