@@ -1477,12 +1477,93 @@ body.sched-col-resizing {
 /* Print header — hidden on screen */
 .no-screen { display: none !important; }
 .schedule-print-sheet { display: none; }
+
+/* Measurable off-screen layout while the print dialog prepares (not visible on page) */
+body.printing-gantt #appShell > #appHeaderBar,
+body.printing-gantt #appSidebar,
+body.printing-gantt #appFooterBar,
+body.printing-gantt #appShell > .flex.flex-1 > div.h-10,
+body.printing-gantt #scheduleChrome,
+body.printing-gantt #scheduleStatusBar,
+body.printing-gantt #scheduleGanttHost,
+body.printing-gantt #gantt_here,
+body.printing-gantt #lookaheadViewPanel,
+body.printing-gantt #traceViewPanel,
+body.printing-gantt .no-print {
+    display: none !important;
+}
+body.printing-gantt #mainContent {
+    padding: 0 !important;
+    overflow: visible !important;
+    display: block !important;
+}
+body.printing-gantt .schedule-page-root {
+    overflow: visible !important;
+    height: auto !important;
+}
+body.printing-gantt #ganttViewPanel {
+    display: block !important;
+    width: 100% !important;
+    border: none !important;
+    background: #fff !important;
+    overflow: visible !important;
+}
 body.printing-gantt #schedulePrintSheet {
     display: block !important;
-    position: relative !important;
+    position: fixed !important;
+    left: -120vw !important;
+    top: 0 !important;
+    width: 100vw !important;
+    max-width: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    z-index: -1 !important;
     background: #fff !important;
     color: #111 !important;
     padding: 0;
+}
+body.printing-gantt #schedulePrintSheet .print-schedule-wrap {
+    position: relative !important;
+    width: 100% !important;
+}
+body.printing-gantt #schedulePrintSheet .print-inline-links {
+    position: absolute;
+    top: 0;
+    left: var(--print-cols-width, 0);
+    right: 0;
+    width: auto;
+    height: 100%;
+    pointer-events: none;
+    z-index: 20;
+    overflow: visible;
+}
+body.printing-gantt #schedulePrintSheet .schedule-print-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: var(--print-font-size, 8pt);
+    color: #111;
+}
+body.printing-gantt #schedulePrintSheet .schedule-print-table-compact th,
+body.printing-gantt #schedulePrintSheet .schedule-print-table-compact td {
+    height: var(--print-row-height, 16px);
+    padding: 2px 3px;
+    vertical-align: middle;
+}
+body.printing-gantt #schedulePrintSheet .print-ts-row td { padding: 0 !important; }
+body.printing-gantt #schedulePrintSheet .print-timescale {
+    position: relative;
+    height: 14px;
+}
+body.printing-gantt #schedulePrintSheet .print-bar-cell {
+    padding: 1px 0 !important;
+    position: relative;
+}
+body.printing-gantt #schedulePrintSheet .print-bar-track {
+    position: relative;
+    width: 100%;
+    height: 16px;
 }
 
 /* Centered modals on schedule page */
@@ -1552,6 +1633,13 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
     body.printing-gantt #schedulePrintSheet {
         display: block !important;
         position: relative !important;
+        left: auto !important;
+        top: auto !important;
+        width: auto !important;
+        max-width: none !important;
+        visibility: visible !important;
+        pointer-events: auto !important;
+        z-index: auto !important;
         background: #fff !important;
         color: #111 !important;
         padding: 0;

@@ -5817,6 +5817,7 @@
         const svg = wrap.querySelector('.print-inline-links');
         const table = wrap.querySelector('.schedule-print-table');
         if (!svg || !table) return;
+        svg.style.position = 'absolute';
         const barCell = table.querySelector('tbody .print-bar-cell')
             || table.querySelector('thead .print-ts-row .print-bar-cell')
             || table.querySelector('.print-bar-cell');
@@ -6208,22 +6209,25 @@
             );
         };
         const onBeforePrint = () => syncLinks();
+        const cleanup = () => {
+            window.removeEventListener('beforeprint', onBeforePrint);
+            window.removeEventListener('afterprint', cleanup);
+            sheet.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove(
+                'printing-gantt',
+                'printing-gantt-show-footer',
+                'printing-gantt-portrait',
+                'printing-gantt-fit-page'
+            );
+        };
         window.addEventListener('beforeprint', onBeforePrint);
+        window.addEventListener('afterprint', cleanup);
         requestAnimationFrame(() => {
             syncLinks();
             requestAnimationFrame(() => {
                 syncLinks();
                 window.print();
-                setTimeout(() => {
-                    window.removeEventListener('beforeprint', onBeforePrint);
-                    sheet.setAttribute('aria-hidden', 'true');
-                    document.body.classList.remove(
-                        'printing-gantt',
-                        'printing-gantt-show-footer',
-                        'printing-gantt-portrait',
-                        'printing-gantt-fit-page'
-                    );
-                }, 800);
+                setTimeout(cleanup, 1500);
             });
         });
     }
