@@ -1693,6 +1693,21 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
     .schedule-print-table-visible-cols td {
         white-space: nowrap;
     }
+    .schedule-print-table-screen-cols {
+        table-layout: fixed !important;
+        width: auto !important;
+        max-width: 100%;
+    }
+    .schedule-print-table-screen-cols th,
+    .schedule-print-table-screen-cols td {
+        width: auto !important;
+        min-width: 0 !important;
+        max-width: none !important;
+    }
+    .schedule-print-table-screen-cols .print-bar-cell {
+        width: auto !important;
+        overflow: hidden;
+    }
     .schedule-print-table-visible-cols .print-name {
         white-space: normal !important;
         line-height: 1.15;

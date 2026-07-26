@@ -571,8 +571,13 @@
         return { columns: metrics, total: left };
     }
 
+    function getGridHeadContainer() {
+        return document.querySelector('#gantt_here .gantt_grid_scale .gantt_grid_head')
+            || document.querySelector('#gantt_here .gantt_grid_scale');
+    }
+
     function ensureGridHeaderChrome(total) {
-        const gridHead = document.querySelector('#gantt_here .gantt_grid_scale .gantt_grid_head');
+        const gridHead = getGridHeadContainer();
         if (!gridHead) return;
         let chrome = gridHead.querySelector('.sched-grid-header-chrome');
         if (!chrome) {
@@ -642,7 +647,7 @@
     }
 
     function ensureColumnResizeGripsLayer(metrics) {
-        const gridHead = document.querySelector('#gantt_here .gantt_grid_scale .gantt_grid_head');
+        const gridHead = getGridHeadContainer();
         if (!gridHead) return;
 
         document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_column_resize_wrap').forEach(wrap => {
@@ -653,6 +658,9 @@
 
         const list = metrics || getColumnLayoutMetrics().columns;
         const cols = gantt.config.columns || [];
+        const gridHead = getGridHeadContainer();
+        if (!gridHead) return;
+        const headCells = gridHead.querySelectorAll('.gantt_grid_head_cell');
         const total = list.length
             ? list[list.length - 1].left + list[list.length - 1].width
             : getColumnsTotalWidth();
@@ -672,16 +680,18 @@
         layer.style.zIndex = '250';
         layer.innerHTML = '';
 
-        list.forEach((m, i) => {
+        headCells.forEach((cell, i) => {
             const col = cols[i];
-            if (!col || col.resize === false || isAddColumnCol(col)) return;
+            const m = list[i];
+            if (!col || !m || col.resize === false || isAddColumnCol(col)) return;
+            const borderX = cell.offsetLeft + cell.offsetWidth;
             const grip = document.createElement('div');
             grip.className = 'sched-col-resize-grip gantt_grid_column_resize_wrap';
             grip.dataset.colIndex = String(i);
             grip.title = 'Drag to resize column';
             grip.innerHTML = '<div class="gantt_grid_column_resize"></div>';
             grip.style.position = 'absolute';
-            grip.style.left = (m.left + m.width) + 'px';
+            grip.style.left = borderX + 'px';
             grip.style.top = 'var(--sched-grid-header-top, 26px)';
             grip.style.height = 'var(--sched-grid-header-label, 39px)';
             grip.style.width = '10px';
@@ -705,13 +715,13 @@
         const host = document.getElementById('gantt_here');
         if (host) host.style.setProperty('--sched-grid-min-width', total + 'px');
 
-        const gridHead = document.querySelector('#gantt_here .gantt_grid_scale .gantt_grid_head');
+        const gridHeadRow = document.querySelector('#gantt_here .gantt_grid_scale .gantt_grid_head');
         const gridScale = document.querySelector('#gantt_here .gantt_grid_scale');
         const gridData = document.querySelector('#gantt_here .gantt_grid_data');
-        if (gridHead) {
-            gridHead.style.width = total + 'px';
-            gridHead.style.minWidth = total + 'px';
-            gridHead.style.maxWidth = 'none';
+        if (gridHeadRow) {
+            gridHeadRow.style.width = total + 'px';
+            gridHeadRow.style.minWidth = total + 'px';
+            gridHeadRow.style.maxWidth = 'none';
         }
         if (gridScale) {
             gridScale.style.width = total + 'px';
@@ -1232,7 +1242,8 @@
             const rect = hostEl.getBoundingClientRect();
             const dx = e.clientX - overlayDrag.startX;
             const scrollW = gantt.config?.scroll_size || 16;
-            const gridW = Math.max(120, Math.min(rect.width - scrollW - 280, overlayDrag.startW + dx));
+            const minPane = Math.max(280, Math.round(rect.width * 0.2));
+            const gridW = Math.max(minPane, Math.min(rect.width - scrollW - 280, overlayDrag.startW + dx));
             scheduleSettings.grid_overlay_width_px = gridW;
             scheduleSettings.timeline_width_px = null;
             scheduleSettings.timeline_pct = 1 - (gridW / rect.width);
@@ -2589,6 +2600,25 @@
         return rect.left + rect.width - getTimelineWidth();
     }
 
+    function getDividerVisibleGridColumns(filterFn) {
+        const cols = gantt.config.columns || [];
+        const metrics = getColumnLayoutMetrics().columns;
+        const scroll = getGridHorizontalScrollLeft();
+        const paneW = getExposedGridWidth();
+        const visible = [];
+        cols.forEach((col, index) => {
+            if (filterFn && !filterFn(col)) return;
+            const m = metrics[index];
+            if (!m) return;
+            const colLeft = m.left - scroll;
+            const colRight = colLeft + m.width;
+            if (colRight > 0.5 && colLeft < paneW - 0.5) {
+                visible.push({ col, index, width: m.width, left: m.left });
+            }
+        });
+        return visible;
+    }
+
     function getPrintVisibleGridColumns(ps) {
         const opts = ps || scheduleSettings.print_settings || {};
         const cols = gantt.config.columns || [];
@@ -2606,6 +2636,15 @@
             index,
             width: resolveColumnWidth(col)
         }));
+
+        if (opts.print_column_mode === 'all') {
+            return mapCols(cols.filter(baseFilter));
+        }
+
+        if (isOverlayMode()) {
+            const dividerVisible = getDividerVisibleGridColumns(baseFilter);
+            if (dividerVisible.length) return dividerVisible;
+        }
 
         if (opts.print_column_mode === 'screen' || opts.print_column_mode == null) {
             return mapCols(cols.filter(baseFilter));
@@ -5832,17 +5871,20 @@
         const visibleCols = showTable ? getPrintVisibleGridColumns(ps) : [];
         const hostW = document.getElementById('gantt_here')?.clientWidth || 1000;
         const exposedW = getExposedGridWidth();
-        const timelineW = getTimelineWidth();
+        const scrollW = gantt.config?.scroll_size || 16;
+        const timelineW = isOverlayMode()
+            ? Math.max(180, hostW - exposedW - scrollW)
+            : getTimelineWidth();
         const splitTotal = Math.max(exposedW + timelineW, 1);
         const showLinks = ps.include_predecessor_links !== false;
         const printFontPt = parseInt(ps.font_size_pt, 10) || 8;
         const printRowH = gantt.config.row_height || parseInt(ps.row_height_px, 10) || 24;
-        const chartWidthPct = parseInt(ps.chart_width_pct, 10);
-        const textTablePct = showInlineBars
-            ? (chartWidthPct >= 30 && chartWidthPct <= 80 ? 100 - chartWidthPct : (exposedW / splitTotal) * 100)
-            : 100;
-        const barTablePct = showInlineBars ? (100 - textTablePct) : 0;
         const visibleTextW = visibleCols.reduce((s, v) => s + v.width, 0) || 1;
+        const textTablePx = visibleTextW;
+        const barTablePx = showInlineBars ? timelineW : 0;
+        const tableWidthPx = textTablePx + barTablePx;
+        const textTablePct = showInlineBars ? (textTablePx / splitTotal) * 100 : 100;
+        const barTablePct = showInlineBars ? (barTablePx / splitTotal) * 100 : 0;
         const hasHierarchyCol = visibleCols.some(v => v.col.name === 'hierarchy');
         const hierarchyPrintW = hasHierarchyCol
             ? (visibleCols.find(v => v.col.name === 'hierarchy')?.width || 56)
@@ -5866,12 +5908,11 @@
                 rowMap.set(t.id, rowIdx++);
                 const level = t.$level || 0;
                 const cells = visibleCols.map(({ col, width: colW }) => {
-                    const pct = ((colW / visibleTextW) * textTablePct).toFixed(3);
                     const align = getPrintColumnAlignClass(col);
                     const nameCls = col.name === 'text' ? ' print-name' : (col.name === 'hierarchy' ? ' print-col-hierarchy' : '');
-                    const styleParts = [`width:${pct}%`];
+                    const styleParts = [];
                     if (col.name === 'text' && !hasHierarchyCol) styleParts.push(`padding-left:${4 + level * 10}px`);
-                    const indent = ` style="${styleParts.join(';')}"`;
+                    const indent = styleParts.length ? ` style="${styleParts.join(';')}"` : '';
                     let content = renderPrintCellHtml(t, col, hierarchyPrintW);
                     if (col.name === 'progress' && !content.includes('%')) content += '%';
                     return `<td class="print-col-${col.name}${nameCls}${align}"${indent}>${content}</td>`;
@@ -5882,7 +5923,7 @@
                 const summary = isSummaryTask(t);
                 const wbsCls = getWbsLevelClass(t);
                 const barCell = showInlineBars
-                    ? `<td class="print-bar-cell" style="width:${barTablePct.toFixed(2)}%"><div class="print-bar-track">${buildPrintBarMarkup(t, startMs, span)}</div></td>`
+                    ? `<td class="print-bar-cell"><div class="print-bar-track">${buildPrintBarMarkup(t, startMs, span)}</div></td>`
                     : '';
                 rows += `<tr class="${summary ? 'print-summary' : ''}${wbsCls ? ' ' + wbsCls : ''}">${cells}${evmExtra}${barCell}</tr>`;
             });
@@ -5923,13 +5964,12 @@
 
         const evmHeader = showEvm && !visibleCols.some(v => v.col.name === 'cpi')
             ? `<th class="print-col-cpi c">CPI</th><th class="print-col-spi c">SPI</th>` : '';
-        const barHeader = showInlineBars ? `<th class="print-bar-cell" style="width:${barTablePct.toFixed(2)}%">Schedule Bars</th>` : '';
-        const colHeaders = visibleCols.map(({ col, width: colW }) => {
-            const pct = ((colW / visibleTextW) * textTablePct).toFixed(3);
+        const barHeader = showInlineBars ? `<th class="print-bar-cell">Schedule Bars</th>` : '';
+        const colHeaders = visibleCols.map(({ col }) => {
             const label = col.name === 'hierarchy' ? '' : (col.label || col.name || '');
             const align = getPrintColumnAlignClass(col);
             const hierarchyCls = col.name === 'hierarchy' ? ' print-col-hierarchy' : '';
-            return `<th class="print-col-${col.name}${align}${hierarchyCls}" style="width:${pct}%">${label}</th>`;
+            return `<th class="print-col-${col.name}${align}${hierarchyCls}">${label}</th>`;
         }).join('');
         const textColCount = visibleCols.length + (evmHeader ? 2 : 0);
         const tsRow = showInlineBars && textColCount
@@ -6005,9 +6045,11 @@
             const repeatCls = ps.repeat_header !== false ? ' print-repeat-header' : '';
             const fitCls = ps.fit_to_page ? ' print-fit-page' : '';
             const colorBarsCls = ps.print_color_bars === false ? ' print-mono-bars' : '';
-            return `<div class="print-schedule-wrap${wbsCls}${gridCls}${repeatCls}${fitCls}${colorBarsCls}" style="--print-font-size:${printFontPt}pt;--print-row-height:${printRowH}px;--print-chart-width:${barTablePct.toFixed(2)}%" data-print-orientation="${ps.orientation || 'landscape'}">
+            const colGroup = `<colgroup>${visibleCols.map(({ width }) => `<col style="width:${width}px">`).join('')}${showInlineBars ? `<col class="print-bar-col" style="width:${Math.round(barTablePx)}px">` : ''}</colgroup>`;
+            return `<div class="print-schedule-wrap${wbsCls}${gridCls}${repeatCls}${fitCls}${colorBarsCls}" style="--print-font-size:${printFontPt}pt;--print-row-height:${printRowH}px;--print-chart-width:${barTablePct.toFixed(2)}%;--print-table-width:${tableWidthPx}px" data-print-orientation="${ps.orientation || 'landscape'}">
                 ${linkSvg}
-                <table class="schedule-print-table schedule-print-table-compact schedule-print-table-visible-cols">
+                <table class="schedule-print-table schedule-print-table-compact schedule-print-table-visible-cols schedule-print-table-screen-cols" style="width:${tableWidthPx}px">
+                ${colGroup}
                 <thead><tr>
                     ${colHeaders}${evmHeader}${barHeader}
                 </tr>${tsRow}</thead>
