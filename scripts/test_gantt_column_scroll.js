@@ -21,10 +21,15 @@ async function main() {
             { name: 'x3', label: 'Col C', width: 180, resize: true }
         ];
         gantt.config.columns = gantt.config.columns.concat(extra);
+        const defWidths = {};
+        gantt.config.columns.forEach(col => { defWidths[col.name] = col.width; });
         let total = 0;
         gantt.config.columns.forEach(col => { total += parseInt(col.width, 10) || 80; });
         gantt.config.grid_width = total;
         gantt.render();
+        gantt.config.columns.forEach(col => {
+            if (defWidths[col.name] != null) col.width = defWidths[col.name];
+        });
         const gridInner = document.querySelector('.gantt_grid');
         if (gridInner) { gridInner.style.width = total + 'px'; gridInner.style.minWidth = total + 'px'; }
         document.getElementById('gantt_here').style.setProperty('--sched-grid-min-width', total + 'px');
@@ -41,20 +46,23 @@ async function main() {
         const scrollHost = document.querySelector('[data-cell-id="gridScroll"]');
         const inner = scrollHost?.querySelector('div');
         if (inner) { inner.style.width = total + 'px'; inner.style.minWidth = total + 'px'; }
+        const layout = fixtureApplyOverlayLayout();
         const gridData = document.querySelector('.gantt_grid_data');
+        const layoutContent = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1) .gantt_layout_content');
         const row = document.querySelector('.gantt_grid_data .gantt_row');
         const cellSum = [...row.querySelectorAll(':scope > .gantt_cell')].reduce((s, c) => s + c.offsetWidth, 0);
         return {
             total,
-            gridInnerW: gridInner?.offsetWidth || 0,
-            gridDataScroll: gridData?.scrollWidth || 0,
-            canScroll: (gridData?.scrollWidth || 0) > (gridData?.clientWidth || 0) + 20,
-            contentWide: (gridInner?.offsetWidth || 0) >= total - 12
+            gridInnerW: document.querySelector('.gantt_grid')?.offsetWidth || 0,
+            contentScrollW: layoutContent?.scrollWidth || 0,
+            canScroll: (layoutContent?.scrollWidth || 0) > (layoutContent?.clientWidth || 0) + 20,
+            contentWide: (document.querySelector('.gantt_grid')?.offsetWidth || 0) >= total - 12,
+            cellSum
         };
     });
 
     console.log(JSON.stringify(metrics, null, 2));
-    const ok = metrics.contentWide;
+    const ok = metrics.contentWide && metrics.canScroll;
     if (!ok) { console.error('COLUMN SCROLL CHECK FAILED', metrics); process.exit(1); }
     console.log('COLUMN SCROLL CHECK PASSED');
     await browser.close();

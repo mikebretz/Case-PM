@@ -118,12 +118,28 @@ function fixtureApplyOverlayLayout() {
   host.style.setProperty('--sched-grid-min-width', total + 'px');
   const gridCell = root.querySelector(':scope > .gantt_layout_cell:nth-child(1)');
   const gridInner = gridCell?.querySelector('.gantt_grid');
+  const layoutContent = gridCell?.querySelector('.gantt_layout_content');
   if (gridCell) {
     gridCell.style.setProperty('width', overlayW + 'px', 'important');
     gridCell.style.setProperty('overflow', 'hidden', 'important');
     gridCell.style.setProperty('border', 'none', 'important');
   }
-  if (gridInner) { gridInner.style.width = '100%'; gridInner.style.minWidth = '0'; }
+  if (layoutContent) {
+    layoutContent.style.setProperty('overflow-x', 'auto', 'important');
+    layoutContent.style.setProperty('overflow-y', 'hidden', 'important');
+    layoutContent.style.setProperty('width', '100%', 'important');
+  }
+  if (gridInner) {
+    gridInner.style.width = total + 'px';
+    gridInner.style.minWidth = total + 'px';
+  }
+  const gridScale = gridCell?.querySelector('.gantt_grid_scale');
+  const gridData = gridCell?.querySelector('.gantt_grid_data');
+  [gridScale, gridData].forEach(el => {
+    if (!el) return;
+    el.style.removeProperty('width');
+    el.style.removeProperty('min-width');
+  });
   return { total, overlayW };
 }
 const gridW = gantt.config.columns.reduce((s, c) => s + c.width, 0);
@@ -132,7 +148,7 @@ const gridOverlayW = 660;
 gantt.config.layout = {
   css: 'gantt_container',
   cols: [
-    { width: gridOverlayW, min_width: 120, rows: [
+    { width: gridW, min_width: gridW, rows: [
       { view: 'grid', scrollX: 'gridScroll', scrollY: 'scrollVer' },
       { view: 'scrollbar', id: 'gridScroll', height: 20 }
     ]},
