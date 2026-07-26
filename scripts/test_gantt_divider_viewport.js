@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Verifies grid pane grows to column total width (no halfway squeeze).
+ * Verifies grid content grows with columns while viewport stays divider-controlled.
  */
 const path = require('path');
 const { chromium } = require('playwright');
@@ -20,28 +20,21 @@ async function main() {
         if (textCol) textCol.width = 440;
         if (startCol) startCol.width = 208;
         const expected = gantt.config.columns.reduce((s, c) => s + (parseInt(c.width, 10) || 0), 0);
-        gantt.config.grid_width = expected;
-        if (gantt.config.layout?.cols?.[0]) {
-            gantt.config.layout.cols[0].width = expected;
-            gantt.config.layout.cols[0].min_width = expected;
-        }
-        fixtureApplyOverlayLayout();
+        const layout = fixtureApplyOverlayLayout();
         const grid = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1)');
-        const timeline = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(3)');
         const gridInner = document.querySelector('.gantt_grid');
-        const gridRight = grid?.getBoundingClientRect().right || 0;
-        const timelineLeft = timeline?.getBoundingClientRect().left || 0;
         return {
             expected,
+            overlayW: layout.overlayW,
             paneW: grid?.getBoundingClientRect().width || 0,
             gridInnerW: gridInner?.offsetWidth || 0,
-            gap: Math.round(timelineLeft - gridRight),
-            paneFitsColumns: (grid?.getBoundingClientRect().width || 0) >= expected - 8
+            contentFitsColumns: (gridInner?.offsetWidth || 0) >= expected - 8,
+            viewportUnchanged: Math.abs((grid?.getBoundingClientRect().width || 0) - 660) <= 8
         };
     });
 
     console.log(JSON.stringify(metrics, null, 2));
-    if (!metrics.paneFitsColumns || Math.abs(metrics.gap) > 4) {
+    if (!metrics.contentFitsColumns || !metrics.viewportUnchanged) {
         console.error('PANE WIDTH CHECK FAILED');
         process.exit(1);
     }

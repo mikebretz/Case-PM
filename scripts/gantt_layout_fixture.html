@@ -73,92 +73,32 @@ gantt.config.columns = [
   { name: 'start_date', label: 'Start', width: 108, resize: true },
   { name: 'end_date', label: 'Finish', width: 108, resize: true }
 ];
-function fixtureColumnMetrics() {
-  const cols = gantt.config.columns || [];
-  const metrics = [];
-  let left = 0;
-  cols.forEach(col => {
-    const w = parseInt(col.width, 10) || 80;
-    metrics.push({ width: w, left });
-    left += w;
-  });
-  return { metrics, total: left };
-}
-function fixtureApplyMetricToCell(cell, m, isHead) {
-  if (!cell || !m) return;
-  cell.style.position = 'absolute';
-  cell.style.left = m.left + 'px';
-  cell.style.width = m.width + 'px';
-  cell.style.minWidth = m.width + 'px';
-  cell.style.maxWidth = m.width + 'px';
-  cell.style.flex = 'none';
-  cell.style.boxSizing = 'border-box';
-  if (!isHead) {
-    cell.style.top = '0';
-    cell.style.height = '100%';
-  } else {
-    cell.style.top = 'var(--sched-grid-header-top, 26px)';
-    cell.style.height = 'var(--sched-grid-header-label, 39px)';
-    cell.style.lineHeight = 'var(--sched-grid-header-label, 39px)';
-  }
-}
 function fixtureApplyColumnLayout() {
-  const { metrics, total } = fixtureColumnMetrics();
+  const cols = gantt.config.columns || [];
+  const total = cols.reduce((s, c) => s + (parseInt(c.width, 10) || 0), 0);
   gantt.config.grid_width = total;
-  const heads = document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell');
-  metrics.forEach((m, i) => fixtureApplyMetricToCell(heads[i], m, true));
-  const gridHead = document.querySelector('#gantt_here .gantt_grid_scale .gantt_grid_head');
-  if (gridHead) {
-    gridHead.style.position = 'relative';
-    gridHead.style.width = total + 'px';
-    gridHead.style.minWidth = total + 'px';
-  }
-  ['.gantt_grid_scale', '.gantt_grid_data'].forEach(sel => {
-    const el = document.querySelector('#gantt_here ' + sel);
-    if (el) { el.style.width = total + 'px'; el.style.minWidth = total + 'px'; }
+  const applyW = (cell, w) => {
+    cell.style.width = w + 'px';
+    cell.style.minWidth = w + 'px';
+    cell.style.maxWidth = w + 'px';
+    cell.style.flex = `0 0 ${w}px`;
+  };
+  document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell').forEach((cell, i) => {
+    if (!cols[i]) return;
+    applyW(cell, parseInt(cols[i].width, 10) || 80);
   });
   document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
-    row.style.position = 'relative';
     row.style.width = total + 'px';
     row.style.minWidth = total + 'px';
-    const cells = row.querySelectorAll(':scope > .gantt_cell');
-    metrics.forEach((m, i) => fixtureApplyMetricToCell(cells[i], m, false));
+    row.querySelectorAll(':scope > .gantt_cell').forEach((cell, i) => {
+      if (!cols[i]) return;
+      applyW(cell, parseInt(cols[i].width, 10) || 80);
+    });
   });
   const gridInner = document.querySelector('#gantt_here .gantt_grid');
   if (gridInner) { gridInner.style.width = total + 'px'; gridInner.style.minWidth = total + 'px'; }
   const host = document.getElementById('gantt_here');
   if (host) host.style.setProperty('--sched-grid-min-width', total + 'px');
-  const gridHeadEl = document.querySelector('#gantt_here .gantt_grid_scale .gantt_grid_head');
-  if (gridHeadEl) {
-    let layer = gridHeadEl.querySelector('.sched-col-grip-layer');
-    if (!layer) {
-      layer = document.createElement('div');
-      layer.className = 'sched-col-grip-layer';
-      gridHeadEl.appendChild(layer);
-    }
-    layer.style.width = total + 'px';
-    layer.style.height = '100%';
-    layer.style.position = 'absolute';
-    layer.style.top = '0';
-    layer.style.left = '0';
-    layer.style.pointerEvents = 'none';
-    layer.style.zIndex = '250';
-    layer.innerHTML = '';
-    metrics.forEach((m, i) => {
-      const col = gantt.config.columns[i];
-      if (!col || col.resize === false) return;
-      const grip = document.createElement('div');
-      grip.className = 'sched-col-resize-grip gantt_grid_column_resize_wrap';
-      grip.innerHTML = '<div class="gantt_grid_column_resize"></div>';
-      grip.style.position = 'absolute';
-      grip.style.left = (m.left + m.width) + 'px';
-      grip.style.top = 'var(--sched-grid-header-top, 26px)';
-      grip.style.height = 'var(--sched-grid-header-label, 39px)';
-      grip.style.width = '10px';
-      grip.style.marginLeft = '-5px';
-      layer.appendChild(grip);
-    });
-  }
   return total;
 }
 function fixtureApplyOverlayLayout() {
@@ -166,40 +106,32 @@ function fixtureApplyOverlayLayout() {
   const root = host?.querySelector('.gantt_layout_root');
   if (!host || !root) return;
   const colsW = fixtureApplyColumnLayout();
+  const overlayW = 660;
   const hostW = host.clientWidth;
   const scrollW = gantt.config.scroll_size || 16;
-  if (gantt.config.layout?.cols?.[0]) {
-    gantt.config.layout.cols[0].width = colsW;
-    gantt.config.layout.cols[0].min_width = colsW;
-  }
+  host.style.setProperty('--sched-grid-overlay-w', overlayW + 'px');
+  host.style.setProperty('--sched-chart-left', overlayW + 'px');
   host.style.setProperty('--sched-grid-min-width', colsW + 'px');
-  host.style.setProperty('--sched-chart-left', colsW + 'px');
-  host.style.setProperty('--sched-grid-overlay-w', colsW + 'px');
   const cells = root.querySelectorAll(':scope > .gantt_layout_cell');
   const gridCell = cells[0];
   const timelineCell = cells[2];
   if (gridCell) {
-    gridCell.style.setProperty('width', colsW + 'px', 'important');
-    gridCell.style.setProperty('min-width', colsW + 'px', 'important');
-    gridCell.style.setProperty('max-width', 'none', 'important');
+    gridCell.style.setProperty('width', overlayW + 'px', 'important');
+    gridCell.style.setProperty('overflow', 'hidden', 'important');
   }
   if (timelineCell) {
-    timelineCell.style.setProperty('left', colsW + 'px', 'important');
-    timelineCell.style.setProperty('width', Math.max(200, hostW - colsW - scrollW) + 'px', 'important');
+    timelineCell.style.setProperty('left', '0', 'important');
+    timelineCell.style.setProperty('width', Math.max(200, hostW - scrollW) + 'px', 'important');
   }
-  const gridInner = gridCell?.querySelector('.gantt_grid');
-  if (gridInner) {
-    gridInner.style.width = colsW + 'px';
-    gridInner.style.minWidth = colsW + 'px';
-  }
-  return colsW;
+  return { colsW, overlayW };
 }
 const gridW = gantt.config.columns.reduce((s, c) => s + c.width, 0);
 const hostW = 1400;
+const gridOverlayW = 660;
 gantt.config.layout = {
   css: 'gantt_container',
   cols: [
-    { width: gridW, min_width: gridW, rows: [
+    { width: gridOverlayW, min_width: 120, rows: [
       { view: 'grid', scrollX: 'gridScroll', scrollY: 'scrollVer' },
       { view: 'scrollbar', id: 'gridScroll', height: 20 }
     ]},
