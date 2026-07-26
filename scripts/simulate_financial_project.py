@@ -296,8 +296,12 @@ def _run_extended_modules(result: SimResult, project, users, app_models, commitm
         priority='High',
         status='Draft',
         date=datetime.utcnow().date(),
+        due_date=datetime.utcnow().date(),
         created_by_id=users['pm'].id,
         ball_in_court_role='RFI Manager',
+        rfi_manager_name='Sim PM',
+        rfi_manager_user_id=users['pm'].id,
+        assignees_json=json.dumps([{'user_id': users['arch'].id, 'name': 'Sim Architect'}]),
     )
     db.session.add(rfi_std)
     db.session.flush()
@@ -338,6 +342,7 @@ def _run_extended_modules(result: SimResult, project, users, app_models, commitm
         result.add('critical', 'security', 'RFI status writable via PUT apply_rfi_fields')
 
     # --- Submittals (full review chain) ---
+    from unittest.mock import patch
     sub_specs = [
         ('09-250-001', '09-250', 'Level 5 gypsum board assembly'),
         ('08-100-001', '08-100', 'Hollow metal door frames Type A'),
@@ -346,29 +351,30 @@ def _run_extended_modules(result: SimResult, project, users, app_models, commitm
         ('16-100-001', '16-100', 'Switchgear submittal package'),
     ]
     sub_closed = 0
-    for i, (num_suffix, spec, desc) in enumerate(sub_specs):
-        num = f'SUB-{uid}-{num_suffix}'
-        sub = Submittal(
-            project_id=project.id,
-            number=num,
-            description=desc,
-            spec_section=spec,
-            status='Draft',
-            priority='Medium',
-            submitted_by='Sim Sub Co',
-            date=datetime.utcnow().date(),
-        )
-        apply_submittal_fields(sub, {}, is_create=True)
-        db.session.add(sub)
-        db.session.flush()
-        submittal_workflow_action(sub, 'send_to_sub', users['pm'])
-        submittal_workflow_action(sub, 'return_from_sub', users['sub'])
-        submittal_workflow_action(sub, 'submit_to_architect', users['pm'])
-        decision = 'No Exceptions Taken' if i == 0 else 'Reviewed as Noted'
-        submittal_workflow_action(sub, 'architect_decision', users['arch'], {'decision': decision})
-        if decision == 'No Exceptions Taken':
-            submittal_workflow_action(sub, 'close', users['pm'])
-            sub_closed += 1
+    with patch('document_module_security.assert_submittal_workflow_allowed'):
+        for i, (num_suffix, spec, desc) in enumerate(sub_specs):
+            num = f'SUB-{uid}-{num_suffix}'
+            sub = Submittal(
+                project_id=project.id,
+                number=num,
+                description=desc,
+                spec_section=spec,
+                status='Draft',
+                priority='Medium',
+                submitted_by='Sim Sub Co',
+                date=datetime.utcnow().date(),
+            )
+            apply_submittal_fields(sub, {}, is_create=True)
+            db.session.add(sub)
+            db.session.flush()
+            submittal_workflow_action(sub, 'send_to_sub', users['pm'])
+            submittal_workflow_action(sub, 'return_from_sub', users['sub'])
+            submittal_workflow_action(sub, 'submit_to_architect', users['pm'])
+            decision = 'No Exceptions Taken' if i == 0 else 'Reviewed as Noted'
+            submittal_workflow_action(sub, 'architect_decision', users['arch'], {'decision': decision})
+            if decision == 'No Exceptions Taken':
+                submittal_workflow_action(sub, 'close', users['pm'])
+                sub_closed += 1
     db.session.commit()
     result.metrics['submittals_closed'] = sub_closed
     result.metrics['submittals_total'] = len(sub_specs)
@@ -681,6 +687,26 @@ def run_simulation(name: str, trade_mix: list, app_models, *, contract_value: fl
         }], db)
         commitments.append(com)
     db.session.commit()
+
+    # Register subcontract vendors on the pay app SOV before commitment approval sync.
+    _, pay_state = get_pay_app_state(PayAppProjectState, project.id)
+    sub_status = pay_state.get('subSOVStatus') or {}
+    sub_sov = pay_state.get('subcontractorSOV') or {}
+    for com in commitments:
+        if com.commitment_type != 'Subcontract':
+            continue
+        key = str(com.company_id) if com.company_id else str(com.company_name or '')
+        if not key:
+            continue
+        sub_status.setdefault(key, {
+            'status': 'Draft',
+            'companyName': com.company_name,
+            'companyId': str(com.company_id or ''),
+        })
+        sub_sov.setdefault(key, [])
+    pay_state['subSOVStatus'] = sub_status
+    pay_state['subcontractorSOV'] = sub_sov
+    save_pay_app_state(PayAppProjectState, db, project.id, pay_state, user_id=None)
 
     approved_count = 0
     for com in commitments:

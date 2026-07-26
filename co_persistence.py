@@ -1224,6 +1224,44 @@ def auto_create_sub_cos_from_owner_co(
     return created
 
 
+def build_change_order_sage_payload(co, allocations=None, extra=None):
+    """Sage 300 CRE payload for owner/sub change orders."""
+    extra = extra or {}
+    allocs = []
+    for item in allocations or []:
+        if hasattr(item, 'cost_code'):
+            allocs.append({
+                'cost_code': item.cost_code,
+                'cost_type': getattr(item, 'cost_type', None),
+                'amount': float(item.amount or 0),
+                'description': getattr(item, 'description', '') or '',
+            })
+        elif isinstance(item, dict):
+            allocs.append({
+                'cost_code': item.get('cost_code'),
+                'cost_type': item.get('cost_type'),
+                'amount': float(item.get('amount') or 0),
+                'description': item.get('description') or '',
+            })
+    payload = {
+        'change_order_id': co.id,
+        'co_number': co.number,
+        'number': co.number,
+        'title': getattr(co, 'title', None) or co.description,
+        'description': co.description,
+        'amount': float(co.amount or 0),
+        'status': co.status,
+        'cost_code': getattr(co, 'cost_code', None),
+        'company_name': getattr(co, 'company_name', None),
+        'company_id': getattr(co, 'company_id', None),
+        'linked_commitment_ref': getattr(co, 'linked_commitment_ref', None),
+        'sub_co_kind': getattr(co, 'sub_co_kind', None),
+        'allocations': allocs,
+    }
+    payload.update({k: v for k, v in (extra or {}).items() if v is not None})
+    return payload
+
+
 def run_change_order_accounting_sync(
     co,
     old_status,
@@ -1314,14 +1352,14 @@ def run_change_order_accounting_sync(
                         co.project_id,
                         'CommitmentChangeOrderApproved',
                         message=f'Subcontractor Change Order {co.number} approved — accounting reconciled',
-                        payload={
-                            'change_order_id': co.id,
-                            'amount': co.amount,
-                            'commitment_type': com_type,
-                            'linked_commitment_ref': getattr(co, 'linked_commitment_ref', None),
-                            'sub_co_kind': getattr(co, 'sub_co_kind', None),
-                            'sync': result['sync_result'],
-                        },
+                        payload=build_change_order_sage_payload(
+                            co,
+                            ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all(),
+                            extra={
+                                'commitment_type': com_type,
+                                'sync': result['sync_result'],
+                            },
+                        ),
                         user_id=user_id,
                         Commitment=Commitment,
                     )
@@ -1333,7 +1371,11 @@ def run_change_order_accounting_sync(
                         co.project_id,
                         'ChangeOrderApproved',
                         message=f'Change Order {co.number} approved — accounting reconciled',
-                        payload={'change_order_id': co.id, 'amount': co.amount, 'sync': result['sync_result']},
+                        payload=build_change_order_sage_payload(
+                            co,
+                            ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all(),
+                            extra={'sync': result['sync_result']},
+                        ),
                         user_id=user_id,
                     )
     except Exception as exc:
@@ -1455,13 +1497,13 @@ def process_change_order_workflow(
                 SageSyncEvent, Project, db, co.project_id,
                 'CommitmentChangeOrderSubmitted',
                 message=f'{co.number} submitted — ball with {co.ball_in_court_role}',
-                payload={
-                    'change_order_id': co.id,
-                    'amount': co.amount,
-                    'commitment_type': com_type,
-                    'linked_commitment_ref': getattr(co, 'linked_commitment_ref', None),
-                    'sub_co_kind': getattr(co, 'sub_co_kind', None),
-                },
+                payload=build_change_order_sage_payload(
+                    co,
+                    allocs,
+                    extra={
+                        'commitment_type': com_type,
+                    },
+                ),
                 user_id=user.id,
                 Commitment=Commitment,
             )
@@ -1470,7 +1512,7 @@ def process_change_order_workflow(
                 SageSyncEvent, Project, db, co.project_id,
                 'ChangeOrderSubmitted',
                 message=f'{co.number} submitted — ball with {co.ball_in_court_role}',
-                payload={'change_order_id': co.id, 'amount': co.amount},
+                payload=build_change_order_sage_payload(co, allocs),
                 user_id=user.id,
             )
 

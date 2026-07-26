@@ -53,6 +53,83 @@ def _parse_json(raw, default):
         return default
 
 
+def _resolve_sage_vendor_code(company_key, state, Commitment=None):
+    status_entry = (state.get('subSOVStatus') or {}).get(str(company_key)) or {}
+    company_id = status_entry.get('companyId') or status_entry.get('company_id') or company_key
+    sage_vendor_code = ''
+    try:
+        from portal_sub_access import resolve_company_from_sov_key
+        company = resolve_company_from_sov_key(str(company_key), Company=None, state=state)
+        if company is not None:
+            from companies_persistence import serialize_company
+            sage_vendor_code = serialize_company(company).get('sage_ap_vendor_code') or ''
+            company_id = getattr(company, 'id', company_id)
+    except Exception:
+        pass
+    if not sage_vendor_code and Commitment is not None:
+        try:
+            for com in Commitment.query.filter_by(status='Approved').all():
+                if str(getattr(com, 'company_id', '') or '') == str(company_id):
+                    from companies_persistence import serialize_company
+                    from app import Company
+                    row = Company.query.get(int(com.company_id)) if com.company_id else None
+                    if row is not None:
+                        sage_vendor_code = serialize_company(row).get('sage_ap_vendor_code') or ''
+                        break
+        except Exception:
+            pass
+    return str(company_id or company_key), sage_vendor_code
+
+
+def _sub_pay_app_sage_allocations(state, company_key):
+    lines = (state.get('subcontractorSOV') or {}).get(str(company_key)) or []
+    allocations = []
+    for line in lines:
+        amount = float(line.get('work_this_period') or line.get('workThisPeriod') or 0)
+        if amount <= 0:
+            continue
+        allocations.append({
+            'cost_code': line.get('cost_code') or line.get('costCode') or '',
+            'amount': amount,
+            'description': line.get('description') or '',
+        })
+    return allocations
+
+
+def _g702_sage_payload(state, period_number, amount, body=None):
+    body = body or {}
+    rollup = body.get('rollup') or {}
+    grand = rollup.get('grand') or {}
+    billing_total = float(grand.get('completed') or amount or 0)
+    return {
+        'periodNumber': period_number,
+        'period_number': period_number,
+        'amount': amount,
+        'amountDue': amount,
+        'amount_due': amount,
+        'billing_total': billing_total,
+        'total': billing_total,
+        'grandTotal': grand.get('completed'),
+        'retainagePercent': state.get('payAppRetainagePercent'),
+        'contractorSOVLineCount': len(state.get('contractorSOV') or []),
+        **(body.get('payload') or {}),
+    }
+
+
+def _sub_pay_app_sage_payload(state, company_key, period_num, total, Commitment=None):
+    company_id, sage_vendor_code = _resolve_sage_vendor_code(company_key, state, Commitment=Commitment)
+    return {
+        'companyId': company_key,
+        'company_id': company_id,
+        'sage_vendor_code': sage_vendor_code,
+        'periodNumber': period_num,
+        'period_number': period_num,
+        'total': total,
+        'totalBilledThisPeriod': total,
+        'allocations': _sub_pay_app_sage_allocations(state, company_key),
+    }
+
+
 def append_pay_app_approval_history(state, entity_type, entity_key, action, user, comment='', old_status='', new_status=''):
     hist = state.get('_payAppWorkflowHistory') or []
     name = f'{getattr(user, "first_name", "")} {getattr(user, "last_name", "")}'.strip() or getattr(user, 'email', 'User')
@@ -717,7 +794,7 @@ def process_pay_app_workflow(
                 project_id, user.id,
                 event_type='G702Submitted',
                 message=f'G702 period {entity_id} submitted',
-                payload={'periodNumber': entity_id, 'amount': amount, **(body.get('payload') or {})},
+                payload=_g702_sage_payload(state, entity_id, amount, body),
                 ChangeOrder=ChangeOrder, ChangeOrderAllocation=ChangeOrderAllocation,
                 PayAppProjectState=PayAppProjectState, BudgetProjectState=BudgetProjectState,
                 Commitment=Commitment, CommitmentAllocation=CommitmentAllocation,
@@ -744,13 +821,7 @@ def process_pay_app_workflow(
                 project_id, user.id,
                 event_type='G702Approved',
                 message=f'G702 period {entity_id} approved — accounting reconciled',
-                payload={
-                    'periodNumber': entity_id,
-                    'amount': amount,
-                    'grandTotal': (body.get('rollup') or {}).get('grand', {}).get('completed'),
-                    'amountDue': amount,
-                    **(body.get('payload') or {}),
-                },
+                payload=_g702_sage_payload(state, entity_id, amount, body),
                 ChangeOrder=ChangeOrder, ChangeOrderAllocation=ChangeOrderAllocation,
                 PayAppProjectState=PayAppProjectState, BudgetProjectState=BudgetProjectState,
                 Commitment=Commitment, CommitmentAllocation=CommitmentAllocation,
@@ -791,7 +862,7 @@ def process_pay_app_workflow(
                 project_id, user.id,
                 event_type='SubPayAppSubmitted',
                 message=f'Sub pay app submitted — company {company_key}',
-                payload={'companyId': company_key, 'periodNumber': period_num, 'total': total},
+                payload=_sub_pay_app_sage_payload(state, company_key, period_num, total, Commitment=Commitment),
                 ChangeOrder=ChangeOrder, ChangeOrderAllocation=ChangeOrderAllocation,
                 PayAppProjectState=PayAppProjectState, BudgetProjectState=BudgetProjectState,
                 Commitment=Commitment, CommitmentAllocation=CommitmentAllocation,
@@ -807,7 +878,7 @@ def process_pay_app_workflow(
                 project_id, user.id,
                 event_type='SubPayAppApproved',
                 message=f'Sub pay app approved — company {company_key}',
-                payload={'companyId': company_key, 'periodNumber': period_num, 'total': total},
+                payload=_sub_pay_app_sage_payload(state, company_key, period_num, total, Commitment=Commitment),
                 ChangeOrder=ChangeOrder, ChangeOrderAllocation=ChangeOrderAllocation,
                 PayAppProjectState=PayAppProjectState, BudgetProjectState=BudgetProjectState,
                 Commitment=Commitment, CommitmentAllocation=CommitmentAllocation,
