@@ -355,7 +355,8 @@ body.schedule-chart-resizing {
     width: var(--sched-grid-overlay-w, 520px) !important;
     min-width: 0 !important;
     max-width: none !important;
-    overflow: hidden !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
     background: var(--sched-bg) !important;
     border: none !important;
     box-shadow: none !important;
@@ -409,18 +410,26 @@ body.schedule-chart-resizing {
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_scale,
 .schedule-overlay-mode #gantt_here .gantt_grid_data {
-    width: 100% !important;
-    min-width: 0 !important;
+    width: var(--sched-grid-min-width, 640px) !important;
+    min-width: var(--sched-grid-min-width, 640px) !important;
     max-width: none !important;
-    overflow-x: scroll !important;
-    scrollbar-width: none;
+    overflow-x: visible !important;
+    scrollbar-width: thin;
+}
+.schedule-overlay-mode #gantt_here .gantt_grid_scale {
+    overflow-y: hidden !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_data {
     overflow-y: auto !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_scale::-webkit-scrollbar,
 .schedule-overlay-mode #gantt_here .gantt_grid_data::-webkit-scrollbar {
-    display: none;
+    height: 8px;
+}
+.schedule-overlay-mode #gantt_here .gantt_grid_scale::-webkit-scrollbar-thumb,
+.schedule-overlay-mode #gantt_here .gantt_grid_data::-webkit-scrollbar-thumb {
+    background: var(--sched-border-strong);
+    border-radius: 4px;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_scale .gantt_grid_head,
 .schedule-overlay-mode #gantt_here .gantt_grid_data .gantt_row {
@@ -1237,6 +1246,12 @@ body.sched-col-dragging .gantt_grid_scale {
 }
 .sched-col-grip-layer .sched-col-resize-grip {
     pointer-events: auto !important;
+    position: absolute !important;
+    top: var(--sched-grid-header-top, 26px) !important;
+    height: var(--sched-grid-header-label, 39px) !important;
+    width: 10px !important;
+    margin-left: -5px !important;
+    z-index: 250 !important;
 }
 #gantt_here .gantt_grid_scale .gantt_grid_head_cell {
     z-index: 1 !important;

@@ -508,6 +508,26 @@
         });
     }
 
+    /** Clear persisted widths that were squeezed by dhtmlx into the viewport. */
+    function repairSqueezedColumnWidths() {
+        if (!gantt.config.columns?.length) return;
+        let defTotal = 0;
+        let effectiveTotal = 0;
+        gantt.config.columns.forEach(col => {
+            const def = columnDefWidths[col.name];
+            if (def == null) return;
+            defTotal += def;
+            const saved = columnWidths[col.name];
+            effectiveTotal += saved != null && saved !== '' ? parseInt(saved, 10) || def : def;
+        });
+        if (defTotal < 400 || effectiveTotal >= defTotal * 0.92) return;
+        gantt.config.columns.forEach(col => {
+            if (columnDefWidths[col.name] == null) return;
+            delete columnWidths[col.name];
+            col.width = columnDefWidths[col.name];
+        });
+    }
+
     function getColumnsTotalWidth() {
         if (!gantt.config.columns) return 900;
         return gantt.config.columns.reduce((sum, col) => sum + resolveColumnWidth(col), 0);
@@ -599,19 +619,57 @@
         });
     }
 
-    function layoutColumnResizeGrips(metrics) {
-        const scaleHead = document.querySelector('#gantt_here .gantt_grid_scale .gantt_grid_head');
-        if (!scaleHead) return;
-        const list = metrics || getColumnLayoutMetrics().columns;
-        scaleHead.querySelectorAll('.gantt_grid_column_resize_wrap').forEach(wrap => {
-            wrap.style.display = '';
-            wrap.style.pointerEvents = '';
-            const colIndex = getColumnIndexFromResizeWrap(wrap);
-            if (colIndex < 0) return;
-            const m = list[colIndex];
-            if (!m) return;
-            wrap.style.left = Math.max(0, m.left + m.width - 5) + 'px';
+    function ensureColumnResizeGripsLayer(metrics) {
+        const gridHead = document.querySelector('#gantt_here .gantt_grid_scale .gantt_grid_head');
+        if (!gridHead) return;
+
+        document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_column_resize_wrap').forEach(wrap => {
+            if (wrap.closest('.sched-col-grip-layer')) return;
+            wrap.style.display = 'none';
+            wrap.style.pointerEvents = 'none';
         });
+
+        const list = metrics || getColumnLayoutMetrics().columns;
+        const cols = gantt.config.columns || [];
+        const total = list.length
+            ? list[list.length - 1].left + list[list.length - 1].width
+            : getColumnsTotalWidth();
+
+        let layer = gridHead.querySelector('.sched-col-grip-layer');
+        if (!layer) {
+            layer = document.createElement('div');
+            layer.className = 'sched-col-grip-layer';
+            gridHead.appendChild(layer);
+        }
+        layer.style.width = total + 'px';
+        layer.style.height = '100%';
+        layer.style.position = 'absolute';
+        layer.style.top = '0';
+        layer.style.left = '0';
+        layer.style.pointerEvents = 'none';
+        layer.style.zIndex = '250';
+        layer.innerHTML = '';
+
+        list.forEach((m, i) => {
+            const col = cols[i];
+            if (!col || col.resize === false || isAddColumnCol(col)) return;
+            const grip = document.createElement('div');
+            grip.className = 'sched-col-resize-grip gantt_grid_column_resize_wrap';
+            grip.dataset.colIndex = String(i);
+            grip.title = 'Drag to resize column';
+            grip.innerHTML = '<div class="gantt_grid_column_resize"></div>';
+            grip.style.position = 'absolute';
+            grip.style.left = (m.left + m.width) + 'px';
+            grip.style.top = 'var(--sched-grid-header-top, 26px)';
+            grip.style.height = 'var(--sched-grid-header-label, 39px)';
+            grip.style.width = '10px';
+            grip.style.marginLeft = '-5px';
+            layer.appendChild(grip);
+        });
+    }
+
+    function layoutColumnResizeGrips(metrics) {
+        ensureColumnResizeGripsLayer(metrics);
     }
 
     function enforceGridColumnExtents() {
@@ -632,8 +690,16 @@
             gridHead.style.minWidth = total + 'px';
             gridHead.style.maxWidth = 'none';
         }
-        if (gridScale) gridScale.style.maxWidth = 'none';
-        if (gridData) gridData.style.maxWidth = 'none';
+        if (gridScale) {
+            gridScale.style.width = total + 'px';
+            gridScale.style.minWidth = total + 'px';
+            gridScale.style.maxWidth = 'none';
+        }
+        if (gridData) {
+            gridData.style.width = total + 'px';
+            gridData.style.minWidth = total + 'px';
+            gridData.style.maxWidth = 'none';
+        }
 
         ensureGridHeaderChrome(total);
         ensureGridScrollWidthSentinel(total);
@@ -855,7 +921,7 @@
             height: '100%',
             'z-index': '30',
             flex: 'none',
-            overflow: 'hidden',
+            overflow: 'auto',
             background: 'var(--sched-bg, #1e1e1e)',
             'box-sizing': 'border-box',
             border: 'none',
@@ -3337,7 +3403,9 @@
         });
         const addCol = getAddColumnDef();
         columnDefWidths[addCol.name] = parseInt(addCol.width, 10) || 36;
-        return ordered.concat([addCol]);
+        const result = ordered.concat([addCol]);
+        repairSqueezedColumnWidths();
+        return result;
     }
 
     function findGridCell(taskId, colName) {
@@ -3824,6 +3892,7 @@
             syncWbsGutterSpans();
             ensureAddColumnHeader();
             bindWbsGutterScrollSync();
+            enforceGridColumnExtents();
             queueEnforceGridColumnExtents();
         });
 
@@ -3840,6 +3909,8 @@
         sanitizeAllTaskDates();
         initGanttLayout();
         ganttReady = true;
+        repairSqueezedColumnWidths();
+        enforceGridColumnExtents();
         bindColumnResizeEnhancements();
         bindGridSelectionHandlers();
         syncScheduleProjectContext();
@@ -3979,6 +4050,7 @@
         scheduleSettings.column_order = columnOrder.slice();
         normalizeTaskDates(payload.data);
         gantt.config.columns = buildColumnConfig();
+        repairSqueezedColumnWidths();
         ensureDefaultColumnAlignments();
         updateGridWidth();
         gantt.clearAll();
