@@ -26,6 +26,12 @@ def _d(dt):
     return dt.isoformat() if dt else None
 
 
+def _scheduling_from_item(item):
+    details = _parse_json(item.details_json, {})
+    scheduling = details.get('scheduling') if isinstance(details.get('scheduling'), dict) else {}
+    return scheduling
+
+
 def serialize_item(item, User=None):
     data = {
         'id': item.id,
@@ -59,6 +65,13 @@ def serialize_item(item, User=None):
         'created_at': item.created_at.isoformat() if item.created_at else None,
         'updated_at': item.updated_at.isoformat() if item.updated_at else None,
     }
+    scheduling = _scheduling_from_item(item)
+    data['schedule_method'] = scheduling.get('schedule_method', '')
+    data['schedule_method_label'] = scheduling.get('schedule_method_label', '')
+    data['schedule_instructions'] = scheduling.get('schedule_instructions', '')
+    data['inspection_schedule_url'] = scheduling.get('inspection_schedule_url', '')
+    data['inspection_phone'] = scheduling.get('inspection_phone', '') or data['authority_phone']
+    data['permit_url'] = scheduling.get('permit_url', '') or data['authority_url']
     try:
         from inspection_reminders import serialize_notification_fields
         data.update(serialize_notification_fields(item))

@@ -12886,6 +12886,29 @@ def _apply_permit_inspection_item(item, body):
             item.scheduled_date = None
     if 'details' in body:
         item.details_json = json.dumps(body['details'] or {})
+    if any(k in body for k in (
+        'schedule_method', 'schedule_instructions', 'inspection_schedule_url',
+        'inspection_phone', 'permit_url', 'scheduling',
+    )):
+        details = {}
+        if item.details_json:
+            try:
+                details = json.loads(item.details_json)
+            except (TypeError, json.JSONDecodeError):
+                details = {}
+        if not isinstance(details, dict):
+            details = {}
+        scheduling = details.get('scheduling') if isinstance(details.get('scheduling'), dict) else {}
+        if isinstance(body.get('scheduling'), dict):
+            scheduling.update(body['scheduling'])
+        for key in ('schedule_method', 'schedule_instructions', 'inspection_schedule_url', 'inspection_phone', 'permit_url'):
+            if key in body:
+                scheduling[key] = body[key]
+        if scheduling.get('schedule_method') and not scheduling.get('schedule_method_label'):
+            from florida_jurisdiction_directory import SCHEDULE_METHOD_LABELS
+            scheduling['schedule_method_label'] = SCHEDULE_METHOD_LABELS.get(scheduling['schedule_method'], scheduling['schedule_method'])
+        details['scheduling'] = scheduling
+        item.details_json = json.dumps(details)
     if any(k in body for k in ('notify_user_ids', 'notify_user_id', 'notify_creator', 'reminder_offsets')):
         from inspection_reminders import apply_notification_settings
         apply_notification_settings(item, body)
@@ -12996,6 +13019,8 @@ def api_permits_inspections_from_template():
     push = bool(body.get('push_to_schedule'))
     created = []
     for tpl in build_checklist_items(trade, jurisdiction):
+        scheduling = tpl.get('scheduling') or {}
+        details = {'scheduling': scheduling} if scheduling else {}
         item = PermitInspectionItem(
             project_id=int(project_id),
             item_number=_next_permit_inspection_number(project_id),
@@ -13012,6 +13037,7 @@ def api_permits_inspections_from_template():
             status=tpl.get('status', 'Not Started'),
             catalog_source='fbc_template',
             created_by_id=current_user.id,
+            details_json=json.dumps(details) if details else None,
         )
         if scheduled_date:
             try:

@@ -104,7 +104,7 @@ window.CASEPM_PERMITS_CTX = {
   <select id="piDirCategory" class="pi-input" style="flex:0 0 auto;width:180px;">
     <option value="all">All categories</option>
     <option value="county">Counties (67)</option>
-    <option value="city">Cities</option>
+    <option value="city">Cities &amp; municipal offices</option>
     <option value="state">State authorities</option>
     <option value="utility">Utilities</option>
     <option value="water_management">Water management</option>
@@ -174,8 +174,23 @@ window.CASEPM_PERMITS_CTX = {
       </div>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div><label class="block text-xs text-zinc-400 mb-1">Authority / building dept</label><input id="piAuthorityName" class="pi-input"></div>
-        <div><label class="block text-xs text-zinc-400 mb-1">Phone</label><input id="piAuthorityPhone" class="pi-input"></div>
-        <div><label class="block text-xs text-zinc-400 mb-1">Website / portal URL</label><input id="piAuthorityUrl" class="pi-input" placeholder="https://"></div>
+        <div><label class="block text-xs text-zinc-400 mb-1">Permit office phone</label><input id="piAuthorityPhone" class="pi-input"></div>
+        <div><label class="block text-xs text-zinc-400 mb-1">Permit office website</label><input id="piAuthorityUrl" class="pi-input" placeholder="https://"></div>
+      </div>
+      <div class="border border-zinc-800 rounded-md p-3 space-y-3 bg-zinc-900/40">
+        <div class="text-xs text-zinc-500 uppercase tracking-wide">Inspection scheduling (city / county AHJ)</div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div><label class="block text-xs text-zinc-400 mb-1">How to schedule</label>
+            <select id="piScheduleMethod" class="pi-input">
+              <option value="phone">Call to schedule</option>
+              <option value="web">Schedule online</option>
+              <option value="both">Call or schedule online</option>
+            </select>
+          </div>
+          <div><label class="block text-xs text-zinc-400 mb-1">Inspection request phone</label><input id="piInspectionPhone" class="pi-input" placeholder="If different from permit office"></div>
+          <div><label class="block text-xs text-zinc-400 mb-1">Online inspection scheduling URL</label><input id="piInspectionScheduleUrl" class="pi-input" placeholder="https://"></div>
+        </div>
+        <div><label class="block text-xs text-zinc-400 mb-1">Scheduling instructions</label><textarea id="piScheduleInstructions" rows="2" class="pi-input resize-y" placeholder="e.g. Call before 3 PM day prior, or use the Accela portal…"></textarea></div>
       </div>
     </div>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">

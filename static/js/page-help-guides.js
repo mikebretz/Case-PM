@@ -1169,10 +1169,12 @@ global.CasePMPageHelpGuides = {
         ['Document pass', 'Attach photo proof on reinspection pass for closeout binder.'],
       ]],
       ['Permits & agencies', 'Record agency inspector name and permit number for jurisdictional audits.', [
+        ['Florida Directory', 'Open the <strong>Florida Directory</strong> tab for all 67 counties and municipal building departments with permit office contacts.'],
+        ['City vs county AHJ', 'Most field inspections are done by the <strong>city</strong> inside city limits; unincorporated areas use the <strong>county</strong> AHJ.'],
+        ['Schedule inspections', 'Each directory entry shows whether to <strong>call</strong>, use the <strong>website</strong>, or both — click a row to apply contacts to an inspection.'],
         ['Permit #', 'Enter the active permit number for the work being inspected.'],
         ['Agency inspector', 'Record name and agency (city, county, fire marshal).'],
-        ['Inspection card', 'Match results to the posted inspection card requirements.'],
-        ['Audit trail', 'Jurisdictions may request logs at final — keep permit fields complete.'],
+        ['Audit trail', 'Jurisdictions may request logs at final — keep permit and scheduling fields complete.'],
       ]],
       ['Export PDF', 'Print official checklist PDFs for owner binders and turnover packages.', [
         ['Export action', 'Use export or print to generate PDF of completed checklist.'],

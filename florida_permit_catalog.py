@@ -220,7 +220,12 @@ def all_catalog_trades():
 
 def build_checklist_items(trade_key, jurisdiction=None):
     """Return dicts ready to become PermitInspectionItem rows."""
+    from florida_jurisdiction_directory import jurisdiction_to_item_details
+
     templates = get_fbc_template(trade_key)
+    j = jurisdiction or {}
+    contact = jurisdiction_to_item_details(j) if j.get('name') or j.get('building_dept') else {}
+    scheduling = contact.get('scheduling') or {}
     items = []
     for t in templates:
         items.append({
@@ -231,9 +236,10 @@ def build_checklist_items(trade_key, jurisdiction=None):
             'description': t.get('notes', ''),
             'fbc_reference': t.get('fbc_ref', ''),
             'status': 'Not Started',
-            'jurisdiction_name': (jurisdiction or {}).get('name', ''),
-            'authority_name': (jurisdiction or {}).get('building_dept', ''),
-            'authority_phone': (jurisdiction or {}).get('phone', ''),
-            'authority_url': (jurisdiction or {}).get('url', ''),
+            'jurisdiction_name': contact.get('jurisdiction_name') or j.get('display') or j.get('name', ''),
+            'authority_name': contact.get('authority_name') or j.get('building_dept', ''),
+            'authority_phone': contact.get('authority_phone') or j.get('phone', ''),
+            'authority_url': contact.get('authority_url') or j.get('url', ''),
+            'scheduling': scheduling,
         })
     return items

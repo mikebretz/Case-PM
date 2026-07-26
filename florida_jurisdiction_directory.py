@@ -8,6 +8,93 @@ Sources: Florida Association of Counties, DBPR, county building department websi
 from florida_permit_catalog import (
     FLORIDA_STATE_AUTHORITIES, FLORIDA_UTILITIES, FLORIDA_WMD,
 )
+from florida_municipal_permit_offices import (
+    FLORIDA_CITY_PERMIT_OFFICES,
+    INSPECTION_SCHEDULING_OVERRIDES,
+)
+
+SCHEDULE_METHOD_LABELS = {
+    'phone': 'Call to schedule inspections',
+    'web': 'Schedule inspections online',
+    'both': 'Call or schedule online',
+}
+
+
+def enrich_jurisdiction(entry, entry_type='county'):
+    """Add permit office + inspection scheduling fields for workflow UI."""
+    out = dict(entry)
+    key = out.get('name', '')
+    if entry_type == 'city' and key == 'Sarasota':
+        override = INSPECTION_SCHEDULING_OVERRIDES.get('Sarasota City', {})
+    else:
+        override = INSPECTION_SCHEDULING_OVERRIDES.get(key, {})
+
+    phone = out.get('inspection_phone') or override.get('inspection_phone') or out.get('phone', '')
+    permit_url = out.get('permit_url') or out.get('url', '')
+    inspection_url = (
+        out.get('inspection_schedule_url')
+        or override.get('inspection_schedule_url')
+        or ''
+    )
+
+    method = out.get('schedule_method') or override.get('schedule_method')
+    if not method:
+        if inspection_url and phone:
+            method = 'both'
+        elif inspection_url:
+            method = 'web'
+        else:
+            method = 'phone'
+
+    instructions = out.get('schedule_instructions') or override.get('schedule_instructions')
+    if not instructions:
+        if method == 'phone':
+            instructions = (
+                f'Call {phone} during business hours to request inspections.'
+                if phone else 'Contact the building department by phone to schedule inspections.'
+            )
+        elif method == 'web':
+            instructions = (
+                'Use the online inspection scheduling portal (link below).'
+                if inspection_url else 'Visit the building department website to schedule inspections online.'
+            )
+        else:
+            if phone and inspection_url:
+                instructions = f'Call {phone} or use the online portal to request inspections.'
+            elif phone:
+                instructions = f'Call {phone} to request inspections.'
+            else:
+                instructions = 'Contact the permitting office to schedule inspections.'
+
+    out.update({
+        'permit_url': permit_url,
+        'inspection_phone': phone,
+        'inspection_schedule_url': inspection_url,
+        'schedule_method': method,
+        'schedule_method_label': SCHEDULE_METHOD_LABELS.get(method, method),
+        'schedule_instructions': instructions,
+        'type': entry_type,
+    })
+    return out
+
+
+def jurisdiction_to_item_details(jurisdiction):
+    """Map a directory entry to permit/inspection item detail fields."""
+    j = enrich_jurisdiction(jurisdiction, jurisdiction.get('type', 'county'))
+    return {
+        'jurisdiction_name': j.get('display') or j.get('name', ''),
+        'authority_name': j.get('building_dept') or j.get('name', ''),
+        'authority_phone': j.get('inspection_phone') or j.get('phone', ''),
+        'authority_url': j.get('permit_url') or j.get('url', ''),
+        'scheduling': {
+            'schedule_method': j.get('schedule_method', 'phone'),
+            'schedule_method_label': j.get('schedule_method_label', ''),
+            'schedule_instructions': j.get('schedule_instructions', ''),
+            'inspection_phone': j.get('inspection_phone', ''),
+            'inspection_schedule_url': j.get('inspection_schedule_url', ''),
+            'permit_url': j.get('permit_url', ''),
+        },
+    }
 
 # All 67 Florida counties — county seat + building/permitting contact
 FLORIDA_COUNTIES = [
@@ -81,28 +168,7 @@ FLORIDA_COUNTIES = [
 ]
 
 # Major Florida cities with independent building departments (in addition to county)
-FLORIDA_MAJOR_CITIES = [
-    {'name': 'Jacksonville', 'county': 'Duval', 'building_dept': 'Jacksonville Building Inspection Division', 'phone': '(904) 255-8500', 'url': 'https://www.coj.net/departments/planning-and-development/building-inspection'},
-    {'name': 'Miami', 'county': 'Miami-Dade', 'building_dept': 'City of Miami Building Department', 'phone': '(305) 416-2060', 'url': 'https://www.miami.gov/Building'},
-    {'name': 'Tampa', 'county': 'Hillsborough', 'building_dept': 'City of Tampa Construction Services Center', 'phone': '(813) 274-3100', 'url': 'https://www.tampa.gov/construction-services'},
-    {'name': 'Orlando', 'county': 'Orange', 'building_dept': 'City of Orlando Permitting Services', 'phone': '(407) 246-4444', 'url': 'https://www.orlando.gov/Building-Development'},
-    {'name': 'St. Petersburg', 'county': 'Pinellas', 'building_dept': 'St. Petersburg Development Services', 'phone': '(727) 893-7231', 'url': 'https://www.stpete.org/'},
-    {'name': 'Hialeah', 'county': 'Miami-Dade', 'building_dept': 'Hialeah Building Department', 'phone': '(305) 883-5800', 'url': 'https://www.hialeahfl.gov/'},
-    {'name': 'Fort Lauderdale', 'county': 'Broward', 'building_dept': 'Fort Lauderdale Building Services', 'phone': '(954) 828-6520', 'url': 'https://www.fortlauderdale.gov/'},
-    {'name': 'Cape Coral', 'county': 'Lee', 'building_dept': 'Cape Coral Building Development Services', 'phone': '(239) 574-0546', 'url': 'https://www.capecoral.gov/'},
-    {'name': 'Tallahassee', 'county': 'Leon', 'building_dept': 'Tallahassee Building Inspection', 'phone': '(850) 891-7000', 'url': 'https://www.talgov.com/'},
-    {'name': 'Hollywood', 'county': 'Broward', 'building_dept': 'Hollywood Building Division', 'phone': '(954) 921-3335', 'url': 'https://www.hollywoodfl.org/'},
-    {'name': 'Gainesville', 'county': 'Alachua', 'building_dept': 'Gainesville Building Inspection', 'phone': '(352) 334-5050', 'url': 'https://www.gainesvillefl.gov/'},
-    {'name': 'Pembroke Pines', 'county': 'Broward', 'building_dept': 'Pembroke Pines Building & Permitting', 'phone': '(954) 431-4500', 'url': 'https://www.ppines.com/'},
-    {'name': 'Clearwater', 'county': 'Pinellas', 'building_dept': 'Clearwater Development Services', 'phone': '(727) 562-4740', 'url': 'https://www.myclearwater.com/'},
-    {'name': 'Lakeland', 'county': 'Polk', 'building_dept': 'Lakeland Building Inspection', 'phone': '(863) 834-6012', 'url': 'https://www.lakelandgov.net/'},
-    {'name': 'Palm Bay', 'county': 'Brevard', 'building_dept': 'Palm Bay Building Department', 'phone': '(321) 953-8924', 'url': 'https://www.palmbayfl.gov/'},
-    {'name': 'West Palm Beach', 'county': 'Palm Beach', 'building_dept': 'West Palm Beach Development Services', 'phone': '(561) 822-2200', 'url': 'https://www.wpb.org/'},
-    {'name': 'Port St. Lucie', 'county': 'St. Lucie', 'building_dept': 'Port St. Lucie Building Department', 'phone': '(772) 871-5132', 'url': 'https://www.cityofpsl.com/'},
-    {'name': 'Boca Raton', 'county': 'Palm Beach', 'building_dept': 'Boca Raton Building Services', 'phone': '(561) 393-7960', 'url': 'https://www.myboca.us/'},
-    {'name': 'Daytona Beach', 'county': 'Volusia', 'building_dept': 'Daytona Beach Building Division', 'phone': '(386) 671-8140', 'url': 'https://www.codb.us/'},
-    {'name': 'Kissimmee', 'county': 'Osceola', 'building_dept': 'Kissimmee Building & Permitting', 'phone': '(407) 518-2120', 'url': 'https://www.kissimmee.gov/'},
-]
+FLORIDA_MAJOR_CITIES = FLORIDA_CITY_PERMIT_OFFICES
 
 
 def search_directory(query='', category='all'):
@@ -117,33 +183,39 @@ def search_directory(query='', category='all'):
         for c in FLORIDA_COUNTIES:
             blob = f"{c['name']} {c['seat']} {c['building_dept']}"
             if match(blob):
-                results.append({**c, 'type': 'county', 'display': f"{c['name']} County — {c['seat']}"})
+                row = enrich_jurisdiction({**c, 'type': 'county', 'display': f"{c['name']} County — {c['seat']}"}, 'county')
+                results.append(row)
     if category in ('all', 'city'):
         for c in FLORIDA_MAJOR_CITIES:
             blob = f"{c['name']} {c['county']} {c['building_dept']}"
             if match(blob):
-                results.append({**c, 'type': 'city', 'display': f"{c['name']} ({c['county']} Co.)"})
+                row = enrich_jurisdiction({**c, 'type': 'city', 'display': f"{c['name']} ({c['county']} Co.)"}, 'city')
+                results.append(row)
     if category in ('all', 'utility'):
         for u in FLORIDA_UTILITIES:
             if match(f"{u['name']} {u['region']} {u['type']}"):
-                results.append({**u, 'type': 'utility', 'display': u['name']})
+                results.append(enrich_jurisdiction({**u, 'type': 'utility', 'display': u['name']}, 'utility'))
     if category in ('all', 'state'):
         for a in FLORIDA_STATE_AUTHORITIES:
             if match(f"{a['name']} {a['role']}"):
-                results.append({**a, 'type': 'state', 'display': a['name']})
+                results.append(enrich_jurisdiction({**a, 'type': 'state', 'display': a['name']}, 'state'))
     if category in ('all', 'water_management'):
         for w in FLORIDA_WMD:
             if match(f"{w['name']} {w['region']}"):
-                results.append({**w, 'type': 'water_management', 'display': w['name']})
+                results.append(enrich_jurisdiction({**w, 'type': 'water_management', 'display': w['name']}, 'water_management'))
     return results
 
 
 def get_full_directory():
+    counties = [enrich_jurisdiction({**c, 'display': f"{c['name']} County — {c['seat']}"}, 'county') for c in FLORIDA_COUNTIES]
+    cities = [enrich_jurisdiction({**c, 'display': f"{c['name']} ({c['county']} Co.)"}, 'city') for c in FLORIDA_MAJOR_CITIES]
     return {
-        'counties': FLORIDA_COUNTIES,
-        'cities': FLORIDA_MAJOR_CITIES,
+        'counties': counties,
+        'cities': cities,
         'utilities': FLORIDA_UTILITIES,
         'state_authorities': FLORIDA_STATE_AUTHORITIES,
         'water_management_districts': FLORIDA_WMD,
         'county_count': len(FLORIDA_COUNTIES),
+        'city_count': len(FLORIDA_MAJOR_CITIES),
+        'schedule_method_labels': SCHEDULE_METHOD_LABELS,
     }
