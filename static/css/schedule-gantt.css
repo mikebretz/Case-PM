@@ -1477,6 +1477,13 @@ body.sched-col-resizing {
 /* Print header — hidden on screen */
 .no-screen { display: none !important; }
 .schedule-print-sheet { display: none; }
+body.printing-gantt #schedulePrintSheet {
+    display: block !important;
+    position: relative !important;
+    background: #fff !important;
+    color: #111 !important;
+    padding: 0;
+}
 
 /* Centered modals on schedule page */
 body:has(.schedule-page-root) dialog {
@@ -1660,9 +1667,9 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
     .print-inline-links {
         position: absolute;
         top: 0;
-        left: 0;
-        right: auto;
-        width: 100%;
+        left: var(--print-cols-width, 0);
+        right: 0;
+        width: auto;
         height: 100%;
         pointer-events: none;
         z-index: 20;
