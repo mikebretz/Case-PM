@@ -5786,6 +5786,46 @@
         printGantt();
     }
 
+    function syncPrintLinkOverlay(wrap) {
+        if (!wrap) return;
+        const svg = wrap.querySelector('.print-inline-links');
+        const table = wrap.querySelector('.schedule-print-table');
+        if (!svg || !table) return;
+        const barCell = table.querySelector('tbody .print-bar-cell')
+            || table.querySelector('thead .print-ts-row .print-bar-cell')
+            || table.querySelector('.print-bar-cell');
+        if (!barCell) return;
+        const wrapRect = wrap.getBoundingClientRect();
+        const tableRect = table.getBoundingClientRect();
+        const barRect = barCell.getBoundingClientRect();
+        svg.style.left = `${Math.max(0, barRect.left - wrapRect.left)}px`;
+        svg.style.top = `${Math.max(0, tableRect.top - wrapRect.top)}px`;
+        svg.style.width = `${Math.max(1, barRect.width)}px`;
+        svg.style.height = `${Math.max(1, tableRect.height)}px`;
+        svg.style.right = 'auto';
+    }
+
+    function getPrintLinkRowY(table) {
+        const rowEls = table.querySelectorAll('tbody tr');
+        const tableRect = table.getBoundingClientRect();
+        const tableH = Math.max(1, tableRect.height);
+        return rowIndex => {
+            const row = rowEls[rowIndex];
+            if (!row) return 50;
+            const rect = row.getBoundingClientRect();
+            return ((rect.top + rect.height / 2) - tableRect.top) / tableH * 100;
+        };
+    }
+
+    function refreshPrintLinkOverlay(wrap, rowMap, startMs, span) {
+        if (!wrap || !rowMap?.size) return;
+        const table = wrap.querySelector('.schedule-print-table');
+        const svg = wrap.querySelector('.print-inline-links');
+        if (!table || !svg) return;
+        syncPrintLinkOverlay(wrap);
+        svg.innerHTML = buildPrintLinkPaths(rowMap, startMs, span, getPrintLinkRowY(table));
+    }
+
     function buildPrintTimescale(startMs, span, mode) {
         const ticks = mode === 'day' ? 14 : (mode === 'month' ? 6 : 10);
         const stepMs = mode === 'day' ? 86400000 : (mode === 'month' ? (span / ticks) : (span / ticks));
@@ -5814,11 +5854,8 @@
         return `<div class="print-bar print-bar-task${crit ? ' print-bar-critical' : ''}" style="left:${left}%;width:${width}%;background:${color}"></div>`;
     }
 
-    function buildPrintLinkPaths(rowMap, rowIdx, startMs, span, headerRowCount) {
-        if (!rowIdx) return '';
-        const headerRows = headerRowCount || 1;
-        const totalRows = rowIdx + headerRows;
-        const rowY = i => ((headerRows + i + 0.5) / totalRows) * 100;
+    function buildPrintLinkPaths(rowMap, startMs, span, rowY) {
+        if (!rowMap?.size || typeof rowY !== 'function') return '';
         let paths = '';
         gantt.getLinks().forEach(link => {
             if (!gantt.isTaskExists(link.source) || !gantt.isTaskExists(link.target)) return;
@@ -5870,10 +5907,8 @@
         const showLinks = ps.include_predecessor_links !== false;
         const printFontPt = parseInt(ps.font_size_pt, 10) || 8;
         const printRowH = gantt.config.row_height || parseInt(ps.row_height_px, 10) || 24;
-        const visibleTextW = visibleCols.reduce((s, v) => s + v.width, 0) || 1;
         const evmExtraCols = showEvm && !visibleCols.some(v => v.col.name === 'cpi');
         const EVM_COL_PX = 40;
-        const textTablePx = visibleTextW + (evmExtraCols ? EVM_COL_PX * 2 : 0);
         const hasHierarchyCol = visibleCols.some(v => v.col.name === 'hierarchy');
         const hierarchyPrintW = hasHierarchyCol
             ? (visibleCols.find(v => v.col.name === 'hierarchy')?.width || 56)
@@ -6025,9 +6060,8 @@
         })();
 
         const tableBlock = showTable && visibleCols.length ? (() => {
-            const headerRowCount = 1 + (showInlineBars && visibleCols.length ? 1 : 0);
             const linkSvg = (showLinks && showInlineBars && rowIdx)
-                ? `<svg class="print-inline-links" viewBox="0 0 100 100" preserveAspectRatio="none">${buildPrintLinkPaths(rowMap, rowIdx, startMs, span, headerRowCount)}</svg>`
+                ? '<svg class="print-inline-links" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>'
                 : '';
             const wbsCls = ps.print_wbs_colors === false ? ' print-no-wbs-colors' : '';
             const gridCls = ps.print_grid_lines !== false ? ' print-show-grid' : '';
@@ -6038,7 +6072,7 @@
                 ? `<col class="print-data-col" style="width:${EVM_COL_PX}px"><col class="print-data-col" style="width:${EVM_COL_PX}px">`
                 : '';
             const colGroup = `<colgroup>${visibleCols.map(({ width }) => `<col class="print-data-col" style="width:${width}px">`).join('')}${evmColGroup}${showInlineBars ? '<col class="print-bar-col">' : ''}</colgroup>`;
-            return `<div class="print-schedule-wrap${wbsCls}${gridCls}${repeatCls}${fitCls}${colorBarsCls}" style="--print-font-size:${printFontPt}pt;--print-row-height:${printRowH}px;--print-cols-width:${textTablePx}px" data-print-orientation="${ps.orientation || 'landscape'}">
+            return `<div class="print-schedule-wrap${wbsCls}${gridCls}${repeatCls}${fitCls}${colorBarsCls}" style="--print-font-size:${printFontPt}pt;--print-row-height:${printRowH}px" data-print-orientation="${ps.orientation || 'landscape'}">
                 ${linkSvg}
                 <table class="schedule-print-table schedule-print-table-compact schedule-print-table-visible-cols schedule-print-table-screen-cols schedule-print-table-fill-page">
                 ${colGroup}
@@ -6070,6 +6104,17 @@
         sheet.innerHTML = headerBlock + tableBlock + chartBlock + footerBlock;
         sheet.dataset.printFooter = hf.include_footer !== false ? '1' : '0';
         sheet.dataset.printOrientation = ps.orientation || 'landscape';
+        const printWrap = sheet.querySelector('.print-schedule-wrap');
+        if (printWrap) {
+            printWrap._printLinkState = (showLinks && showInlineBars && rowIdx)
+                ? { rowMap, startMs, span }
+                : null;
+        }
+        if (printWrap && showLinks && showInlineBars && rowIdx) {
+            const refreshLinks = () => refreshPrintLinkOverlay(printWrap, rowMap, startMs, span);
+            refreshLinks();
+            requestAnimationFrame(refreshLinks);
+        }
     }
 
     function printGantt() {
@@ -6098,17 +6143,29 @@
         document.body.classList.toggle('printing-gantt-show-footer', sheet.dataset.printFooter === '1');
         document.body.classList.toggle('printing-gantt-fit-page', ps.fit_to_page === true);
         document.body.classList.toggle('printing-gantt-portrait', orient === 'portrait');
+        const printWrap = sheet.querySelector('.print-schedule-wrap');
+        const linkState = printWrap?._printLinkState || null;
+        const syncLinks = () => {
+            if (linkState?.rowMap?.size) refreshPrintLinkOverlay(printWrap, linkState.rowMap, linkState.startMs, linkState.span);
+        };
+        const onBeforePrint = () => syncLinks();
+        window.addEventListener('beforeprint', onBeforePrint);
         document.body.classList.add('printing-gantt');
         requestAnimationFrame(() => {
-            window.print();
-            setTimeout(() => {
-                document.body.classList.remove(
-                    'printing-gantt',
-                    'printing-gantt-show-footer',
-                    'printing-gantt-portrait',
-                    'printing-gantt-fit-page'
-                );
-            }, 800);
+            syncLinks();
+            requestAnimationFrame(() => {
+                syncLinks();
+                window.print();
+                setTimeout(() => {
+                    window.removeEventListener('beforeprint', onBeforePrint);
+                    document.body.classList.remove(
+                        'printing-gantt',
+                        'printing-gantt-show-footer',
+                        'printing-gantt-portrait',
+                        'printing-gantt-fit-page'
+                    );
+                }, 800);
+            });
         });
     }
 
