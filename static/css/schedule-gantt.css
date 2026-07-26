@@ -1531,8 +1531,9 @@ body.printing-gantt #schedulePrintSheet .print-inline-links {
     top: 0;
     left: var(--print-cols-width, 0);
     right: 0;
+    bottom: 0;
     width: auto;
-    height: 100%;
+    height: auto;
     pointer-events: none;
     z-index: 20;
     overflow: visible;
@@ -1757,8 +1758,9 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         top: 0;
         left: var(--print-cols-width, 0);
         right: 0;
+        bottom: 0;
         width: auto;
-        height: 100%;
+        height: auto;
         pointer-events: none;
         z-index: 20;
         overflow: visible;

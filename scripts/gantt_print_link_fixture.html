@@ -38,8 +38,9 @@
             top: 0;
             left: var(--print-cols-width, 0);
             right: 0;
+            bottom: 0;
             width: auto;
-            height: 100%;
+            height: auto;
             pointer-events: none;
             z-index: 20;
         }
@@ -85,16 +86,25 @@
         function syncPrintLinkOverlay(wrap) {
             const svg = wrap.querySelector('.print-inline-links');
             const table = wrap.querySelector('.schedule-print-table');
-            const barCell = table.querySelector('tbody .print-bar-cell');
             const wrapRect = wrap.getBoundingClientRect();
             const tableRect = table.getBoundingClientRect();
-            const barRect = barCell.getBoundingClientRect();
-            if (barRect.width < 2 || tableRect.height < 2) return;
-            svg.style.left = `${Math.max(0, barRect.left - wrapRect.left)}px`;
+            const cells = table.querySelectorAll('.print-bar-cell');
+            let barLeft = Infinity;
+            let barRight = -Infinity;
+            cells.forEach(cell => {
+                const r = cell.getBoundingClientRect();
+                if (r.width < 1) return;
+                barLeft = Math.min(barLeft, r.left);
+                barRight = Math.max(barRight, r.right);
+            });
+            if (!Number.isFinite(barLeft) || barRight <= barLeft || tableRect.height < 2) return;
+            svg.style.position = 'absolute';
+            svg.style.left = `${Math.max(0, barLeft - wrapRect.left)}px`;
+            svg.style.right = `${Math.max(0, wrapRect.right - barRight)}px`;
             svg.style.top = `${Math.max(0, tableRect.top - wrapRect.top)}px`;
-            svg.style.width = `${Math.max(1, barRect.width)}px`;
-            svg.style.height = `${Math.max(1, tableRect.height)}px`;
-            svg.style.right = 'auto';
+            svg.style.bottom = `${Math.max(0, wrapRect.bottom - tableRect.bottom)}px`;
+            svg.style.width = '';
+            svg.style.height = '';
         }
         function getPrintLinkRowY(table) {
             const rowEls = table.querySelectorAll('tbody tr');
