@@ -1563,7 +1563,11 @@ body.printing-gantt #schedulePrintSheet .print-row-links {
     height: 100%;
     pointer-events: none;
     overflow: visible;
-    z-index: 5;
+    z-index: 1;
+}
+body.printing-gantt #schedulePrintSheet .print-bar,
+body.printing-gantt #schedulePrintSheet .print-milestone {
+    z-index: 2;
 }
 
 /* Centered modals on schedule page */
@@ -1912,7 +1916,7 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         height: 100%;
         pointer-events: none;
         overflow: visible;
-        z-index: 5;
+        z-index: 1;
     }
     .print-row-links path,
     .print-row-links polygon {
@@ -1924,6 +1928,7 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         height: 10px;
         border-radius: 0;
         min-width: 2px;
+        z-index: 2;
     }
     .print-bar-summary {
         top: 2px;
