@@ -15,9 +15,13 @@ from case_workflow import user_has_module_access  # noqa: E402
 from access_control import user_can_receive_workflow_email, user_email_internal_only  # noqa: E402
 from project_workflow_users import (  # noqa: E402
     build_project_directory,
+    build_project_directory_payload,
+    build_project_companies,
     build_internal_message_contacts,
     parse_recipient_emails,
     CONSULTANT_WORKFLOW_ROLES,
+    ON_PROJECT_SOURCES,
+    SOURCE_LABELS,
 )
 
 
@@ -163,6 +167,42 @@ def test_build_project_directory_merges_membership_and_contacts() -> None:
     assert arch['email'] == 'arch@firm.com'
     assert arch['position'] == 'Lead Architect'
     assert arch['role'] != arch['position']
+    assert arch.get('on_project') is True
+    assert 'membership' in (arch.get('sources') or [])
+    assert 'Project team' in (arch.get('source_labels') or [])
+
+
+def test_build_project_directory_payload_groups_companies() -> None:
+    users = [
+        _User(id=1, first_name='Brett', last_name='Architect', email='arch@firm.com', role='Architect', company='Design Co', status='Active'),
+    ]
+    pm = _PM([_MembershipRow(7, 1, 'Architect')])
+
+    class UserModel:
+        query = _UserQuery(users)
+
+    class ProjectObj:
+        id = 7
+        project_manager = ''
+        client = ''
+        client_company_id = None
+
+        def get_details(self):
+            return {'team_contacts': []}
+
+    payload = build_project_directory_payload(ProjectObj(), UserModel, Company=None, ProjectMembership=pm)
+    assert payload['counts']['directory'] >= 1
+    companies = payload['companies']
+    assert any(c['name'] == 'Design Co' for c in companies)
+    design = next(c for c in companies if c['name'] == 'Design Co')
+    assert design['people_count'] >= 1
+    assert design.get('on_project') is True
+
+
+def test_on_project_sources_constant() -> None:
+    assert 'membership' in ON_PROJECT_SOURCES
+    assert 'pay_app_sov' not in ON_PROJECT_SOURCES
+    assert SOURCE_LABELS['rfi'] == 'RFI'
 
 
 def test_consultant_roles_include_engineers() -> None:
@@ -254,6 +294,8 @@ def main() -> int:
     test_architect_internal_only_not_email()
     test_staff_user_can_receive_workflow_email()
     test_build_project_directory_merges_membership_and_contacts()
+    test_build_project_directory_payload_groups_companies()
+    test_on_project_sources_constant()
     test_build_internal_message_contacts_merges_project_and_staff()
     test_parse_recipient_emails()
     test_consultant_roles_include_engineers()
