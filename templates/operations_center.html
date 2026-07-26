@@ -7,7 +7,9 @@ window.CASEPM_OPS_CTX = {
   projectName: {{ (active_project.name if active_project else '')|tojson }},
 };
 </script>
+<script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
 <script src="{{ url_for('static', filename='js/casepm-module-shell.js') }}"></script>
+<script src="{{ url_for('static', filename='js/operations-bim-viewer.js') }}"></script>
 <script src="{{ url_for('static', filename='js/operations-center-app.js') }}"></script>
 
 <style>
@@ -15,25 +17,38 @@ window.CASEPM_OPS_CTX = {
 .ops-shell { display:flex; gap:1rem; flex:1; min-height:0; }
 .ops-sidebar { width:220px; flex-shrink:0; background:#18181b; border:1px solid #3f3f46; border-radius:0.75rem; padding:0.75rem; overflow-y:auto; }
 .ops-main { flex:1; min-width:0; display:flex; flex-direction:column; min-height:0; }
-.ops-cat-btn { width:100%; text-align:left; padding:0.55rem 0.65rem; border-radius:0.5rem; font-size:0.85rem; color:#d4d4d8; display:flex; align-items:center; gap:0.5rem; }
+.ops-cat-btn { width:100%; text-align:left; padding:0.55rem 0.65rem; border-radius:0.5rem; font-size:0.85rem; color:#d4d4d8; display:flex; align-items:center; gap:0.5rem; border:none; background:transparent; cursor:pointer; }
 .ops-cat-btn:hover, .ops-cat-btn.active { background:#27272a; color:#fff; }
-.ops-mod-btn { width:100%; text-align:left; padding:0.4rem 0.55rem 0.4rem 1.75rem; border-radius:0.4rem; font-size:0.8rem; color:#a1a1aa; }
+.ops-mod-btn { width:100%; text-align:left; padding:0.4rem 0.55rem 0.4rem 1.75rem; border-radius:0.4rem; font-size:0.8rem; color:#a1a1aa; border:none; background:transparent; cursor:pointer; }
 .ops-mod-btn:hover, .ops-mod-btn.active { background:#10b98122; color:#6ee7b7; }
 .ops-card { background:#18181b; border:1px solid #3f3f46; border-radius:0.75rem; }
-.ops-input { width:100%; background:#27272a; border:1px solid #3f3f46; border-radius:0.5rem; padding:0.5rem 0.65rem; font-size:0.875rem; color:#fff; }
+.ops-input { width:100%; background:#27272a; border:1px solid #3f3f46; border-radius:0.5rem; padding:0.5rem 0.65rem; font-size:0.875rem; color:#fff; box-sizing:border-box; }
 .ops-input:focus { outline:none; border-color:#10b981; }
 .ops-row { display:flex; align-items:center; gap:0.75rem; padding:0.65rem 0.85rem; border-bottom:1px solid #27272a; cursor:pointer; }
 .ops-row:hover { background:#202023; }
 .ops-chip { padding:0.15rem 0.55rem; border-radius:9999px; font-size:0.68rem; font-weight:600; }
-.ops-advanced { border-top:1px dashed #3f3f46; margin-top:0.75rem; padding-top:0.75rem; }
+.ops-advanced.hidden { display:none; }
+.ops-toast { position:fixed; bottom:1.5rem; right:1.5rem; z-index:9999; padding:0.75rem 1rem; border-radius:0.5rem; font-size:0.875rem; max-width:360px; box-shadow:0 8px 24px rgba(0,0,0,.4); }
+.ops-toast.ok { background:#065f46; color:#ecfdf5; }
+.ops-toast.err { background:#7f1d1d; color:#fef2f2; }
+#opsBimViewer { width:100%; height:420px; background:#0a0a0b; border-radius:0.5rem; border:1px solid #3f3f46; }
+.ops-chat { display:flex; flex-direction:column; height:100%; min-height:360px; }
+.ops-chat-msgs { flex:1; overflow-y:auto; padding:0.75rem; space-y:0.5rem; }
+.ops-chat-bubble { max-width:85%; padding:0.65rem 0.85rem; border-radius:0.75rem; margin-bottom:0.5rem; font-size:0.875rem; white-space:pre-wrap; }
+.ops-chat-bubble.user { background:#1e3a5f; margin-left:auto; }
+.ops-chat-bubble.assistant { background:#27272a; }
 @media (max-width:900px) { .ops-shell { flex-direction:column; } .ops-sidebar { width:100%; max-height:180px; } }
 </style>
 
 <div class="ops-page">
+  <div id="opsProjectBanner" class="hidden mb-3 p-3 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-200 text-sm">
+    <i class="fa-solid fa-triangle-exclamation mr-2"></i>Select a <strong>Current Project</strong> in the header to create project-scoped items.
+  </div>
+
   <div class="flex items-center justify-between gap-3 mb-3 flex-shrink-0">
     <div>
       <h1 class="text-2xl font-semibold text-white">Operations Center</h1>
-      <p class="text-sm text-zinc-400 mt-0.5">Start simple — expand any item for full detail.</p>
+      <p class="text-sm text-zinc-400 mt-0.5">Quick Add for essentials — expand for full detail.</p>
     </div>
     <button type="button" id="opsQuickAdd" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">
       <i class="fa-solid fa-plus mr-1"></i> Quick Add
@@ -49,11 +64,14 @@ window.CASEPM_OPS_CTX = {
             <div id="opsModuleTitle" class="text-lg font-semibold text-white">—</div>
             <div id="opsModuleHint" class="text-xs text-zinc-500 mt-0.5">Select a tool on the left</div>
           </div>
-          <div class="flex gap-2 text-center" id="opsStats"></div>
+          <div class="flex gap-4 text-center" id="opsStats"></div>
         </div>
       </div>
       <div class="ops-card flex-1 min-h-0 flex flex-col overflow-hidden">
         <div id="opsWipHost" class="hidden flex-1 overflow-auto p-4"></div>
+        <div id="opsAiHost" class="hidden flex-1 flex flex-col p-4"></div>
+        <div id="opsReportHost" class="hidden flex-1 overflow-auto p-4"></div>
+        <div id="opsBimHost" class="hidden flex-1 overflow-auto p-4"></div>
         <div id="opsListHost" class="flex-1 overflow-auto"></div>
       </div>
     </section>
@@ -63,16 +81,16 @@ window.CASEPM_OPS_CTX = {
 <dialog id="opsModal" class="modal casepm-dialog bg-zinc-900 border border-zinc-700 rounded-lg w-full max-w-lg p-0">
   <div class="px-5 py-4 border-b border-zinc-700 flex items-center justify-between">
     <h3 id="opsModalTitle" class="font-semibold text-lg">Quick Add</h3>
-    <button type="button" id="opsModalClose" class="text-zinc-400 hover:text-white text-xl">&times;</button>
+    <button type="button" id="opsModalClose" class="text-zinc-400 hover:text-white text-xl bg-transparent border-none cursor-pointer">&times;</button>
   </div>
   <div class="p-5 space-y-3 overflow-y-auto" style="max-height:70vh;" id="opsModalBody"></div>
   <div class="px-5 py-3 border-t border-zinc-700 flex justify-between items-center">
-    <button type="button" id="opsToggleAdvanced" class="text-sm text-emerald-400 hover:text-emerald-300">
+    <button type="button" id="opsToggleAdvanced" class="text-sm text-emerald-400 hover:text-emerald-300 bg-transparent border-none cursor-pointer">
       <i class="fa-solid fa-chevron-down mr-1"></i> More options
     </button>
     <div class="flex gap-2">
-      <button type="button" id="opsModalCancel" class="px-4 py-2 text-sm border border-zinc-700 rounded-md">Cancel</button>
-      <button type="button" id="opsModalSave" class="px-5 py-2 text-sm bg-emerald-600 rounded-md font-semibold">Save</button>
+      <button type="button" id="opsModalCancel" class="px-4 py-2 text-sm border border-zinc-700 rounded-md bg-transparent text-white cursor-pointer">Cancel</button>
+      <button type="button" id="opsModalSave" class="px-5 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md font-semibold text-white border-none cursor-pointer">Save</button>
     </div>
   </div>
 </dialog>
