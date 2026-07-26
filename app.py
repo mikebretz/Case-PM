@@ -1941,8 +1941,13 @@ class MeetingActionItem(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
-from extended_platform_models import define_extended_platform_model
-ExtendedModuleRecord = define_extended_platform_model(db)
+from extended_platform_models import define_extended_platform_models
+_extended_models = define_extended_platform_models(db)
+ExtendedModuleRecord = _extended_models['ExtendedModuleRecord']
+OperationsAiMessage = _extended_models['OperationsAiMessage']
+OperationsPaymentLine = _extended_models['OperationsPaymentLine']
+OperationsReportRun = _extended_models['OperationsReportRun']
+OperationsBimAsset = _extended_models['OperationsBimAsset']
 
 
 class Company(db.Model):
@@ -17123,12 +17128,18 @@ register_extended_platform_routes(app, {
     'render_template': render_template,
     'get_active_project': get_active_project,
     'ExtendedModuleRecord': ExtendedModuleRecord,
+    'OperationsAiMessage': OperationsAiMessage,
+    'OperationsPaymentLine': OperationsPaymentLine,
+    'OperationsReportRun': OperationsReportRun,
+    'OperationsBimAsset': OperationsBimAsset,
+    'PunchItem': PunchItem,
     'Project': Project,
     'Commitment': Commitment,
     'CommitmentAllocation': CommitmentAllocation,
     'ChangeOrder': ChangeOrder,
     'BudgetProjectState': BudgetProjectState,
     'PayAppProjectState': PayAppProjectState,
+    'SageSyncEvent': SageSyncEvent,
     'RFI': RFI,
     'ChangeEvent': ChangeEvent,
 })
