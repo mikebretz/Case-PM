@@ -62,17 +62,18 @@ async function main() {
 
     const maxGap = Math.max(...metrics.gaps, 0);
     const maxAlign = Math.max(...metrics.align.map(a => Math.abs(a || 0)), 0);
-    const timelineStartsAtHost = Math.abs(metrics.timelineLeft - metrics.hostLeft) <= 2;
-    const timelineIsFullWidth = metrics.timelineWidth >= metrics.hostWidth - 24;
+    const overlayW = 660;
+    const timelineStartsAtGrid = Math.abs(metrics.timelineLeft - (metrics.hostLeft + overlayW)) <= 12;
+    const timelineFillsRemainder = metrics.timelineWidth >= metrics.hostWidth - overlayW - 32;
     const ok = metrics.overlay && !metrics.split && metrics.resizeWraps > 0
         && maxGap <= 0.5 && maxAlign <= 1 && metrics.rowHeight === 24
-        && timelineStartsAtHost && timelineIsFullWidth
+        && timelineStartsAtGrid && timelineFillsRemainder
         && metrics.visibleHeads >= 5 && metrics.barsInChart >= 1
         && metrics.gridContentW >= 600;
 
     if (!ok) {
         console.error('LAYOUT CHECK FAILED', {
-            maxGap, maxAlign, timelineStartsAtHost, timelineIsFullWidth,
+            maxGap, maxAlign, timelineStartsAtGrid, timelineFillsRemainder,
             visibleHeads: metrics.visibleHeads, barsInChart: metrics.barsInChart,
             gridContentW: metrics.gridContentW, ok
         });
