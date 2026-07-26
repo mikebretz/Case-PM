@@ -71,6 +71,10 @@ async function main() {
             }
             s.style.cssText = 'position:absolute;left:0;top:0;height:1px;width:' + total + 'px;visibility:hidden;pointer-events:none';
         });
+        gantt.config.columns.forEach(col => {
+            if (defWidths[col.name] != null) col.width = defWidths[col.name];
+        });
+        fixtureApplyOverlayLayout();
 
         const rows = [...document.querySelectorAll('.gantt_grid_data .gantt_row')].slice(0, 8);
         const taskRows = [...document.querySelectorAll('.gantt_task_row')].slice(0, 8);
@@ -86,6 +90,7 @@ async function main() {
             return Math.round((r.getBoundingClientRect().top - tr.getBoundingClientRect().top) * 100) / 100;
         });
         const gridData = document.querySelector('.gantt_grid_data');
+        const layoutContent = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1) .gantt_layout_content');
         const heads = [...document.querySelectorAll('.gantt_grid_head_cell')];
         const cells = [...rows[0]?.querySelectorAll(':scope > .gantt_cell') || []];
         const mismatches = heads.map((h, i) => ({
@@ -96,13 +101,14 @@ async function main() {
 
         return {
             total,
-            gridDataScroll: gridData?.scrollWidth || 0,
-            gridDataClient: gridData?.clientWidth || 0,
+            gridDataScroll: layoutContent?.scrollWidth || gridData?.scrollWidth || 0,
+            gridDataClient: layoutContent?.clientWidth || gridData?.clientWidth || 0,
             rowPositions: rows.slice(0, 3).map(r => getComputedStyle(r).position),
             maxGap: Math.max(...gaps, 0),
             maxAlign: Math.max(...align.map(a => Math.abs(a || 0)), 0),
             mismatches,
-            canScroll: (gridData?.scrollWidth || 0) >= total - 4
+            canScroll: (layoutContent?.scrollWidth || 0) >= total - 4
+                && (layoutContent?.scrollWidth || 0) > (layoutContent?.clientWidth || 0) + 20
         };
     });
 
