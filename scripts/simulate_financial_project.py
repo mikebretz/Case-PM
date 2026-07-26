@@ -249,13 +249,66 @@ def _approve_owner_co(co, users, app_models):
     return co.status
 
 
+def _approve_pco_to_promotion(pco, users, app_models):
+    """Advance PCO/CPCO through pricing and review to Approved for CO."""
+    from co_persistence import process_pco_workflow
+    db = app_models['db']
+    wf_kwargs = {
+        'SageSyncEvent': app_models['SageSyncEvent'],
+        'Project': app_models['Project'],
+        'db': db,
+    }
+    if pco.status == 'Open':
+        process_pco_workflow(pco, 'submit', users['pm'], app_models['User'], {'comments': 'Sim submit'}, **wf_kwargs)
+        db.session.commit()
+    for _ in range(4):
+        if pco.status in ('Approved for CO', 'Promoted', 'Void'):
+            break
+        process_pco_workflow(pco, 'approve', users['pm'], app_models['User'], {'comments': 'Sim approve'}, **wf_kwargs)
+        db.session.commit()
+    return pco.status
+
+
+def _approve_sub_co(co, users, app_models):
+    """Advance subcontract change order through PM and accounting approval."""
+    from co_persistence import process_change_order_workflow
+    db = app_models['db']
+    wf_kwargs = {
+        'ChangeOrder': app_models['ChangeOrder'],
+        'ChangeOrderAllocation': app_models['ChangeOrderAllocation'],
+        'PayAppProjectState': app_models['PayAppProjectState'],
+        'ScheduleData': app_models.get('ScheduleData'),
+        'Project': app_models['Project'],
+        'BudgetProjectState': app_models['BudgetProjectState'],
+        'db': db,
+        'Commitment': app_models['Commitment'],
+        'CommitmentAllocation': app_models['CommitmentAllocation'],
+        'SageSyncEvent': app_models['SageSyncEvent'],
+    }
+    process_change_order_workflow(co, 'submit', users['pm'], app_models['User'], {'comments': 'Sim submit'}, **wf_kwargs)
+    db.session.commit()
+    for actor in (users['pm'], users['acct']):
+        if co.status == 'Approved':
+            break
+        process_change_order_workflow(
+            co, 'approve', actor, app_models['User'], {'comments': 'Sim approve'},
+            developer_unlock_bypass=True, **wf_kwargs,
+        )
+        db.session.commit()
+    return co.status
+
+
 def _run_extended_modules(result: SimResult, project, users, app_models, commitments):
     """RFIs, submittals, change events, RFQs, CORs, security regression, period 2, Sage review."""
     from change_event_persistence import (
         apply_change_event_fields, change_event_workflow_action,
         rfq_workflow_action, cor_workflow_action, save_generic_allocations,
-        accept_sage_event_for_export,
+        accept_sage_event_for_export, promote_cor_to_pco, promote_rfq_to_cpco,
+        promote_cpco_to_sco, bulk_create_rfqs_from_lines,
+        bulk_create_commitment_cos_from_lines,
     )
+    from co_persistence import promote_pco_to_co
+    from app import generate_next_number
     from rfi_persistence import apply_rfi_fields, workflow_rfi, add_response
     from workflow_responder import execute_rfi_action
     from submittal_persistence import apply_submittal_fields, submittal_workflow_action
@@ -280,8 +333,9 @@ def _run_extended_modules(result: SimResult, project, users, app_models, commitm
     ChangeOrderAllocation = app_models['ChangeOrderAllocation']
     Project = app_models['Project']
     User = app_models['User']
+    ChangeEventLineItem = app_models['ChangeEventLineItem']
 
-    if not RFI or not Submittal or not ChangeEvent:
+    if not RFI or not Submittal or not ChangeEvent or not ChangeEventLineItem:
         result.add('critical', 'setup', 'Extended modules missing required models (RFI, Submittal, ChangeEvent)')
         return
 
@@ -387,116 +441,203 @@ def _run_extended_modules(result: SimResult, project, users, app_models, commitm
         if sample_sub.status != old_sub_status:
             result.add('critical', 'security', 'Submittal status writable via apply_submittal_fields PUT path')
 
-    # --- Change event + RFQ + COR ---
-    ce = ChangeEvent(
-        project_id=project.id,
-        number=f'CE-{uid}-001',
-        title='Owner-directed lobby upgrade',
-        status='Open',
-        ball_in_court_role='Project Manager',
-        rom_amount=1_200_000.0,
-        created_by_id=users['pm'].id,
-    )
-    db.session.add(ce)
-    db.session.flush()
+    # --- Change event (multi-sub) + COR → PCO → CO + RFQ → CPCO → SCO ---
+    sub_commitments = [c for c in commitments if c.commitment_type == 'Subcontract']
+    line_specs = [
+        (200_000, 'Lobby finishes upgrade'),
+        (350_000, 'Curtain wall revision'),
+        (175_000, 'MEP coordination add'),
+        (125_000, 'Direct SCO line — signage package'),
+    ]
+    if len(sub_commitments) < 3:
+        result.add('critical', 'change_event', f'Need at least 3 subs for multi-sub CE (got {len(sub_commitments)})')
+    else:
+        ce = ChangeEvent(
+            project_id=project.id,
+            number=f'CE-{uid}-001',
+            title='Owner-directed lobby upgrade',
+            status='Open',
+            ball_in_court_role='Project Manager',
+            rom_amount=sum(a for a, _ in line_specs),
+            created_by_id=users['pm'].id,
+        )
+        db.session.add(ce)
+        db.session.flush()
 
-    sub_com = next((c for c in commitments if c.commitment_type == 'Subcontract'), commitments[0] if commitments else None)
-    rfq = SubcontractorRFQ(
-        project_id=project.id,
-        number=f'RFQ-{uid}-001',
-        title='Lobby finishes RFQ',
-        status='Draft',
-        ball_in_court_role='Creator',
-        company_id=sub_com.company_id if sub_com else '200',
-        company_name=sub_com.company_name if sub_com else 'Finishes Sim Co',
-        change_event_id=ce.id,
-        created_by_id=users['pm'].id,
-    )
-    db.session.add(rfq)
-    db.session.flush()
-    save_generic_allocations(RFQAllocation, 'rfq_id', rfq.id, [{
-        'cost_code': '09-250', 'cost_type': 'Subcontract', 'amount': 450_000,
-    }], db)
-    rfq_workflow_action(rfq, 'send', users['pm'])
-    rfq_workflow_action(rfq, 'quote', users['sub'], [{
-        'cost_code': '09-250', 'cost_type': 'Subcontract', 'amount': 450_000, 'quoted_amount': 475_000,
-    }])
-    rfq_workflow_action(rfq, 'accept', users['pm'])
-    db.session.commit()
-    result.metrics['rfq_status'] = rfq.status
-
-    # Security: RFQ reject without authority must fail
-    rfq_reject_test = SubcontractorRFQ(
-        project_id=project.id,
-        number=f'RFQ-{uid}-REJ',
-        title='Reject auth test',
-        status='Quoted',
-        ball_in_court_role='Project Manager',
-        company_id='999',
-        created_by_id=users['pm'].id,
-    )
-    db.session.add(rfq_reject_test)
-    db.session.commit()
-    try:
-        rfq_workflow_action(rfq_reject_test, 'reject', users['sub'])
-        result.add('critical', 'security', 'RFQ reject allowed for unauthorized subcontractor user')
-    except ValueError:
-        result.add('info', 'security', 'RFQ reject correctly blocked for unauthorized user')
-
-    # Security: RFQ quoted_amount PUT bypass
-    old_quote = float(rfq.quoted_amount or 0)
-    from change_event_persistence import apply_rfq_fields
-    apply_rfq_fields(rfq, {'quoted_amount': 1.0})
-    if float(rfq.quoted_amount or 0) != old_quote:
-        result.add('critical', 'security', 'RFQ quoted_amount writable via PUT')
-
-    cor = ChangeOrderRequest(
-        project_id=project.id,
-        number=f'COR-{uid}-001',
-        title='Lobby upgrade COR',
-        status='Draft',
-        ball_in_court_role='Creator',
-        amount=1_200_000.0,
-        change_event_id=ce.id,
-        created_by_id=users['pm'].id,
-    )
-    db.session.add(cor)
-    db.session.flush()
-    save_generic_allocations(CORAllocation, 'cor_id', cor.id, [{
-        'cost_code': '09-250', 'cost_type': 'Subcontract', 'amount': 1_200_000,
-    }], db)
-    cor_workflow_action(cor, 'submit', users['pm'])
-    for actor in (users['pm'], users['arch'], users['owner'], users['acct']):
-        if cor.status == 'Approved':
-            break
-        try:
-            cor_workflow_action(
-                cor, 'approve', actor,
-                body={'signature_attestation': True, 'signature_hash': 'sim', 'skip_signature_verify': True},
-                ChangeOrderRequest=ChangeOrderRequest,
-                CORAllocation=CORAllocation,
+        ce_lines = []
+        for idx, (com, (amount, desc)) in enumerate(zip(sub_commitments[:len(line_specs)], line_specs)):
+            alloc = CommitmentAllocation.query.filter_by(commitment_id=com.id).first()
+            line = ChangeEventLineItem(
+                change_event_id=ce.id,
+                sort_order=idx,
+                description=desc,
+                cost_code=alloc.cost_code if alloc else f'09-{250 + idx}',
+                cost_type='Subcontract',
+                amount=amount,
+                company_name=com.company_name,
+                company_id=com.company_id,
+                linked_commitment_ref=com.number,
+                status='Open',
             )
-        except ValueError as exc:
-            if 'signature' not in str(exc).lower():
-                raise
-    db.session.commit()
-    result.metrics['cor_status'] = cor.status
-    if cor.status != 'Approved':
-        result.add('critical', 'change_event', f'COR ended {cor.status} (expected Approved)')
+            db.session.add(line)
+            ce_lines.append(line)
+        db.session.flush()
+        result.metrics['ce_line_count'] = len(ce_lines)
 
-    change_event_workflow_action(ce, 'submit', users['pm'])
-    for _ in range(4):
-        if ce.status == 'Approved':
-            break
-        change_event_workflow_action(ce, 'approve', users['pm'])
-    db.session.commit()
-    result.metrics['change_event_status'] = ce.status
+        cor = ChangeOrderRequest(
+            project_id=project.id,
+            number=f'COR-{uid}-001',
+            title='Lobby upgrade COR',
+            status='Draft',
+            ball_in_court_role='Creator',
+            amount=sum(a for a, _ in line_specs),
+            change_event_id=ce.id,
+            created_by_id=users['pm'].id,
+        )
+        db.session.add(cor)
+        db.session.flush()
+        save_generic_allocations(CORAllocation, 'cor_id', cor.id, [{
+            'cost_code': line.cost_code,
+            'cost_type': 'Subcontract',
+            'amount': line.amount,
+            'change_event_line_item_id': line.id,
+        } for line in ce_lines], db)
+        cor_workflow_action(cor, 'submit', users['pm'])
+        for actor in (users['pm'], users['arch'], users['owner'], users['acct']):
+            if cor.status == 'Approved':
+                break
+            try:
+                cor_workflow_action(
+                    cor, 'approve', actor,
+                    body={'signature_attestation': True, 'signature_hash': 'sim', 'skip_signature_verify': True},
+                    ChangeOrderRequest=ChangeOrderRequest,
+                    CORAllocation=CORAllocation,
+                )
+            except ValueError as exc:
+                if 'signature' not in str(exc).lower():
+                    raise
+        db.session.commit()
+        result.metrics['cor_status'] = cor.status
+        if cor.status != 'Approved':
+            result.add('critical', 'change_event', f'COR ended {cor.status} (expected Approved)')
 
-    # Security: CE status PUT bypass
-    old_ce_status = ce.status
-    apply_change_event_fields(ce, {'status': 'Void'})
-    if ce.status != old_ce_status:
-        result.add('critical', 'security', 'Change event status writable via PUT')
+        cor_allocs = CORAllocation.query.filter_by(cor_id=cor.id).all()
+        owner_pco = promote_cor_to_pco(
+            cor, cor_allocs, PotentialChangeOrder, PCOAllocation, db, generate_next_number, users['pm'].id,
+        )
+        db.session.commit()
+        owner_pco_status = _approve_pco_to_promotion(owner_pco, users, app_models)
+        result.metrics['owner_pco_status'] = owner_pco_status
+        if owner_pco_status != 'Approved for CO':
+            result.add('critical', 'change_event', f'Owner PCO ended {owner_pco_status} (expected Approved for CO)')
+
+        promoted_owner_co = promote_pco_to_co(
+            PotentialChangeOrder, PCOAllocation, ChangeOrder, ChangeOrderAllocation,
+            db, owner_pco.id, users['pm'].id, generate_next_number,
+        )
+        promoted_owner_co_status = _approve_owner_co(promoted_owner_co, users, app_models)
+        result.metrics['promoted_owner_co_status'] = promoted_owner_co_status
+        if promoted_owner_co_status != 'Approved':
+            result.add('critical', 'change_event', f'Promoted owner CO ended {promoted_owner_co_status} (expected Approved)')
+
+        rfq_line_ids = [line.id for line in ce_lines[:3]]
+        direct_line = ce_lines[3] if len(ce_lines) > 3 else None
+        rfqs = bulk_create_rfqs_from_lines(
+            ce, rfq_line_ids, SubcontractorRFQ, RFQAllocation, ChangeEventLineItem,
+            db, generate_next_number, users['pm'].id,
+        )
+        db.session.commit()
+        result.metrics['multi_sub_rfq_count'] = len(rfqs)
+
+        cpcos = []
+        scos_from_rfq = []
+        for rfq in rfqs:
+            rfq_workflow_action(rfq, 'send', users['pm'])
+            rfq_allocs = RFQAllocation.query.filter_by(rfq_id=rfq.id).all()
+            quote_rows = [{
+                'cost_code': a.cost_code,
+                'cost_type': a.cost_type or 'Subcontract',
+                'amount': a.amount,
+                'quoted_amount': round(float(a.amount or 0) * 1.05, 2),
+            } for a in rfq_allocs]
+            rfq_workflow_action(rfq, 'quote', users['sub'], quote_rows)
+            rfq_workflow_action(rfq, 'accept', users['pm'])
+            cpco = promote_rfq_to_cpco(
+                rfq, rfq_allocs, PotentialChangeOrder, PCOAllocation,
+                db, generate_next_number, users['pm'].id, change_event_id=ce.id,
+            )
+            cpcos.append(cpco)
+            cpco_status = _approve_pco_to_promotion(cpco, users, app_models)
+            if cpco_status != 'Approved for CO':
+                result.add('critical', 'change_event', f'CPCO {cpco.number} ended {cpco_status} (expected Approved for CO)')
+            cpco_allocs = PCOAllocation.query.filter_by(pco_id=cpco.id).all()
+            sco = promote_cpco_to_sco(
+                cpco, cpco_allocs, ChangeOrder, ChangeOrderAllocation,
+                db, generate_next_number, users['pm'].id, SubcontractorRFQ=SubcontractorRFQ,
+            )
+            scos_from_rfq.append(sco)
+            sco_status = _approve_sub_co(sco, users, app_models)
+            if sco_status != 'Approved':
+                result.add('critical', 'change_event', f'SCO {sco.number} from CPCO ended {sco_status} (expected Approved)')
+        db.session.commit()
+        result.metrics['cpco_count'] = len(cpcos)
+        result.metrics['sco_approved_count'] = sum(1 for sco in scos_from_rfq if sco.status == 'Approved')
+        result.metrics['rfq_status'] = rfqs[-1].status if rfqs else None
+
+        direct_sco_status = None
+        if direct_line:
+            direct_scos = bulk_create_commitment_cos_from_lines(
+                ce, [direct_line.id], ChangeOrder, ChangeOrderAllocation,
+                ChangeEventLineItem, db, generate_next_number, users['pm'].id,
+            )
+            direct_sco = direct_scos[0] if direct_scos else None
+            if direct_sco:
+                direct_sco_status = _approve_sub_co(direct_sco, users, app_models)
+                if direct_sco_status != 'Approved':
+                    result.add('critical', 'change_event', f'Direct SCO ended {direct_sco_status} (expected Approved)')
+            db.session.commit()
+        result.metrics['direct_sco_status'] = direct_sco_status
+
+        # Security: RFQ reject without authority must fail
+        rfq_reject_test = SubcontractorRFQ(
+            project_id=project.id,
+            number=f'RFQ-{uid}-REJ',
+            title='Reject auth test',
+            status='Quoted',
+            ball_in_court_role='Project Manager',
+            company_id='999',
+            created_by_id=users['pm'].id,
+        )
+        db.session.add(rfq_reject_test)
+        db.session.commit()
+        try:
+            rfq_workflow_action(rfq_reject_test, 'reject', users['sub'])
+            result.add('critical', 'security', 'RFQ reject allowed for unauthorized subcontractor user')
+        except ValueError:
+            result.add('info', 'security', 'RFQ reject correctly blocked for unauthorized user')
+
+        # Security: RFQ quoted_amount PUT bypass
+        if rfqs:
+            from change_event_persistence import apply_rfq_fields
+            sample_rfq = rfqs[0]
+            old_quote = float(sample_rfq.quoted_amount or 0)
+            apply_rfq_fields(sample_rfq, {'quoted_amount': 1.0})
+            if float(sample_rfq.quoted_amount or 0) != old_quote:
+                result.add('critical', 'security', 'RFQ quoted_amount writable via PUT')
+
+        change_event_workflow_action(ce, 'submit', users['pm'])
+        for _ in range(4):
+            if ce.status == 'Approved':
+                break
+            change_event_workflow_action(ce, 'approve', users['pm'])
+        db.session.commit()
+        result.metrics['change_event_status'] = ce.status
+
+        # Security: CE status PUT bypass
+        old_ce_status = ce.status
+        apply_change_event_fields(ce, {'status': 'Void'})
+        if ce.status != old_ce_status:
+            result.add('critical', 'security', 'Change event status writable via PUT')
 
     # --- Sage accounting review (sample events) ---
     reviewed = 0
@@ -958,6 +1099,7 @@ def main():
         PayAppProjectState, SageSyncEvent, User, RFI, Submittal,
         ChangeEvent, SubcontractorRFQ, RFQAllocation,
         ChangeOrderRequest, CORAllocation, PotentialChangeOrder, PCOAllocation,
+        ChangeEventLineItem,
     )
 
     models = {
@@ -981,6 +1123,7 @@ def main():
         'CORAllocation': CORAllocation,
         'PotentialChangeOrder': PotentialChangeOrder,
         'PCOAllocation': PCOAllocation,
+        'ChangeEventLineItem': ChangeEventLineItem,
     }
 
     runs = [
