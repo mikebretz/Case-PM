@@ -579,6 +579,19 @@ def build_commitment_sage_payload(commitment, allocations=None, extra=None):
     """Full Sage 300 CRE payload for commitment sync (AP / Subcontracts modules)."""
     allocs = allocations or []
     extra = extra or {}
+    sage_vendor_code = extra.get('sage_vendor_code')
+    company_id = getattr(commitment, 'company_id', None)
+    if not sage_vendor_code and company_id:
+        try:
+            from flask import has_app_context
+            if has_app_context():
+                from app import Company
+                company = Company.query.get(int(company_id))
+                if company is not None:
+                    from companies_persistence import serialize_company
+                    sage_vendor_code = serialize_company(company).get('sage_ap_vendor_code') or sage_vendor_code
+        except Exception:
+            pass
     return {
         'commitment_id': commitment.id,
         'number': commitment.number,
@@ -594,7 +607,7 @@ def build_commitment_sage_payload(commitment, allocations=None, extra=None):
             'contact_name': getattr(commitment, 'contact_name', None),
             'contact_email': getattr(commitment, 'contact_email', None),
             'contact_phone': getattr(commitment, 'contact_phone', None),
-            'sage_vendor_code': extra.get('sage_vendor_code'),
+            'sage_vendor_code': sage_vendor_code,
         },
         'amounts': {
             'original': float(commitment.original_amount or 0),
@@ -691,8 +704,8 @@ def validate_commitment_allocations(allocations):
     errors = []
     valid_lines = 0
     for item in allocations or []:
-        code = (item.get('cost_code') if isinstance(item, dict) else getattr(item, 'cost_code', None) or '')
-        code = str(code).strip()
+        raw_code = item.get('cost_code') if isinstance(item, dict) else getattr(item, 'cost_code', None)
+        code = str(raw_code or '').strip()
         amt = float(item.get('amount') if isinstance(item, dict) else getattr(item, 'amount', 0) or 0)
         if amt > 0 and not code:
             errors.append('Each allocation with an amount must include a cost code.')

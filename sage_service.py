@@ -502,12 +502,43 @@ def apply_sage_pull_to_project(
     _, pay_state = get_pay_app_state(PayAppProjectState, project_id)
     vendor_totals = ledger.get('vendor_paid_totals') or {}
 
+    def _sage_vendor_lookup():
+        lookup = {}
+        try:
+            from app import Company
+            from companies_persistence import serialize_company
+            for com in commitments:
+                cid = str(com.company_id or '').strip()
+                if not cid:
+                    continue
+                try:
+                    company = Company.query.get(int(cid))
+                except (TypeError, ValueError):
+                    company = None
+                sage_code = ''
+                if company is not None:
+                    sage_code = (serialize_company(company).get('sage_ap_vendor_code') or '').strip()
+                lookup[cid] = cid
+                if sage_code:
+                    lookup[sage_code] = cid
+        except Exception:
+            pass
+        return lookup
+
+    vendor_key_lookup = _sage_vendor_lookup()
+
     sage_invoiced_updates = []
     for com in commitments:
         if com.commitment_type != 'Subcontract':
             continue
         cid = str(com.company_id or '').strip()
-        sage_paid = float(vendor_totals.get(cid) or 0)
+        sage_paid = 0.0
+        for key, paid in vendor_totals.items():
+            mapped = vendor_key_lookup.get(str(key))
+            if mapped == cid:
+                sage_paid += float(paid or 0)
+        if sage_paid <= 0:
+            sage_paid = float(vendor_totals.get(cid) or 0)
         if sage_paid <= 0:
             continue
         case_invoiced = float(getattr(com, 'invoiced_amount', 0) or 0)
@@ -550,9 +581,11 @@ def apply_sage_pull_to_project(
         sage_paid = float(sage_paid or 0)
         if sage_paid <= 0:
             continue
-        case_billed = float(case_billed_by_vendor.get(str(company_id)) or 0)
+        canonical_id = vendor_key_lookup.get(str(company_id), str(company_id))
+        case_billed = float(case_billed_by_vendor.get(str(canonical_id)) or case_billed_by_vendor.get(str(company_id)) or 0)
         vendor_payment_checks.append({
-            'company_id': str(company_id),
+            'company_id': str(canonical_id),
+            'sage_vendor_key': str(company_id),
             'case_billed': case_billed,
             'sage_paid': sage_paid,
             'delta': round(sage_paid - case_billed, 2),

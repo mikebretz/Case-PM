@@ -212,7 +212,42 @@ class CommitmentValidationTests(unittest.TestCase):
         from commitment_persistence import validate_commitment_allocations
         self.assertEqual(len(validate_commitment_allocations([])), 1)
         self.assertEqual(len(validate_commitment_allocations([{'amount': 1000}])), 1)
+        self.assertEqual(len(validate_commitment_allocations([{'cost_code': None, 'amount': 1000}])), 1)
         self.assertEqual(validate_commitment_allocations([{'cost_code': '03-300', 'amount': 1000}]), [])
+
+
+class SagePayloadTests(unittest.TestCase):
+    def test_g702_sage_payload_includes_amount_due_aliases(self):
+        from pay_app_workflow import _g702_sage_payload
+        payload = _g702_sage_payload(
+            {'contractorSOV': [{'id': 1}], 'payAppRetainagePercent': 10},
+            1,
+            125000.0,
+            {'rollup': {'grand': {'completed': 150000.0}}},
+        )
+        self.assertEqual(payload['amount_due'], 125000.0)
+        self.assertEqual(payload['amountDue'], 125000.0)
+        self.assertEqual(payload['billing_total'], 150000.0)
+
+    def test_build_change_order_sage_payload_includes_allocations(self):
+        from co_persistence import build_change_order_sage_payload
+        co = SimpleNamespace(
+            id=9,
+            number='CO-001',
+            title='Lobby upgrade',
+            description='Lobby upgrade',
+            amount=450000.0,
+            status='Approved',
+            cost_code='16-100',
+            company_name='',
+            company_id=None,
+            linked_commitment_ref=None,
+            sub_co_kind=None,
+        )
+        payload = build_change_order_sage_payload(co, [{'cost_code': '16-100', 'amount': 450000.0}])
+        self.assertEqual(payload['co_number'], 'CO-001')
+        self.assertEqual(len(payload['allocations']), 1)
+        self.assertEqual(payload['allocations'][0]['cost_code'], '16-100')
 
 
 class PutBypassTests(unittest.TestCase):
@@ -373,7 +408,7 @@ class SubmittalSecurityTests(unittest.TestCase):
         user = SimpleNamespace(role='Subcontractor')
         with mock.patch('submittal_persistence._user_can_act', return_value=True):
             with mock.patch('document_module_security.assert_submittal_workflow_allowed'):
-                new_status = submittal_workflow_action(sub, 'return_from_sub', user, {})
+                new_status, _revision = submittal_workflow_action(sub, 'return_from_sub', user, {})
         self.assertEqual(new_status, 'Returned from Subcontractor')
         self.assertEqual(sub.status, 'Returned from Subcontractor')
 

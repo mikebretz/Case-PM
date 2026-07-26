@@ -169,7 +169,13 @@ def _apply_transaction(payload: dict) -> dict:
             pass
 
     if event_type == 'G702Approved':
-        amount = _float_val(data.get('amount_due'), data.get('total'), data.get('billing_total'))
+        amount = _float_val(
+            data.get('amount_due'),
+            data.get('amountDue'),
+            data.get('amount'),
+            data.get('total'),
+            data.get('billing_total'),
+        )
         rec['owner_billings'].append({
             'period_number': data.get('periodNumber') or data.get('period_number'),
             'amount': amount,
