@@ -98,6 +98,13 @@ MODULE_GROUPS = [
         ],
     },
     {
+        'id': 'operations',
+        'label': 'Operations Center',
+        'modules': [
+            ('operations_center', 'Operations Center'),
+        ],
+    },
+    {
         'id': 'project_docs',
         'label': 'Project Documentation',
         'modules': [
@@ -177,6 +184,7 @@ LEGACY_MODULE_MAP = {
     'Internal Messages': 'internal_messages',
     'Forecast': 'forecast',
     'Deliveries': 'deliveries',
+    'Operations Center': 'operations_center',
     'Inspections': 'inspections',
     'Meeting Minutes': 'meeting_minutes',
     'Notifications': 'notifications',
@@ -347,6 +355,7 @@ ROLE_TEMPLATES = {
             'users': ('view', 'none'),
             'program_settings': ('view', 'none'),
             'audit_log': ('view', 'none'),
+            'operations_center': ('edit', 'approve_reject'),
         }),
     },
     'Superintendent': {
@@ -368,6 +377,7 @@ ROLE_TEMPLATES = {
             'safety_library': ('view', 'none'),
             'inspections': ('edit', 'none'),
             'deliveries': ('entry', 'none'),
+            'operations_center': ('entry', 'none'),
             'rfis': ('entry', 'none'),
             'submittals': ('view', 'none'),
             'documents': ('view', 'none'),
@@ -465,6 +475,7 @@ ROLE_TEMPLATES = {
             'documents': ('view', 'none'),
             'schedule': ('view', 'none'),
             'email': ('edit', 'none'),
+            'operations_center': ('edit', 'approve_reject'),
         }),
     },
     'Subcontractor Accountant': {

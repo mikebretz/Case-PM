@@ -301,6 +301,7 @@ MODULE_ROUTE_GUARD = {
     'projects_page': 'projects',
     'project_detail': 'projects',
     'project_directory_page': 'project_directory',
+    'operations_center_page': 'operations_center',
 }
 
 
@@ -1938,6 +1939,10 @@ class MeetingActionItem(db.Model):
     priority = db.Column(db.String(20), default='Normal')
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+from extended_platform_models import define_extended_platform_model
+ExtendedModuleRecord = define_extended_platform_model(db)
 
 
 class Company(db.Model):
@@ -17103,6 +17108,29 @@ register_estimate_feature_routes(app, {
     'Drawing': Drawing,
     'DrawingMarkup': DrawingMarkup,
     'User': User,
+})
+
+
+from extended_platform_routes import register_extended_platform_routes
+register_extended_platform_routes(app, {
+    'db': db,
+    'request': request,
+    'jsonify': jsonify,
+    'login_required': login_required,
+    'current_user': current_user,
+    'get_current_project_id': get_current_project_id,
+    'generate_next_number': generate_next_number,
+    'render_template': render_template,
+    'get_active_project': get_active_project,
+    'ExtendedModuleRecord': ExtendedModuleRecord,
+    'Project': Project,
+    'Commitment': Commitment,
+    'CommitmentAllocation': CommitmentAllocation,
+    'ChangeOrder': ChangeOrder,
+    'BudgetProjectState': BudgetProjectState,
+    'PayAppProjectState': PayAppProjectState,
+    'RFI': RFI,
+    'ChangeEvent': ChangeEvent,
 })
 
 
