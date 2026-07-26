@@ -118,27 +118,27 @@ function fixtureApplyOverlayLayout() {
   host.style.setProperty('--sched-grid-min-width', total + 'px');
   const gridCell = root.querySelector(':scope > .gantt_layout_cell:nth-child(1)');
   const gridInner = gridCell?.querySelector('.gantt_grid');
-  const layoutContent = gridCell?.querySelector('.gantt_layout_content');
   if (gridCell) {
     gridCell.style.setProperty('width', overlayW + 'px', 'important');
-    gridCell.style.setProperty('overflow', 'hidden', 'important');
+    gridCell.style.setProperty('overflow-x', 'auto', 'important');
+    gridCell.style.setProperty('overflow-y', 'hidden', 'important');
     gridCell.style.setProperty('border', 'none', 'important');
-  }
-  if (layoutContent) {
-    layoutContent.style.setProperty('overflow-x', 'auto', 'important');
-    layoutContent.style.setProperty('overflow-y', 'hidden', 'important');
-    layoutContent.style.setProperty('width', '100%', 'important');
   }
   if (gridInner) {
     gridInner.style.width = total + 'px';
     gridInner.style.minWidth = total + 'px';
   }
+  gridCell?.querySelectorAll('.gantt_layout_content').forEach(el => {
+    el.style.setProperty('overflow', 'visible', 'important');
+    el.style.setProperty('min-width', total + 'px', 'important');
+    el.style.setProperty('width', 'auto', 'important');
+  });
   const gridScale = gridCell?.querySelector('.gantt_grid_scale');
   const gridData = gridCell?.querySelector('.gantt_grid_data');
   [gridScale, gridData].forEach(el => {
     if (!el) return;
-    el.style.removeProperty('width');
-    el.style.removeProperty('min-width');
+    el.style.width = total + 'px';
+    el.style.minWidth = total + 'px';
   });
   return { total, overlayW };
 }

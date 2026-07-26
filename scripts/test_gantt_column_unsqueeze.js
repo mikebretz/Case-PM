@@ -90,19 +90,18 @@ async function main() {
         const row = document.querySelector('.gantt_grid_data .gantt_row');
         const cells = [...row.querySelectorAll(':scope > .gantt_cell')];
         const cellSum = cells.reduce((s, c) => s + c.offsetWidth, 0);
-        const gridData = document.querySelector('.gantt_grid_data');
-        const layoutContent = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1) .gantt_layout_content');
+        const gridPane = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1)');
         const overlayW = 660;
-        const contentScrollW = layoutContent?.scrollWidth || document.querySelector('.gantt_grid')?.offsetWidth || 0;
+        const contentScrollW = document.querySelector('.gantt_grid')?.offsetWidth || gridPane?.scrollWidth || 0;
         const canScroll = contentScrollW > overlayW + 20
-            || contentScrollW > (layoutContent?.clientWidth || 0) + 20;
+            || (gridPane?.scrollWidth || 0) > (gridPane?.clientWidth || 0) + 20;
         return {
             expected,
             total,
             configSum: gantt.config.columns.reduce((s, c) => s + (parseInt(c.width, 10) || 0), 0),
             cellSum,
             contentScrollW,
-            gridDataClient: layoutContent?.clientWidth || gridData?.clientWidth || 0,
+            gridDataClient: gridPane?.clientWidth || 0,
             overlayW,
             canScroll,
             squeezed: cellSum < expected - 20
