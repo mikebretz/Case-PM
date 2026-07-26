@@ -5812,32 +5812,56 @@
         return rect.width > 2 && rect.height > 2;
     }
 
+    function getPrintBarColumnBounds(wrap, table) {
+        if (!wrap || !table) return null;
+        const wrapRect = wrap.getBoundingClientRect();
+        const tableRect = table.getBoundingClientRect();
+        if (tableRect.width < 2 || tableRect.height < 2) return null;
+        const cells = table.querySelectorAll('.print-bar-cell');
+        let barLeft = Infinity;
+        let barRight = -Infinity;
+        cells.forEach(cell => {
+            const r = cell.getBoundingClientRect();
+            if (r.width < 1) return;
+            barLeft = Math.min(barLeft, r.left);
+            barRight = Math.max(barRight, r.right);
+        });
+        if (!Number.isFinite(barLeft) || barRight <= barLeft) return null;
+        return {
+            left: Math.max(0, barLeft - wrapRect.left),
+            right: Math.max(0, wrapRect.right - barRight),
+            top: Math.max(0, tableRect.top - wrapRect.top),
+            bottom: Math.max(0, wrapRect.bottom - tableRect.bottom),
+        };
+    }
+
+    function clearPrintLinkOverlayStyles(svg) {
+        if (!svg) return;
+        svg.style.left = '';
+        svg.style.right = '';
+        svg.style.top = '';
+        svg.style.bottom = '';
+        svg.style.width = '';
+        svg.style.height = '';
+    }
+
     function syncPrintLinkOverlay(wrap) {
         if (!wrap) return;
         const svg = wrap.querySelector('.print-inline-links');
         const table = wrap.querySelector('.schedule-print-table');
         if (!svg || !table) return;
-        svg.style.position = 'absolute';
-        const barCell = table.querySelector('tbody .print-bar-cell')
-            || table.querySelector('thead .print-ts-row .print-bar-cell')
-            || table.querySelector('.print-bar-cell');
-        if (!barCell) return;
-        const wrapRect = wrap.getBoundingClientRect();
-        const tableRect = table.getBoundingClientRect();
-        const barRect = barCell.getBoundingClientRect();
-        if (barRect.width < 2 || tableRect.height < 2) {
-            svg.style.left = '';
-            svg.style.top = '';
-            svg.style.width = '';
-            svg.style.height = '';
-            svg.style.right = '';
+        const bounds = getPrintBarColumnBounds(wrap, table);
+        if (!bounds) {
+            clearPrintLinkOverlayStyles(svg);
             return;
         }
-        svg.style.left = `${Math.max(0, barRect.left - wrapRect.left)}px`;
-        svg.style.top = `${Math.max(0, tableRect.top - wrapRect.top)}px`;
-        svg.style.width = `${Math.max(1, barRect.width)}px`;
-        svg.style.height = `${Math.max(1, tableRect.height)}px`;
-        svg.style.right = 'auto';
+        svg.style.position = 'absolute';
+        svg.style.left = `${bounds.left}px`;
+        svg.style.right = `${bounds.right}px`;
+        svg.style.top = `${bounds.top}px`;
+        svg.style.bottom = `${bounds.bottom}px`;
+        svg.style.width = '';
+        svg.style.height = '';
     }
 
     function getPrintLinkRowY(table) {
@@ -6208,10 +6232,20 @@
                 linkState.hasTimescaleRow
             );
         };
-        const onBeforePrint = () => syncLinks();
+        const onBeforePrint = () => {
+            requestAnimationFrame(() => {
+                syncLinks();
+                requestAnimationFrame(syncLinks);
+            });
+        };
+        const onPrintMediaChange = (e) => {
+            if (e.matches) syncLinks();
+        };
+        const printMedia = window.matchMedia('print');
         const cleanup = () => {
             window.removeEventListener('beforeprint', onBeforePrint);
             window.removeEventListener('afterprint', cleanup);
+            printMedia.removeEventListener('change', onPrintMediaChange);
             sheet.setAttribute('aria-hidden', 'true');
             document.body.classList.remove(
                 'printing-gantt',
@@ -6222,6 +6256,7 @@
         };
         window.addEventListener('beforeprint', onBeforePrint);
         window.addEventListener('afterprint', cleanup);
+        printMedia.addEventListener('change', onPrintMediaChange);
         requestAnimationFrame(() => {
             syncLinks();
             requestAnimationFrame(() => {

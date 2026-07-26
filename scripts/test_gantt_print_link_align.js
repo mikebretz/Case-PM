@@ -14,37 +14,39 @@ async function main() {
     await page.goto('file://' + FIXTURE, { waitUntil: 'load' });
     await page.waitForTimeout(100);
 
-    const metrics = await page.evaluate(() => {
-        const wrap = document.querySelector('.print-schedule-wrap');
-        const table = wrap.querySelector('.schedule-print-table');
-        const svg = wrap.querySelector('.print-inline-links');
-        const barCell = table.querySelector('tbody .print-bar-cell');
-        const wrapRect = wrap.getBoundingClientRect();
-        const tableRect = table.getBoundingClientRect();
-        const barRect = barCell.getBoundingClientRect();
-        const svgRect = svg.getBoundingClientRect();
-        const rowY = window.__printLinkRowY;
-        const expectedY0 = rowY(0);
-        const row0 = table.querySelector('tbody tr');
-        const row0Rect = row0.getBoundingClientRect();
-        const row0CenterPct = ((row0Rect.top + row0Rect.height / 2) - tableRect.top) / tableRect.height * 100;
-        return {
-            pathCount: window.__printLinkPathCount || svg.querySelectorAll('path').length,
-            leftDelta: Math.abs(svgRect.left - barRect.left),
-            widthDelta: Math.abs(svgRect.width - barRect.width),
-            heightDelta: Math.abs(svgRect.height - tableRect.height),
-            rowY0: expectedY0,
-            row0CenterPct,
-            rowYDelta: Math.abs(expectedY0 - row0CenterPct)
-        };
-    });
+        const metrics = await page.evaluate(() => {
+            const wrap = document.querySelector('.print-schedule-wrap');
+            const table = wrap.querySelector('.schedule-print-table');
+            const svg = wrap.querySelector('.print-inline-links');
+            const barCell = table.querySelector('tbody .print-bar-cell');
+            const wrapRect = wrap.getBoundingClientRect();
+            const tableRect = table.getBoundingClientRect();
+            const barRect = barCell.getBoundingClientRect();
+            const svgRect = svg.getBoundingClientRect();
+            const rowY = window.__printLinkRowY;
+            const expectedY0 = rowY(0);
+            const row0 = table.querySelector('tbody tr');
+            const row0Rect = row0.getBoundingClientRect();
+            const row0CenterPct = ((row0Rect.top + row0Rect.height / 2) - tableRect.top) / tableRect.height * 100;
+            return {
+                pathCount: window.__printLinkPathCount || svg.querySelectorAll('path').length,
+                leftDelta: Math.abs(svgRect.left - barRect.left),
+                rightDelta: Math.abs(svgRect.right - barRect.right),
+                topDelta: Math.abs(svgRect.top - tableRect.top),
+                bottomDelta: Math.abs(svgRect.bottom - tableRect.bottom),
+                rowY0: expectedY0,
+                row0CenterPct,
+                rowYDelta: Math.abs(expectedY0 - row0CenterPct)
+            };
+        });
 
     console.log(JSON.stringify(metrics, null, 2));
 
     const ok = metrics.pathCount >= 1
         && metrics.leftDelta <= 1
-        && metrics.widthDelta <= 1
-        && metrics.heightDelta <= 1
+        && metrics.rightDelta <= 1
+        && metrics.topDelta <= 1
+        && metrics.bottomDelta <= 1
         && metrics.rowYDelta <= 1.5;
 
     if (!ok) {
