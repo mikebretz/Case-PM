@@ -5957,7 +5957,6 @@
         const EVM_COL_PX = 40;
         const textTablePx = visibleCols.reduce((s, v) => s + v.width, 0)
             + (evmExtraCols ? EVM_COL_PX * 2 : 0);
-        const EVM_COL_PX = 40;
         const hasHierarchyCol = visibleCols.some(v => v.col.name === 'hierarchy');
         const hierarchyPrintW = hasHierarchyCol
             ? (visibleCols.find(v => v.col.name === 'hierarchy')?.width || 56)
