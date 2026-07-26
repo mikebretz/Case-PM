@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Print Link Align Fixture</title>
+    <style>
+        .print-schedule-wrap { position: relative; width: 100%; }
+        .schedule-print-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            font-family: Arial, sans-serif;
+            font-size: 8pt;
+        }
+        .schedule-print-table th,
+        .schedule-print-table td {
+            border: 1px solid #999;
+            padding: 3px 5px;
+            vertical-align: middle;
+            height: 24px;
+        }
+        .print-bar-cell {
+            padding: 1px 0 !important;
+            position: relative;
+            border-left: 1px solid #999 !important;
+        }
+        .print-ts-row td { padding: 0 !important; }
+        .print-timescale { position: relative; height: 14px; background: #eee; }
+        .print-bar-track { position: relative; width: 100%; height: 16px; }
+        .print-bar {
+            position: absolute;
+            top: 3px;
+            height: 10px;
+            background: #2563eb;
+        }
+        .print-inline-links {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: auto;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 20;
+        }
+    </style>
+</head>
+<body>
+    <div class="print-schedule-wrap" id="wrap">
+        <svg class="print-inline-links" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+        <table class="schedule-print-table">
+            <colgroup>
+                <col style="width:120px">
+                <col style="width:80px">
+                <col class="print-bar-col">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th>Activity</th>
+                    <th>Duration</th>
+                    <th class="print-bar-cell">Schedule Bars</th>
+                </tr>
+                <tr class="print-ts-row">
+                    <td colspan="2"></td>
+                    <td class="print-bar-cell"><div class="print-timescale"></div></td>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Task A</td>
+                    <td>5d</td>
+                    <td class="print-bar-cell"><div class="print-bar-track"><div class="print-bar" style="left:10%;width:30%"></div></div></td>
+                </tr>
+                <tr>
+                    <td>Task B</td>
+                    <td>8d</td>
+                    <td class="print-bar-cell"><div class="print-bar-track"><div class="print-bar" style="left:45%;width:25%"></div></div></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <script>
+        function syncPrintLinkOverlay(wrap) {
+            const svg = wrap.querySelector('.print-inline-links');
+            const table = wrap.querySelector('.schedule-print-table');
+            const barCell = table.querySelector('tbody .print-bar-cell');
+            const wrapRect = wrap.getBoundingClientRect();
+            const tableRect = table.getBoundingClientRect();
+            const barRect = barCell.getBoundingClientRect();
+            svg.style.left = `${Math.max(0, barRect.left - wrapRect.left)}px`;
+            svg.style.top = `${Math.max(0, tableRect.top - wrapRect.top)}px`;
+            svg.style.width = `${Math.max(1, barRect.width)}px`;
+            svg.style.height = `${Math.max(1, tableRect.height)}px`;
+            svg.style.right = 'auto';
+        }
+        function getPrintLinkRowY(table) {
+            const rowEls = table.querySelectorAll('tbody tr');
+            const tableRect = table.getBoundingClientRect();
+            const tableH = Math.max(1, tableRect.height);
+            return rowIndex => {
+                const row = rowEls[rowIndex];
+                if (!row) return 50;
+                const rect = row.getBoundingClientRect();
+                return ((rect.top + rect.height / 2) - tableRect.top) / tableH * 100;
+            };
+        }
+        const wrap = document.getElementById('wrap');
+        const table = wrap.querySelector('.schedule-print-table');
+        syncPrintLinkOverlay(wrap);
+        const rowY = getPrintLinkRowY(table);
+        window.__printLinkRowY = rowY;
+    </script>
+</body>
+</html>

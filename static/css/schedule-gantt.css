@@ -1660,9 +1660,9 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
     .print-inline-links {
         position: absolute;
         top: 0;
-        left: var(--print-cols-width, 0);
-        right: 0;
-        width: auto;
+        left: 0;
+        right: auto;
+        width: 100%;
         height: 100%;
         pointer-events: none;
         z-index: 20;
