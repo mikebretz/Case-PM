@@ -47,15 +47,14 @@ async function main() {
         const inner = scrollHost?.querySelector('div');
         if (inner) { inner.style.width = total + 'px'; inner.style.minWidth = total + 'px'; }
         const layout = fixtureApplyOverlayLayout();
-        const gridData = document.querySelector('.gantt_grid_data');
-        const layoutContent = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1) .gantt_layout_content');
+        const gridPane = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1)');
         const row = document.querySelector('.gantt_grid_data .gantt_row');
         const cellSum = [...row.querySelectorAll(':scope > .gantt_cell')].reduce((s, c) => s + c.offsetWidth, 0);
         return {
             total,
             gridInnerW: document.querySelector('.gantt_grid')?.offsetWidth || 0,
-            contentScrollW: layoutContent?.scrollWidth || 0,
-            canScroll: (layoutContent?.scrollWidth || 0) > (layoutContent?.clientWidth || 0) + 20,
+            contentScrollW: gridPane?.scrollWidth || 0,
+            canScroll: (gridPane?.scrollWidth || 0) > (gridPane?.clientWidth || 0) + 20,
             contentWide: (document.querySelector('.gantt_grid')?.offsetWidth || 0) >= total - 12,
             cellSum
         };

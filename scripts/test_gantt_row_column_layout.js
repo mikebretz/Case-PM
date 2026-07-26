@@ -89,8 +89,9 @@ async function main() {
             if (!tr) return null;
             return Math.round((r.getBoundingClientRect().top - tr.getBoundingClientRect().top) * 100) / 100;
         });
+        const gridPane = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1)');
         const gridData = document.querySelector('.gantt_grid_data');
-        const layoutContent = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1) .gantt_layout_content');
+        const gridInner = document.querySelector('.gantt_grid');
         const heads = [...document.querySelectorAll('.gantt_grid_head_cell')];
         const cells = [...rows[0]?.querySelectorAll(':scope > .gantt_cell') || []];
         const mismatches = heads.map((h, i) => ({
@@ -101,14 +102,14 @@ async function main() {
 
         return {
             total,
-            gridDataScroll: layoutContent?.scrollWidth || gridData?.scrollWidth || 0,
-            gridDataClient: layoutContent?.clientWidth || gridData?.clientWidth || 0,
+            gridDataScroll: gridInner?.offsetWidth || gridPane?.scrollWidth || gridData?.scrollWidth || 0,
+            gridDataClient: gridPane?.clientWidth || gridData?.clientWidth || 0,
             rowPositions: rows.slice(0, 3).map(r => getComputedStyle(r).position),
             maxGap: Math.max(...gaps, 0),
             maxAlign: Math.max(...align.map(a => Math.abs(a || 0)), 0),
             mismatches,
-            canScroll: (layoutContent?.scrollWidth || 0) >= total - 4
-                && (layoutContent?.scrollWidth || 0) > (layoutContent?.clientWidth || 0) + 20
+            canScroll: (gridInner?.offsetWidth || 0) >= total - 4
+                && (gridPane?.scrollWidth || 0) > (gridPane?.clientWidth || 0) + 20
         };
     });
 

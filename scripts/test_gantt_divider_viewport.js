@@ -22,16 +22,15 @@ async function main() {
         const expected = gantt.config.columns.reduce((s, c) => s + (parseInt(c.width, 10) || 0), 0);
         const layout = fixtureApplyOverlayLayout();
         const grid = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1)');
-        const layoutContent = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1) .gantt_layout_content');
         const gridInner = document.querySelector('#gantt_here .gantt_grid');
         return {
             expected,
             overlayW: layout.overlayW,
             paneW: grid?.getBoundingClientRect().width || 0,
-            contentScrollW: layoutContent?.scrollWidth || gridInner?.offsetWidth || 0,
-            contentFitsColumns: (layoutContent?.scrollWidth || gridInner?.offsetWidth || 0) >= expected - 8,
+            contentScrollW: gridInner?.offsetWidth || grid?.scrollWidth || 0,
+            contentFitsColumns: (gridInner?.offsetWidth || 0) >= expected - 8,
             viewportUnchanged: Math.abs((grid?.getBoundingClientRect().width || 0) - 660) <= 8,
-            canScroll: (layoutContent?.scrollWidth || 0) > (layoutContent?.clientWidth || 0) + 20
+            canScroll: (grid?.scrollWidth || 0) > (grid?.clientWidth || 0) + 20
         };
     });
 
