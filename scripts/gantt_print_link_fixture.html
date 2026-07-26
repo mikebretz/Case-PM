@@ -22,35 +22,37 @@
         .print-bar-cell {
             padding: 1px 0 !important;
             position: relative;
+            overflow: visible;
             border-left: 1px solid #999 !important;
         }
         .print-ts-row td { padding: 0 !important; }
         .print-timescale { position: relative; height: 14px; background: #eee; }
-        .print-bar-track { position: relative; width: 100%; height: 16px; }
+        .print-bar-track {
+            position: relative;
+            width: 100%;
+            height: 16px;
+            overflow: visible;
+        }
         .print-bar {
             position: absolute;
             top: 3px;
             height: 10px;
             background: #2563eb;
+            z-index: 2;
         }
-        .print-inline-links {
+        .print-row-links {
             position: absolute;
-            top: 0;
-            left: var(--print-cols-width, 0);
-            right: 0;
-            bottom: 0;
-            width: auto;
-            height: auto;
+            inset: 0;
+            width: 100%;
+            height: 100%;
             pointer-events: none;
-            z-index: 20;
+            overflow: visible;
+            z-index: 1;
         }
     </style>
 </head>
 <body>
     <div class="print-schedule-wrap" id="wrap" style="--print-cols-width:200px">
-        <svg class="print-inline-links" viewBox="0 0 100 100" preserveAspectRatio="none">
-            <path d="M 40 60 L 43 60 L 43 75 L 55 75" fill="none" stroke="#b0b0b0" stroke-width="1.2"/>
-        </svg>
         <table class="schedule-print-table">
             <colgroup>
                 <col style="width:120px">
@@ -72,56 +74,40 @@
                 <tr>
                     <td>Task A</td>
                     <td>5d</td>
-                    <td class="print-bar-cell"><div class="print-bar-track"><div class="print-bar" style="left:10%;width:30%"></div></div></td>
+                    <td class="print-bar-cell"><div class="print-bar-track"><svg class="print-row-links" viewBox="0 0 100 100" preserveAspectRatio="none"><path d="M 40 50 L 43 50" fill="none" stroke="#b0b0b0" stroke-width="1.2"/><path d="M 43 50 L 43 100" fill="none" stroke="#b0b0b0" stroke-width="1.2"/></svg><div class="print-bar" style="left:10%;width:30%"></div></div></td>
                 </tr>
                 <tr>
                     <td>Task B</td>
                     <td>8d</td>
-                    <td class="print-bar-cell"><div class="print-bar-track"><div class="print-bar" style="left:45%;width:25%"></div></div></td>
+                    <td class="print-bar-cell"><div class="print-bar-track"><svg class="print-row-links" viewBox="0 0 100 100" preserveAspectRatio="none"><path d="M 43 0 L 43 50 L 55 50" fill="none" stroke="#b0b0b0" stroke-width="1.2"/><polygon points="55,50 53.8,49.5 53.8,50.5" fill="#b0b0b0"/></svg><div class="print-bar" style="left:45%;width:25%"></div></div></td>
                 </tr>
             </tbody>
         </table>
     </div>
     <script>
-        function syncPrintLinkOverlay(wrap) {
-            const svg = wrap.querySelector('.print-inline-links');
-            const table = wrap.querySelector('.schedule-print-table');
-            const wrapRect = wrap.getBoundingClientRect();
-            const tableRect = table.getBoundingClientRect();
-            const cells = table.querySelectorAll('.print-bar-cell');
-            let barLeft = Infinity;
-            let barRight = -Infinity;
-            cells.forEach(cell => {
-                const r = cell.getBoundingClientRect();
-                if (r.width < 1) return;
-                barLeft = Math.min(barLeft, r.left);
-                barRight = Math.max(barRight, r.right);
-            });
-            if (!Number.isFinite(barLeft) || barRight <= barLeft || tableRect.height < 2) return;
-            svg.style.position = 'absolute';
-            svg.style.left = `${Math.max(0, barLeft - wrapRect.left)}px`;
-            svg.style.right = `${Math.max(0, wrapRect.right - barRight)}px`;
-            svg.style.top = `${Math.max(0, tableRect.top - wrapRect.top)}px`;
-            svg.style.bottom = `${Math.max(0, wrapRect.bottom - tableRect.bottom)}px`;
-            svg.style.width = '';
-            svg.style.height = '';
-        }
-        function getPrintLinkRowY(table) {
-            const rowEls = table.querySelectorAll('tbody tr');
-            const tableRect = table.getBoundingClientRect();
-            const tableH = Math.max(1, tableRect.height);
-            return rowIndex => {
-                const row = rowEls[rowIndex];
-                if (!row) return 50;
-                const rect = row.getBoundingClientRect();
-                return ((rect.top + rect.height / 2) - tableRect.top) / tableH * 100;
+        function getRowLinkMetrics(table, rowIndex) {
+            const row = table.querySelectorAll('tbody tr')[rowIndex];
+            const track = row.querySelector('.print-bar-track');
+            const bar = row.querySelector('.print-bar');
+            const svg = row.querySelector('.print-row-links');
+            const trackRect = track.getBoundingClientRect();
+            const barRect = bar.getBoundingClientRect();
+            const svgRect = svg.getBoundingClientRect();
+            const barLeftPct = ((barRect.left - trackRect.left) / trackRect.width) * 100;
+            const barRightPct = ((barRect.right - trackRect.left) / trackRect.width) * 100;
+            return {
+                svgMatchesTrack: Math.abs(svgRect.left - trackRect.left) <= 1
+                    && Math.abs(svgRect.width - trackRect.width) <= 1,
+                barLeftPct,
+                barRightPct
             };
         }
-        const wrap = document.getElementById('wrap');
-        const table = wrap.querySelector('.schedule-print-table');
-        syncPrintLinkOverlay(wrap);
-        window.__printLinkRowY = getPrintLinkRowY(table);
-        window.__printLinkPathCount = wrap.querySelectorAll('.print-inline-links path').length;
+        const table = document.querySelector('.schedule-print-table');
+        window.__printLinkMetrics = {
+            row0: getRowLinkMetrics(table, 0),
+            row1: getRowLinkMetrics(table, 1),
+            pathCount: document.querySelectorAll('.print-row-links path').length
+        };
     </script>
 </body>
 </html>
