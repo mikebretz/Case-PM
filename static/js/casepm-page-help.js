@@ -73,6 +73,22 @@
     });
   }
 
+  function renderSubsteps(substeps, stepIndex) {
+    if (!substeps?.length) return '';
+    const items = substeps.map((sub, j) => `
+      <div class="casepm-help-substep">
+        <button type="button" class="casepm-help-substep-toggle" data-help-substep-toggle
+          aria-expanded="false" aria-controls="casepm-help-sub-${stepIndex}-${j}">
+          <i class="fa-solid fa-chevron-right casepm-help-substep-chevron" aria-hidden="true"></i>
+          <span>${esc(sub.title)}</span>
+        </button>
+        <div id="casepm-help-sub-${stepIndex}-${j}" class="casepm-help-substep-detail hidden casepm-help-prose" hidden>
+          ${sub.body}
+        </div>
+      </div>`).join('');
+    return `<div class="casepm-help-substeps hidden" data-help-substeps hidden>${items}</div>`;
+  }
+
   function renderContent(guide, section) {
     const body = document.getElementById('casepmPageHelpBody');
     const titleEl = document.getElementById('casepmPageHelpTitle');
@@ -80,21 +96,67 @@
     if (!body || !section) return;
     if (titleEl) titleEl.textContent = guide.title || 'How to use this page';
     if (subEl) subEl.textContent = guide.subtitle || section.title || '';
-    const steps = (section.steps || []).map((step, i) => `
+    const hasSubsteps = (section.steps || []).some(s => s.substeps?.length);
+    const steps = (section.steps || []).map((step, i) => {
+      const subs = step.substeps || [];
+      const hasSubs = subs.length > 0;
+      const numCls = hasSubs
+        ? 'casepm-help-step-num'
+        : 'casepm-help-step-num casepm-help-step-num-static';
+      const numAttrs = hasSubs
+        ? ` type="button" data-help-step-toggle aria-expanded="false" aria-controls="casepm-help-subs-${i}" title="Click for step-by-step details"`
+        : '';
+      return `
       <div class="casepm-help-step mb-5">
         <div class="flex items-start gap-3">
-          <span class="flex-shrink-0 w-7 h-7 rounded-full bg-violet-600 text-white text-sm font-bold flex items-center justify-center">${i + 1}</span>
-          <div class="min-w-0">
+          <${hasSubs ? 'button' : 'span'} class="flex-shrink-0 w-7 h-7 rounded-full bg-violet-600 text-white text-sm font-bold flex items-center justify-center ${numCls}"${numAttrs}>${i + 1}</${hasSubs ? 'button' : 'span'}>
+          <div class="min-w-0 flex-1">
             <h3 class="text-sm font-semibold text-white mb-1">${esc(step.title)}</h3>
             <div class="text-sm text-zinc-300 leading-relaxed casepm-help-prose">${step.body}</div>
+            ${renderSubsteps(subs, i)}
           </div>
         </div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
     body.innerHTML = `
       ${guide.sections.length > 1 ? `<h2 class="text-base font-semibold text-white mb-1 flex items-center gap-2"><i class="fa-solid ${esc(section.icon || 'fa-book')} text-violet-400"></i>${esc(section.title)}</h2>` : ''}
-      <p class="text-xs text-zinc-500 mb-4">${guide.sections.length > 1 ? 'Follow the steps below. Pick another topic from the list on the left anytime.' : 'Follow the steps below.'}</p>
+      <p class="text-xs text-zinc-500 mb-1">${guide.sections.length > 1 ? 'Follow the steps below. Pick another topic from the list on the left anytime.' : 'Follow the steps below.'}</p>
+      ${hasSubsteps ? '<p class="casepm-help-expand-hint"><i class="fa-solid fa-hand-pointer mr-1 opacity-70"></i>Click a step number for detailed sub-steps. Click each sub-step name to read why and how.</p>' : ''}
       ${steps || '<p class="text-sm text-zinc-500">No help content for this section yet.</p>'}`;
     body.scrollTop = 0;
+  }
+
+  function bindHelpStepToggles() {
+    const body = document.getElementById('casepmPageHelpBody');
+    if (!body || body.dataset.helpStepsBound === '1') return;
+    body.dataset.helpStepsBound = '1';
+    body.addEventListener('click', (e) => {
+      const stepBtn = e.target.closest('[data-help-step-toggle]');
+      if (stepBtn) {
+        e.preventDefault();
+        const expanded = stepBtn.getAttribute('aria-expanded') === 'true';
+        const stepEl = stepBtn.closest('.casepm-help-step');
+        const panel = stepEl?.querySelector('[data-help-substeps]');
+        stepBtn.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+        if (panel) {
+          panel.classList.toggle('hidden', expanded);
+          panel.hidden = expanded;
+        }
+        return;
+      }
+      const subBtn = e.target.closest('[data-help-substep-toggle]');
+      if (subBtn) {
+        e.preventDefault();
+        const expanded = subBtn.getAttribute('aria-expanded') === 'true';
+        const controlsId = subBtn.getAttribute('aria-controls');
+        const detail = controlsId ? document.getElementById(controlsId) : null;
+        subBtn.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+        if (detail) {
+          detail.classList.toggle('hidden', expanded);
+          detail.hidden = expanded;
+        }
+      }
+    });
   }
 
   function selectSection(pageKey, sectionId) {
@@ -167,6 +229,7 @@
 
   function init() {
     bindDialog();
+    bindHelpStepToggles();
     initHeaderButton();
     document.querySelectorAll('[data-casepm-page-help]').forEach(el => {
       if (el.dataset.helpBound === '1') return;
