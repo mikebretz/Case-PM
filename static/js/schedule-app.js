@@ -5786,8 +5786,6 @@
         printGantt();
     }
 
-    const PRINT_TS_ROW_PX = 14;
-
     function resolvePrintRowMapIndex(rowMap, taskId) {
         if (!rowMap) return null;
         if (rowMap.has(taskId)) return rowMap.get(taskId);
@@ -5796,100 +5794,58 @@
         return null;
     }
 
-    function getPrintLinkRowMetrics(rowCount, printRowH, hasTimescaleRow) {
-        const headerRowH = printRowH;
-        const tsRowH = hasTimescaleRow ? PRINT_TS_ROW_PX : 0;
-        const bodyRowH = printRowH;
-        const totalH = headerRowH + tsRowH + rowCount * bodyRowH;
-        const bodyTop = headerRowH + tsRowH;
-        const rowCenterY = rowIndex => bodyTop + rowIndex * bodyRowH + bodyRowH / 2;
-        return rowIndex => (rowCenterY(rowIndex) / totalH) * 100;
-    }
+    function buildPrintLinkSegmentsByRow(rowMap, startMs, span) {
+        const byRow = new Map();
+        const add = (rowIndex, fragment) => {
+            if (!byRow.has(rowIndex)) byRow.set(rowIndex, []);
+            byRow.get(rowIndex).push(fragment);
+        };
+        const linkPath = (d, stroke) =>
+            `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="1.2" stroke-linejoin="miter" stroke-linecap="square" vector-effect="non-scaling-stroke"/>`;
+        const linkArrow = (x2, stroke) =>
+            `<polygon points="${x2},50 ${x2 - 1.2},49.5 ${x2 - 1.2},50.5" fill="${stroke}"/>`;
 
-    function isPrintLayoutMeasurable(table) {
-        if (!table) return false;
-        const rect = table.getBoundingClientRect();
-        return rect.width > 2 && rect.height > 2;
-    }
+        gantt.getLinks().forEach(link => {
+            if (!gantt.isTaskExists(link.source) || !gantt.isTaskExists(link.target)) return;
+            const src = gantt.getTask(link.source);
+            const tgt = gantt.getTask(link.target);
+            const si = resolvePrintRowMapIndex(rowMap, link.source);
+            const ti = resolvePrintRowMapIndex(rowMap, link.target);
+            if (si == null || ti == null) return;
+            const x1 = ((toGanttDate(src.end_date)?.getTime() || startMs) - startMs) / span * 100;
+            const x2 = ((toGanttDate(tgt.start_date)?.getTime() || startMs) - startMs) / span * 100;
+            const midX = Math.max(x1 + 1.5, Math.min(x1 + 3, x2 - 1));
+            const crit = gantt.config.highlight_critical_path && (isTaskCritical(src) || isTaskCritical(tgt));
+            const stroke = crit ? '#808080' : (scheduleSettings.link_color || '#b0b0b0');
 
-    function getPrintBarColumnBounds(wrap, table) {
-        if (!wrap || !table) return null;
-        const wrapRect = wrap.getBoundingClientRect();
-        const tableRect = table.getBoundingClientRect();
-        if (tableRect.width < 2 || tableRect.height < 2) return null;
-        const cells = table.querySelectorAll('.print-bar-cell');
-        let barLeft = Infinity;
-        let barRight = -Infinity;
-        cells.forEach(cell => {
-            const r = cell.getBoundingClientRect();
-            if (r.width < 1) return;
-            barLeft = Math.min(barLeft, r.left);
-            barRight = Math.max(barRight, r.right);
+            if (si === ti) {
+                add(si, linkPath(`M ${x1} 50 L ${midX} 50 L ${x2} 50`, stroke));
+                add(si, linkArrow(x2, stroke));
+                return;
+            }
+            add(si, linkPath(`M ${x1} 50 L ${midX} 50`, stroke));
+            if (ti > si) {
+                add(si, linkPath(`M ${midX} 50 L ${midX} 100`, stroke));
+                for (let r = si + 1; r < ti; r++) {
+                    add(r, linkPath(`M ${midX} 0 L ${midX} 100`, stroke));
+                }
+                add(ti, linkPath(`M ${midX} 0 L ${midX} 50 L ${x2} 50`, stroke));
+            } else {
+                add(si, linkPath(`M ${midX} 50 L ${midX} 0`, stroke));
+                for (let r = ti + 1; r < si; r++) {
+                    add(r, linkPath(`M ${midX} 0 L ${midX} 100`, stroke));
+                }
+                add(ti, linkPath(`M ${midX} 100 L ${midX} 50 L ${x2} 50`, stroke));
+            }
+            add(ti, linkArrow(x2, stroke));
         });
-        if (!Number.isFinite(barLeft) || barRight <= barLeft) return null;
-        return {
-            left: Math.max(0, barLeft - wrapRect.left),
-            right: Math.max(0, wrapRect.right - barRight),
-            top: Math.max(0, tableRect.top - wrapRect.top),
-            bottom: Math.max(0, wrapRect.bottom - tableRect.bottom),
-        };
+        return byRow;
     }
 
-    function clearPrintLinkOverlayStyles(svg) {
-        if (!svg) return;
-        svg.style.left = '';
-        svg.style.right = '';
-        svg.style.top = '';
-        svg.style.bottom = '';
-        svg.style.width = '';
-        svg.style.height = '';
-    }
-
-    function syncPrintLinkOverlay(wrap) {
-        if (!wrap) return;
-        const svg = wrap.querySelector('.print-inline-links');
-        const table = wrap.querySelector('.schedule-print-table');
-        if (!svg || !table) return;
-        const bounds = getPrintBarColumnBounds(wrap, table);
-        if (!bounds) {
-            clearPrintLinkOverlayStyles(svg);
-            return;
-        }
-        svg.style.position = 'absolute';
-        svg.style.left = `${bounds.left}px`;
-        svg.style.right = `${bounds.right}px`;
-        svg.style.top = `${bounds.top}px`;
-        svg.style.bottom = `${bounds.bottom}px`;
-        svg.style.width = '';
-        svg.style.height = '';
-    }
-
-    function getPrintLinkRowY(table) {
-        const rowEls = table.querySelectorAll('tbody tr');
-        const tableRect = table.getBoundingClientRect();
-        const tableH = Math.max(1, tableRect.height);
-        return rowIndex => {
-            const row = rowEls[rowIndex];
-            if (!row) return 50;
-            const rect = row.getBoundingClientRect();
-            return ((rect.top + rect.height / 2) - tableRect.top) / tableH * 100;
-        };
-    }
-
-    function refreshPrintLinkOverlay(wrap, rowMap, startMs, span, printRowH, hasTimescaleRow) {
-        if (!wrap || !rowMap?.size) return;
-        const table = wrap.querySelector('.schedule-print-table');
-        const svg = wrap.querySelector('.print-inline-links');
-        if (!table || !svg) return;
-        syncPrintLinkOverlay(wrap);
-        if (!isPrintLayoutMeasurable(table)) return;
-        svg.innerHTML = buildPrintLinkPaths(
-            rowMap,
-            startMs,
-            span,
-            getPrintLinkRowY(table),
-            getPrintLinkRowMetrics(rowMap.size, printRowH, hasTimescaleRow)
-        );
+    function buildPrintRowLinkSvg(rowIndex, linkSegmentsByRow) {
+        const segments = linkSegmentsByRow?.get(rowIndex);
+        if (!segments?.length) return '';
+        return `<svg class="print-row-links" viewBox="0 0 100 100" preserveAspectRatio="none">${segments.join('')}</svg>`;
     }
 
     function buildPrintTimescale(startMs, span, mode) {
@@ -5918,34 +5874,6 @@
         }
         const crit = gantt.config.highlight_critical_path && isTaskCritical(task);
         return `<div class="print-bar print-bar-task${crit ? ' print-bar-critical' : ''}" style="left:${left}%;width:${width}%;background:${color}"></div>`;
-    }
-
-    function buildPrintLinkPaths(rowMap, startMs, span, rowY, rowYFallback) {
-        if (!rowMap?.size || typeof rowY !== 'function') return '';
-        const yFor = rowIndex => {
-            const y = rowY(rowIndex);
-            if (Number.isFinite(y) && (y > 0 || rowIndex === 0)) return y;
-            return typeof rowYFallback === 'function' ? rowYFallback(rowIndex) : y;
-        };
-        let paths = '';
-        gantt.getLinks().forEach(link => {
-            if (!gantt.isTaskExists(link.source) || !gantt.isTaskExists(link.target)) return;
-            const src = gantt.getTask(link.source);
-            const tgt = gantt.getTask(link.target);
-            const si = resolvePrintRowMapIndex(rowMap, link.source);
-            const ti = resolvePrintRowMapIndex(rowMap, link.target);
-            if (si == null || ti == null) return;
-            const x1 = ((toGanttDate(src.end_date)?.getTime() || startMs) - startMs) / span * 100;
-            const x2 = ((toGanttDate(tgt.start_date)?.getTime() || startMs) - startMs) / span * 100;
-            const y1 = yFor(si);
-            const y2 = yFor(ti);
-            const midX = Math.max(x1 + 1.5, Math.min(x1 + 3, x2 - 1));
-            const crit = gantt.config.highlight_critical_path && (isTaskCritical(src) || isTaskCritical(tgt));
-            const stroke = crit ? '#808080' : (scheduleSettings.link_color || '#b0b0b0');
-            paths += `<path d="M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}" fill="none" stroke="${stroke}" stroke-width="1.2" stroke-linejoin="miter" stroke-linecap="square"/>`;
-            paths += `<polygon points="${x2},${y2} ${x2 - 1.2},${y2 - 0.5} ${x2 - 1.2},${y2 + 0.5}" fill="${stroke}"/>`;
-        });
-        return paths;
     }
 
     function getPrintColumnAlignClass(col) {
@@ -6001,8 +5929,15 @@
         const rowMap = new Map();
         let rowIdx = 0;
         if (showTable && visibleCols.length) {
+            gantt.eachTask(t => { rowMap.set(t.id, rowIdx++); });
+        }
+        const linkSegmentsByRow = (showLinks && showInlineBars && rowIdx)
+            ? buildPrintLinkSegmentsByRow(rowMap, startMs, span)
+            : null;
+        rowIdx = 0;
+        if (showTable && visibleCols.length) {
             gantt.eachTask(t => {
-                rowMap.set(t.id, rowIdx++);
+                const currentRow = rowIdx++;
                 const level = t.$level || 0;
                 const cells = visibleCols.map(({ col, width: colW }) => {
                     const align = getPrintColumnAlignClass(col);
@@ -6019,8 +5954,9 @@
                     : '';
                 const summary = isSummaryTask(t);
                 const wbsCls = getWbsLevelClass(t);
+                const rowLinkSvg = buildPrintRowLinkSvg(currentRow, linkSegmentsByRow);
                 const barCell = showInlineBars
-                    ? `<td class="print-bar-cell"><div class="print-bar-track">${buildPrintBarMarkup(t, startMs, span)}</div></td>`
+                    ? `<td class="print-bar-cell"><div class="print-bar-track">${buildPrintBarMarkup(t, startMs, span)}${rowLinkSvg}</div></td>`
                     : '';
                 rows += `<tr class="${summary ? 'print-summary' : ''}${wbsCls ? ' ' + wbsCls : ''}">${cells}${evmExtra}${barCell}</tr>`;
             });
@@ -6133,14 +6069,6 @@
         })();
 
         const tableBlock = showTable && visibleCols.length ? (() => {
-            const hasTimescaleRow = !!(showInlineBars && visibleCols.length);
-            const initialRowY = getPrintLinkRowMetrics(rowIdx, printRowH, hasTimescaleRow);
-            const linkPaths = (showLinks && showInlineBars && rowIdx)
-                ? buildPrintLinkPaths(rowMap, startMs, span, initialRowY, initialRowY)
-                : '';
-            const linkSvg = linkPaths
-                ? `<svg class="print-inline-links" viewBox="0 0 100 100" preserveAspectRatio="none">${linkPaths}</svg>`
-                : '';
             const wbsCls = ps.print_wbs_colors === false ? ' print-no-wbs-colors' : '';
             const gridCls = ps.print_grid_lines !== false ? ' print-show-grid' : '';
             const repeatCls = ps.repeat_header !== false ? ' print-repeat-header' : '';
@@ -6151,7 +6079,6 @@
                 : '';
             const colGroup = `<colgroup>${visibleCols.map(({ width }) => `<col class="print-data-col" style="width:${width}px">`).join('')}${evmColGroup}${showInlineBars ? '<col class="print-bar-col">' : ''}</colgroup>`;
             return `<div class="print-schedule-wrap${wbsCls}${gridCls}${repeatCls}${fitCls}${colorBarsCls}" style="--print-font-size:${printFontPt}pt;--print-row-height:${printRowH}px;--print-cols-width:${textTablePx}px" data-print-orientation="${ps.orientation || 'landscape'}">
-                ${linkSvg}
                 <table class="schedule-print-table schedule-print-table-compact schedule-print-table-visible-cols schedule-print-table-screen-cols schedule-print-table-fill-page">
                 ${colGroup}
                 <thead><tr>
@@ -6182,13 +6109,6 @@
         sheet.innerHTML = headerBlock + tableBlock + chartBlock + footerBlock;
         sheet.dataset.printFooter = hf.include_footer !== false ? '1' : '0';
         sheet.dataset.printOrientation = ps.orientation || 'landscape';
-        const printWrap = sheet.querySelector('.print-schedule-wrap');
-        if (printWrap) {
-            const hasTimescaleRow = !!(showInlineBars && visibleCols.length);
-            printWrap._printLinkState = (showLinks && showInlineBars && rowIdx)
-                ? { rowMap, startMs, span, printRowH, hasTimescaleRow }
-                : null;
-        }
     }
 
     function printGantt() {
@@ -6219,33 +6139,8 @@
         document.body.classList.toggle('printing-gantt-portrait', orient === 'portrait');
         document.body.classList.add('printing-gantt');
         sheet.setAttribute('aria-hidden', 'false');
-        const printWrap = sheet.querySelector('.print-schedule-wrap');
-        const linkState = printWrap?._printLinkState || null;
-        const syncLinks = () => {
-            if (!linkState?.rowMap?.size) return;
-            refreshPrintLinkOverlay(
-                printWrap,
-                linkState.rowMap,
-                linkState.startMs,
-                linkState.span,
-                linkState.printRowH,
-                linkState.hasTimescaleRow
-            );
-        };
-        const onBeforePrint = () => {
-            requestAnimationFrame(() => {
-                syncLinks();
-                requestAnimationFrame(syncLinks);
-            });
-        };
-        const onPrintMediaChange = (e) => {
-            if (e.matches) syncLinks();
-        };
-        const printMedia = window.matchMedia('print');
         const cleanup = () => {
-            window.removeEventListener('beforeprint', onBeforePrint);
             window.removeEventListener('afterprint', cleanup);
-            printMedia.removeEventListener('change', onPrintMediaChange);
             sheet.setAttribute('aria-hidden', 'true');
             document.body.classList.remove(
                 'printing-gantt',
@@ -6254,16 +6149,10 @@
                 'printing-gantt-fit-page'
             );
         };
-        window.addEventListener('beforeprint', onBeforePrint);
         window.addEventListener('afterprint', cleanup);
-        printMedia.addEventListener('change', onPrintMediaChange);
         requestAnimationFrame(() => {
-            syncLinks();
-            requestAnimationFrame(() => {
-                syncLinks();
-                window.print();
-                setTimeout(cleanup, 1500);
-            });
+            window.print();
+            setTimeout(cleanup, 1500);
         });
     }
 
