@@ -658,8 +658,6 @@
 
         const list = metrics || getColumnLayoutMetrics().columns;
         const cols = gantt.config.columns || [];
-        const gridHead = getGridHeadContainer();
-        if (!gridHead) return;
         const headCells = gridHead.querySelectorAll('.gantt_grid_head_cell');
         const total = list.length
             ? list[list.length - 1].left + list[list.length - 1].width
