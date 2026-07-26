@@ -5794,14 +5794,140 @@
         return null;
     }
 
-    function buildPrintLinkSegmentsByRow(rowMap, startMs, span) {
+    function getPrintLinkLineType(link) {
+        const types = gantt.config.links || {};
+        const type = String(link.type ?? types.finish_to_start ?? '0');
+        if (type === String(types.start_to_start) || type === '1') return { fromStart: true, toStart: true };
+        if (type === String(types.finish_to_finish) || type === '2') return { fromStart: false, toStart: false };
+        if (type === String(types.start_to_finish) || type === '3') return { fromStart: true, toStart: false };
+        return { fromStart: false, toStart: true };
+    }
+
+    function getPrintTimelinePct(date, startMs, span) {
+        return ((toGanttDate(date)?.getTime() || startMs) - startMs) / span * 100;
+    }
+
+    function getPrintTaskEndpointX(task, fromStart, startMs, span) {
+        const milestone = task.type === 'milestone' || task.type === gantt.config.types.milestone;
+        if (milestone) return getPrintTimelinePct(task.start_date, startMs, span);
+        const date = fromStart ? task.start_date : task.end_date;
+        return getPrintTimelinePct(date, startMs, span);
+    }
+
+    function getPrintLinkMetrics(textTablePx) {
+        const estBarPx = Math.max(320, (window.innerWidth || 1200) - (textTablePx || 0) - 120);
+        const arrowPx = gantt.config.link_arrow_size || 12;
+        const wrapperPx = gantt.config.link_wrapper_width || 20;
+        return {
+            arrowPct: (arrowPx / estBarPx) * 100,
+            wrapperPct: (wrapperPx / estBarPx) * 100,
+            stroke: scheduleSettings.link_color || '#b0b0b0',
+            strokeWidth: scheduleSettings.link_width || gantt.config.link_line_width || 1,
+        };
+    }
+
+    function buildPrintLinkPolyline(lineType, x1, y1, x2, y2, metrics) {
+        const f = metrics.arrowPct * 2;
+        const u = y2 - y1;
+        let c = x2 - x1;
+        const rowH = 1;
+        let x = x1;
+        let y = y1;
+        const pts = [{ x, y }];
+        const push = () => pts.push({ x, y });
+        const k = x2 > x1;
+
+        if (lineType.fromStart && lineType.toStart) {
+            x -= f; push();
+            if (!k) { x += c; push(); y += u; push(); }
+            else { y += u; push(); x += c; push(); }
+            x += f; push();
+        } else if (!lineType.fromStart && lineType.toStart) {
+            x += f; push();
+            if (u !== 0) {
+                const k2 = x2 > x1 + 2 * f;
+                if (k2) {
+                    c -= f;
+                    y += u; push();
+                    x += c; push();
+                } else {
+                    c -= 2 * f;
+                    const dir = u > 0 ? 1 : -1;
+                    y += dir * (rowH / 2); push();
+                    x += c; push();
+                    y += dir * (Math.abs(u) - rowH / 2); push();
+                    x += f; push();
+                }
+            } else {
+                x += c - f; push();
+            }
+        } else if (!lineType.fromStart && !lineType.toStart) {
+            x += f; push();
+            if (k) { x += c; push(); y += u; push(); }
+            else { y += u; push(); x += c; push(); }
+            x -= f; push();
+        } else {
+            x -= f; push();
+            if (u !== 0) {
+                const k2 = x2 < x1 - 2 * f;
+                if (k2) {
+                    c += f;
+                    y += u; push();
+                    x += c; push();
+                } else {
+                    c += 2 * f;
+                    const dir = u > 0 ? 1 : -1;
+                    y += dir * (rowH / 2); push();
+                    x += c; push();
+                    y += dir * (Math.abs(u) - rowH / 2); push();
+                    x -= f; push();
+                }
+            } else {
+                x += c + f; push();
+            }
+        }
+        return pts;
+    }
+
+    function addPrintPolylineSegments(byRow, add, linkPath, linkArrow, stroke, points) {
+        for (let i = 0; i < points.length - 1; i++) {
+            const a = points[i];
+            const b = points[i + 1];
+            if (Math.abs(a.y - b.y) < 0.001) {
+                const row = Math.round(a.y - 0.5);
+                const localY = (a.y - row) * 100;
+                add(row, linkPath(`M ${a.x} ${localY} L ${b.x} ${localY}`, stroke));
+            } else if (Math.abs(a.x - b.x) < 0.001) {
+                const yLo = Math.min(a.y, b.y);
+                const yHi = Math.max(a.y, b.y);
+                let row = Math.floor(yLo);
+                while (row <= Math.floor(yHi - 0.0001)) {
+                    const segTop = Math.max(yLo, row);
+                    const segBot = Math.min(yHi, row + 1);
+                    if (segBot > segTop) {
+                        add(row, linkPath(
+                            `M ${a.x} ${(segTop - row) * 100} L ${b.x} ${(segBot - row) * 100}`,
+                            stroke
+                        ));
+                    }
+                    row += 1;
+                }
+            }
+        }
+        const end = points[points.length - 1];
+        const endRow = Math.round(end.y - 0.5);
+        add(endRow, linkArrow(end.x, stroke));
+    }
+
+    function buildPrintLinkSegmentsByRow(rowMap, startMs, span, textTablePx) {
         const byRow = new Map();
         const add = (rowIndex, fragment) => {
             if (!byRow.has(rowIndex)) byRow.set(rowIndex, []);
             byRow.get(rowIndex).push(fragment);
         };
+        const metrics = getPrintLinkMetrics(textTablePx);
         const linkPath = (d, stroke) =>
-            `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="1.2" stroke-linejoin="miter" stroke-linecap="square" vector-effect="non-scaling-stroke"/>`;
+            `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${metrics.strokeWidth}" stroke-linejoin="miter" stroke-linecap="square" vector-effect="non-scaling-stroke"/>`;
         const linkArrow = (x2, stroke) =>
             `<polygon points="${x2},50 ${x2 - 1.2},49.5 ${x2 - 1.2},50.5" fill="${stroke}"/>`;
 
@@ -5812,32 +5938,13 @@
             const si = resolvePrintRowMapIndex(rowMap, link.source);
             const ti = resolvePrintRowMapIndex(rowMap, link.target);
             if (si == null || ti == null) return;
-            const x1 = ((toGanttDate(src.end_date)?.getTime() || startMs) - startMs) / span * 100;
-            const x2 = ((toGanttDate(tgt.start_date)?.getTime() || startMs) - startMs) / span * 100;
-            const midX = Math.max(x1 + 1.5, Math.min(x1 + 3, x2 - 1));
-            const crit = gantt.config.highlight_critical_path && (isTaskCritical(src) || isTaskCritical(tgt));
-            const stroke = crit ? '#808080' : (scheduleSettings.link_color || '#b0b0b0');
-
-            if (si === ti) {
-                add(si, linkPath(`M ${x1} 50 L ${midX} 50 L ${x2} 50`, stroke));
-                add(si, linkArrow(x2, stroke));
-                return;
-            }
-            add(si, linkPath(`M ${x1} 50 L ${midX} 50`, stroke));
-            if (ti > si) {
-                add(si, linkPath(`M ${midX} 50 L ${midX} 100`, stroke));
-                for (let r = si + 1; r < ti; r++) {
-                    add(r, linkPath(`M ${midX} 0 L ${midX} 100`, stroke));
-                }
-                add(ti, linkPath(`M ${midX} 0 L ${midX} 50 L ${x2} 50`, stroke));
-            } else {
-                add(si, linkPath(`M ${midX} 50 L ${midX} 0`, stroke));
-                for (let r = ti + 1; r < si; r++) {
-                    add(r, linkPath(`M ${midX} 0 L ${midX} 100`, stroke));
-                }
-                add(ti, linkPath(`M ${midX} 100 L ${midX} 50 L ${x2} 50`, stroke));
-            }
-            add(ti, linkArrow(x2, stroke));
+            const lineType = getPrintLinkLineType(link);
+            const x1 = getPrintTaskEndpointX(src, lineType.fromStart, startMs, span);
+            const x2 = getPrintTaskEndpointX(tgt, lineType.toStart, startMs, span);
+            const y1 = si + 0.5;
+            const y2 = ti + 0.5;
+            const points = buildPrintLinkPolyline(lineType, x1, y1, x2, y2, metrics);
+            addPrintPolylineSegments(byRow, add, linkPath, linkArrow, metrics.stroke, points);
         });
         return byRow;
     }
@@ -5932,7 +6039,7 @@
             gantt.eachTask(t => { rowMap.set(t.id, rowIdx++); });
         }
         const linkSegmentsByRow = (showLinks && showInlineBars && rowIdx)
-            ? buildPrintLinkSegmentsByRow(rowMap, startMs, span)
+            ? buildPrintLinkSegmentsByRow(rowMap, startMs, span, textTablePx)
             : null;
         rowIdx = 0;
         if (showTable && visibleCols.length) {
@@ -5956,7 +6063,7 @@
                 const wbsCls = getWbsLevelClass(t);
                 const rowLinkSvg = buildPrintRowLinkSvg(currentRow, linkSegmentsByRow);
                 const barCell = showInlineBars
-                    ? `<td class="print-bar-cell"><div class="print-bar-track">${buildPrintBarMarkup(t, startMs, span)}${rowLinkSvg}</div></td>`
+                    ? `<td class="print-bar-cell"><div class="print-bar-track">${rowLinkSvg}${buildPrintBarMarkup(t, startMs, span)}</div></td>`
                     : '';
                 rows += `<tr class="${summary ? 'print-summary' : ''}${wbsCls ? ' ' + wbsCls : ''}">${cells}${evmExtra}${barCell}</tr>`;
             });
