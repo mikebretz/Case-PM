@@ -6,10 +6,11 @@
 .pd-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
 .pd-card { background: #18181b; border: 1px solid #3f3f46; border-radius: 0.75rem; }
 .pd-table { width: 100%; border-collapse: collapse; }
-.pd-table th, .pd-table td { padding: 0.65rem 0.85rem; border-bottom: 1px solid #27272a; text-align: left; font-size: 0.875rem; }
+.pd-table th, .pd-table td { padding: 0.65rem 0.85rem; border-bottom: 1px solid #27272a; text-align: left; font-size: 0.875rem; vertical-align: top; }
 .pd-table th { color: #a1a1aa; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; }
 .pd-table tr:last-child td { border-bottom: none; }
 .pd-empty { color: #71717a; padding: 2rem; text-align: center; }
+.pd-filter-btn { padding: 0.4rem 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; font-weight: 600; transition: background-color 0.15s ease; }
 </style>
 
 <div class="pd-page">
@@ -18,7 +19,7 @@
 <div class="flex items-center justify-between flex-shrink-0 mb-3 gap-3">
   <div class="min-w-0">
     <div class="text-2xl font-semibold text-white">Project Directory</div>
-    <div id="pdSubtitle" class="text-sm text-zinc-400 mt-1">Everyone attached to this project — team, subcontractors, vendors, and contacts</div>
+    <div id="pdSubtitle" class="text-sm text-zinc-400 mt-1">Everyone and every company attached to this project — team, SOV subcontractors, RFIs, schedule, permits, and more</div>
   </div>
   <button type="button" id="pdRefresh" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px]">
     <i class="fa-solid fa-rotate"></i>
@@ -37,10 +38,30 @@
   </div>
 </div>
 
-<div class="pd-card flex-1 min-h-0 overflow-hidden flex flex-col">
+<div class="pd-card mb-3 flex-shrink-0 p-3">
+  <div class="flex flex-col lg:flex-row lg:items-center gap-3">
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-xs uppercase tracking-wide text-zinc-500 mr-1">Show</span>
+      <button type="button" class="pd-filter-btn bg-zinc-800 text-zinc-300" data-pd-scope="on_project">On this project</button>
+      <button type="button" class="pd-filter-btn bg-sky-600 text-white" data-pd-scope="all_project">All project</button>
+      <button type="button" class="pd-filter-btn bg-zinc-800 text-zinc-300" data-pd-scope="all_personnel">All personnel</button>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-xs uppercase tracking-wide text-zinc-500 mr-1">View</span>
+      <button type="button" class="pd-filter-btn bg-sky-600 text-white" data-pd-view="people">People</button>
+      <button type="button" class="pd-filter-btn bg-zinc-800 text-zinc-300" data-pd-view="companies">Companies</button>
+      <button type="button" class="pd-filter-btn bg-zinc-800 text-zinc-300" data-pd-view="all">All</button>
+    </div>
+    <div class="flex-1 min-w-[12rem]">
+      <input id="pdSearch" type="search" placeholder="Search name, company, email, attachment…" class="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white placeholder:text-zinc-500">
+    </div>
+  </div>
+</div>
+
+<div id="pdPeoplePanel" class="pd-card flex-1 min-h-0 overflow-hidden flex flex-col mb-3">
   <div class="px-4 py-3 border-b border-zinc-800 flex items-center justify-between gap-2">
-    <div class="font-semibold text-white">Team &amp; Contacts</div>
-    <div id="pdContactCount" class="text-xs text-zinc-500">0 contacts</div>
+    <div class="font-semibold text-white">People</div>
+    <div id="pdContactCount" class="text-xs text-zinc-500">0 people</div>
   </div>
   <div class="flex-1 min-h-0 overflow-auto">
     <table class="pd-table">
@@ -51,10 +72,33 @@
           <th>Company</th>
           <th>Email</th>
           <th>Phone</th>
+          <th>Attached via</th>
         </tr>
       </thead>
       <tbody id="pdContactsBody">
-        <tr><td colspan="5" class="pd-empty">Select a project to view the directory.</td></tr>
+        <tr><td colspan="6" class="pd-empty">Select a project to view the directory.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div id="pdCompaniesPanel" class="pd-card flex-1 min-h-0 overflow-hidden flex flex-col hidden mb-3">
+  <div class="px-4 py-3 border-b border-zinc-800 flex items-center justify-between gap-2">
+    <div class="font-semibold text-white">Companies</div>
+    <div class="text-xs text-zinc-500">Grouped from project attachments</div>
+  </div>
+  <div class="flex-1 min-h-0 overflow-auto">
+    <table class="pd-table">
+      <thead>
+        <tr>
+          <th>Company</th>
+          <th>People</th>
+          <th>Contacts on project</th>
+          <th>Attached via</th>
+        </tr>
+      </thead>
+      <tbody id="pdCompaniesBody">
+        <tr><td colspan="4" class="pd-empty">No companies linked yet.</td></tr>
       </tbody>
     </table>
   </div>

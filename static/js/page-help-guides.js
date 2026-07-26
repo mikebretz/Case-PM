@@ -566,37 +566,31 @@ global.CasePMPageHelpGuides = {
 
   project_directory: singleGuide(
     'Project Directory',
-    'Contacts and companies assigned to the active project.',
+    'Everyone and every company attached to the active project — built automatically from team assignments, SOV subcontractors, RFIs, schedule, permits, and more.',
     [
       ['Select the project', 'The directory lists people and companies for the <strong>active project</strong> in the header. Switch projects to see a different roster.', [
         ['Check header', 'Confirm the correct project is selected in the header project picker.'],
         ['Switch project', 'Change the active project to view a different job\'s directory roster.'],
-        ['Empty list', 'If the list is empty, you may need to add contacts for this project.'],
-        ['Project-scoped', 'Directory entries here are specific to this project — not the global company list.'],
+        ['Empty list', 'If the list is empty, add team contacts on the project, commitments, pay app SOV subs, or module assignees.'],
+        ['Auto-built', 'Contacts are aggregated from modules — you do not add rows directly on this page.'],
       ]],
-      ['Add a contact', 'Click <strong>Add Contact</strong>. Pick or create a company, then enter name, role, email, and phone.', [
-        ['Add Contact', 'Click <strong>Add Contact</strong> in the toolbar.'],
-        ['Pick company', 'Select an existing company from <strong>Companies</strong> or create a new one.'],
-        ['Name & role', 'Enter contact name and role (e.g. Project Manager, Superintendent).'],
-        ['Email & phone', 'Enter email and phone — these feed notifications and RFI routing.'],
+      ['Filter the roster', 'Use <strong>On this project</strong>, <strong>All project</strong>, or <strong>All personnel</strong> to change who appears in the people list.', [
+        ['On this project', 'Shows team members and owner/client contacts assigned directly to the project.'],
+        ['All project', 'Shows everyone linked through any module (RFIs, punch, schedule resources, SOV, permits, etc.).'],
+        ['All personnel', 'Adds main-company staff who are not yet linked to this project.'],
+        ['Search', 'Search by name, company, email, or attachment source.'],
       ]],
-      ['Link existing companies', 'Pull from the global <strong>Companies</strong> list so RFIs, submittals, and commitments use the same vendor record.', [
-        ['Companies module', 'Ensure the vendor exists in <strong>Companies</strong> before adding to directory.'],
-        ['Same record', 'Linking the global company keeps RFQs, submittals, and commitments on one vendor ID.'],
-        ['Avoid duplicates', 'Do not create a second company record for the same sub — merge in Companies first.'],
-        ['Accounting', 'One vendor ID in Sage requires one company record in Case PM.'],
+      ['People vs companies', 'Switch between <strong>People</strong>, <strong>Companies</strong>, or <strong>All</strong> to see individuals or grouped firms.', [
+        ['People view', 'One row per person with position, company, email, phone, and attachment badges.'],
+        ['Companies view', 'Groups people by company and shows how each firm is attached to the job.'],
+        ['Attached via', 'Badges show whether someone came from team, SOV, RFI, schedule, permit, or another module.'],
+        ['Refresh', 'Click <strong>Refresh</strong> after updating commitments, pay apps, or module assignees.'],
       ]],
-      ['Set roles', 'Role labels (Owner, Architect, Sub, etc.) help filters and email routing. Be consistent across projects.', [
-        ['Role dropdown', 'Pick a role type when adding or editing a contact.'],
-        ['Consistent labels', 'Use the same role names across projects (e.g. always "Architect" not "Design").'],
-        ['Filter by role', 'Filters on RFIs and submittals use these roles to find the right contact.'],
-        ['Primary routing', 'Correct roles ensure Ball in Court and emails reach the right person.'],
-      ]],
-      ['Mark primary contacts', 'Flag primary contacts for each trade or company so field staff know who to call.', [
-        ['Primary flag', 'Check or toggle <strong>Primary</strong> on the main contact for each company.'],
-        ['One per trade', 'Mark one primary per subcontractor so RFIs default to the right person.'],
-        ['Field reference', 'Supers and PMs use primary flags to know who to call on site.'],
-        ['Update on change', 'Change primary when a sub assigns a new project manager mid-job.'],
+      ['Where contacts come from', 'Directory rows are pulled from project team, commitments, pay app SOV, submittals, RFIs, punch list, schedule resources, meetings, permits, safety, and deliveries.', [
+        ['Project team', 'Assign users and team contacts on the project record.'],
+        ['Subcontractors', 'Register subs on Pay Applications / commitments so SOV vendors appear here.'],
+        ['Module assignees', 'RFI assignees, punch assignees, and schedule resource names are included automatically.'],
+        ['Keep modules current', 'Update phone and email in the source module or Companies when subs change PMs.'],
       ]],
       ['Portal users', 'If a contact needs portal access (sub RFQ, submittals), ensure their user account exists under <strong>Users</strong> and is tied to the right company.', [
         ['User account', 'Create the contact as a user under <strong>Users</strong> if they need portal login.'],
@@ -604,15 +598,9 @@ global.CasePMPageHelpGuides = {
         ['Portal role', 'Assign a portal role with access to RFQs, submittals, or other sub-facing modules.'],
         ['Send invite', 'They receive a setup email to activate portal access.'],
       ]],
-      ['Export or print', 'Use export / print actions (when shown) for O&amp;M handoff or meeting attendee lists.', [
-        ['Export button', 'Look for <strong>Export</strong> or <strong>Print</strong> in the toolbar when available.'],
-        ['PDF or Excel', 'Choose format for owner handoff packages or meeting attendee lists.'],
-        ['Filter first', 'Filter by role or company before export to get a focused list.'],
-        ['O&amp;M closeout', 'Export final directory for operations and maintenance manuals at turnover.'],
-      ]],
-      ['Keep it current', 'Update phone and email when subs change PMs — outdated directory entries cause missed RFIs and approvals.', [
+      ['Keep it current', 'Update phone and email when subs change PMs — outdated contacts in commitments, SOV, or RFIs cause missed approvals.', [
         ['Quarterly review', 'Review directory contacts each quarter or when subs mobilize.'],
-        ['Edit contact', 'Click a contact row to update phone, email, or role.'],
+        ['Source modules', 'Edit the commitment, company record, or RFI assignee where the contact originated.'],
         ['Missed RFIs', 'Wrong email is the #1 cause of overdue RFI responses — verify before sending.'],
         ['Remove old', 'Deactivate or remove contacts who left the company to avoid misdirected notifications.'],
       ]],

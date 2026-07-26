@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from project_team_persistence import ROLE_LABELS, migrate_legacy_team_contacts
 
+import json
 import re
 
 
@@ -70,6 +71,35 @@ ROLE_SORT_ORDER = {
     'custom': 11,
 }
 
+SOURCE_LABELS = {
+    'membership': 'Project team',
+    'team_contact': 'Team contact',
+    'project': 'Project record',
+    'client_company': 'Owner / client',
+    'commitment': 'Commitment',
+    'pay_app_sov': 'Pay app / SOV',
+    'submittal': 'Submittal',
+    'change_order': 'Change order',
+    'rfq': 'RFQ',
+    'bid_invitation': 'Bid invitation',
+    'rfi': 'RFI',
+    'punch': 'Punch list',
+    'schedule': 'Schedule',
+    'schedule_task': 'Schedule task',
+    'meeting': 'Meeting',
+    'permit': 'Permits & inspections',
+    'safety': 'Safety',
+    'delivery': 'Delivery',
+    'staff': 'Company staff',
+}
+
+ON_PROJECT_SOURCES = frozenset({
+    'membership',
+    'team_contact',
+    'project',
+    'client_company',
+})
+
 # Permission / portal roles — not shown as directory position when a job title exists.
 SYSTEM_ACCOUNT_ROLES = frozenset({
     'Admin',
@@ -130,6 +160,46 @@ def _company_name(company_id, Company):
         return ''
 
 
+def _parse_json(raw, default):
+    if not raw:
+        return default
+    try:
+        return json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return default
+
+
+def _source_list(entry):
+    sources = entry.get('sources')
+    if isinstance(sources, list):
+        return [s for s in sources if s]
+    src = (entry.get('source') or '').strip()
+    return [src] if src else []
+
+
+def _annotate_directory_entry(entry):
+    sources = _source_list(entry)
+    entry['sources'] = sources
+    entry['source_labels'] = [
+        SOURCE_LABELS.get(src, src.replace('_', ' ').title())
+        for src in sources
+    ]
+    entry['on_project'] = bool(set(sources) & ON_PROJECT_SOURCES)
+    if len(sources) == 1:
+        entry['source'] = sources[0]
+    elif len(sources) > 1:
+        entry['source'] = 'multiple'
+    return _finalize_directory_entry(entry)
+
+
+def _split_party_names(value):
+    text = (value or '').strip()
+    if not text:
+        return []
+    parts = re.split(r'[,;/]+', text)
+    return [part.strip() for part in parts if part.strip()]
+
+
 def _user_directory_row(user, *, role='', role_label='', company='', source='membership', team_position=''):
     name = f'{getattr(user, "first_name", "")} {getattr(user, "last_name", "")}'.strip()
     company_name = (company or getattr(user, 'company', None) or '').strip()
@@ -138,7 +208,7 @@ def _user_directory_row(user, *, role='', role_label='', company='', source='mem
     if team_pos in SYSTEM_ACCOUNT_ROLES and not job_title:
         team_pos = ''
     position = _resolve_position(job_title=job_title, team_position=team_pos)
-    return _finalize_directory_entry({
+    return _annotate_directory_entry({
         'user_id': getattr(user, 'id', None),
         'name': name,
         'email': (getattr(user, 'email', None) or '').strip(),
@@ -150,6 +220,7 @@ def _user_directory_row(user, *, role='', role_label='', company='', source='mem
         'company': company_name,
         'firm': company_name,
         'source': source,
+        'sources': [source] if source else [],
     })
 
 
@@ -173,7 +244,7 @@ def _person_directory_row(
         team_position=role_label,
         context_position=position,
     )
-    return _finalize_directory_entry({
+    return _annotate_directory_entry({
         'user_id': user_id,
         'name': display_name,
         'email': (email or '').strip(),
@@ -185,13 +256,14 @@ def _person_directory_row(
         'company': company_name,
         'firm': company_name,
         'source': source,
+        'sources': [source] if source else [],
     })
 
 
 def _contact_directory_row(contact, source='team_contact'):
     firm = (contact.get('firm') or '').strip()
     team_position = (contact.get('role_label') or ROLE_LABELS.get(contact.get('role'), 'Contact')).strip()
-    return _finalize_directory_entry({
+    return _annotate_directory_entry({
         'user_id': contact.get('user_id'),
         'name': (contact.get('name') or '').strip(),
         'email': (contact.get('email') or '').strip(),
@@ -203,6 +275,7 @@ def _contact_directory_row(contact, source='team_contact'):
         'company': firm,
         'firm': firm,
         'source': source,
+        'sources': [source] if source else [],
     })
 
 
@@ -229,9 +302,13 @@ def _merge_directory_entry(existing, incoming):
             merged[field] = incoming[field]
     if incoming.get('user_id') and not merged.get('user_id'):
         merged['user_id'] = incoming['user_id']
-    if existing.get('source') != incoming.get('source'):
-        merged['source'] = 'both'
-    return merged
+    merged_sources = set(_source_list(merged)) | set(_source_list(incoming))
+    merged['sources'] = sorted(merged_sources)
+    if len(merged['sources']) == 1:
+        merged['source'] = merged['sources'][0]
+    elif len(merged['sources']) > 1:
+        merged['source'] = 'multiple'
+    return _annotate_directory_entry(merged)
 
 
 def _add_entry(entries_by_key, entry):
@@ -257,8 +334,19 @@ def _lazy_models():
             ChangeOrder,
             Commitment,
             Company,
+            Delivery,
             Estimate,
+            MeetingActionItem,
+            MeetingMinute,
             PayAppProjectState,
+            PermitInspectionItem,
+            PunchItem,
+            RFI,
+            SafetyCertification,
+            SafetyReport,
+            SafetyTrainingEvent,
+            ScheduleData,
+            ScheduleTask,
             SubcontractorRFQ,
             Submittal,
         )
@@ -272,6 +360,17 @@ def _lazy_models():
             'BidInvitation': BidInvitation,
             'SubcontractorRFQ': SubcontractorRFQ,
             'Company': Company,
+            'RFI': RFI,
+            'PunchItem': PunchItem,
+            'ScheduleData': ScheduleData,
+            'ScheduleTask': ScheduleTask,
+            'MeetingMinute': MeetingMinute,
+            'MeetingActionItem': MeetingActionItem,
+            'PermitInspectionItem': PermitInspectionItem,
+            'SafetyReport': SafetyReport,
+            'SafetyCertification': SafetyCertification,
+            'SafetyTrainingEvent': SafetyTrainingEvent,
+            'Delivery': Delivery,
         }
     except Exception:
         return {}
@@ -605,6 +704,367 @@ def _collect_bid_invitations(project_id, entries_by_key, BidPackage, BidInvitati
         ))
 
 
+def _collect_rfis(project_id, entries_by_key, User, RFI):
+    if RFI is None:
+        return
+    try:
+        from rfi_persistence import normalize_party_list
+    except Exception:
+        return
+    seen = set()
+    for rfi in _model_query(RFI).filter_by(project_id=int(project_id)).all():
+        number = (getattr(rfi, 'number', None) or '').strip()
+        role_suffix = f' {number}' if number else ''
+
+        manager_uid = getattr(rfi, 'rfi_manager_user_id', None)
+        manager_name = (getattr(rfi, 'rfi_manager_name', None) or '').strip()
+        if manager_uid:
+            user = _model_query(User).get(int(manager_uid))
+            if user and (getattr(user, 'status', 'Active') or 'Active') == 'Active':
+                key = ('user', int(manager_uid))
+                if key not in seen:
+                    seen.add(key)
+                    _add_entry(entries_by_key, _user_directory_row(
+                        user,
+                        role='consultant',
+                        team_position=f'RFI Manager{role_suffix}',
+                        company=getattr(user, 'company', '') or '',
+                        source='rfi',
+                    ))
+        elif manager_name:
+            key = ('name', manager_name.lower(), 'rfi_manager')
+            if key not in seen:
+                seen.add(key)
+                _add_entry(entries_by_key, _person_directory_row(
+                    name=manager_name,
+                    role='consultant',
+                    position=f'RFI Manager{role_suffix}',
+                    source='rfi',
+                ))
+
+        for party in normalize_party_list(_parse_json(getattr(rfi, 'assignees_json', None), [])):
+            uid = party.get('user_id')
+            name = (party.get('name') or '').strip()
+            if uid:
+                user = _model_query(User).get(int(uid))
+                if user and (getattr(user, 'status', 'Active') or 'Active') == 'Active':
+                    key = ('user', int(uid))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    _add_entry(entries_by_key, _user_directory_row(
+                        user,
+                        role='consultant',
+                        team_position=f'RFI Assignee{role_suffix}',
+                        company=getattr(user, 'company', '') or '',
+                        source='rfi',
+                    ))
+                    continue
+            if name:
+                key = ('name', name.lower(), 'rfi_assignee')
+                if key in seen:
+                    continue
+                seen.add(key)
+                _add_entry(entries_by_key, _person_directory_row(
+                    name=name,
+                    role='consultant',
+                    position=f'RFI Assignee{role_suffix}',
+                    source='rfi',
+                ))
+
+        for party in normalize_party_list(_parse_json(getattr(rfi, 'distribution_json', None), [])):
+            uid = party.get('user_id')
+            name = (party.get('name') or '').strip()
+            if uid:
+                user = _model_query(User).get(int(uid))
+                if user and (getattr(user, 'status', 'Active') or 'Active') == 'Active':
+                    key = ('user', int(uid))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    _add_entry(entries_by_key, _user_directory_row(
+                        user,
+                        role='consultant',
+                        team_position=f'RFI Distribution{role_suffix}',
+                        company=getattr(user, 'company', '') or '',
+                        source='rfi',
+                    ))
+                    continue
+            if name:
+                key = ('name', name.lower(), 'rfi_distribution')
+                if key in seen:
+                    continue
+                seen.add(key)
+                _add_entry(entries_by_key, _person_directory_row(
+                    name=name,
+                    role='consultant',
+                    position=f'RFI Distribution{role_suffix}',
+                    source='rfi',
+                ))
+
+        for company_name, contact_name in (
+            (getattr(rfi, 'responsible_contractor', None), ''),
+            (getattr(rfi, 'received_from_company', None), getattr(rfi, 'received_from_contact', None)),
+        ):
+            company_name = (company_name or '').strip()
+            contact_name = (contact_name or '').strip()
+            if not company_name and not contact_name:
+                continue
+            key = ('company', company_name.lower(), contact_name.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            _add_entry(entries_by_key, _person_directory_row(
+                name=contact_name or company_name,
+                role='vendor_contact',
+                position=f'RFI Contact{role_suffix}',
+                company=company_name or contact_name,
+                source='rfi',
+            ))
+
+
+def _collect_punch_items(project_id, entries_by_key, PunchItem):
+    if PunchItem is None:
+        return
+    seen = set()
+    for item in _model_query(PunchItem).filter_by(project_id=int(project_id)).all():
+        number = (getattr(item, 'number', None) or '').strip()
+        role_suffix = f' {number}' if number else ''
+        company_name = (getattr(item, 'assigned_company', None) or '').strip()
+        assignee = (getattr(item, 'assigned_to', None) or '').strip()
+        if assignee or company_name:
+            key = (assignee.lower(), company_name.lower())
+            if key not in seen:
+                seen.add(key)
+                _add_entry(entries_by_key, _person_directory_row(
+                    name=assignee or company_name,
+                    role='vendor_contact',
+                    position=f'Punch Assignee{role_suffix}',
+                    company=company_name,
+                    source='punch',
+                ))
+
+
+def _collect_schedule_resources(project_id, entries_by_key, ScheduleData, ScheduleTask):
+    seen = set()
+    if ScheduleData is not None:
+        record = _model_query(ScheduleData).filter_by(project_id=int(project_id)).first()
+        if record and getattr(record, 'payload', None):
+            payload = _parse_json(record.payload, {})
+            tasks = payload.get('data') if isinstance(payload, dict) else []
+            if not isinstance(tasks, list):
+                tasks = []
+            for task in tasks:
+                if not isinstance(task, dict):
+                    continue
+                activity = (task.get('activity_id') or task.get('text') or '').strip()
+                suffix = f' — {activity}' if activity else ''
+                for field, position in (('resource', 'Schedule Resource'), ('owner', 'Schedule Responsible')):
+                    for part in _split_party_names(task.get(field)):
+                        key = (field, part.lower())
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        _add_entry(entries_by_key, _person_directory_row(
+                            name=part,
+                            role='vendor_contact',
+                            position=f'{position}{suffix}',
+                            company=part if field == 'owner' else '',
+                            source='schedule',
+                        ))
+    if ScheduleTask is not None:
+        for task in _model_query(ScheduleTask).filter_by(project_id=int(project_id)).all():
+            assignee = (getattr(task, 'assigned_to', None) or '').strip()
+            if not assignee:
+                continue
+            number = (getattr(task, 'number', None) or '').strip()
+            suffix = f' {number}' if number else ''
+            key = ('task', assignee.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            _add_entry(entries_by_key, _person_directory_row(
+                name=assignee,
+                role='vendor_contact',
+                position=f'Schedule Task{suffix}',
+                source='schedule_task',
+            ))
+
+
+def _collect_meetings(project_id, entries_by_key, MeetingMinute, MeetingActionItem):
+    if MeetingMinute is None:
+        return
+    seen = set()
+    for meeting in _model_query(MeetingMinute).filter_by(project_id=int(project_id)).all():
+        number = (getattr(meeting, 'meeting_number', None) or '').strip()
+        suffix = f' {number}' if number else ''
+        organizer = (getattr(meeting, 'organizer', None) or '').strip()
+        if organizer:
+            key = ('organizer', organizer.lower())
+            if key not in seen:
+                seen.add(key)
+                _add_entry(entries_by_key, _person_directory_row(
+                    name=organizer,
+                    role='consultant',
+                    position=f'Meeting Organizer{suffix}',
+                    source='meeting',
+                ))
+        for attendee in _parse_json(getattr(meeting, 'attendees_json', None), []):
+            if isinstance(attendee, str):
+                name = attendee.strip()
+                company = ''
+            elif isinstance(attendee, dict):
+                name = (attendee.get('name') or '').strip()
+                company = (attendee.get('company') or '').strip()
+            else:
+                continue
+            if not name:
+                continue
+            key = ('attendee', name.lower(), company.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            _add_entry(entries_by_key, _person_directory_row(
+                name=name,
+                role='consultant',
+                position=f'Meeting Attendee{suffix}',
+                company=company,
+                source='meeting',
+            ))
+        if MeetingActionItem is not None:
+            for action in _model_query(MeetingActionItem).filter_by(meeting_id=int(meeting.id)).all():
+                assignee = (getattr(action, 'assigned_to', None) or '').strip()
+                if not assignee:
+                    continue
+                key = ('action', assignee.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                _add_entry(entries_by_key, _person_directory_row(
+                    name=assignee,
+                    role='consultant',
+                    position=f'Meeting Action Item{suffix}',
+                    source='meeting',
+                ))
+
+
+def _collect_permits(project_id, entries_by_key, PermitInspectionItem):
+    if PermitInspectionItem is None:
+        return
+    seen = set()
+    for item in _model_query(PermitInspectionItem).filter_by(project_id=int(project_id)).all():
+        inspector = (getattr(item, 'inspector', None) or '').strip()
+        authority = (getattr(item, 'authority_name', None) or '').strip()
+        jurisdiction = (getattr(item, 'jurisdiction_name', None) or '').strip()
+        number = (getattr(item, 'item_number', None) or '').strip()
+        suffix = f' {number}' if number else ''
+        if inspector:
+            key = ('inspector', inspector.lower())
+            if key not in seen:
+                seen.add(key)
+                _add_entry(entries_by_key, _person_directory_row(
+                    name=inspector,
+                    role='consultant',
+                    position=f'Inspector{suffix}',
+                    company=authority or jurisdiction,
+                    source='permit',
+                ))
+        if authority and authority.lower() != (inspector or '').lower():
+            key = ('authority', authority.lower())
+            if key not in seen:
+                seen.add(key)
+                _add_entry(entries_by_key, _person_directory_row(
+                    name=authority,
+                    role='vendor',
+                    position=f'Permit Authority{suffix}',
+                    company=authority,
+                    source='permit',
+                ))
+
+
+def _collect_safety(project_id, entries_by_key, SafetyReport, SafetyCertification, SafetyTrainingEvent):
+    seen = set()
+    if SafetyReport is not None:
+        for report in _model_query(SafetyReport).filter_by(project_id=int(project_id)).all():
+            assignee = (getattr(report, 'assigned_to', None) or '').strip()
+            if not assignee:
+                continue
+            key = ('report', assignee.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            _add_entry(entries_by_key, _person_directory_row(
+                name=assignee,
+                role='consultant',
+                position='Safety Report Assignee',
+                source='safety',
+            ))
+    if SafetyCertification is not None:
+        for cert in _model_query(SafetyCertification).filter_by(project_id=int(project_id)).all():
+            person = (getattr(cert, 'person_name', None) or '').strip()
+            company = (getattr(cert, 'company', None) or '').strip()
+            if not person:
+                continue
+            key = ('cert', person.lower(), company.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            _add_entry(entries_by_key, _person_directory_row(
+                name=person,
+                role='consultant',
+                position='Safety Certification',
+                company=company,
+                source='safety',
+            ))
+    if SafetyTrainingEvent is not None:
+        for event in _model_query(SafetyTrainingEvent).filter_by(project_id=int(project_id)).all():
+            person = (getattr(event, 'person_name', None) or '').strip()
+            company = (getattr(event, 'company', None) or '').strip()
+            if not person:
+                continue
+            key = ('training', person.lower(), company.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            _add_entry(entries_by_key, _person_directory_row(
+                name=person,
+                role='consultant',
+                position='Safety Training',
+                company=company,
+                source='safety',
+            ))
+
+
+def _collect_deliveries(project_id, entries_by_key, Delivery):
+    if Delivery is None:
+        return
+    seen = set()
+    for delivery in _model_query(Delivery).filter_by(project_id=int(project_id)).all():
+        number = (getattr(delivery, 'delivery_number', None) or '').strip()
+        suffix = f' {number}' if number else ''
+        for field, position in (
+            ('supplier', 'Delivery Supplier'),
+            ('carrier', 'Delivery Carrier'),
+            ('responsible', 'Delivery Responsible'),
+            ('received_by', 'Delivery Receiver'),
+        ):
+            value = (getattr(delivery, field, None) or '').strip()
+            if not value:
+                continue
+            key = (field, value.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            company = value if field == 'supplier' else ''
+            _add_entry(entries_by_key, _person_directory_row(
+                name=value,
+                role='vendor_contact',
+                position=f'{position}{suffix}',
+                company=company,
+                source='delivery',
+            ))
+
+
 def _safe_collect(collector, *args, **kwargs):
     try:
         collector(*args, **kwargs)
@@ -635,6 +1095,32 @@ def build_project_directory(project, User, Company=None, ProjectMembership=None)
     _safe_collect(_collect_change_orders, project_id, entries_by_key, models.get('ChangeOrder'))
     _safe_collect(_collect_rfqs, project_id, entries_by_key, models.get('SubcontractorRFQ'), Company)
     _safe_collect(_collect_bid_invitations, project_id, entries_by_key, models.get('BidPackage'), models.get('BidInvitation'))
+    _safe_collect(_collect_rfis, project_id, entries_by_key, User, models.get('RFI'))
+    _safe_collect(_collect_punch_items, project_id, entries_by_key, models.get('PunchItem'))
+    _safe_collect(
+        _collect_schedule_resources,
+        project_id,
+        entries_by_key,
+        models.get('ScheduleData'),
+        models.get('ScheduleTask'),
+    )
+    _safe_collect(
+        _collect_meetings,
+        project_id,
+        entries_by_key,
+        models.get('MeetingMinute'),
+        models.get('MeetingActionItem'),
+    )
+    _safe_collect(_collect_permits, project_id, entries_by_key, models.get('PermitInspectionItem'))
+    _safe_collect(
+        _collect_safety,
+        project_id,
+        entries_by_key,
+        models.get('SafetyReport'),
+        models.get('SafetyCertification'),
+        models.get('SafetyTrainingEvent'),
+    )
+    _safe_collect(_collect_deliveries, project_id, entries_by_key, models.get('Delivery'))
 
     def sort_key(entry):
         role = (entry.get('role') or '').strip().lower().replace(' ', '_')
@@ -643,6 +1129,108 @@ def build_project_directory(project, User, Company=None, ProjectMembership=None)
         return (tier, company, (entry.get('name') or '').lower())
 
     return sorted(entries_by_key.values(), key=sort_key)
+
+
+def build_project_companies(directory):
+    """Group directory people by company with merged attachment sources."""
+    companies_by_key = {}
+    for entry in directory or []:
+        company_name = (entry.get('company') or entry.get('firm') or '').strip()
+        if not company_name:
+            continue
+        key = company_name.lower()
+        record = companies_by_key.get(key)
+        if record is None:
+            record = {
+                'name': company_name,
+                'sources': set(),
+                'source_labels': [],
+                'people_count': 0,
+                'on_project': False,
+                'people': [],
+            }
+            companies_by_key[key] = record
+        for src in entry.get('sources') or _source_list(entry):
+            if src:
+                record['sources'].add(src)
+        if entry.get('on_project'):
+            record['on_project'] = True
+        person_summary = {
+            'name': entry.get('name') or '',
+            'position': entry.get('position') or '',
+            'email': entry.get('email') or '',
+            'phone': entry.get('phone') or '',
+            'on_project': bool(entry.get('on_project')),
+            'source_labels': entry.get('source_labels') or [],
+        }
+        record['people'].append(person_summary)
+
+    companies = []
+    for record in companies_by_key.values():
+        sources = sorted(record['sources'])
+        record['sources'] = sources
+        record['source_labels'] = [
+            SOURCE_LABELS.get(src, src.replace('_', ' ').title())
+            for src in sources
+        ]
+        record['people_count'] = len(record['people'])
+        companies.append(record)
+
+    return sorted(companies, key=lambda row: ((not row.get('on_project')), row.get('name', '').lower()))
+
+
+def build_staff_directory(User):
+    """Active main-company staff for the All Personnel view."""
+    staff = []
+    for user in _staff_portal_users(User):
+        entry = _user_directory_row(
+            user,
+            role=getattr(user, 'role', '') or '',
+            team_position=_user_job_title(user) or getattr(user, 'role', '') or '',
+            company=getattr(user, 'company', '') or '',
+            source='staff',
+        )
+        entry['group'] = 'staff'
+        entry['on_project'] = False
+        staff.append(entry)
+    return staff
+
+
+def build_project_directory_payload(project, User, Company=None, ProjectMembership=None):
+    """Directory, companies, and staff roster for the project directory API."""
+    directory = build_project_directory(project, User, Company=Company, ProjectMembership=ProjectMembership)
+    companies = build_project_companies(directory)
+    staff = build_staff_directory(User)
+
+    project_user_ids = {
+        int(entry['user_id'])
+        for entry in directory
+        if entry.get('user_id') is not None
+    }
+    project_emails = {
+        (entry.get('email') or '').strip().lower()
+        for entry in directory
+        if (entry.get('email') or '').strip()
+    }
+    for person in staff:
+        uid = person.get('user_id')
+        email = (person.get('email') or '').strip().lower()
+        if (uid is not None and int(uid) in project_user_ids) or (email and email in project_emails):
+            person['on_project'] = True
+
+    on_project_people = [entry for entry in directory if entry.get('on_project')]
+    return {
+        'directory': directory,
+        'companies': companies,
+        'staff': staff,
+        'team_contacts': directory,
+        'counts': {
+            'directory': len(directory),
+            'companies': len(companies),
+            'staff': len(staff),
+            'on_project': len(on_project_people),
+        },
+    }
 
 
 def _active_project_users(project_id, User, ProjectMembership=None):

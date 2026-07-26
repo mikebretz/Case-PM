@@ -3627,9 +3627,9 @@ def api_project_directory(project_id):
     if not user_can_access_project(current_user, project_id, Project):
         return jsonify({'error': 'You do not have access to this project.'}), 403
     project = Project.query.get_or_404(project_id)
-    from project_workflow_users import build_project_directory
+    from project_workflow_users import build_project_directory_payload
     try:
-        directory = build_project_directory(project, User, Company=Company)
+        payload = build_project_directory_payload(project, User, Company=Company)
     except Exception as exc:
         current_app.logger.exception('project directory build failed for project %s', project_id)
         return jsonify({'error': f'Unable to build project directory: {exc}'}), 500
@@ -3646,8 +3646,11 @@ def api_project_directory(project_id):
             'description': data.get('description', ''),
             'client': data.get('client', ''),
         },
-        'directory': directory,
-        'team_contacts': directory,
+        'directory': payload.get('directory', []),
+        'companies': payload.get('companies', []),
+        'staff': payload.get('staff', []),
+        'counts': payload.get('counts', {}),
+        'team_contacts': payload.get('team_contacts', payload.get('directory', [])),
     })
 
 
