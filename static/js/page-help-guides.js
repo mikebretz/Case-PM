@@ -1629,6 +1629,27 @@ global.CasePMPageHelpGuides = {
     'fa-drafting-compass'
   ),
 
+  operations_center: singleGuide(
+    'Operations Center',
+    'All extended tools in one place — start with Quick Add, expand when you need more.',
+    [
+      ['Pick a tool', 'Use the left sidebar: Field, Communications, Financial Plus, Precon, Insights, or Client.', [
+        ['Categories', 'Tools are grouped so you are not overwhelmed — open one category at a time.'],
+        ['WIP Report', 'Financial Plus includes a live Work in Progress snapshot — no records to create.'],
+      ]],
+      ['Quick Add', 'Click <strong>Quick Add</strong> and fill only three fields. That is enough to save and track the item.', [
+        ['Three fields', 'Each tool shows the minimum needed to get started (subject, date, amount, etc.).'],
+        ['More options', 'Click <strong>More options</strong> in the dialog for numbers, notes, links, and custom data.'],
+      ]],
+      ['Workflow actions', 'Open any saved row to run actions like Promote to RFI, Validate vs SOV, or Generate AI insight.', [
+        ['T&M → Change Event', 'Approved field tickets can promote to a change event.'],
+        ['Correspondence → RFI', 'Formal letters can become RFIs with one click.'],
+        ['Vendor invoices', 'Validate invoice amount against commitment SOV before approval.'],
+      ]],
+    ],
+    'fa-layer-group'
+  ),
+
   deliveries: singleGuide(
     'Deliveries',
     'Track material deliveries and receiving.',

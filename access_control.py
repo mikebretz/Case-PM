@@ -53,6 +53,7 @@ API_PREFIX_MODULE = [
     ('/api/photos', 'photos'),
     ('/api/inspections', 'inspections'),
     ('/api/deliveries', 'deliveries'),
+    ('/api/operations', 'operations_center'),
     ('/api/meeting-minutes', 'meeting_minutes'),
     ('/api/documents', 'documents'),
     ('/api/document-folders', 'documents'),

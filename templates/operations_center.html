@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block content %}
+<script>
+window.CASEPM_OPS_CTX = {
+  projectId: {{ active_project.id if active_project else 'null' }},
+  projectName: {{ (active_project.name if active_project else '')|tojson }},
+};
+</script>
+<script src="{{ url_for('static', filename='js/casepm-module-shell.js') }}"></script>
+<script src="{{ url_for('static', filename='js/operations-center-app.js') }}"></script>
+
+<style>
+.ops-page { display:flex; flex-direction:column; flex:1; min-height:0; padding:1rem; box-sizing:border-box; }
+.ops-shell { display:flex; gap:1rem; flex:1; min-height:0; }
+.ops-sidebar { width:220px; flex-shrink:0; background:#18181b; border:1px solid #3f3f46; border-radius:0.75rem; padding:0.75rem; overflow-y:auto; }
+.ops-main { flex:1; min-width:0; display:flex; flex-direction:column; min-height:0; }
+.ops-cat-btn { width:100%; text-align:left; padding:0.55rem 0.65rem; border-radius:0.5rem; font-size:0.85rem; color:#d4d4d8; display:flex; align-items:center; gap:0.5rem; }
+.ops-cat-btn:hover, .ops-cat-btn.active { background:#27272a; color:#fff; }
+.ops-mod-btn { width:100%; text-align:left; padding:0.4rem 0.55rem 0.4rem 1.75rem; border-radius:0.4rem; font-size:0.8rem; color:#a1a1aa; }
+.ops-mod-btn:hover, .ops-mod-btn.active { background:#10b98122; color:#6ee7b7; }
+.ops-card { background:#18181b; border:1px solid #3f3f46; border-radius:0.75rem; }
+.ops-input { width:100%; background:#27272a; border:1px solid #3f3f46; border-radius:0.5rem; padding:0.5rem 0.65rem; font-size:0.875rem; color:#fff; }
+.ops-input:focus { outline:none; border-color:#10b981; }
+.ops-row { display:flex; align-items:center; gap:0.75rem; padding:0.65rem 0.85rem; border-bottom:1px solid #27272a; cursor:pointer; }
+.ops-row:hover { background:#202023; }
+.ops-chip { padding:0.15rem 0.55rem; border-radius:9999px; font-size:0.68rem; font-weight:600; }
+.ops-advanced { border-top:1px dashed #3f3f46; margin-top:0.75rem; padding-top:0.75rem; }
+@media (max-width:900px) { .ops-shell { flex-direction:column; } .ops-sidebar { width:100%; max-height:180px; } }
+</style>
+
+<div class="ops-page">
+  <div class="flex items-center justify-between gap-3 mb-3 flex-shrink-0">
+    <div>
+      <h1 class="text-2xl font-semibold text-white">Operations Center</h1>
+      <p class="text-sm text-zinc-400 mt-0.5">Start simple — expand any item for full detail.</p>
+    </div>
+    <button type="button" id="opsQuickAdd" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">
+      <i class="fa-solid fa-plus mr-1"></i> Quick Add
+    </button>
+  </div>
+
+  <div class="ops-shell">
+    <aside class="ops-sidebar" id="opsSidebar"></aside>
+    <section class="ops-main">
+      <div class="ops-card p-4 mb-3 flex-shrink-0">
+        <div class="flex flex-wrap items-center gap-3 justify-between">
+          <div>
+            <div id="opsModuleTitle" class="text-lg font-semibold text-white">—</div>
+            <div id="opsModuleHint" class="text-xs text-zinc-500 mt-0.5">Select a tool on the left</div>
+          </div>
+          <div class="flex gap-2 text-center" id="opsStats"></div>
+        </div>
+      </div>
+      <div class="ops-card flex-1 min-h-0 flex flex-col overflow-hidden">
+        <div id="opsWipHost" class="hidden flex-1 overflow-auto p-4"></div>
+        <div id="opsListHost" class="flex-1 overflow-auto"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<dialog id="opsModal" class="modal casepm-dialog bg-zinc-900 border border-zinc-700 rounded-lg w-full max-w-lg p-0">
+  <div class="px-5 py-4 border-b border-zinc-700 flex items-center justify-between">
+    <h3 id="opsModalTitle" class="font-semibold text-lg">Quick Add</h3>
+    <button type="button" id="opsModalClose" class="text-zinc-400 hover:text-white text-xl">&times;</button>
+  </div>
+  <div class="p-5 space-y-3 overflow-y-auto" style="max-height:70vh;" id="opsModalBody"></div>
+  <div class="px-5 py-3 border-t border-zinc-700 flex justify-between items-center">
+    <button type="button" id="opsToggleAdvanced" class="text-sm text-emerald-400 hover:text-emerald-300">
+      <i class="fa-solid fa-chevron-down mr-1"></i> More options
+    </button>
+    <div class="flex gap-2">
+      <button type="button" id="opsModalCancel" class="px-4 py-2 text-sm border border-zinc-700 rounded-md">Cancel</button>
+      <button type="button" id="opsModalSave" class="px-5 py-2 text-sm bg-emerald-600 rounded-md font-semibold">Save</button>
+    </div>
+  </div>
+</dialog>
+{% endblock %}

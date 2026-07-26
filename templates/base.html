@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <meta name="theme-color" content="#10b981">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta name="casepm-build" content="{{ asset_v }}">
@@ -707,6 +710,11 @@
                     <span>Deliveries</span>
                 </a>
 
+                <a href="{{ url_for('operations_center_page', project_id=active_project.id) if active_project else url_for('operations_center_page') }}" data-nav-module="operations_center" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'operations_center_page' %}active{% endif %}">
+                    <i class="fa-solid fa-layer-group w-5"></i>
+                    <span>Operations</span>
+                </a>
+
                 <a href="{{ url_for('inspections_page', project_id=active_project.id) if active_project else url_for('inspections_page') }}" data-nav-module="inspections" class="nav-link nav-staff-only nav-architect-visible flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'inspections_page' %}active{% endif %}">
                     <i class="fa-solid fa-clipboard-check w-5"></i>
                     <span>Permits &amp; Inspections</span>
@@ -1363,7 +1371,15 @@
     </dialog>
     {% endif %}
 
-{% endif %}
+    {% endif %}
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('{{ url_for("static", filename="sw.js") }}').catch(function () {});
+  });
+}
+</script>
 
 </body>
 </html>
