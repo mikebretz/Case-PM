@@ -140,12 +140,34 @@ def _format_schedule_line(item):
 
 def _notification_body_html(item, headline, extra=''):
     kind = (item.record_kind or 'inspection').replace('_', ' ').title()
+    scheduling = {}
+    try:
+        from permits_inspections_persistence import _scheduling_from_item
+        scheduling = _scheduling_from_item(item)
+    except Exception:
+        pass
+    schedule_bits = []
+    if scheduling.get('schedule_instructions'):
+        schedule_bits.append(f'<p><strong>How to schedule:</strong> {scheduling["schedule_instructions"]}</p>')
+    insp_phone = scheduling.get('inspection_phone') or getattr(item, 'authority_phone', None)
+    if insp_phone:
+        schedule_bits.append(f'<p><strong>Inspection phone:</strong> {insp_phone}</p>')
+    insp_url = scheduling.get('inspection_schedule_url')
+    if insp_url:
+        schedule_bits.append(f'<p><strong>Schedule online:</strong> <a href="{insp_url}">{insp_url}</a></p>')
+    elif getattr(item, 'authority_phone', None) or getattr(item, 'authority_url', None):
+        if getattr(item, 'authority_phone', None):
+            schedule_bits.append(f'<p><strong>Permit office phone:</strong> {item.authority_phone}</p>')
+        if getattr(item, 'authority_url', None):
+            schedule_bits.append(f'<p><strong>Permit office:</strong> <a href="{item.authority_url}">{item.authority_url}</a></p>')
+    schedule_html = ''.join(schedule_bits)
     return f'''<p><strong>{headline}</strong></p>
 <p><strong>{kind}:</strong> {item.title or item.item_number}</p>
 <p><strong>When:</strong> {_format_schedule_line(item)}</p>
 {f'<p><strong>Jurisdiction:</strong> {item.jurisdiction_name}</p>' if getattr(item, 'jurisdiction_name', None) else ''}
 {f'<p><strong>Inspector:</strong> {item.inspector}</p>' if getattr(item, 'inspector', None) else ''}
 {f'<p><strong>Status:</strong> {item.status}</p>' if getattr(item, 'status', None) else ''}
+{schedule_html}
 {extra}'''
 
 

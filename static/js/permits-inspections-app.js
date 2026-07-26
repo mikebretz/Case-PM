@@ -40,6 +40,59 @@
   function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
   function el(id) { return document.getElementById(id); }
   function iso(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+  function phoneHref(phone) {
+    const digits = String(phone || '').replace(/[^\d+]/g, '');
+    return digits ? `tel:${digits}` : '';
+  }
+  function scheduleMethodBadge(method, label) {
+    const colors = {
+      phone: 'bg-amber-900/40 text-amber-300 border-amber-700/50',
+      web: 'bg-sky-900/40 text-sky-300 border-sky-700/50',
+      both: 'bg-emerald-900/40 text-emerald-300 border-emerald-700/50',
+    };
+    const cls = colors[method] || 'bg-zinc-800 text-zinc-400 border-zinc-700';
+    return `<span class="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded border ${cls}">${esc(label || method || 'Contact AHJ')}</span>`;
+  }
+  function renderSchedulingActions(it, compact) {
+    const phone = it.inspection_phone || it.authority_phone;
+    const scheduleUrl = it.inspection_schedule_url;
+    const method = it.schedule_method || 'phone';
+    if (compact) {
+      const parts = [];
+      if ((method === 'phone' || method === 'both') && phone) {
+        parts.push(`<a href="${esc(phoneHref(phone))}" class="text-amber-400 hover:underline" onclick="event.stopPropagation()" title="Call to schedule"><i class="fa-solid fa-phone mr-1"></i>Call</a>`);
+      }
+      if ((method === 'web' || method === 'both') && scheduleUrl) {
+        parts.push(`<a href="${esc(scheduleUrl)}" target="_blank" class="text-sky-400 hover:underline" onclick="event.stopPropagation()" title="Schedule online"><i class="fa-solid fa-globe mr-1"></i>Web</a>`);
+      }
+      return parts.length ? `<span class="flex items-center gap-2">${parts.join('')}</span>` : '';
+    }
+    let html = `<div class="text-xs text-zinc-400 mt-2 space-y-1">`;
+    html += `<div>${scheduleMethodBadge(method, it.schedule_method_label)}</div>`;
+    if (it.schedule_instructions) html += `<div class="text-zinc-500">${esc(it.schedule_instructions)}</div>`;
+    html += `<div class="flex flex-wrap gap-3 mt-1">`;
+    if (phone) html += `<a href="${esc(phoneHref(phone))}" class="text-amber-400 hover:underline" onclick="event.stopPropagation()"><i class="fa-solid fa-phone mr-1"></i>${esc(phone)}</a>`;
+    if (scheduleUrl) html += `<a href="${esc(scheduleUrl)}" target="_blank" class="text-sky-400 hover:underline" onclick="event.stopPropagation()"><i class="fa-solid fa-calendar-check mr-1"></i>Schedule online</a>`;
+    else if (it.authority_url) html += `<a href="${esc(it.authority_url)}" target="_blank" class="text-emerald-400 hover:underline" onclick="event.stopPropagation()"><i class="fa-solid fa-building mr-1"></i>Permit office</a>`;
+    html += `</div></div>`;
+    return html;
+  }
+  function applyJurisdictionFromDirectory(r) {
+    if (!r) return;
+    state.selectedJurisdiction = r;
+    if (el('piJurisdictionName')) el('piJurisdictionName').value = r.display || r.name || '';
+    if (el('piAuthorityName')) el('piAuthorityName').value = r.building_dept || r.name || '';
+    if (el('piAuthorityPhone')) el('piAuthorityPhone').value = r.phone || '';
+    if (el('piAuthorityUrl')) el('piAuthorityUrl').value = r.permit_url || r.url || '';
+    if (el('piInspectionPhone')) el('piInspectionPhone').value = r.inspection_phone || r.phone || '';
+    if (el('piInspectionScheduleUrl')) el('piInspectionScheduleUrl').value = r.inspection_schedule_url || '';
+    if (el('piScheduleMethod')) el('piScheduleMethod').value = r.schedule_method || 'phone';
+    if (el('piScheduleInstructions')) el('piScheduleInstructions').value = r.schedule_instructions || '';
+    if (r.type && el('piJurisdictionLevel')) {
+      const map = { county: 'county', city: 'city', state: 'state', utility: 'utility', water_management: 'water_management', fire: 'fire_district' };
+      el('piJurisdictionLevel').value = map[r.type] || el('piJurisdictionLevel').value;
+    }
+  }
   async function api(url, opts) { const r = await fetch(url, opts); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'Request failed'); return j; }
 
   async function loadCatalog() {
@@ -175,7 +228,8 @@
     }
     host.innerHTML = `<table class="w-full text-sm"><thead class="bg-zinc-800 text-xs uppercase text-zinc-500 sticky top-0"><tr>
       <th class="text-left px-3 py-2">#</th><th class="text-left px-3 py-2">Type</th><th class="text-left px-3 py-2">Trade</th>
-      <th class="text-left px-3 py-2">Title</th><th class="text-left px-3 py-2">Date</th><th class="text-left px-3 py-2">Jurisdiction</th><th class="text-left px-3 py-2">Status</th><th class="px-3 py-2"></th>
+      <th class="text-left px-3 py-2">Title</th><th class="text-left px-3 py-2">Date</th><th class="text-left px-3 py-2">Jurisdiction</th>
+      <th class="text-left px-3 py-2">Schedule</th><th class="text-left px-3 py-2">Status</th><th class="px-3 py-2"></th>
     </tr></thead><tbody>${rows.map((it) => `
       <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer" data-open="${it.id}">
         <td class="px-3 py-2 font-mono text-xs">${esc(it.item_number)}</td>
@@ -183,7 +237,11 @@
         <td class="px-3 py-2 text-xs">${esc((it.trade || '').replace('_', ' '))}</td>
         <td class="px-3 py-2">${esc(it.title)}${it.synced_to_schedule ? ' <span class="text-violet-400 text-xs">🔗</span>' : ''}</td>
         <td class="px-3 py-2 text-xs whitespace-nowrap">${esc(it.scheduled_date || '—')}${it.scheduled_time ? ' ' + esc(it.scheduled_time) : ''}</td>
-        <td class="px-3 py-2 text-xs text-zinc-400">${esc(it.jurisdiction_name || '—')}</td>
+        <td class="px-3 py-2 text-xs text-zinc-400">
+          <div>${esc(it.jurisdiction_name || '—')}</div>
+          ${it.authority_name ? `<div class="text-[10px] text-zinc-500">${esc(it.authority_name)}</div>` : ''}
+        </td>
+        <td class="px-3 py-2 text-xs">${renderSchedulingActions(it, true) || '<span class="text-zinc-600">—</span>'}</td>
         <td class="px-3 py-2"><span class="pi-chip ${STATUS_COLORS[it.status] || 'bg-zinc-700'}">${esc(it.status)}</span></td>
         <td class="px-3 py-2 text-zinc-500"><i class="fa-solid fa-chevron-right"></i></td>
       </tr>`).join('')}</tbody></table>`;
@@ -208,33 +266,30 @@
       host.innerHTML = `<div class="p-4 grid gap-2">${results.map((r, idx) => `
         <div class="border border-zinc-700 rounded-md p-3 bg-zinc-900 hover:border-zinc-500 cursor-pointer pi-dir-row" data-dir-idx="${idx}">
           <div class="flex items-start justify-between gap-2">
-            <div>
+            <div class="min-w-0 flex-1">
               <div class="font-medium text-sm">${esc(r.display || r.name)}</div>
               <div class="text-xs text-zinc-500 mt-0.5">${esc(r.building_dept || r.role || r.region || '')}</div>
+              ${r.notes ? `<div class="text-[10px] text-zinc-600 mt-1">${esc(r.notes)}</div>` : ''}
             </div>
-            <span class="text-[10px] uppercase tracking-wide text-zinc-500 bg-zinc-800 px-2 py-0.5 rounded">${esc(r.type)}</span>
+            <div class="flex flex-col items-end gap-1 flex-shrink-0">
+              <span class="text-[10px] uppercase tracking-wide text-zinc-500 bg-zinc-800 px-2 py-0.5 rounded">${esc(r.type)}</span>
+              ${r.schedule_method ? scheduleMethodBadge(r.schedule_method, r.schedule_method_label) : ''}
+            </div>
           </div>
           <div class="text-xs text-zinc-400 mt-2 flex flex-wrap gap-3">
-            ${r.phone ? `<span><i class="fa-solid fa-phone mr-1"></i>${esc(r.phone)}</span>` : ''}
-            ${r.url ? `<a href="${esc(r.url)}" target="_blank" class="text-emerald-400 hover:underline" onclick="event.stopPropagation()">Website</a>` : ''}
+            ${r.phone ? `<a href="${esc(phoneHref(r.inspection_phone || r.phone))}" class="text-amber-400 hover:underline" onclick="event.stopPropagation()"><i class="fa-solid fa-phone mr-1"></i>${esc(r.inspection_phone || r.phone)}</a>` : ''}
+            ${r.inspection_schedule_url ? `<a href="${esc(r.inspection_schedule_url)}" target="_blank" class="text-sky-400 hover:underline" onclick="event.stopPropagation()"><i class="fa-solid fa-calendar-check mr-1"></i>Schedule inspections online</a>` : (r.url ? `<a href="${esc(r.url)}" target="_blank" class="text-emerald-400 hover:underline" onclick="event.stopPropagation()"><i class="fa-solid fa-building mr-1"></i>Permit office website</a>` : '')}
           </div>
+          ${r.schedule_instructions ? `<div class="text-[11px] text-zinc-500 mt-2 border-t border-zinc-800 pt-2">${esc(r.schedule_instructions)}</div>` : ''}
+          <div class="text-[10px] text-zinc-600 mt-2">Click to apply contacts to a new permit / inspection</div>
         </div>`).join('')}</div>`;
       host.querySelectorAll('.pi-dir-row').forEach((row) => {
         row.addEventListener('click', () => {
           const idx = parseInt(row.getAttribute('data-dir-idx'), 10);
           const r = state.dirResults[idx];
           if (!r) return;
-          state.selectedJurisdiction = r;
-          el('piJurisdictionName').value = r.display || r.name || '';
-          el('piAuthorityName').value = r.building_dept || r.name || '';
-          el('piAuthorityPhone').value = r.phone || '';
-          el('piAuthorityUrl').value = r.url || '';
-          if (r.type && el('piJurisdictionLevel')) {
-            const map = { county: 'county', city: 'city', state: 'state', utility: 'utility', water_management: 'water_management', fire: 'fire_district' };
-            const lvl = map[r.type] || el('piJurisdictionLevel').value;
-            el('piJurisdictionLevel').value = lvl;
-          }
-          if (global.showToast) global.showToast('Jurisdiction applied to form');
+          applyJurisdictionFromDirectory(r);
+          if (global.showToast) global.showToast('Municipal permit office applied — open Add or edit an inspection to save');
         });
       });
     } catch (e) {
@@ -305,9 +360,11 @@
     state.editId = null;
     el('piModalTitle').textContent = 'New Permit / Inspection';
     ['piTitle', 'piDescription', 'piPermitNumber', 'piJurisdictionName', 'piAuthorityName',
-      'piAuthorityPhone', 'piAuthorityUrl', 'piInspector', 'piLocation', 'piResultNotes', 'piCorrectionNotes', 'piFbcRef'].forEach((id) => {
+      'piAuthorityPhone', 'piAuthorityUrl', 'piInspectionPhone', 'piInspectionScheduleUrl',
+      'piScheduleInstructions', 'piInspector', 'piLocation', 'piResultNotes', 'piCorrectionNotes', 'piFbcRef'].forEach((id) => {
       if (el(id)) el(id).value = '';
     });
+    if (el('piScheduleMethod')) el('piScheduleMethod').value = 'phone';
     el('piDate').value = iso(new Date());
     el('piTime').value = '';
     el('piDuration').value = 1;
@@ -323,12 +380,7 @@
     if (el('piNotifyCreator')) el('piNotifyCreator').checked = true;
     setSelectedNotifyUserIds([]);
     setReminderOffsets(['morning_of', '1h']);
-    if (state.selectedJurisdiction) {
-      el('piJurisdictionName').value = state.selectedJurisdiction.display || state.selectedJurisdiction.name || '';
-      el('piAuthorityName').value = state.selectedJurisdiction.building_dept || '';
-      el('piAuthorityPhone').value = state.selectedJurisdiction.phone || '';
-      el('piAuthorityUrl').value = state.selectedJurisdiction.url || '';
-    }
+    if (state.selectedJurisdiction) applyJurisdictionFromDirectory(state.selectedJurisdiction);
   }
 
   function openCreate(dateStr) {
@@ -349,7 +401,11 @@
     el('piJurisdictionName').value = it.jurisdiction_name || '';
     el('piAuthorityName').value = it.authority_name || '';
     el('piAuthorityPhone').value = it.authority_phone || '';
-    el('piAuthorityUrl').value = it.authority_url || '';
+    el('piAuthorityUrl').value = it.permit_url || it.authority_url || '';
+    if (el('piInspectionPhone')) el('piInspectionPhone').value = it.inspection_phone || it.authority_phone || '';
+    if (el('piInspectionScheduleUrl')) el('piInspectionScheduleUrl').value = it.inspection_schedule_url || '';
+    if (el('piScheduleMethod')) el('piScheduleMethod').value = it.schedule_method || 'phone';
+    if (el('piScheduleInstructions')) el('piScheduleInstructions').value = it.schedule_instructions || '';
     el('piInspector').value = it.inspector || '';
     el('piLocation').value = it.location || '';
     el('piResultNotes').value = it.result_notes || '';
@@ -397,6 +453,11 @@
       authority_name: el('piAuthorityName').value.trim(),
       authority_phone: el('piAuthorityPhone').value.trim(),
       authority_url: el('piAuthorityUrl').value.trim(),
+      schedule_method: el('piScheduleMethod')?.value || 'phone',
+      inspection_phone: el('piInspectionPhone')?.value.trim() || el('piAuthorityPhone').value.trim(),
+      inspection_schedule_url: el('piInspectionScheduleUrl')?.value.trim() || '',
+      schedule_instructions: el('piScheduleInstructions')?.value.trim() || '',
+      permit_url: el('piAuthorityUrl').value.trim(),
       scheduled_date: el('piDate').value,
       scheduled_time: el('piTime').value.trim(),
       duration_days: el('piDuration').value,
@@ -471,9 +532,14 @@
           push_to_schedule: el('piTemplatePush').checked,
           jurisdiction: state.selectedJurisdiction || {
             name: el('piJurisdictionName')?.value,
+            display: el('piJurisdictionName')?.value,
             building_dept: el('piAuthorityName')?.value,
             phone: el('piAuthorityPhone')?.value,
             url: el('piAuthorityUrl')?.value,
+            inspection_phone: el('piInspectionPhone')?.value,
+            inspection_schedule_url: el('piInspectionScheduleUrl')?.value,
+            schedule_method: el('piScheduleMethod')?.value,
+            schedule_instructions: el('piScheduleInstructions')?.value,
           },
         }),
       });
