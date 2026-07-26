@@ -5867,22 +5867,13 @@
         const showEvm = ps.include_evm === true;
         const showSummary = ps.include_summary !== false;
         const visibleCols = showTable ? getPrintVisibleGridColumns(ps) : [];
-        const hostW = document.getElementById('gantt_here')?.clientWidth || 1000;
-        const exposedW = getExposedGridWidth();
-        const scrollW = gantt.config?.scroll_size || 16;
-        const timelineW = isOverlayMode()
-            ? Math.max(180, hostW - exposedW - scrollW)
-            : getTimelineWidth();
-        const splitTotal = Math.max(exposedW + timelineW, 1);
         const showLinks = ps.include_predecessor_links !== false;
         const printFontPt = parseInt(ps.font_size_pt, 10) || 8;
         const printRowH = gantt.config.row_height || parseInt(ps.row_height_px, 10) || 24;
         const visibleTextW = visibleCols.reduce((s, v) => s + v.width, 0) || 1;
-        const textTablePx = visibleTextW;
-        const barTablePx = showInlineBars ? timelineW : 0;
-        const tableWidthPx = textTablePx + barTablePx;
-        const textTablePct = showInlineBars ? (textTablePx / splitTotal) * 100 : 100;
-        const barTablePct = showInlineBars ? (barTablePx / splitTotal) * 100 : 0;
+        const evmExtraCols = showEvm && !visibleCols.some(v => v.col.name === 'cpi');
+        const EVM_COL_PX = 40;
+        const textTablePx = visibleTextW + (evmExtraCols ? EVM_COL_PX * 2 : 0);
         const hasHierarchyCol = visibleCols.some(v => v.col.name === 'hierarchy');
         const hierarchyPrintW = hasHierarchyCol
             ? (visibleCols.find(v => v.col.name === 'hierarchy')?.width || 56)
@@ -5915,8 +5906,8 @@
                     if (col.name === 'progress' && !content.includes('%')) content += '%';
                     return `<td class="print-col-${col.name}${nameCls}${align}"${indent}>${content}</td>`;
                 }).join('');
-                const evmExtra = showEvm && !visibleCols.some(v => v.col.name === 'cpi')
-                    ? `<td class="c print-col-cpi" style="width:${(textTablePct / visibleCols.length * 0.5).toFixed(2)}%">${t.cpi != null ? t.cpi : '—'}</td><td class="c print-col-spi" style="width:${(textTablePct / visibleCols.length * 0.5).toFixed(2)}%">${t.spi != null ? t.spi : '—'}</td>`
+                const evmExtra = evmExtraCols
+                    ? `<td class="c print-col-cpi" style="width:${EVM_COL_PX}px">${t.cpi != null ? t.cpi : '—'}</td><td class="c print-col-spi" style="width:${EVM_COL_PX}px">${t.spi != null ? t.spi : '—'}</td>`
                     : '';
                 const summary = isSummaryTask(t);
                 const wbsCls = getWbsLevelClass(t);
@@ -5960,7 +5951,7 @@
                 <svg class="print-chart-svg" viewBox="0 0 100 100" preserveAspectRatio="none" style="height:${chartH}px">${chartLines}${chartBars}</svg></div>`;
         }
 
-        const evmHeader = showEvm && !visibleCols.some(v => v.col.name === 'cpi')
+        const evmHeader = evmExtraCols
             ? `<th class="print-col-cpi c">CPI</th><th class="print-col-spi c">SPI</th>` : '';
         const barHeader = showInlineBars ? `<th class="print-bar-cell">Schedule Bars</th>` : '';
         const colHeaders = visibleCols.map(({ col }) => {
@@ -6043,10 +6034,13 @@
             const repeatCls = ps.repeat_header !== false ? ' print-repeat-header' : '';
             const fitCls = ps.fit_to_page ? ' print-fit-page' : '';
             const colorBarsCls = ps.print_color_bars === false ? ' print-mono-bars' : '';
-            const colGroup = `<colgroup>${visibleCols.map(({ width }) => `<col style="width:${width}px">`).join('')}${showInlineBars ? `<col class="print-bar-col" style="width:${Math.round(barTablePx)}px">` : ''}</colgroup>`;
-            return `<div class="print-schedule-wrap${wbsCls}${gridCls}${repeatCls}${fitCls}${colorBarsCls}" style="--print-font-size:${printFontPt}pt;--print-row-height:${printRowH}px;--print-chart-width:${barTablePct.toFixed(2)}%;--print-table-width:${tableWidthPx}px" data-print-orientation="${ps.orientation || 'landscape'}">
+            const evmColGroup = evmExtraCols
+                ? `<col class="print-data-col" style="width:${EVM_COL_PX}px"><col class="print-data-col" style="width:${EVM_COL_PX}px">`
+                : '';
+            const colGroup = `<colgroup>${visibleCols.map(({ width }) => `<col class="print-data-col" style="width:${width}px">`).join('')}${evmColGroup}${showInlineBars ? '<col class="print-bar-col">' : ''}</colgroup>`;
+            return `<div class="print-schedule-wrap${wbsCls}${gridCls}${repeatCls}${fitCls}${colorBarsCls}" style="--print-font-size:${printFontPt}pt;--print-row-height:${printRowH}px;--print-cols-width:${textTablePx}px" data-print-orientation="${ps.orientation || 'landscape'}">
                 ${linkSvg}
-                <table class="schedule-print-table schedule-print-table-compact schedule-print-table-visible-cols schedule-print-table-screen-cols" style="width:${tableWidthPx}px">
+                <table class="schedule-print-table schedule-print-table-compact schedule-print-table-visible-cols schedule-print-table-screen-cols schedule-print-table-fill-page">
                 ${colGroup}
                 <thead><tr>
                     ${colHeaders}${evmHeader}${barHeader}

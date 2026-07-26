@@ -1655,12 +1655,14 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
     }
     .print-schedule-wrap {
         position: relative !important;
+        width: 100% !important;
     }
     .print-inline-links {
         position: absolute;
         top: 0;
+        left: var(--print-cols-width, 0);
         right: 0;
-        width: var(--print-chart-width, 58%);
+        width: auto;
         height: 100%;
         pointer-events: none;
         z-index: 20;
@@ -1698,6 +1700,14 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         width: auto !important;
         max-width: 100%;
     }
+    .schedule-print-table-fill-page {
+        width: 100% !important;
+        max-width: 100% !important;
+        table-layout: fixed !important;
+    }
+    .schedule-print-table-fill-page col.print-bar-col {
+        width: auto !important;
+    }
     .schedule-print-table-screen-cols th,
     .schedule-print-table-screen-cols td {
         width: auto !important;
@@ -1707,6 +1717,10 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
     .schedule-print-table-screen-cols .print-bar-cell {
         width: auto !important;
         overflow: hidden;
+        padding: 1px 0 !important;
+    }
+    .schedule-print-table-fill-page .print-bar-cell {
+        width: auto !important;
     }
     .schedule-print-table-visible-cols .print-name {
         white-space: normal !important;
@@ -1773,7 +1787,6 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         background: #f0f0f0;
     }
     .print-bar-cell {
-        width: 58%;
         padding: 1px 0 !important;
         position: relative;
         border-left: 1px solid #999 !important;
@@ -1805,6 +1818,8 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
     .print-ts-row td { padding: 0 !important; border-top: none !important; }
     .print-bar-track {
         position: relative;
+        width: 100%;
+        min-width: 100%;
         height: 16px;
         background: transparent;
         border: none;
