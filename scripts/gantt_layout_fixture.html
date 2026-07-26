@@ -29,7 +29,7 @@ gantt.config.date_format = '%Y-%m-%d';
 gantt.config.row_height = 24;
 gantt.config.bar_height = 16;
 gantt.config.scale_height = 52;
-gantt.config.keep_grid_width = false;
+gantt.config.keep_grid_width = true;
 gantt.config.grid_elastic_columns = false;
 gantt.config.show_links = true;
 gantt.config.scroll_size = 16;
@@ -73,13 +73,133 @@ gantt.config.columns = [
   { name: 'start_date', label: 'Start', width: 108, resize: true },
   { name: 'end_date', label: 'Finish', width: 108, resize: true }
 ];
+function fixtureColumnMetrics() {
+  const cols = gantt.config.columns || [];
+  const metrics = [];
+  let left = 0;
+  cols.forEach(col => {
+    const w = parseInt(col.width, 10) || 80;
+    metrics.push({ width: w, left });
+    left += w;
+  });
+  return { metrics, total: left };
+}
+function fixtureApplyMetricToCell(cell, m, isHead) {
+  if (!cell || !m) return;
+  cell.style.position = 'absolute';
+  cell.style.left = m.left + 'px';
+  cell.style.width = m.width + 'px';
+  cell.style.minWidth = m.width + 'px';
+  cell.style.maxWidth = m.width + 'px';
+  cell.style.flex = 'none';
+  cell.style.boxSizing = 'border-box';
+  if (!isHead) {
+    cell.style.top = '0';
+    cell.style.height = '100%';
+  } else {
+    cell.style.top = 'var(--sched-grid-header-top, 26px)';
+    cell.style.height = 'var(--sched-grid-header-label, 39px)';
+    cell.style.lineHeight = 'var(--sched-grid-header-label, 39px)';
+  }
+}
+function fixtureApplyColumnLayout() {
+  const { metrics, total } = fixtureColumnMetrics();
+  gantt.config.grid_width = total;
+  const heads = document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell');
+  metrics.forEach((m, i) => fixtureApplyMetricToCell(heads[i], m, true));
+  const gridHead = document.querySelector('#gantt_here .gantt_grid_scale .gantt_grid_head');
+  if (gridHead) {
+    gridHead.style.position = 'relative';
+    gridHead.style.width = total + 'px';
+    gridHead.style.minWidth = total + 'px';
+  }
+  ['.gantt_grid_scale', '.gantt_grid_data'].forEach(sel => {
+    const el = document.querySelector('#gantt_here ' + sel);
+    if (el) { el.style.width = total + 'px'; el.style.minWidth = total + 'px'; }
+  });
+  document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
+    row.style.position = 'relative';
+    row.style.width = total + 'px';
+    row.style.minWidth = total + 'px';
+    const cells = row.querySelectorAll(':scope > .gantt_cell');
+    metrics.forEach((m, i) => fixtureApplyMetricToCell(cells[i], m, false));
+  });
+  const gridInner = document.querySelector('#gantt_here .gantt_grid');
+  if (gridInner) { gridInner.style.width = total + 'px'; gridInner.style.minWidth = total + 'px'; }
+  const host = document.getElementById('gantt_here');
+  if (host) host.style.setProperty('--sched-grid-min-width', total + 'px');
+  const gridHeadEl = document.querySelector('#gantt_here .gantt_grid_scale .gantt_grid_head');
+  if (gridHeadEl) {
+    let layer = gridHeadEl.querySelector('.sched-col-grip-layer');
+    if (!layer) {
+      layer = document.createElement('div');
+      layer.className = 'sched-col-grip-layer';
+      gridHeadEl.appendChild(layer);
+    }
+    layer.style.width = total + 'px';
+    layer.style.height = '100%';
+    layer.style.position = 'absolute';
+    layer.style.top = '0';
+    layer.style.left = '0';
+    layer.style.pointerEvents = 'none';
+    layer.style.zIndex = '250';
+    layer.innerHTML = '';
+    metrics.forEach((m, i) => {
+      const col = gantt.config.columns[i];
+      if (!col || col.resize === false) return;
+      const grip = document.createElement('div');
+      grip.className = 'sched-col-resize-grip gantt_grid_column_resize_wrap';
+      grip.innerHTML = '<div class="gantt_grid_column_resize"></div>';
+      grip.style.position = 'absolute';
+      grip.style.left = (m.left + m.width) + 'px';
+      grip.style.top = 'var(--sched-grid-header-top, 26px)';
+      grip.style.height = 'var(--sched-grid-header-label, 39px)';
+      grip.style.width = '10px';
+      grip.style.marginLeft = '-5px';
+      layer.appendChild(grip);
+    });
+  }
+  return total;
+}
+function fixtureApplyOverlayLayout() {
+  const host = document.getElementById('gantt_here');
+  const root = host?.querySelector('.gantt_layout_root');
+  if (!host || !root) return;
+  const colsW = fixtureApplyColumnLayout();
+  const hostW = host.clientWidth;
+  const scrollW = gantt.config.scroll_size || 16;
+  if (gantt.config.layout?.cols?.[0]) {
+    gantt.config.layout.cols[0].width = colsW;
+    gantt.config.layout.cols[0].min_width = colsW;
+  }
+  host.style.setProperty('--sched-grid-min-width', colsW + 'px');
+  host.style.setProperty('--sched-chart-left', colsW + 'px');
+  host.style.setProperty('--sched-grid-overlay-w', colsW + 'px');
+  const cells = root.querySelectorAll(':scope > .gantt_layout_cell');
+  const gridCell = cells[0];
+  const timelineCell = cells[2];
+  if (gridCell) {
+    gridCell.style.setProperty('width', colsW + 'px', 'important');
+    gridCell.style.setProperty('min-width', colsW + 'px', 'important');
+    gridCell.style.setProperty('max-width', 'none', 'important');
+  }
+  if (timelineCell) {
+    timelineCell.style.setProperty('left', colsW + 'px', 'important');
+    timelineCell.style.setProperty('width', Math.max(200, hostW - colsW - scrollW) + 'px', 'important');
+  }
+  const gridInner = gridCell?.querySelector('.gantt_grid');
+  if (gridInner) {
+    gridInner.style.width = colsW + 'px';
+    gridInner.style.minWidth = colsW + 'px';
+  }
+  return colsW;
+}
 const gridW = gantt.config.columns.reduce((s, c) => s + c.width, 0);
 const hostW = 1400;
-const gridOverlayW = 660;
 gantt.config.layout = {
   css: 'gantt_container',
   cols: [
-    { width: gridOverlayW, min_width: 120, rows: [
+    { width: gridW, min_width: gridW, rows: [
       { view: 'grid', scrollX: 'gridScroll', scrollY: 'scrollVer' },
       { view: 'scrollbar', id: 'gridScroll', height: 20 }
     ]},
@@ -97,9 +217,6 @@ gantt.config.scales = [
   { unit: 'day', step: 1, format: '%d' }
 ];
 gantt.init('gantt_here');
-document.getElementById('gantt_here').style.setProperty('--sched-grid-min-width', gridW + 'px');
-document.getElementById('gantt_here').style.setProperty('--sched-grid-overlay-w', gridOverlayW + 'px');
-document.getElementById('gantt_here').style.setProperty('--sched-chart-left', gridOverlayW + 'px');
 gantt.parse({
   data: [
     { id: 1, text: 'Pipe Repairs & Improvement 12', type: 'project', open: true, start_date: '2023-06-05', end_date: '2023-07-28', duration: 0 },
@@ -114,6 +231,9 @@ gantt.parse({
     { id: 2, source: 4, target: 5, type: '0' }
   ]
 });
+fixtureApplyOverlayLayout();
+window.fixtureApplyColumnLayout = fixtureApplyColumnLayout;
+window.fixtureApplyOverlayLayout = fixtureApplyOverlayLayout;
 window.gantt = gantt;
 </script>
 </body>

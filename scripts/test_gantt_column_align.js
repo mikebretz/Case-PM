@@ -42,6 +42,7 @@ async function main() {
         await page.mouse.move(box.x + 60, box.y + box.height / 2);
         await page.mouse.up();
         await page.waitForTimeout(300);
+        await page.evaluate(() => fixtureApplyColumnLayout());
     }
 
     const after = await page.evaluate(() => {
