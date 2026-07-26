@@ -778,7 +778,7 @@
 
     function getTimelineScrollMargin(fraction) {
         if (isOverlayMode()) {
-            return getGridOverlayWidth() + 32;
+            return getGridPaneDisplayWidth() + 32;
         }
         const viewW = getTimelineDomWidth();
         if (fraction != null) return Math.round(viewW * fraction);
