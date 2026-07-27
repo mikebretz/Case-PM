@@ -7,9 +7,6 @@ import os
 UNLOCK_SESSION_KEY = 'developer_unlock_mode'
 RECOVERY_ACCESS_FILE = os.path.join('instance', 'recovery.access')
 
-RECOVERY_EMAIL_DEFAULT = 'recovery@casepm.local'
-RECOVERY_PASSWORD_DEFAULT = 'CasePM-Recovery-2026'
-
 
 def _read_recovery_access_file():
     """Return recovery.access JSON dict or None."""
@@ -37,10 +34,7 @@ def recovery_email():
     data = _read_recovery_access_file()
     if data and (data.get('email') or '').strip():
         return str(data['email']).strip().lower()
-    env = (os.environ.get('CASEPM_RECOVERY_EMAIL', '') or '').strip().lower()
-    if env:
-        return env
-    return RECOVERY_EMAIL_DEFAULT
+    return (os.environ.get('CASEPM_RECOVERY_EMAIL', '') or '').strip().lower()
 
 
 def recovery_password_plain():
@@ -48,9 +42,7 @@ def recovery_password_plain():
     if data and data.get('password') is not None:
         return str(data['password'])
     env = os.environ.get('CASEPM_RECOVERY_PASSWORD')
-    if env:
-        return env
-    return RECOVERY_PASSWORD_DEFAULT
+    return env if env is not None else ''
 
 
 def recovery_access_token():
@@ -69,12 +61,15 @@ def validate_recovery_token(token):
 
 
 def is_recovery_login(email, password):
-    """Break-glass login checked before normal user lookup — survives deleted admin accounts."""
+    """Break-glass login — only when recovery.access or env credentials are configured."""
     if not email or password is None:
         return False
-    # When owner file is configured, only that email/password works (not defaults/env for others).
-    if recovery_access_configured():
-        return email.strip().lower() == recovery_email() and password == recovery_password_plain()
+    if not recovery_access_configured():
+        env_email = (os.environ.get('CASEPM_RECOVERY_EMAIL', '') or '').strip().lower()
+        env_pass = os.environ.get('CASEPM_RECOVERY_PASSWORD')
+        if not env_email or env_pass is None:
+            return False
+        return email.strip().lower() == env_email and password == env_pass
     return email.strip().lower() == recovery_email() and password == recovery_password_plain()
 
 

@@ -381,6 +381,14 @@ def guard_api_request(current_user):
             }), 403
     except Exception:
         return jsonify({'error': 'Permission check failed. Access denied.'}), 403
+
+    try:
+        from project_security import guard_api_project_scope
+        scoped = guard_api_project_scope(current_user, path, request.method)
+        if scoped is not None:
+            return scoped
+    except Exception:
+        return jsonify({'error': 'Project access check failed.'}), 403
     return None
 
 
