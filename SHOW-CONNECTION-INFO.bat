@@ -31,7 +31,7 @@ netsh advfirewall firewall show rule name="Case PM Server (TCP 5000)" >nul 2>&1
 if errorlevel 1 (
     color 0E
     echo  WARNING: Windows Firewall may block other computers.
-    echo  Run ALLOW-REMOTE-ACCESS.bat once ^(as administrator^).
+    echo  Run WINDOWS-SERVER-SETUP.bat once ^(as administrator^).
     echo.
 ) else (
     echo  Firewall: OK — port %PORT% allowed
