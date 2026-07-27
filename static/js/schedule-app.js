@@ -95,9 +95,8 @@
     if (!scheduleSettings.compare_baseline_indices) scheduleSettings.compare_baseline_indices = [];
 
     const REQUIRED_COLUMNS = ['text', 'collapse'];
-    const ROLLING_YEARS_BACK = 2;
-    const ROLLING_YEARS_FORWARD = 6;
-    const ROLLING_MIN_SPAN_DAYS = 365 * 3;
+    const ROLLING_PAD_DAYS = 28;
+    const ROLLING_MIN_SPAN_DAYS = 56;
 
     let editingContext = null;
     let editorClampTimer = null;
@@ -116,6 +115,8 @@
     let undoDebounceTimer = null;
     let ganttRenderHookTimer = null;
     let printBuildInProgress = false;
+    let scheduleRunTimer = null;
+    let statusBarTimer = null;
 
     function countScheduleTasks() {
         if (!ganttReady) return 0;
@@ -127,18 +128,33 @@
     function applySchedulePerformanceProfile() {
         if (!ganttReady) return;
         scheduleTaskCount = countScheduleTasks();
-        schedulePerformanceMode = scheduleTaskCount >= 120;
-        if (!schedulePerformanceMode) return;
+        schedulePerformanceMode = true;
 
         gantt.config.smart_rendering = true;
         gantt.config.static_background = true;
-        rollingCalendarBounds = null;
-        applyRollingCalendarRange(true);
+        applyRollingCalendarRange();
 
-        if (scheduleTaskCount >= 250 && (scheduleSettings.timescale || 'day') === 'day') {
+        const spanDays = rollingCalendarBounds
+            ? CasePMSchedule.calendarDaysBetween(rollingCalendarBounds.start, rollingCalendarBounds.end)
+            : 0;
+        if ((scheduleTaskCount >= 60 || spanDays > 90) && (scheduleSettings.timescale || 'day') === 'day') {
             scheduleSettings.timescale = 'week';
             applyTimescaleScales('week');
         }
+        if (gantt.plugins && scheduleTaskCount > 40) {
+            gantt.plugins({ tooltip: false, marker: true });
+        }
+    }
+
+    function queueStatusBarUpdate() {
+        clearTimeout(statusBarTimer);
+        statusBarTimer = setTimeout(updateStatusBar, 250);
+    }
+
+    function queueRunSchedule(options) {
+        clearTimeout(scheduleRunTimer);
+        const opts = Object.assign({ skipScroll: true, batch: true, light: true }, options || {});
+        scheduleRunTimer = setTimeout(() => runSchedule(opts), 300);
     }
 
     function pushUndoStateNow() {
@@ -153,12 +169,8 @@
 
     function pushUndoState() {
         if (!ganttReady || undoPaused) return;
-        if (schedulePerformanceMode || bulkLoadDepth > 0) {
-            clearTimeout(undoDebounceTimer);
-            undoDebounceTimer = setTimeout(pushUndoStateNow, 700);
-            return;
-        }
-        pushUndoStateNow();
+        clearTimeout(undoDebounceTimer);
+        undoDebounceTimer = setTimeout(pushUndoStateNow, 700);
     }
 
     function restoreUndoState(json) {
@@ -654,13 +666,7 @@
 
     function queueEnforceGridColumnExtents() {
         clearTimeout(enforceGridTimer);
-        enforceGridPass = 0;
-        const run = () => {
-            enforceGridColumnExtents();
-            enforceGridPass += 1;
-            if (enforceGridPass < 5) requestAnimationFrame(run);
-        };
-        enforceGridTimer = setTimeout(() => requestAnimationFrame(run), 0);
+        enforceGridTimer = setTimeout(() => enforceGridColumnExtents(), 16);
     }
 
     function ensureGridScrollWidthSentinel(total) {
@@ -789,7 +795,7 @@
             if (cols[i]?.name === '_sched_add_col') headCells[i].classList.add('sched-add-col-header');
         }
 
-        if (schedulePerformanceMode && !opts.includeRows) {
+        if (!opts.includeRows) {
             metrics.forEach((m, i) => {
                 if (cols[i]) cols[i].width = m.width;
             });
@@ -1457,20 +1463,18 @@
     }
 
     function getDefaultCalendarBounds() {
-        const y = new Date().getFullYear();
+        const today = new Date();
         return {
-            start: new Date(y - ROLLING_YEARS_BACK, 0, 1),
-            end: new Date(y + ROLLING_YEARS_FORWARD, 11, 31)
+            start: CasePMSchedule.addCalendarDays(today, -ROLLING_PAD_DAYS),
+            end: CasePMSchedule.addCalendarDays(today, ROLLING_MIN_SPAN_DAYS)
         };
     }
 
     function computeRollingCalendarBounds() {
         let minStart = null;
         let maxEnd = null;
-        let taskCount = 0;
         if (ganttReady) {
             gantt.eachTask(t => {
-                taskCount += 1;
                 const ts = toGanttDate(t.start_date);
                 const te = toGanttDate(t.end_date);
                 if (ts && (!minStart || ts < minStart)) minStart = new Date(ts.getTime());
@@ -1478,37 +1482,23 @@
             });
         }
 
-        const large = taskCount >= 120;
         if (!minStart || !maxEnd) {
             return getDefaultCalendarBounds();
         }
 
-        const padDays = large ? 21 : 60;
-        let start = ganttDateAdd(minStart, -padDays, 'day');
-        let end = ganttDateAdd(maxEnd, padDays, 'day');
-        const minSpan = large ? 90 : ROLLING_MIN_SPAN_DAYS;
-        if (CasePMSchedule.calendarDaysBetween(start, end) < minSpan) {
-            end = CasePMSchedule.addCalendarDays(start, minSpan);
-        }
-        const maxSpan = large ? 365 * 3 : 365 * 8;
-        if (CasePMSchedule.calendarDaysBetween(start, end) > maxSpan) {
-            end = CasePMSchedule.addCalendarDays(start, maxSpan);
+        let start = ganttDateAdd(minStart, -ROLLING_PAD_DAYS, 'day');
+        let end = ganttDateAdd(maxEnd, ROLLING_PAD_DAYS, 'day');
+        if (CasePMSchedule.calendarDaysBetween(start, end) < ROLLING_MIN_SPAN_DAYS) {
+            end = CasePMSchedule.addCalendarDays(start, ROLLING_MIN_SPAN_DAYS);
         }
         return { start, end };
     }
 
-    function applyRollingCalendarRange(forceReset) {
+    function applyRollingCalendarRange() {
         const bounds = computeRollingCalendarBounds();
-        if (forceReset || !rollingCalendarBounds) {
-            rollingCalendarBounds = bounds;
-        } else {
-            rollingCalendarBounds = {
-                start: bounds.start < rollingCalendarBounds.start ? bounds.start : rollingCalendarBounds.start,
-                end: bounds.end > rollingCalendarBounds.end ? bounds.end : rollingCalendarBounds.end
-            };
-        }
-        gantt.config.start_date = new Date(rollingCalendarBounds.start.getTime());
-        gantt.config.end_date = new Date(rollingCalendarBounds.end.getTime());
+        rollingCalendarBounds = bounds;
+        gantt.config.start_date = new Date(bounds.start.getTime());
+        gantt.config.end_date = new Date(bounds.end.getTime());
     }
 
     function resetTimelineCalendar() {
@@ -1695,7 +1685,7 @@
         if (!date) return;
         const d = toGanttDate(date);
         if (!d) return;
-        applyRollingCalendarRange(false);
+        applyRollingCalendarRange();
         const margin = marginPx != null ? marginPx : getTimelineScrollMargin(0.5);
         const apply = () => {
             let x = null;
@@ -1808,7 +1798,7 @@
     function syncTimelineToTasks(options) {
         if (!ganttReady) return;
         const opts = options || {};
-        applyRollingCalendarRange(false);
+        applyRollingCalendarRange();
         updateRowHeightsForLabels();
         gantt.render();
         requestAnimationFrame(() => {
@@ -1831,7 +1821,7 @@
         const start = toGanttDate(range.start_date);
         const end = toGanttDate(range.end_date);
         if (!start || !end) return scrollToToday();
-        applyRollingCalendarRange(false);
+        applyRollingCalendarRange();
         const mid = gantt.date.add
             ? gantt.date.add(start, Math.round(CasePMSchedule.calendarDaysBetween(start, end) / 2), 'day')
             : ganttDateAdd(start, Math.round(CasePMSchedule.calendarDaysBetween(start, end) / 2), 'day');
@@ -1840,7 +1830,7 @@
     }
 
     function applyTimelineDateRange() {
-        applyRollingCalendarRange(false);
+        applyRollingCalendarRange();
     }
 
     function updateRowHeightsForLabels() {
@@ -3795,8 +3785,8 @@
         applyTimescaleScales(scheduleSettings.timescale || 'day');
 
         const todaySeed = new Date();
-        gantt.config.start_date = new Date(todaySeed.getFullYear() - ROLLING_YEARS_BACK, 0, 1);
-        gantt.config.end_date = new Date(todaySeed.getFullYear() + ROLLING_YEARS_FORWARD, 11, 31);
+        gantt.config.start_date = CasePMSchedule.addCalendarDays(todaySeed, -ROLLING_PAD_DAYS);
+        gantt.config.end_date = CasePMSchedule.addCalendarDays(todaySeed, ROLLING_MIN_SPAN_DAYS);
 
         const gridW = getColumnsTotalWidth();
         const hostW = document.getElementById('gantt_here')?.offsetWidth || 1000;
@@ -3937,6 +3927,7 @@
         if (window.ScheduleExtras) ScheduleExtras.setupNonWorkTemplates(gantt);
 
         gantt.templates.tooltip_text = function (start, end, task) {
+            if (scheduleTaskCount > 40) return '';
             const preds = predTemplate(task);
             return `<b>${task.text}</b><br/>
                 Start: ${formatDateSafe(start)}<br/>
@@ -4015,21 +4006,42 @@
         gantt.attachEvent('onAfterTaskUpdate', (id, task) => {
             sanitizeTaskDates(task);
             if (task.progress > 1) task.progress = Math.min(1, task.progress / 100);
-            applyTaskBarColor(task);
+            if (bulkLoadDepth === 0) applyTaskBarColor(task);
+            if (bulkLoadDepth > 0) return;
             pushUndoState();
             queueSave();
         });
-        gantt.attachEvent('onAfterTaskAdd', () => { pushUndoState(); queueSave(); });
-        gantt.attachEvent('onAfterTaskDelete', () => { pushUndoState(); queueSave(); });
-        gantt.attachEvent('onAfterLinkAdd', () => { pushUndoState(); queueSave(); });
-        gantt.attachEvent('onAfterLinkUpdate', () => { pushUndoState(); queueSave(); });
-        gantt.attachEvent('onAfterLinkDelete', () => { pushUndoState(); queueSave(); });
+        gantt.attachEvent('onAfterTaskAdd', () => {
+            if (bulkLoadDepth > 0) return;
+            pushUndoState();
+            queueSave();
+        });
+        gantt.attachEvent('onAfterTaskDelete', () => {
+            if (bulkLoadDepth > 0) return;
+            pushUndoState();
+            queueSave();
+        });
+        gantt.attachEvent('onAfterLinkAdd', () => {
+            if (bulkLoadDepth > 0) return;
+            pushUndoState();
+            queueSave();
+        });
+        gantt.attachEvent('onAfterLinkUpdate', () => {
+            if (bulkLoadDepth > 0) return;
+            pushUndoState();
+            queueSave();
+        });
+        gantt.attachEvent('onAfterLinkDelete', () => {
+            if (bulkLoadDepth > 0) return;
+            pushUndoState();
+            queueSave();
+        });
         gantt.attachEvent('onAfterTaskDrag', function (id, mode) {
-            applyRollingCalendarRange(false);
+            applyRollingCalendarRange();
             pushUndoState();
             queueSave();
             if (mode === 'move' || mode === 'resize' || mode === 'progress') {
-                runSchedule({ skipScroll: true });
+                queueRunSchedule({ skipScroll: true, batch: true, light: true });
             }
             refreshTimelinePanBar();
         });
@@ -4066,32 +4078,23 @@
         });
 
         function runGanttRenderHooks() {
-            if (!schedulePerformanceMode) refreshWbsCodes();
-            updateStatusBar();
-            updateDeadlineMarkers();
+            queueStatusBarUpdate();
             ensureTimelineScrollbar();
             restoreTimelineScrollAfterRender();
             refreshTimelinePanBar();
             if (!bindColumnResizeEnhancements.done) bindColumnResizeEnhancements();
             if (!bindGridSelectionHandlers.done) bindGridSelectionHandlers();
-            if (!schedulePerformanceMode) applyCellAlignToDom();
             updateAlignToolbarButtons();
             if (isOverlayMode()) applyOverlayDomLayout();
             syncWbsGutterSpans();
             ensureAddColumnHeader();
             bindWbsGutterScrollSync();
             enforceGridColumnExtents();
-            if (!schedulePerformanceMode) queueEnforceGridColumnExtents();
         }
 
         gantt.attachEvent('onGanttRender', () => {
-            updateStatusBar();
-            if (schedulePerformanceMode) {
-                clearTimeout(ganttRenderHookTimer);
-                ganttRenderHookTimer = setTimeout(runGanttRenderHooks, 200);
-                return;
-            }
-            runGanttRenderHooks();
+            clearTimeout(ganttRenderHookTimer);
+            ganttRenderHookTimer = setTimeout(runGanttRenderHooks, 120);
         });
 
         document.addEventListener('keydown', onScheduleKeyDown);
@@ -4099,14 +4102,14 @@
         initBaselineBars();
         initBarLabels();
         initTimelineEngine();
-        applyRollingCalendarRange(true);
-
+        applyRollingCalendarRange();
 
         syncGridTableWidth();
         gantt.init('gantt_here');
         sanitizeAllTaskDates();
         initGanttLayout();
         ganttReady = true;
+        schedulePerformanceMode = true;
         repairSqueezedColumnWidths();
         enforceGridColumnExtents();
         bindColumnResizeEnhancements();
@@ -4263,7 +4266,7 @@
         else parseSchedule();
         if ((payload.data?.length || 0) > 200) gantt.config.smart_rendering = true;
         sanitizeAllTaskDates();
-        runSchedule({ skipScroll: true, skipSave: true, skipLog: importing, batch: true });
+        runSchedule({ skipScroll: true, skipSave: true, skipLog: importing, batch: true, light: importing });
         baselines = payload.baselines || [];
         if (payload.settings) scheduleSettings = Object.assign(scheduleSettings, payload.settings);
         applyP6RowMetrics();
@@ -4293,7 +4296,7 @@
         if (!importing) gantt.eachTask(t => applyTaskBarColor(t));
         syncScheduleProjectContext();
         applyBaselineVariance();
-        applyRollingCalendarRange(true);
+        applyRollingCalendarRange();
         if (!importing) updateRowHeightsForLabels();
         syncScheduleProjectContext();
         queueGanttLayoutSync();
@@ -4315,8 +4318,8 @@
             }, importing ? 300 : 150);
         }
         applySchedulePerformanceProfile();
-        if (schedulePerformanceMode) {
-            showScheduleAlert(`Large schedule loaded (${scheduleTaskCount} activities). Switched to performance mode for smoother scrolling.`, 'info');
+        if (importing && scheduleTaskCount >= 60) {
+            showScheduleAlert(`Schedule imported (${scheduleTaskCount} activities). Performance mode enabled — week timescale and tight calendar for smoother scrolling.`, 'info');
         }
         return true;
         } finally {
@@ -4327,11 +4330,11 @@
     function finalizeScheduleImport(payload) {
         setSaveStatus('Finalizing import…');
         requestAnimationFrame(() => {
+            applySchedulePerformanceProfile();
             gantt.eachTask(t => applyTaskBarColor(t));
-            updateRowHeightsForLabels();
-            applyCellAlignToDom();
+            updateDeadlineMarkers();
             gantt.render();
-            syncGanttLayout();
+            syncGanttLayout({ light: true });
             pushUndoState();
             queueSave();
             const count = payload?.data?.length || 0;
@@ -4529,7 +4532,7 @@
 
     function focusInitialTimelineView() {
         if (!ganttReady) return;
-        applyRollingCalendarRange(true);
+        applyRollingCalendarRange();
         gantt.render();
         const range = gantt.getSubtaskDates?.();
         if (range?.start_date && range?.end_date) fitScheduleView();
@@ -4543,7 +4546,7 @@
             ? gantt.dateFromPos(gantt.getScrollState().x + getTimelineWidth() / 2)
             : null;
         applyTimescaleScales(scale);
-        applyRollingCalendarRange(true);
+        applyRollingCalendarRange();
         gantt.render();
         if (anchor) scrollTimelineToDate(anchor, getTimelineWidth() / 2);
         document.querySelectorAll('[data-timescale]').forEach(btn => {
@@ -4969,7 +4972,7 @@
         const anchor = gantt.getScrollState?.() && typeof gantt.dateFromPos === 'function'
             ? gantt.dateFromPos(gantt.getScrollState().x + getTimelineWidth() / 2)
             : null;
-        applyRollingCalendarRange(true);
+        applyRollingCalendarRange();
         gantt.render();
         if (anchor) scrollTimelineToDate(anchor, getTimelineWidth() / 2);
     }
@@ -5119,7 +5122,8 @@
         a.click();
     }
 
-    function rollupSummaryProgress() {
+    function rollupSummaryProgress(options) {
+        const skipRefresh = !!(options && options.batch);
         function walk(parentId) {
             const kids = gantt.getChildren(parentId) || [];
             kids.forEach(walk);
@@ -5132,7 +5136,7 @@
             if (total <= 0) return;
             const earned = children.reduce((s, c) => s + (Number(c.duration) || 0) * effectiveProgress(c), 0);
             t.progress = earned / total;
-            gantt.refreshTask(parentId);
+            if (!skipRefresh) gantt.refreshTask(parentId);
         }
         walk(0);
     }
@@ -5152,7 +5156,10 @@
         const tasks = [];
         gantt.eachTask(t => tasks.push(Object.assign({}, t)));
         const links = gantt.getLinks().map(l => Object.assign({}, l));
-        const { updates, wbsMap } = CasePMSchedule.runCPM(tasks, links, { dataDate });
+        const { updates, wbsMap } = CasePMSchedule.runCPM(tasks, links, {
+            dataDate,
+            skipEvm: !!opts.light
+        });
         const evmFields = ['bcws', 'bcwp', 'acwp', 'cpi', 'spi', 'cost_variance', 'schedule_variance', 'schedule_percent_complete'];
         const cpmFields = ['early_start', 'early_finish', 'late_start', 'late_finish'];
         const applyUpdate = (patch, id) => {
@@ -5176,16 +5183,21 @@
         } else {
             updates.forEach(applyUpdate);
         }
-        sanitizeAllTaskDates();
-        applyBaselineVariance();
-        rollupSummaryProgress();
-        applyRollingCalendarRange(false);
+        if (!opts.light) {
+            sanitizeAllTaskDates();
+            applyBaselineVariance();
+            rollupSummaryProgress({ batch: opts.batch });
+        }
+        applyRollingCalendarRange();
         wbsCodeMap = wbsMap || CasePMSchedule.buildWbsMap(tasks);
         gantt.render();
         if (!opts.skipScroll) scrollToScheduleRange();
-        updateDataDateMarker();
-        syncGanttLayout();
-        updateStatusBar();
+        if (!opts.light) {
+            updateDataDateMarker();
+            updateDeadlineMarkers();
+        }
+        syncGanttLayout(opts.light ? { light: true } : undefined);
+        queueStatusBarUpdate();
         if (!opts.skipSave) queueSave();
         if (!opts.skipLog) logActivity('Ran CPM schedule', `${updates.size} activities calculated`);
     }
@@ -6204,7 +6216,7 @@
             if (t.type !== 'project' && isTaskCritical(t)) critical++;
         });
         const taskTotal = tasks.length;
-        const showLinks = ps.include_predecessor_links !== false && showInlineBars && taskTotal <= 300;
+        const showLinks = ps.include_predecessor_links !== false && showInlineBars && taskTotal <= 200;
         const projectEvm = CasePMSchedule.computeProjectEVM
             ? CasePMSchedule.computeProjectEVM(tasks, dataDate)
             : null;
@@ -6450,10 +6462,10 @@
                 printBuildInProgress = false;
             }
         };
-        if (scheduleTaskCount > 200) {
+        if (scheduleTaskCount > 120) {
             setTimeout(runPrint, 30);
         } else {
-            runPrint();
+            requestAnimationFrame(runPrint);
         }
     }
 
@@ -6561,8 +6573,8 @@
         syncScheduleProjectContext();
         configureGantt();
         await loadSchedule();
-        runSchedule({ skipScroll: true });
-        applyRollingCalendarRange(true);
+        applySchedulePerformanceProfile();
+        applyRollingCalendarRange();
         applyTimescaleScales(scheduleSettings.timescale || 'day');
         updateRowHeightsForLabels();
         gantt.render();
