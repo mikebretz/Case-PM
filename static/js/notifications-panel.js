@@ -101,11 +101,18 @@
 
   window.CasePMNotifications = { refresh, open: () => { refresh(); panel()?.showModal(); } };
 
-  document.getElementById('notificationsBell')?.addEventListener('click', () => window.CasePMNotifications.open());
-  document.getElementById('notificationsMarkAll')?.addEventListener('click', markAllRead);
-  document.getElementById('notificationsViewAll')?.addEventListener('click', () => { panel()?.close(); window.location.href = '/notifications'; });
+  function bindUi() {
+    document.getElementById('notificationsBell')?.addEventListener('click', () => window.CasePMNotifications.open());
+    document.getElementById('notificationsMarkAll')?.addEventListener('click', markAllRead);
+    document.getElementById('notificationsViewAll')?.addEventListener('click', () => { panel()?.close(); window.location.href = '/notifications'; });
+  }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', refresh);
-  else refresh();
-  setInterval(refresh, 60000);
+  function boot() {
+    bindUi();
+    refresh();
+    setInterval(refresh, 60000);
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
 })();
