@@ -451,68 +451,54 @@ body.schedule-chart-resizing {
 .schedule-split-mode .schedule-timeline-pan {
     display: none !important;
 }
-/* Split layout: native dhtmlx grid + resizer + timeline (reliable scroll & column sync) */
+/* Split layout: native dhtmlx grid | resizer | timeline | scroll */
+.schedule-split-mode #gantt_here,
 .schedule-split-mode #gantt_here .gantt_layout_root {
     width: 100% !important;
     height: 100% !important;
 }
 .schedule-split-mode #gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1) {
-    position: relative !important;
     overflow: hidden !important;
-    min-width: 200px !important;
+    min-width: 280px !important;
 }
+.schedule-split-mode #gantt_here .gantt_resizer,
 .schedule-split-mode #gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(2) {
     display: block !important;
-    flex: 0 0 4px !important;
-    width: 4px !important;
-    min-width: 4px !important;
-    max-width: 4px !important;
+    flex: 0 0 6px !important;
+    width: 6px !important;
+    min-width: 6px !important;
+    max-width: 6px !important;
+    background: #5a5a5a !important;
+    cursor: col-resize !important;
+    z-index: 60 !important;
 }
 .schedule-split-mode #gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(3) {
-    position: relative !important;
     overflow: hidden !important;
     flex: 1 1 auto !important;
     min-width: 240px !important;
-}
-.schedule-split-mode #gantt_here .gantt_layout_cell:nth-child(3) .gantt_data_area,
-.schedule-split-mode #gantt_here .gantt_layout_cell:nth-child(3) .gantt_bars_area,
-.schedule-split-mode #gantt_here .gantt_layout_cell:nth-child(3) .gantt_task_bg {
-    height: 100% !important;
-    min-height: 0 !important;
 }
 .schedule-split-mode #gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(4) {
     flex: 0 0 16px !important;
     width: 16px !important;
     min-width: 16px !important;
 }
-.schedule-split-mode #gantt_here .gantt_grid_scale,
-.schedule-split-mode #gantt_here .gantt_grid_data {
-    width: var(--sched-grid-min-width, 640px) !important;
-    min-width: var(--sched-grid-min-width, 640px) !important;
-    max-width: none !important;
+/* Native column flow in split mode — headers must match data cells */
+.schedule-split-mode #gantt_here .gantt_grid_scale .gantt_grid_head_cell {
+    position: relative !important;
+    left: auto !important;
+    top: auto !important;
 }
-.schedule-split-mode #gantt_here .gantt_grid {
-    min-width: var(--sched-grid-min-width, 640px) !important;
-    width: var(--sched-grid-min-width, 640px) !important;
-    max-width: none !important;
+.schedule-split-mode #gantt_here .gantt_grid_data .gantt_row > .gantt_cell {
+    position: relative !important;
+    left: auto !important;
+    top: auto !important;
+    height: auto !important;
 }
-.schedule-split-mode #gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(3) .gantt_layout_content {
-    overflow: hidden !important;
-    height: 100% !important;
-}
-.schedule-split-mode #gantt_here [data-cell-id="scrollVer"] {
-    height: 100% !important;
-    min-height: 0 !important;
-}
+.schedule-split-mode #gantt_here [data-cell-id="scrollVer"],
 .schedule-split-mode #gantt_here [data-cell-id="scrollVer"] .gantt_layout_outer_scroll {
     height: 100% !important;
+    min-height: 0 !important;
     overflow-y: scroll !important;
-    overflow-x: hidden !important;
-}
-.schedule-split-mode #gantt_here .gantt_grid_scale .gantt_grid_head,
-.schedule-split-mode #gantt_here .gantt_grid_data .gantt_row {
-    width: var(--sched-grid-min-width, 640px) !important;
-    min-width: var(--sched-grid-min-width, 640px) !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) .schedule-timeline-pan {
     flex: 0 0 30px;
