@@ -1253,6 +1253,8 @@
 
     function wbsCode(task) {
         if (!task) return '';
+        const imported = String(task.wbs || '').trim();
+        if (imported) return imported;
         if (typeof gantt !== 'undefined' && typeof gantt.getWBSCode === 'function') {
             try { return gantt.getWBSCode(task); } catch (e) { /* community edition */ }
         }
@@ -1272,7 +1274,12 @@
     function refreshWbsCodes() {
         if (!ganttReady) return;
         const tasks = [];
-        gantt.eachTask(t => tasks.push({ id: t.id, parent: t.parent, $index: gantt.getTaskIndex(t.id) }));
+        gantt.eachTask(t => tasks.push({
+            id: t.id,
+            parent: t.parent,
+            $index: gantt.getTaskIndex(t.id),
+            wbs: t.wbs
+        }));
         wbsCodeMap = CasePMSchedule.buildWbsMap(tasks);
     }
 
@@ -1513,6 +1520,22 @@
             }
             enforceGridColumnExtents();
         }, force ? 0 : 32);
+    }
+
+    function refreshGanttGridLayout(options = {}) {
+        if (!ganttReady) return;
+        restoreColumnWidthsFromConfig();
+        repairSqueezedColumnWidths();
+        updateGridWidth();
+        applyRollingCalendarRange();
+        if (typeof gantt.setSizes === 'function') gantt.setSizes();
+        gantt.render();
+        syncGanttLayout({ forceLayout: true, refreshScroll: options.refreshScroll !== false });
+        enforceGridColumnExtents({ syncRows: true });
+        positionChartResizerVisual();
+        scheduleGridHeaderLayout(true);
+        bindVerticalScrollSync();
+        if (options.focusTimeline) focusInitialTimelineView();
     }
 
     function layoutColumnResizeGrips(metrics) {
@@ -4147,10 +4170,13 @@
         return toGanttDate(value);
     }
 
-    function normalizeTaskDates(data) {
+    function normalizeTaskDates(data, options) {
+        const preserveMissing = !!(options?.importing);
         const today = CasePMSchedule.formatDate(new Date());
         (data || []).forEach(task => {
-            let start = toGanttDate(task.start_date) || toGanttDate(today);
+            let start = toGanttDate(task.start_date);
+            if (!start && !preserveMissing) start = toGanttDate(today);
+            if (!start) return;
             task.start_date = CasePMSchedule.formatDate(start);
             const dur = Math.max(0, Number(task.duration) || 0);
             if (task.type === 'milestone') {
@@ -5324,7 +5350,7 @@
         columnWidths = payload.columnWidths || {};
         columnOrder = payload.columnOrder || payload.settings?.column_order || [];
         scheduleSettings.column_order = columnOrder.slice();
-        normalizeTaskDates(payload.data);
+        normalizeTaskDates(payload.data, { importing });
         gantt.config.columns = buildColumnConfig();
         repairSqueezedColumnWidths();
         ensureDefaultColumnAlignments();
@@ -5415,13 +5441,8 @@
         setTimeout(() => {
             applyRollingCalendarRange();
             applySchedulePerformanceProfile();
-            if (typeof gantt.setSizes === 'function') gantt.setSizes();
-            syncGanttLayout({ forceLayout: true, refreshScroll: true });
-            enforceGridColumnExtents();
-            positionChartResizerVisual();
-            scheduleGridHeaderLayout(true);
-            focusInitialTimelineView();
-            bindVerticalScrollSync();
+            refreshGanttGridLayout({ focusTimeline: importing, refreshScroll: true });
+            if (!importing) focusInitialTimelineView();
         }, importing ? 120 : 40);
         if (importing && scheduleTaskCount >= SCHEDULE_PERF_TASK_THRESHOLD) {
             showScheduleAlert(`Schedule imported (${scheduleTaskCount} activities). Virtual scrolling enabled for smoother navigation.`, 'info');
@@ -5446,6 +5467,9 @@
             const linkCount = payload?.links?.length || 0;
             setSaveStatus('Import complete');
             logActivity('Imported schedule', `${count} activities, ${linkCount} links`);
+            refreshGanttGridLayout({ focusTimeline: true });
+            setTimeout(() => refreshGanttGridLayout({ focusTimeline: true }), 150);
+            setTimeout(() => refreshGanttGridLayout({ focusTimeline: true }), 400);
         });
     }
 
@@ -6424,8 +6448,10 @@
                 document.getElementById('tabGantt')?.classList.add('active-view');
                 if (ganttReady) {
                     resizeGanttHost();
-                    gantt.render();
-                    syncGanttLayout();
+                    requestAnimationFrame(() => {
+                        refreshGanttGridLayout({ focusTimeline: false });
+                        setTimeout(() => refreshGanttGridLayout({ focusTimeline: false }), 120);
+                    });
                 }
             } else if (view === 'calendar') {
                 document.getElementById('calendarViewPanel')?.classList.remove('hidden');
