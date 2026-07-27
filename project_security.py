@@ -116,17 +116,25 @@ def _entity_project_id(model_name: str, entity_id: int):
 
 
 def resolve_upload_project_id(path: str | None) -> int | None:
+    return resolve_upload_access(path)[0]
+
+
+def resolve_upload_access(path: str | None) -> tuple[int | None, str | None]:
+    """Return (project_id, entity_kind) for an upload path."""
     p = (path or '').split('?', 1)[0]
+    logo_match = _PROJECT_LOGO_UPLOAD_RE.match(p)
+    if logo_match:
+        return int(logo_match.group('pid')), 'logo'
     for pattern, model_name in _UPLOAD_RULES:
         m = pattern.match(p)
         if not m:
             continue
         groups = m.groupdict()
         if 'pid' in groups:
-            return _entity_project_id('__project__', int(groups['pid']))
+            return _entity_project_id('__project__', int(groups['pid'])), '__project__'
         if 'eid' in groups:
-            return _entity_project_id(model_name, int(groups['eid']))
-    return None
+            return _entity_project_id(model_name, int(groups['eid'])), model_name
+    return None, None
 
 
 def _request_project_id() -> int | None:
@@ -153,21 +161,43 @@ def _resolve_api_entity_project_id(path: str) -> int | None:
     return None
 
 
-def _check_project_access(user, project_id: int | None):
-    from financial_security import require_financial_project_access
+_FINANCIAL_UPLOAD_ENTITIES = frozenset({
+    'Commitment', 'ChangeOrder', 'PotentialChangeOrder',
+})
+
+_PROJECT_LOGO_UPLOAD_RE = re.compile(r'^/uploads/projects/(?P<pid>\d+)/logo$')
+_PROJECT_LOGO_API_RE = re.compile(r'^/api/projects/(?P<pid>\d+)/logo$')
+
+
+def _check_general_project_access(user, project_id: int | None):
+    """Project assets (logos, photos, documents) — honors enforce_project_membership setting."""
+    from project_access import user_can_access_project
     Project = _load_model('Project')
-    return require_financial_project_access(user, project_id, Project)
+    if not user_can_access_project(user, project_id, Project):
+        raise PermissionError('You do not have access to this project.')
+    return int(project_id)
+
+
+def _check_project_access(user, project_id: int | None, *, entity_kind: str | None = None):
+    if entity_kind in _FINANCIAL_UPLOAD_ENTITIES:
+        from financial_security import require_financial_project_access
+        Project = _load_model('Project')
+        return require_financial_project_access(user, project_id, Project)
+    return _check_general_project_access(user, project_id)
 
 
 def guard_upload_request(user, path: str | None):
     """Return a Flask response tuple when access is denied, else None."""
     if user is None or not getattr(user, 'is_authenticated', False):
         return jsonify({'error': 'Authentication required'}), 401
-    project_id = resolve_upload_project_id(path)
+    project_id, entity_kind = resolve_upload_access(path)
     if project_id is None:
         return jsonify({'error': 'Not found'}), 404
     try:
-        _check_project_access(user, project_id)
+        if entity_kind == 'logo':
+            _check_general_project_access(user, project_id)
+        else:
+            _check_project_access(user, project_id, entity_kind=entity_kind)
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
     except PermissionError as exc:
@@ -193,9 +223,27 @@ def guard_api_project_scope(user, path: str | None, method: str | None = None):
         pass
 
     entity_pid = _resolve_api_entity_project_id(p)
-    if entity_pid is not None:
+    logo_match = _PROJECT_LOGO_API_RE.match(p)
+    if logo_match:
         try:
-            _check_project_access(user, entity_pid)
+            _check_general_project_access(user, int(logo_match.group('pid')))
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        return None
+    if entity_pid is not None:
+        entity_kind = None
+        for pattern, model_name in _ENTITY_PATH_RULES:
+            m = pattern.match(p)
+            if m:
+                entity_kind = model_name
+                break
+        try:
+            if entity_kind == '__project__':
+                _check_general_project_access(user, entity_pid)
+            else:
+                _check_project_access(user, entity_pid, entity_kind=entity_kind)
         except ValueError as exc:
             return jsonify({'error': str(exc)}), 400
         except PermissionError as exc:

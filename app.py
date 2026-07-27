@@ -5413,7 +5413,10 @@ def api_delete_original_contract(project_id):
 @app.route('/api/projects/<int:project_id>/logo', methods=['GET'])
 @login_required
 def api_get_project_logo(project_id):
+    from project_access import user_can_access_project
     Project.query.get_or_404(project_id)
+    if not user_can_access_project(current_user, project_id, Project):
+        return jsonify({'error': 'You do not have access to this project.'}), 403
     folder = _project_asset_folder(project_id, 'projects')
     meta = _read_project_asset_meta(project_id, 'projects')
     if not meta or not meta.get('filename'):
@@ -5429,7 +5432,10 @@ def api_get_project_logo(project_id):
 @app.route('/api/projects/<int:project_id>/logo', methods=['POST'])
 @login_required
 def api_upload_project_logo(project_id):
+    from project_access import user_can_access_project
     Project.query.get_or_404(project_id)
+    if not user_can_access_project(current_user, project_id, Project):
+        return jsonify({'error': 'You do not have access to this project.'}), 403
     file = request.files.get('file')
     if not file or not file.filename:
         return jsonify({'error': 'file required'}), 400
@@ -5515,6 +5521,9 @@ def serve_original_contract_pdf(project_id):
 @app.route('/uploads/projects/<int:project_id>/logo')
 @login_required
 def serve_project_logo(project_id):
+    from project_access import user_can_access_project
+    if not user_can_access_project(current_user, project_id, Project):
+        return jsonify({'error': 'Forbidden'}), 403
     meta = _read_project_asset_meta(project_id, 'projects')
     if not meta or not meta.get('filename'):
         return jsonify({'error': 'not found'}), 404
@@ -5526,11 +5535,11 @@ def serve_project_logo(project_id):
         'jpeg': 'image/jpeg',
         'gif': 'image/gif',
         'webp': 'image/webp',
+        'svg': 'image/svg+xml',
     }
     if ext == 'svg':
         from flask import make_response
         resp = make_response(send_from_directory(directory, meta['filename'], mimetype='image/svg+xml'))
-        resp.headers['Content-Security-Policy'] = "default-src 'none'; style-src 'unsafe-inline'"
         resp.headers['X-Content-Type-Options'] = 'nosniff'
         return resp
     return send_from_directory(directory, meta['filename'], mimetype=mimetypes.get(ext, 'application/octet-stream'))
