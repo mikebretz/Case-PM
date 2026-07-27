@@ -40,6 +40,7 @@
         data_date: typeof CasePMSchedule !== 'undefined' ? CasePMSchedule.formatDate(new Date()) : '',
         calendar: 'standard',
         lookahead_days: 14,
+        lookahead_plans: [],
         timescale: 'day',
         default_bar_color: '#3794ff',
         critical_bar_color: '#f1707b',
@@ -129,6 +130,219 @@
     const taskGutterCache = new Map();
     let schedulePayloadSource = '';
     let scheduleImportMeta = null;
+    let lookaheadDraft = null;
+
+    function lookAheadUid() {
+        return 'la-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+    }
+
+    function formatLookAheadDate(value) {
+        const d = toGanttDate(value);
+        if (!d) return '';
+        return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+    }
+
+    function parseLookAheadDateInput(str) {
+        if (!str || !String(str).trim()) return null;
+        const raw = String(str).trim();
+        const direct = toGanttDate(raw);
+        if (direct) return direct;
+        const m = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+        if (m) {
+            let y = parseInt(m[3], 10);
+            if (y < 100) y += 2000;
+            const dt = new Date(y, parseInt(m[1], 10) - 1, parseInt(m[2], 10));
+            if (!Number.isNaN(dt.getTime())) return dt;
+        }
+        return null;
+    }
+
+    function normalizeLookAheadDateInput(str) {
+        const d = parseLookAheadDateInput(str);
+        return d ? formatLookAheadDate(d) : (str || '').trim();
+    }
+
+    function getLookAheadContext() {
+        const dataDate = CasePMSchedule.parseDate(document.getElementById('dataDateInput')?.value) || new Date();
+        const horizon = parseInt(document.getElementById('lookaheadDaysInput')?.value, 10) || 14;
+        const periodKey = formatLookAheadDate(dataDate);
+        return { dataDate, horizon, periodKey };
+    }
+
+    function computeLookAheadRowsFromSchedule() {
+        const tasks = [];
+        gantt.eachTask(t => tasks.push(Object.assign({}, t)));
+        const links = gantt.getLinks().map(l => Object.assign({}, l));
+        const { dataDate, horizon } = getLookAheadContext();
+        const items = CasePMSchedule.computeLookAhead(tasks, links, { dataDate, horizonWorkDays: horizon, minDuration: 3 });
+        const groups = CasePMSchedule.groupLookAheadByWbs(tasks, items);
+        const rows = [];
+        groups.forEach((groupItems, wbsName) => {
+            groupItems.forEach(item => {
+                rows.push({
+                    id: lookAheadUid(),
+                    wbsGroup: wbsName,
+                    priority: item.priority || 'Normal',
+                    activity: item.task?.text || '',
+                    start: formatLookAheadDate(item.start || item.task?.start_date),
+                    finish: formatLookAheadDate(item.end || item.task?.end_date),
+                    resource: item.task?.resource || item.task?.owner || '',
+                    why: (item.reasons || []).join(' · '),
+                    notes: '',
+                    taskId: item.task?.id ?? null
+                });
+            });
+        });
+        return rows;
+    }
+
+    function getLookAheadRowsForRender() {
+        const ctx = getLookAheadContext();
+        if (lookaheadDraft
+            && lookaheadDraft.periodKey === ctx.periodKey
+            && lookaheadDraft.horizon === ctx.horizon) {
+            return lookaheadDraft.rows.slice();
+        }
+        const saved = (scheduleSettings.lookahead_plans || []).find(p => p.period_key === ctx.periodKey && (p.horizon_days || 14) === ctx.horizon);
+        if (saved?.rows?.length) return saved.rows.map(r => ({ ...r }));
+        return computeLookAheadRowsFromSchedule();
+    }
+
+    function syncLookAheadDraftFromDom() {
+        const tbody = document.getElementById('lookaheadTableBody');
+        if (!tbody) return;
+        const ctx = getLookAheadContext();
+        const rows = [];
+        tbody.querySelectorAll('tr[data-row-id]').forEach(tr => {
+            rows.push({
+                id: tr.dataset.rowId,
+                wbsGroup: tr.querySelector('.la-wbs')?.value?.trim() || '',
+                priority: tr.querySelector('.la-priority')?.value || 'Normal',
+                activity: tr.querySelector('.la-activity')?.value?.trim() || '',
+                start: normalizeLookAheadDateInput(tr.querySelector('.la-start')?.value),
+                finish: normalizeLookAheadDateInput(tr.querySelector('.la-finish')?.value),
+                resource: tr.querySelector('.la-resource')?.value?.trim() || '',
+                why: tr.querySelector('.la-why')?.value?.trim() || '',
+                notes: tr.querySelector('.la-notes')?.value?.trim() || '',
+                taskId: tr.dataset.taskId ? Number(tr.dataset.taskId) : null
+            });
+        });
+        lookaheadDraft = { periodKey: ctx.periodKey, horizon: ctx.horizon, rows };
+        return rows;
+    }
+
+    function bindLookAheadTableEvents() {
+        const wrap = document.getElementById('lookaheadContent');
+        if (!wrap || wrap.dataset.laBound) return;
+        wrap.dataset.laBound = '1';
+        wrap.addEventListener('input', () => syncLookAheadDraftFromDom());
+        wrap.addEventListener('change', e => {
+            if (e.target.matches('.la-start, .la-finish')) {
+                e.target.value = normalizeLookAheadDateInput(e.target.value);
+            }
+            syncLookAheadDraftFromDom();
+        });
+        wrap.addEventListener('click', e => {
+            const del = e.target.closest('.la-delete-row');
+            if (del) {
+                del.closest('tr')?.remove();
+                syncLookAheadDraftFromDom();
+                renderLookAhead({ skipReload: true });
+                return;
+            }
+            const focus = e.target.closest('.la-focus-task');
+            if (focus && focus.dataset.taskId) focusActivity(focus.dataset.taskId);
+        });
+    }
+
+    function populateLookAheadPlanSelect() {
+        const sel = document.getElementById('lookaheadPlanSelect');
+        if (!sel) return;
+        const plans = (scheduleSettings.lookahead_plans || []).slice().sort((a, b) => (b.saved_at || '').localeCompare(a.saved_at || ''));
+        const ctx = getLookAheadContext();
+        let html = `<option value="">Current period (${ctx.periodKey})</option>`;
+        plans.forEach(p => {
+            const label = p.title || `Look-ahead ${p.period_key}`;
+            html += `<option value="${p.id}">${label}</option>`;
+        });
+        sel.innerHTML = html;
+    }
+
+    function saveLookAheadPlan() {
+        const rows = syncLookAheadDraftFromDom();
+        const ctx = getLookAheadContext();
+        if (!scheduleSettings.lookahead_plans) scheduleSettings.lookahead_plans = [];
+        const title = `Two-week look-ahead — ${ctx.periodKey}`;
+        const existing = scheduleSettings.lookahead_plans.findIndex(p => p.period_key === ctx.periodKey && (p.horizon_days || 14) === ctx.horizon);
+        const plan = {
+            id: existing >= 0 ? scheduleSettings.lookahead_plans[existing].id : lookAheadUid(),
+            title,
+            period_key: ctx.periodKey,
+            data_date: CasePMSchedule.formatDate(ctx.dataDate),
+            horizon_days: ctx.horizon,
+            saved_at: new Date().toISOString(),
+            rows
+        };
+        if (existing >= 0) scheduleSettings.lookahead_plans[existing] = plan;
+        else scheduleSettings.lookahead_plans.unshift(plan);
+        scheduleSettings.data_date = plan.data_date;
+        scheduleSettings.lookahead_days = ctx.horizon;
+        lookaheadDraft = { periodKey: ctx.periodKey, horizon: ctx.horizon, rows: rows.map(r => ({ ...r })) };
+        queueSave();
+        populateLookAheadPlanSelect();
+        setSaveStatus('Look-ahead saved');
+        showScheduleAlert(`Saved ${title}.`, 'success');
+    }
+
+    function loadSelectedLookAheadPlan() {
+        const sel = document.getElementById('lookaheadPlanSelect');
+        const planId = sel?.value;
+        if (!planId) {
+            lookaheadDraft = null;
+            renderLookAhead();
+            return;
+        }
+        const plan = (scheduleSettings.lookahead_plans || []).find(p => p.id === planId);
+        if (!plan) return;
+        lookaheadDraft = {
+            periodKey: plan.period_key,
+            horizon: plan.horizon_days || 14,
+            rows: (plan.rows || []).map(r => ({ ...r }))
+        };
+        const dd = document.getElementById('dataDateInput');
+        const horizonEl = document.getElementById('lookaheadDaysInput');
+        if (dd && plan.data_date) dd.value = plan.data_date;
+        if (horizonEl) horizonEl.value = plan.horizon_days || 14;
+        renderLookAhead({ skipReload: true });
+    }
+
+    function refreshLookAheadFromSchedule() {
+        if (lookaheadDraft?.rows?.length) {
+            if (!confirm('Replace current look-ahead rows with a fresh pull from the schedule?')) return;
+        }
+        lookaheadDraft = null;
+        renderLookAhead();
+    }
+
+    function addLookAheadRow() {
+        syncLookAheadDraftFromDom();
+        const ctx = getLookAheadContext();
+        const rows = lookaheadDraft?.rows || getLookAheadRowsForRender();
+        rows.push({
+            id: lookAheadUid(),
+            wbsGroup: '',
+            priority: 'Normal',
+            activity: '',
+            start: ctx.periodKey,
+            finish: '',
+            resource: '',
+            why: '',
+            notes: '',
+            taskId: null
+        });
+        lookaheadDraft = { periodKey: ctx.periodKey, horizon: ctx.horizon, rows };
+        renderLookAhead({ skipReload: true });
+    }
 
     function countScheduleTasks() {
         if (!ganttReady) return 0;
@@ -4802,7 +5016,8 @@
                 print_wbs_colors: true,
                 include_schedule_chart: false,
                 include_evm: false,
-                include_footer: true
+                include_footer: true,
+                fit_timescale_to_page: true
             };
         }
         ensureHeaderFooterSettings();
@@ -5876,59 +6091,88 @@
         });
     }
 
-    function renderLookAhead() {
+    function renderLookAhead(options) {
         if (!ganttReady) {
             showScheduleAlert('Schedule is still loading…', 'warning');
             return;
         }
-        const tasks = [];
-        gantt.eachTask(t => tasks.push(Object.assign({}, t)));
-        const links = gantt.getLinks().map(l => Object.assign({}, l));
-        const dataDate = CasePMSchedule.parseDate(document.getElementById('dataDateInput')?.value) || new Date();
-        const horizon = parseInt(document.getElementById('lookaheadDaysInput')?.value, 10) || 14;
+        const opts = options || {};
+        const { dataDate, horizon, periodKey } = getLookAheadContext();
         scheduleSettings.data_date = CasePMSchedule.formatDate(dataDate);
         scheduleSettings.lookahead_days = horizon;
 
-        const items = CasePMSchedule.computeLookAhead(tasks, links, { dataDate, horizonWorkDays: horizon, minDuration: 3 });
-        const groups = CasePMSchedule.groupLookAheadByWbs(tasks, items);
+        if (!opts.skipReload) {
+            populateLookAheadPlanSelect();
+        }
+
+        const rows = getLookAheadRowsForRender();
+        if (!lookaheadDraft || lookaheadDraft.periodKey !== periodKey || lookaheadDraft.horizon !== horizon) {
+            lookaheadDraft = { periodKey, horizon, rows: rows.map(r => ({ ...r })) };
+        }
+
         const container = document.getElementById('lookaheadContent');
         if (!container) return;
 
-        if (!items.length) {
-            container.innerHTML = '<p class="text-zinc-400 text-center py-12">No major activities in the look-ahead window.</p>';
-            document.getElementById('lookaheadCount').textContent = '0';
-            return;
-        }
-
-        let html = `<div class="mb-4 flex flex-wrap gap-4 text-sm text-zinc-400">
-            <span>Data Date: <b class="text-white">${CasePMSchedule.formatDate(dataDate)}</b></span>
-            <span>Horizon: <b class="text-white">${horizon} work days</b></span>
-            <span>Activities: <b class="text-white">${items.length}</b></span>
-        </div>`;
-
-        groups.forEach((groupItems, wbsName) => {
-            html += `<div class="mb-6"><h3 class="text-sm font-semibold text-emerald-400 uppercase mb-2">${wbsName}</h3>
-                <table class="w-full text-sm bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-                <thead><tr class="border-b border-zinc-800 bg-zinc-950 text-zinc-400 text-xs uppercase">
-                    <th class="text-left px-4 py-2">Priority</th><th class="text-left px-4 py-2">Activity</th>
-                    <th class="text-left px-4 py-2">Start</th><th class="text-left px-4 py-2">Finish</th>
-                    <th class="text-left px-4 py-2">Resource</th><th class="text-left px-4 py-2">Why</th>
-                </tr></thead><tbody class="divide-y divide-zinc-800">`;
-            groupItems.forEach(item => {
-                const priClass = item.priority === 'High' ? 'text-red-400' : item.priority === 'Medium' ? 'text-amber-400' : 'text-zinc-400';
-                html += `<tr class="hover:bg-zinc-800/50">
-                    <td class="px-4 py-2 ${priClass}">${item.priority}</td>
-                    <td class="px-4 py-2 font-medium">${item.task.text}</td>
-                    <td class="px-4 py-2 text-zinc-400">${item.start}</td>
-                    <td class="px-4 py-2 text-zinc-400">${item.end || '—'}</td>
-                    <td class="px-4 py-2">${item.task.resource || '—'}</td>
-                    <td class="px-4 py-2 text-xs text-zinc-500">${item.reasons.join(' · ')}</td>
+        const priOptions = ['High', 'Medium', 'Normal'];
+        let bodyHtml = '';
+        if (!rows.length) {
+            bodyHtml = `<tr><td colspan="9" class="px-4 py-8 text-center text-zinc-500">No activities in this window. Click <b>Add row</b> or <b>Refresh from schedule</b>.</td></tr>`;
+        } else {
+            rows.forEach(row => {
+                const priClass = row.priority === 'High' ? 'text-red-400' : row.priority === 'Medium' ? 'text-amber-400' : 'text-zinc-300';
+                const priSel = priOptions.map(p => `<option value="${p}"${row.priority === p ? ' selected' : ''}>${p}</option>`).join('');
+                const focusBtn = row.taskId
+                    ? `<button type="button" class="la-focus-task text-sky-400 hover:text-sky-300 text-xs mr-1" data-task-id="${row.taskId}" title="Show on Gantt"><i class="fa-solid fa-arrow-up-right-from-square"></i></button>`
+                    : '';
+                bodyHtml += `<tr data-row-id="${row.id}" data-task-id="${row.taskId || ''}" class="lookahead-row">
+                    <td class="px-2 py-1"><select class="la-priority lookahead-input ${priClass}">${priSel}</select></td>
+                    <td class="px-2 py-1">${focusBtn}<input type="text" class="la-activity lookahead-input w-full" value="${escHtml(row.activity || '')}"></td>
+                    <td class="px-2 py-1"><input type="text" class="la-start lookahead-input w-full" value="${escHtml(row.start || '')}" placeholder="M/D/YYYY"></td>
+                    <td class="px-2 py-1"><input type="text" class="la-finish lookahead-input w-full" value="${escHtml(row.finish || '')}" placeholder="M/D/YYYY"></td>
+                    <td class="px-2 py-1"><input type="text" class="la-resource lookahead-input w-full" value="${escHtml(row.resource || '')}"></td>
+                    <td class="px-2 py-1"><input type="text" class="la-wbs lookahead-input w-full" value="${escHtml(row.wbsGroup || '')}"></td>
+                    <td class="px-2 py-1"><input type="text" class="la-why lookahead-input w-full text-xs" value="${escHtml(row.why || '')}"></td>
+                    <td class="px-2 py-1"><textarea class="la-notes lookahead-input w-full" rows="2">${escHtml(row.notes || '')}</textarea></td>
+                    <td class="px-2 py-1 text-center no-print"><button type="button" class="la-delete-row text-zinc-500 hover:text-red-400" title="Delete row"><i class="fa-solid fa-trash-can"></i></button></td>
                 </tr>`;
             });
-            html += '</tbody></table></div>';
-        });
-        container.innerHTML = html;
-        document.getElementById('lookaheadCount').textContent = items.length;
+        }
+
+        container.innerHTML = `
+            <div class="lookahead-meta mb-3 flex flex-wrap gap-4 text-sm text-zinc-400">
+                <span>Period start: <b class="text-white">${periodKey}</b></span>
+                <span>Horizon: <b class="text-white">${horizon} work days</b></span>
+                <span>Rows: <b class="text-white">${rows.length}</b></span>
+            </div>
+            <div class="lookahead-table-wrap overflow-auto border border-zinc-800 rounded-lg">
+                <table class="lookahead-table w-full text-sm">
+                    <thead>
+                        <tr class="lookahead-head text-xs uppercase text-zinc-400 border-b border-zinc-800 bg-zinc-950">
+                            <th class="text-left px-2 py-2 w-24">Priority</th>
+                            <th class="text-left px-2 py-2 min-w-[10rem]">Activity</th>
+                            <th class="text-left px-2 py-2 w-28">Start</th>
+                            <th class="text-left px-2 py-2 w-28">Finish</th>
+                            <th class="text-left px-2 py-2 w-28">Resource</th>
+                            <th class="text-left px-2 py-2 w-28">WBS</th>
+                            <th class="text-left px-2 py-2 min-w-[8rem]">Why</th>
+                            <th class="text-left px-2 py-2 min-w-[12rem]">Notes</th>
+                            <th class="text-center px-2 py-2 w-10 no-print"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="lookaheadTableBody">${bodyHtml}</tbody>
+                </table>
+            </div>`;
+
+        document.getElementById('lookaheadCount').textContent = String(rows.length);
+        bindLookAheadTableEvents();
+    }
+
+    function escHtml(str) {
+        return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
     }
 
     function renderTraceTable() {
@@ -7107,7 +7351,8 @@
     }
 
     function printLookAhead() {
-        renderLookAhead();
+        syncLookAheadDraftFromDom();
+        renderLookAhead({ skipReload: true });
         const panel = document.getElementById('lookaheadViewPanel');
         const deliver = () => {
             document.body.classList.add('printing-lookahead');
@@ -7265,6 +7510,7 @@
         toggleCriticalPath, toggleCriticalFilter, setBaseline, showBaselineManager, activateBaseline, deleteBaseline,
         undo, redo, fitScheduleView, scrollToToday, panTimeline, resetTimelineCalendar, filterTasks, exportCsv, focusTimelineOnTask,
         runSchedule, switchScheduleView, renderCalendarView, renderLookAhead, focusActivity, sortByStartDate, exportXer, exportMsProjectXml,
+        saveLookAheadPlan, refreshLookAheadFromSchedule, addLookAheadRow, loadSelectedLookAheadPlan,
         showAllOptionalColumns, hideAllOptionalColumns, showFeaturesChecklist, showKeyboardShortcuts,
         exportJson, importFile, printGantt, printLookAhead, showPrintSetup, savePrintSettings, setPrintColumnToggle, updatePrintChartWidthFieldState,
         showHeaderFooterSetup, saveHeaderFooterSettings, onHeaderLogoSelected, clearHeaderLogo,
