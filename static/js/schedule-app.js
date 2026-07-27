@@ -1409,13 +1409,12 @@
 
     function persistLayoutPaneWidths() {
         if (!ganttReady) return;
-        const host = document.getElementById('scheduleGanttHost');
-        if (!host?.classList.contains('schedule-overlay-mode')) return;
-        const overlayW = getGridOverlayWidth();
-        if (overlayW >= 120 && Math.abs((scheduleSettings.grid_overlay_width_px || 0) - overlayW) > 4) {
-            scheduleSettings.grid_overlay_width_px = overlayW;
+        const gridCell = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(1)');
+        const paneW = gridCell?.offsetWidth || getGridOverlayWidth();
+        if (paneW >= 120 && Math.abs((scheduleSettings.grid_overlay_width_px || 0) - paneW) > 4) {
+            scheduleSettings.grid_overlay_width_px = paneW;
             const hostW = document.getElementById('gantt_here')?.clientWidth;
-            if (hostW) scheduleSettings.timeline_pct = 1 - (overlayW / hostW);
+            if (hostW) scheduleSettings.timeline_pct = 1 - (paneW / hostW);
             scheduleSettings.timeline_width_px = null;
             queueSave();
         }
@@ -3168,10 +3167,8 @@
         if (reflow) {
             lastGridWidthKey = '';
             applyColumnWidthsToDom();
-            if (isOverlayMode()) {
-                applyOverlayDomLayout();
-                syncGanttLayout({ skipSetSizes: true, light: true });
-            }
+            if (isOverlayMode()) applyOverlayDomLayout();
+            syncGanttLayout({ skipSetSizes: true, light: true });
             applyCellAlignToDom();
             if (persist) queueSave();
         }
