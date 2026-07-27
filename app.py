@@ -6580,6 +6580,7 @@ def api_import_schedule_mpp():
         'payload': payload,
         'task_count': len(payload.get('data') or []),
         'link_count': len(payload.get('links') or []),
+        'import_meta': payload.get('import_meta') or {},
     })
 
 
