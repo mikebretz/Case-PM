@@ -2586,6 +2586,15 @@ def recovery_enter():
     return _complete_recovery_login(user, via='recovery token')
 
 
+@app.route('/api/session/touch', methods=['POST'])
+@login_required
+def api_session_touch():
+    """Record genuine user activity for idle timeout (not called by background polls)."""
+    from access_control import reset_session_activity
+    reset_session_activity()
+    return jsonify({'ok': True})
+
+
 @app.route('/logout')
 @login_required
 def logout():
@@ -2594,7 +2603,11 @@ def logout():
     clear_session_activity()
     mark_2fa_verified(False)
     logout_user()
-    flash('You have been logged out successfully.', 'info')
+    reason = (request.args.get('reason') or '').strip().lower()
+    if reason == 'idle':
+        flash('Your session expired due to inactivity. Please sign in again.', 'warning')
+    else:
+        flash('You have been logged out successfully.', 'info')
     nxt = (request.args.get('next') or '').strip()
     if nxt.startswith('/') and not nxt.startswith('//'):
         return redirect(nxt)

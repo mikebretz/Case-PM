@@ -400,6 +400,32 @@ def users_module_admin(user) -> bool:
         return False
 
 
+def should_extend_session_activity(endpoint: str | None, path: str | None) -> bool:
+    """Return False for automated background polls that must not keep sessions alive."""
+    ep = (endpoint or '').strip()
+    p = (path or request.path or '').strip()
+    if ep in {
+        'api_presence_heartbeat',
+        'api_developer_presence_list',
+        'api_developer_presence_session',
+        'api_developer_presence_thumbnail',
+        'static',
+        'favicon',
+    }:
+        return False
+    skip_prefixes = (
+        '/api/presence/',
+        '/api/developer/presence',
+    )
+    for prefix in skip_prefixes:
+        if p.startswith(prefix):
+            return False
+    # Notification list polling is background; user actions on that API still extend.
+    if p == '/api/notifications' and request.method == 'GET':
+        return False
+    return True
+
+
 def enforce_session_idle_timeout(current_user, endpoint: str | None):
     """
     Log out authenticated users after configured inactivity.
@@ -426,6 +452,7 @@ def enforce_session_idle_timeout(current_user, endpoint: str | None):
     last = session.get(SESSION_ACTIVITY_KEY)
     if last is not None and now - float(last) > timeout_min * 60:
         return True, timeout_min
-    session[SESSION_ACTIVITY_KEY] = now
-    session.modified = True
+    if should_extend_session_activity(endpoint, request.path):
+        session[SESSION_ACTIVITY_KEY] = now
+        session.modified = True
     return False, timeout_min
