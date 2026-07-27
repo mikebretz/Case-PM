@@ -56,22 +56,9 @@ echo Packages OK.
 
 echo.
 echo Checking Java for MS Project MPP import...
-where java >nul 2>&1
+"%PY%" scripts\ensure_java_runtime.py
 if errorlevel 1 (
-    echo WARNING: Java is not installed. Schedule MPP import will not work until Java is added.
-    echo Install Temurin 17 JRE from https://adoptium.net/ and restart this setup if needed.
-    choice /C YN /M "Try installing Java now with winget (requires internet)"
-    if not errorlevel 2 (
-        winget install -e --id EclipseAdoptium.Temurin.17.JRE --accept-package-agreements --accept-source-agreements
-        where java >nul 2>&1
-        if errorlevel 1 (
-            echo Java install did not complete. Install manually from https://adoptium.net/
-        ) else (
-            java -version
-        )
-    )
-) else (
-    java -version
+    echo WARNING: Java download did not complete. Run INSTALL-JAVA-FOR-MPP.bat later.
 )
 
 echo Verifying MPP import support...

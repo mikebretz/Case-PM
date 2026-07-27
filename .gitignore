@@ -16,3 +16,5 @@ instance/server.env
 *.log
 .DS_Store
 Thumbs.db
+vendor/java/
+vendor/java-download.zip
