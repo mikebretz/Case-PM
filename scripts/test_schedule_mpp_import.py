@@ -25,9 +25,18 @@ SAMPLE_MSPDI = b'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 class ScheduleMppImportTests(unittest.TestCase):
     def test_mpp_import_available(self):
-        from schedule_mpp_import import mpp_import_available
+        from schedule_mpp_import import mpp_import_status
 
-        self.assertTrue(mpp_import_available())
+        status = mpp_import_status()
+        self.assertTrue(status['packages_ok'])
+        self.assertTrue(status['available'], status)
+
+    def test_mpp_import_status_shape(self):
+        from schedule_mpp_import import mpp_import_status
+
+        status = mpp_import_status()
+        for key in ('available', 'packages_ok', 'java_ok', 'message', 'setup_hint'):
+            self.assertIn(key, status)
 
     def test_parse_mspdi_via_mpxj(self):
         from schedule_mpp_import import parse_mpp_bytes

@@ -6537,11 +6537,15 @@ def api_save_schedule():
 @login_required
 def api_import_schedule_mpp():
     """Import a native MS Project .mpp file into gantt schedule format."""
-    from schedule_mpp_import import MppImportError, mpp_import_available, parse_mpp_bytes
+    from schedule_mpp_import import MppImportError, mpp_import_status, parse_mpp_bytes
 
-    if not mpp_import_available():
+    import_status = mpp_import_status()
+    if not import_status['available']:
         return jsonify({
-            'error': 'MPP import is not available on this server (requires Java and the mpxj package).'
+            'error': import_status['message'] or 'MPP import is not available on this server.',
+            'setup_hint': import_status.get('setup_hint') or '',
+            'packages_ok': import_status.get('packages_ok'),
+            'java_ok': import_status.get('java_ok'),
         }), 503
 
     project_id = request.args.get('project_id', type=int)

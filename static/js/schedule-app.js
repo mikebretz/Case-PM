@@ -5414,7 +5414,8 @@
             });
             const body = await res.json().catch(() => ({}));
             if (!res.ok) {
-                throw new Error(body.error || `Import failed (${res.status})`);
+                const hint = body.setup_hint ? ` ${body.setup_hint}` : '';
+                throw new Error((body.error || `Import failed (${res.status})`) + hint);
             }
             const payload = body.payload;
             if (!payload || !payload.data) throw new Error('No tasks in file');

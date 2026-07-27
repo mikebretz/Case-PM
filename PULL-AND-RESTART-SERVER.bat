@@ -41,6 +41,20 @@ echo.
 echo Build on disk: %BUILD%
 echo.
 
+echo STEP 1b: Install / update Python packages...
+if exist "venv\Scripts\python.exe" (
+    "venv\Scripts\python.exe" -m pip install -r requirements.txt --quiet
+    if errorlevel 1 (
+        echo Package install failed. Run INSTALL-PACKAGES.bat on this PC.
+        pause
+        exit /b 1
+    )
+    echo Packages updated.
+) else (
+    echo WARNING: venv missing. Run WINDOWS-SERVER-SETUP.bat before hosting remotely.
+)
+
+echo.
 echo STEP 2: Stop old server and start a new one...
 echo ^(Close the RUN-AS-SERVER window if it is still open.^)
 echo.

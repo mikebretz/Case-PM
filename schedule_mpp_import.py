@@ -25,14 +25,54 @@ class MppImportError(Exception):
     """Raised when an MPP/MS Project file cannot be parsed."""
 
 
-def mpp_import_available() -> bool:
-    """Return True when MPXJ + Java are available on this server."""
+def mpp_import_status() -> dict[str, Any]:
+    """Return readiness details for native MPP import on this server."""
+    import shutil
+
+    status: dict[str, Any] = {
+        'available': False,
+        'packages_ok': False,
+        'java_ok': False,
+        'message': '',
+        'setup_hint': '',
+    }
     try:
         import jpype  # noqa: F401
         import mpxj  # noqa: F401
+        status['packages_ok'] = True
     except ImportError:
-        return False
-    return True
+        status['message'] = 'MPP import packages are not installed (mpxj, jpype1).'
+        status['setup_hint'] = (
+            'On the server PC, run INSTALL-PACKAGES.bat or '
+            'venv\\Scripts\\python.exe -m pip install -r requirements.txt, then restart RUN-AS-SERVER.bat.'
+        )
+        return status
+
+    if not shutil.which('java'):
+        status['message'] = 'Java is not installed or not on PATH.'
+        status['setup_hint'] = (
+            'Install Java 17+ from https://adoptium.net/ (Temurin JRE), '
+            'restart the Command Prompt, then restart RUN-AS-SERVER.bat.'
+        )
+        return status
+
+    try:
+        _ensure_jvm()
+        status['java_ok'] = True
+        status['available'] = True
+        status['message'] = 'MPP import is ready.'
+    except Exception as exc:
+        status['message'] = f'MPP import could not start Java/MPXJ: {exc}'
+        status['setup_hint'] = (
+            'Install Java 17+ from https://adoptium.net/, verify "java -version" works, '
+            'then restart RUN-AS-SERVER.bat.'
+        )
+    return status
+
+
+def mpp_import_available() -> bool:
+    """Return True when MPXJ + Java are available on this server."""
+    return bool(mpp_import_status()['available'])
 
 
 def _ensure_jvm() -> None:

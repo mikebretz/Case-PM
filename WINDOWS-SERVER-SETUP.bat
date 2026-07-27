@@ -54,6 +54,34 @@ if errorlevel 1 (
 )
 echo Packages OK.
 
+echo.
+echo Checking Java for MS Project MPP import...
+where java >nul 2>&1
+if errorlevel 1 (
+    echo WARNING: Java is not installed. Schedule MPP import will not work until Java is added.
+    echo Install Temurin 17 JRE from https://adoptium.net/ and restart this setup if needed.
+    choice /C YN /M "Try installing Java now with winget (requires internet)"
+    if not errorlevel 2 (
+        winget install -e --id EclipseAdoptium.Temurin.17.JRE --accept-package-agreements --accept-source-agreements
+        where java >nul 2>&1
+        if errorlevel 1 (
+            echo Java install did not complete. Install manually from https://adoptium.net/
+        ) else (
+            java -version
+        )
+    )
+) else (
+    java -version
+)
+
+echo Verifying MPP import support...
+"%PY%" -c "from schedule_mpp_import import mpp_import_status; s=mpp_import_status(); print(s['message']); import sys; sys.exit(0 if s['available'] else 1)"
+if errorlevel 1 (
+    echo WARNING: MPP import is not ready yet. See messages above, then restart RUN-AS-SERVER.bat after fixing.
+) else (
+    echo MPP import support: OK
+)
+
 if not exist "instance" mkdir "instance" >nul 2>&1
 if not exist "instance\server.env" (
     echo.
