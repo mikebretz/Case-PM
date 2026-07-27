@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Print predecessor link alignment checks (full-height overlay SVG).
+ * Print predecessor link alignment checks (per-row bar track SVGs).
  * Run: node scripts/test_gantt_print_link_align.js
  */
 const path = require('path');
@@ -18,10 +18,10 @@ async function main() {
 
     console.log(JSON.stringify(metrics, null, 2));
 
-    const ok = metrics.pathCount >= 1
+    const ok = metrics.pathCount >= 2
         && metrics.arrowCount >= 1
-        && metrics.overlayMatchesBarColumn
         && metrics.row0.svgMatchesTrack
+        && metrics.row1.svgMatchesTrack
         && metrics.row0.barLeftPct >= 8
         && metrics.row0.barLeftPct <= 12
         && metrics.row1.barLeftPct >= 43

@@ -1627,27 +1627,21 @@ body.printing-gantt #schedulePrintSheet .print-bar-track {
     height: var(--print-row-height, 16px);
     overflow: visible;
 }
-body.printing-gantt #schedulePrintSheet .print-bar-links-layer {
+body.printing-gantt #schedulePrintSheet .print-row-links {
     position: absolute;
-    left: var(--print-cols-width);
-    right: 0;
-    top: var(--print-links-top, 0);
-    height: var(--print-links-height, auto);
-    pointer-events: none;
-    z-index: 1;
-    overflow: visible;
-}
-body.printing-gantt #schedulePrintSheet .print-links-overlay {
-    display: block;
+    inset: 0;
     width: 100%;
     height: 100%;
+    pointer-events: none;
     overflow: visible;
+    z-index: 1;
 }
-body.printing-gantt #schedulePrintSheet .print-links-overlay path {
+body.printing-gantt #schedulePrintSheet .print-row-links path {
     stroke: var(--gantt-link-color, #b0b0b0);
     stroke-width: var(--gantt-link-width, 1px);
+    fill: none;
 }
-body.printing-gantt #schedulePrintSheet .print-links-overlay polygon {
+body.printing-gantt #schedulePrintSheet .print-row-links polygon {
     fill: var(--gantt-link-color, #b0b0b0);
 }
 body.printing-gantt #schedulePrintSheet .print-bar,
@@ -1841,41 +1835,6 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         position: relative !important;
         width: 100% !important;
     }
-    .print-bar-links-layer {
-        position: absolute;
-        left: var(--print-cols-width);
-        right: 0;
-        top: var(--print-links-top, 0);
-        height: var(--print-links-height, auto);
-        pointer-events: none;
-        z-index: 1;
-        overflow: visible;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-    }
-    .print-schedule-wrap > .schedule-print-table {
-        position: relative;
-        z-index: 2;
-    }
-    .print-links-overlay {
-        display: block;
-        width: 100%;
-        height: 100%;
-        overflow: visible;
-    }
-    .print-links-overlay path {
-        stroke: var(--gantt-link-color, #b0b0b0) !important;
-        stroke-width: var(--gantt-link-width, 1px) !important;
-        fill: none !important;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-    }
-    .print-links-overlay polygon {
-        fill: var(--gantt-link-color, #b0b0b0) !important;
-        stroke: none !important;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-    }
     .print-schedule-wrap .schedule-print-table-compact th,
     .print-schedule-wrap .schedule-print-table-compact td {
         height: var(--print-row-height, 16px);
@@ -2028,6 +1987,32 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         background: transparent;
         border: none;
         overflow: visible;
+    }
+    .print-row-links {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        overflow: visible;
+        z-index: 1;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .print-row-links path {
+        vector-effect: non-scaling-stroke;
+        stroke: var(--gantt-link-color, #b0b0b0) !important;
+        stroke-width: var(--gantt-link-width, 1px) !important;
+        fill: none !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .print-row-links polygon {
+        vector-effect: non-scaling-stroke;
+        stroke: none;
+        fill: var(--gantt-link-color, #b0b0b0) !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
     }
     .print-bar {
         position: absolute;
