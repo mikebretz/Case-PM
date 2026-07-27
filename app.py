@@ -302,6 +302,7 @@ MODULE_ROUTE_GUARD = {
     'project_detail': 'projects',
     'project_directory_page': 'project_directory',
     'operations_center_page': 'operations_center',
+    'operations_bim_viewer_page': 'operations_center',
 }
 
 

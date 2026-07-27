@@ -17,6 +17,8 @@
     aiThreadId: null,
     aiMessages: [],
     lastReport: null,
+    activeBimAsset: null,
+    bimFullscreenCleanup: null,
   };
 
   const $ = id => document.getElementById(id);
@@ -107,6 +109,11 @@
     $('opsModuleTitle').textContent = mod?.label || key;
     $('opsModuleHint').textContent = readOnly ? 'Live report' : 'Quick Add · click row to edit';
     hideAllHosts();
+    document.querySelector('.ops-page')?.classList.toggle('ops-bim-active', key === 'bim_models');
+    if (state.bimFullscreenCleanup) {
+      state.bimFullscreenCleanup();
+      state.bimFullscreenCleanup = null;
+    }
 
     if (key === 'wip_snapshot') {
       $('opsWipHost').classList.remove('hidden');
@@ -342,37 +349,87 @@
     });
   }
 
+  function mountBimAsset(asset) {
+    if (!asset) return;
+    state.activeBimAsset = asset;
+    const viewer = $('opsBimViewer');
+    const title = $('opsBimActiveTitle');
+    if (title) title.textContent = asset.title || asset.filename || 'Model';
+    if (window.CasePMBimViewer && viewer) {
+      CasePMBimViewer.mount(viewer, asset.file_url, asset.file_ext, { fill: true });
+    }
+    $('opsBimPopout')?.toggleAttribute('disabled', !asset.id);
+  }
+
   function renderBimPanel() {
     const host = $('opsBimHost');
-    host.innerHTML = `
-      <div class="flex justify-between items-center mb-3">
-        <h3 class="text-lg font-semibold">BIM / 3D Models</h3>
-        <label class="px-4 py-2 bg-emerald-600 rounded-md text-sm font-semibold text-white cursor-pointer">
-          <i class="fa-solid fa-upload mr-1"></i> Upload model
-          <input type="file" id="opsBimFile" class="hidden" accept=".glb,.gltf,.ifc,.obj,.pdf">
-        </label>
-      </div>
-      <div id="opsBimViewer" class="mb-4"></div>
-      <div id="opsBimList" class="space-y-2"></div>`;
-    const list = $('opsBimList');
     const assets = state.bimAssets || [];
+    const active = state.activeBimAsset || assets[0] || null;
+    state.activeBimAsset = active;
+    host.innerHTML = `
+      <div class="ops-bim-layout">
+        <div class="flex justify-between items-center gap-3 mb-3 flex-shrink-0">
+          <h3 class="text-lg font-semibold">BIM / 3D Models</h3>
+          <label class="px-4 py-2 bg-emerald-600 rounded-md text-sm font-semibold text-white cursor-pointer">
+            <i class="fa-solid fa-upload mr-1"></i> Upload model
+            <input type="file" id="opsBimFile" class="hidden" accept=".glb,.gltf,.ifc,.obj,.pdf">
+          </label>
+        </div>
+        <div id="opsBimStage" class="ops-bim-stage">
+          <div class="ops-bim-stage-bar">
+            <div class="min-w-0">
+              <div id="opsBimActiveTitle" class="text-sm font-medium truncate">${shell.esc(active?.title || active?.filename || 'Select a model below')}</div>
+              <div class="text-xs text-zinc-500">${active ? `.${shell.esc(active.file_ext)}` : 'Upload or pick from the list'}</div>
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0">
+              <button type="button" id="opsBimFullscreen" class="px-3 py-1.5 text-xs rounded-md border border-zinc-700 hover:bg-zinc-800 text-white bg-transparent cursor-pointer" ${active ? '' : 'disabled'}>
+                <i class="fa-solid fa-expand mr-1"></i> Full screen
+              </button>
+              <button type="button" id="opsBimPopout" class="px-3 py-1.5 text-xs rounded-md border border-zinc-700 hover:bg-zinc-800 text-white bg-transparent cursor-pointer" ${active?.id ? '' : 'disabled'}>
+                <i class="fa-solid fa-up-right-from-square mr-1"></i> New window
+              </button>
+            </div>
+          </div>
+          <div id="opsBimViewer"></div>
+        </div>
+        <details class="ops-bim-list-wrap" ${assets.length ? 'open' : ''}>
+          <summary>Models (${assets.length})</summary>
+          <div id="opsBimList"></div>
+        </details>
+      </div>`;
+
+    const list = $('opsBimList');
     if (!assets.length) {
-      list.innerHTML = '<p class="text-zinc-500 text-sm">Upload GLB, GLTF, or PDF models. GLB opens in the 3D viewer.</p>';
+      list.innerHTML = '<p class="text-zinc-500 text-sm p-3">Upload GLB, GLTF, or PDF models. GLB opens in the 3D viewer.</p>';
     } else {
       list.innerHTML = assets.map(a => `
-        <div class="ops-row" data-aid="${a.id}" data-url="${shell.esc(a.file_url)}" data-ext="${a.file_ext}">
+        <div class="ops-row ${active?.id === a.id ? 'bg-emerald-500/10' : ''}" data-aid="${a.id}" data-url="${shell.esc(a.file_url)}" data-ext="${a.file_ext}" data-title="${shell.esc(a.title || a.filename)}">
           <div><div class="font-medium text-white">${shell.esc(a.title || a.filename)}</div>
           <div class="text-xs text-zinc-500">${shell.esc(a.discipline || '')} · Rev ${shell.esc(a.revision || '—')} · .${a.file_ext}</div></div>
         </div>`).join('');
       list.querySelectorAll('.ops-row').forEach(row => {
         row.addEventListener('click', () => {
-          if (window.CasePMBimViewer) CasePMBimViewer.mount($('opsBimViewer'), row.dataset.url, row.dataset.ext);
+          mountBimAsset({
+            id: parseInt(row.dataset.aid, 10),
+            file_url: row.dataset.url,
+            file_ext: row.dataset.ext,
+            title: row.dataset.title,
+            filename: row.dataset.title,
+          });
+          list.querySelectorAll('.ops-row').forEach(r => r.classList.remove('bg-emerald-500/10'));
+          row.classList.add('bg-emerald-500/10');
         });
       });
-      if (assets[0] && window.CasePMBimViewer) {
-        CasePMBimViewer.mount($('opsBimViewer'), assets[0].file_url, assets[0].file_ext);
-      }
     }
+
+    if (active) mountBimAsset(active);
+
+    if (state.bimFullscreenCleanup) state.bimFullscreenCleanup();
+    state.bimFullscreenCleanup = window.CasePMBimViewer?.bindFullscreen($('opsBimStage'), $('opsBimFullscreen'));
+
+    $('opsBimPopout')?.addEventListener('click', () => {
+      if (state.activeBimAsset?.id) CasePMBimViewer.openPopout(state.activeBimAsset.id);
+    });
     $('opsBimFile')?.addEventListener('change', uploadBim);
   }
 

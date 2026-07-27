@@ -50,6 +50,14 @@ def register_extended_platform_routes(app, deps):
     def operations_center_page():
         return render_template('operations_center.html', active_project=get_active_project())
 
+    @app.route('/operations/bim-viewer')
+    @login_required
+    def operations_bim_viewer_page():
+        from extended_platform_services import serialize_bim_asset
+        asset_id = request.args.get('asset_id', type=int)
+        asset = OperationsBimAsset.query.get_or_404(asset_id) if asset_id else None
+        return render_template('operations_bim_viewer.html', asset=serialize_bim_asset(asset) if asset else None)
+
     @app.route('/api/operations/catalog')
     @login_required
     def api_operations_catalog():
