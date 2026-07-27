@@ -1308,6 +1308,7 @@ body.sched-col-dragging .gantt_grid_scale {
     width: 10px !important;
     margin-left: -5px !important;
     z-index: 250 !important;
+    cursor: col-resize !important;
 }
 #gantt_here .gantt_grid_scale .gantt_grid_head_cell {
     z-index: 1 !important;
