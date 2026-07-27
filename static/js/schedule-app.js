@@ -122,6 +122,7 @@
     let wbsGutterRefreshTimer = null;
     let taskOrderList = [];
     const taskOrderIndex = new Map();
+    const taskGutterCache = new Map();
     let schedulePayloadSource = '';
     let scheduleImportMeta = null;
 
@@ -172,6 +173,24 @@
             taskOrderIndex.set(String(t.id), taskOrderList.length);
             taskOrderList.push(t);
         });
+        rebuildWbsGutterCache();
+    }
+
+    function rebuildWbsGutterCache() {
+        taskGutterCache.clear();
+        if (!ganttReady || !taskOrderList.length) return;
+        for (let i = 0; i < taskOrderList.length; i++) {
+            const task = taskOrderList[i];
+            const nextTask = i < taskOrderList.length - 1 ? taskOrderList[i + 1] : null;
+            const active = [];
+            const extend = [];
+            for (let g = 0; g < WBS_GUTTER_COLORS.length; g++) {
+                const isActive = taskShowsGutterLevel(task, g);
+                active.push(isActive);
+                extend.push(isActive && nextTask && taskShowsGutterLevel(nextTask, g));
+            }
+            taskGutterCache.set(String(task.id), { active, extend });
+        }
     }
 
     function expandAllTasks() {
@@ -739,7 +758,7 @@
 
     function queueEnforceGridColumnExtents() {
         clearTimeout(enforceGridTimer);
-        enforceGridTimer = setTimeout(() => enforceGridColumnExtents(), 16);
+        enforceGridTimer = setTimeout(() => enforceGridColumnExtents(), 48);
     }
 
     function ensureGridScrollWidthSentinel(total) {
@@ -1294,7 +1313,7 @@
                 lastGridWidthKey = gridKey;
                 gantt.setSizes();
             }
-            if (!options.light && sizeChanged) queueEnforceGridColumnExtents();
+            if (sizeChanged) queueEnforceGridColumnExtents();
 
             if (isOverlay) applyOverlayDomLayout();
             else positionChartResizerVisual();
@@ -1690,17 +1709,51 @@
     }
 
     function scrollGanttVertically(deltaY) {
-        const scrollVerEl = getVerticalScrollElement();
-        if (!scrollVerEl || !deltaY) return false;
-        timelineScrollProgrammatic = true;
-        scrollVerEl.scrollTop += deltaY;
-        syncVerticalScrollViews(scrollVerEl.scrollTop);
+        if (!ganttReady || !deltaY) return false;
+        let x = 0;
+        let y = 0;
         try {
-            const x = gantt.getScrollState?.()?.x || 0;
-            if (gantt.scrollTo) gantt.scrollTo(x, scrollVerEl.scrollTop);
+            const state = gantt.getScrollState?.() || {};
+            x = state.x || 0;
+            y = state.y || 0;
         } catch (e) { /* ok */ }
+        const nextY = Math.max(0, y + deltaY);
+        timelineScrollProgrammatic = true;
+        try {
+            if (typeof gantt.scrollTo === 'function') gantt.scrollTo(x, nextY);
+            const scrollVerEl = getVerticalScrollElement();
+            if (scrollVerEl) scrollVerEl.scrollTop = nextY;
+            syncVerticalScrollViews(nextY);
+        } catch (e) {
+            timelineScrollProgrammatic = false;
+            return false;
+        }
         requestAnimationFrame(() => { timelineScrollProgrammatic = false; });
         return true;
+    }
+
+    function bindGanttWheelNavigation() {
+        const host = document.getElementById('gantt_here');
+        if (!host || host.dataset.ganttWheelBound) return;
+        host.dataset.ganttWheelBound = '1';
+        host.addEventListener('wheel', e => {
+            if (!e.target.closest('#gantt_here')) return;
+            const absX = Math.abs(e.deltaX);
+            const absY = Math.abs(e.deltaY);
+            const inTimeline = e.target.closest('.gantt_layout_cell:nth-child(3)');
+            if (inTimeline && (e.shiftKey || absX > absY * 1.25)) {
+                const raw = e.shiftKey ? e.deltaY : e.deltaX;
+                if (!raw) return;
+                e.preventDefault();
+                e.stopPropagation();
+                panTimelineByDays(raw > 0 ? 7 : -7);
+                return;
+            }
+            if (absY > 0 && scrollGanttVertically(e.deltaY)) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        }, { passive: false, capture: true });
     }
 
     function bindVerticalScrollSync() {
@@ -1730,20 +1783,7 @@
     }
 
     function bindGanttVerticalWheel() {
-        const host = document.getElementById('gantt_here');
-        if (!host || host.dataset.vertWheelBound) return;
-        host.dataset.vertWheelBound = '1';
-        host.addEventListener('wheel', e => {
-            if (Math.abs(e.deltaY) <= Math.abs(e.deltaX) && !e.shiftKey) return;
-            const inTimeline = e.target.closest('.gantt_layout_cell:nth-child(3)');
-            if (inTimeline) return;
-            const inGantt = e.target.closest('#gantt_here .gantt_grid_data, #gantt_here .gantt_grid_scale, #gantt_here .gantt_layout_cell:nth-child(1)');
-            if (!inGantt) return;
-            if (scrollGanttVertically(e.deltaY)) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-        }, { passive: false, capture: true });
+        bindGanttWheelNavigation();
     }
 
     function bindTimelineScrollbarSync() {
@@ -1946,30 +1986,9 @@
         });
 
         const host = document.getElementById('gantt_here');
-        if (host) {
-            host.addEventListener('wheel', e => {
-                const inTimeline = e.target.closest('.gantt_layout_cell:nth-child(3)');
-                if (!inTimeline) return;
-                const absX = Math.abs(e.deltaX);
-                const absY = Math.abs(e.deltaY);
-                if (absY > absX && !e.shiftKey) {
-                    if (scrollGanttVertically(e.deltaY)) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                    }
-                    return;
-                }
-                const raw = absX > absY ? e.deltaX : (e.shiftKey ? e.deltaY : 0);
-                if (!raw) return;
-                e.preventDefault();
-                e.stopPropagation();
-                const days = raw > 0 ? 7 : -7;
-                panTimelineByDays(days);
-            }, { passive: false, capture: true });
-        }
+        bindGanttWheelNavigation();
         bindTimelineScrollbarSync();
         bindVerticalScrollSync();
-        bindGanttVerticalWheel();
 
         const gridData = document.querySelector('#gantt_here .gantt_grid_data');
         if (gridData && !gridData.dataset.resizeSyncBound) {
@@ -3465,7 +3484,6 @@
 
     function taskShowsGutterLevel(task, gutterLevel) {
         if (!task || !ganttReady) return false;
-        if (scheduleTaskCount > 25) return gutterLevel === 0;
         if (gutterLevel === 0) return true;
         const maxLevel = WBS_GUTTER_COLORS.length - 1;
         const levelFor = t => Math.min(getWbsLevel(t), maxLevel);
@@ -3488,12 +3506,11 @@
     }
 
     function hierarchyIndentTemplate(task) {
-        if (scheduleTaskCount > 25) return '<div class="sched-wbs-indents sched-wbs-indents-lite"></div>';
-        const nextTask = scheduleTaskCount <= 40 ? getNextTaskInTree(task.id) : null;
+        const cached = taskGutterCache.get(String(task.id));
         let html = '<div class="sched-wbs-indents">';
         for (let i = 0; i < WBS_GUTTER_COLORS.length; i++) {
-            const active = taskShowsGutterLevel(task, i);
-            const extend = active && nextTask && taskShowsGutterLevel(nextTask, i);
+            const active = cached?.active?.[i] ?? (i === 0);
+            const extend = cached?.extend?.[i] ?? false;
             if (active) {
                 const color = WBS_GUTTER_COLORS[i];
                 html += `<span class="sched-wbs-slot sched-wbs-slot-active${extend ? ' sched-wbs-slot-extend' : ''}" style="--wbs-slot-color:${color};background-color:${color}"></span>`;
@@ -3520,7 +3537,7 @@
     }
 
     function syncWbsGutterSpans() {
-        if (!ganttReady || scheduleTaskCount > 25) return;
+        if (!ganttReady) return;
         const items = getVisibleTaskItems();
         if (items.length) lastWbsBandSegments = computeWbsBandSegments(items);
         document.querySelectorAll('#gantt_here .sched-wbs-gutter-layer .sched-wbs-band').forEach(el => el.remove());
@@ -4151,8 +4168,8 @@
             pushUndoState();
             queueSave();
         });
-        gantt.attachEvent('onTaskOpened', () => { refreshWbsGutterDisplay(); });
-        gantt.attachEvent('onTaskClosed', () => { refreshWbsGutterDisplay(); });
+        gantt.attachEvent('onTaskOpened', () => { rebuildWbsGutterCache(); refreshWbsGutterDisplay(); });
+        gantt.attachEvent('onTaskClosed', () => { rebuildWbsGutterCache(); refreshWbsGutterDisplay(); });
         gantt.attachEvent('onTaskClick', function (id, e) {
             const target = e.target || e.srcElement;
             if (!target.closest?.('.sched-floating-cell-editor')) {
@@ -4287,6 +4304,7 @@
             ensureTimelineScrollbar();
             restoreTimelineScrollAfterRender();
             refreshTimelinePanBar();
+            queueEnforceGridColumnExtents();
             if (!bindColumnResizeEnhancements.done) bindColumnResizeEnhancements();
             if (!bindGridSelectionHandlers.done) bindGridSelectionHandlers();
             updateAlignToolbarButtons();
@@ -6213,7 +6231,7 @@
         return {
             arrowPct: (arrowPx / estBarPx) * 100,
             wrapperPct: (wrapperPx / estBarPx) * 100,
-            stroke: '#d0d0d0',
+            stroke: '#888888',
             strokeWidth: scheduleSettings.link_width || gantt.config.link_line_width || 1,
         };
     }
@@ -6325,11 +6343,12 @@
         return `<polygon points="${x1},${localY} ${x1 - size * 0.6},${localY - size} ${x1 + size * 0.6},${localY - size}" fill="${stroke}"/>`;
     }
 
-    function addPrintPolylineSegments(byRow, add, linkPath, linkArrow, linkStartArrow, stroke, points) {
+    function addPrintPolylineSegments(byRow, add, linkPath, stroke, points) {
         const clamped = points.map(p => ({ x: clampPrintLinkX(p.x), y: p.y }));
         for (let i = 0; i < clamped.length - 1; i++) {
             const a = clamped[i];
             const b = clamped[i + 1];
+            const isLastSeg = i === clamped.length - 2;
             if (Math.abs(a.y - b.y) < 0.001) {
                 const row = Math.round(a.y - 0.5);
                 const localY = (a.y - row) * 100;
@@ -6337,34 +6356,27 @@
                 const xHi = Math.max(a.x, b.x);
                 const segStart = Math.max(0, xLo);
                 if (xHi > segStart) {
-                    add(row, linkPath(`M ${segStart} ${localY} L ${xHi} ${localY}`, stroke));
+                    add(row, linkPath(`M ${segStart} ${localY} L ${xHi} ${localY}`, stroke, isLastSeg));
                 }
             } else if (Math.abs(a.x - b.x) < 0.001) {
                 const yLo = Math.min(a.y, b.y);
                 const yHi = Math.max(a.y, b.y);
                 let row = Math.floor(yLo);
-                while (row <= Math.floor(yHi - 0.0001)) {
+                const lastRow = Math.floor(yHi - 0.0001);
+                while (row <= lastRow) {
                     const segTop = Math.max(yLo, row);
                     const segBot = Math.min(yHi, row + 1);
                     if (segBot > segTop && a.x >= 0) {
                         add(row, linkPath(
                             `M ${a.x} ${(segTop - row) * 100} L ${b.x} ${(segBot - row) * 100}`,
-                            stroke
+                            stroke,
+                            isLastSeg && row === lastRow
                         ));
                     }
                     row += 1;
                 }
             }
         }
-        const start = clamped[0];
-        const end = clamped[clamped.length - 1];
-        const startRow = Math.round(start.y - 0.5);
-        const endRow = Math.round(end.y - 0.5);
-        if (clamped.length > 1) {
-            add(startRow, linkStartArrow(start.x, start.y, clamped[1], stroke));
-        }
-        const prev = clamped.length > 1 ? clamped[clamped.length - 2] : null;
-        add(endRow, linkArrow(end.x, end.y, prev, stroke));
     }
 
     function buildPrintLinkSegmentsByRow(rowMap, startMs, span, textTablePx) {
@@ -6374,10 +6386,8 @@
             byRow.get(rowIndex).push(fragment);
         };
         const metrics = getPrintLinkMetrics(textTablePx);
-        const linkPath = (d, stroke) =>
-            `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${metrics.strokeWidth}" stroke-linejoin="miter" stroke-linecap="square" vector-effect="non-scaling-stroke"/>`;
-        const linkArrow = (x2, y2, prev, stroke) => buildPrintLinkArrow(x2, y2, prev, stroke);
-        const linkStartArrow = (x1, y1, next, stroke) => buildPrintLinkStartArrow(x1, y1, next, stroke);
+        const linkPath = (d, stroke, withArrow) =>
+            `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${metrics.strokeWidth}" stroke-linejoin="miter" stroke-linecap="square" vector-effect="non-scaling-stroke"${withArrow ? ' marker-end="url(#print-link-arrow)"' : ''}/>`;
 
         gantt.getLinks().forEach(link => {
             if (!gantt.isTaskExists(link.source) || !gantt.isTaskExists(link.target)) return;
@@ -6392,7 +6402,7 @@
             const y1 = si + 0.5;
             const y2 = ti + 0.5;
             const points = buildPrintLinkPolyline(lineType, x1, y1, x2, y2, metrics);
-            addPrintPolylineSegments(byRow, add, linkPath, linkArrow, linkStartArrow, metrics.stroke, points);
+            addPrintPolylineSegments(byRow, add, linkPath, metrics.stroke, points);
         });
         return byRow;
     }
@@ -6400,7 +6410,7 @@
     function buildPrintRowLinkSvg(rowIndex, linkSegmentsByRow) {
         const segments = linkSegmentsByRow?.get(rowIndex);
         if (!segments?.length) return '';
-        return `<svg class="print-row-links" viewBox="0 0 100 100" preserveAspectRatio="none">${segments.join('')}</svg>`;
+        return `<svg class="print-row-links" viewBox="0 0 100 100" preserveAspectRatio="none"><defs><marker id="print-link-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="4" markerHeight="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#888888"/></marker></defs>${segments.join('')}</svg>`;
     }
 
     function buildPrintTimescale(startMs, span, mode) {
@@ -6843,7 +6853,7 @@
             gantt.render();
             ensureGridVisible({ scrollTop: false, skipRender: true });
             focusInitialTimelineView();
-            bindGanttVerticalWheel();
+            bindGanttWheelNavigation();
         });
         switchScheduleView('gantt');
         updateAlignToolbarButtons();
