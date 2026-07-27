@@ -31,7 +31,12 @@ class ScheduleMppImportTests(unittest.TestCase):
         self.assertTrue(status['packages_ok'])
         self.assertTrue(status['available'], status)
 
-    def test_mpp_import_status_shape(self):
+    def test_ensure_mpp_import_dependencies(self):
+        from schedule_mpp_import import ensure_mpp_import_dependencies
+
+        status = ensure_mpp_import_dependencies(auto_install=False)
+        self.assertTrue(status['packages_ok'])
+
         from schedule_mpp_import import mpp_import_status
 
         status = mpp_import_status()

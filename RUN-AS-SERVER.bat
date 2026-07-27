@@ -31,6 +31,14 @@ if not exist "venv\Scripts\python.exe" (
 
 set "PY=venv\Scripts\python.exe"
 
+echo Checking required Python packages...
+"%PY%" -m pip install --upgrade pip --quiet
+"%PY%" -m pip install -r requirements.txt --quiet
+if errorlevel 1 (
+    echo WARNING: Could not install all requirements. Run INSTALL-PACKAGES.bat.
+    echo.
+)
+
 netsh advfirewall firewall show rule name="Case PM Server (TCP 5000)" >nul 2>&1
 if errorlevel 1 (
     echo.

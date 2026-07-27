@@ -6537,9 +6537,9 @@ def api_save_schedule():
 @login_required
 def api_import_schedule_mpp():
     """Import a native MS Project .mpp file into gantt schedule format."""
-    from schedule_mpp_import import MppImportError, mpp_import_status, parse_mpp_bytes
+    from schedule_mpp_import import MppImportError, ensure_mpp_import_dependencies, parse_mpp_bytes
 
-    import_status = mpp_import_status()
+    import_status = ensure_mpp_import_dependencies()
     if not import_status['available']:
         return jsonify({
             'error': import_status['message'] or 'MPP import is not available on this server.',
@@ -17655,6 +17655,22 @@ if __name__ == '__main__':
         except Exception as dep_exc:
             print(f'⚠️  Drawing upload libraries not available: {dep_exc}')
             print(f'   Run: {sys.executable} -m pip install -r requirements.txt')
+
+        try:
+            from schedule_mpp_import import ensure_mpp_import_dependencies
+            mpp_status = ensure_mpp_import_dependencies()
+            if mpp_status['available']:
+                print('✅ MS Project MPP import ready')
+            elif mpp_status['packages_ok']:
+                print(f'⚠️  MPP import needs Java: {mpp_status["message"]}')
+                if mpp_status.get('setup_hint'):
+                    print(f'   {mpp_status["setup_hint"]}')
+            else:
+                print(f'⚠️  MPP import not ready: {mpp_status["message"]}')
+                if mpp_status.get('setup_hint'):
+                    print(f'   {mpp_status["setup_hint"]}')
+        except Exception as mpp_exc:
+            print(f'⚠️  MPP import check skipped: {mpp_exc}')
 
     # Start the Flask development server
     host = os.environ.get('CASEPM_HOST', '127.0.0.1')
