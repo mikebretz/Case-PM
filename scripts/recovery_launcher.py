@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Recovery access launcher — used by RECOVERY-ACCESS.bat / EMERGENCY-RECOVERY.bat.
+Recovery access launcher — used by EMERGENCY-RECOVERY.bat.
 
 - Ensures instance/recovery.access exists (with access_token)
 - Waits for the Case PM server (starts are handled by the .bat)

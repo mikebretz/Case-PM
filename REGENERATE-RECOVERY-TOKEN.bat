@@ -5,7 +5,7 @@ echo ================================================
 echo   Regenerate Recovery One-Click Token
 echo ================================================
 echo.
-echo Use this if RECOVERY-ACCESS / EMERGENCY-RECOVERY opens the browser
+echo Use this if EMERGENCY-RECOVERY opens the browser
 echo but one-click entry says "Invalid recovery token".
 echo Your email and password in recovery.access are NOT changed.
 echo.

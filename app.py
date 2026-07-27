@@ -2604,7 +2604,7 @@ def recovery_enter():
     token = (request.args.get('token') or '').strip()
     if not validate_recovery_token(token):
         record_login_failure('recovery-token')
-        flash('Invalid recovery token. Use RECOVERY-ACCESS.bat on the owner PC or sign in manually.', 'error')
+        flash('Invalid recovery token. Use EMERGENCY-RECOVERY.bat on the owner PC or sign in manually.', 'error')
         return redirect(url_for('recovery_login'))
 
     record_login_success('recovery-token')

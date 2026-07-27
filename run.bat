@@ -90,7 +90,8 @@ echo Login: admin@casepm.local
 echo Password: admin123
 echo.
 echo For REMOTE access from OTHER computers:
-echo   Double-click REMOTE-LOGIN-SETUP.bat  ^(recommended^)
+echo   Double-click WINDOWS-SERVER-SETUP.bat  ^(first time^)
+echo   Then RUN-AS-SERVER.bat  ^(keep window open^)
 echo   NOT run.bat — run.bat only works on this PC.
 echo.
 echo The application will open in your browser shortly...

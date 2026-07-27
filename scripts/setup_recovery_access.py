@@ -124,7 +124,7 @@ def main() -> int:
     print(f'  Email:  {email}')
     print('  Password: (stored in file — not shown)')
     print('')
-    print('Use EMERGENCY-RECOVERY.bat or RECOVERY-ACCESS.bat to open the recovery login, or browse to:')
+    print('Use EMERGENCY-RECOVERY.bat to open the recovery login, or browse to:')
     print('  http://127.0.0.1:5000/recovery')
     print('')
     print('Keep a copy of instance/recovery.access on a USB drive or personal cloud folder.')
