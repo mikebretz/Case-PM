@@ -7,16 +7,11 @@
         .print-schedule-wrap {
             position: relative;
             width: 100%;
-            --print-cols-width: 200px;
             --print-row-height: 24px;
-            --print-links-top: 38px;
-            --print-links-height: 48px;
             --gantt-link-color: #94a3b8;
             --gantt-link-width: 2px;
         }
         .schedule-print-table {
-            position: relative;
-            z-index: 2;
             width: 100%;
             border-collapse: collapse;
             table-layout: fixed;
@@ -51,39 +46,27 @@
             background: #2563eb;
             z-index: 2;
         }
-        .print-bar-links-layer {
+        .print-row-links {
             position: absolute;
-            left: var(--print-cols-width);
-            right: 0;
-            top: var(--print-links-top);
-            height: var(--print-links-height);
-            pointer-events: none;
-            z-index: 1;
-            overflow: visible;
-        }
-        .print-links-overlay {
-            display: block;
+            inset: 0;
             width: 100%;
             height: 100%;
+            pointer-events: none;
+            overflow: visible;
+            z-index: 1;
         }
-        .print-links-overlay path {
+        .print-row-links path {
             stroke: var(--gantt-link-color);
             stroke-width: var(--gantt-link-width);
             fill: none;
         }
-        .print-links-overlay polygon {
+        .print-row-links polygon {
             fill: var(--gantt-link-color);
         }
     </style>
 </head>
 <body>
     <div class="print-schedule-wrap" id="wrap">
-        <div class="print-bar-links-layer">
-            <svg class="print-links-overlay" viewBox="0 0 600 48" preserveAspectRatio="none" aria-hidden="true">
-                <path d="M 240 12 L 258 12 L 258 36 L 330 36" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linejoin="miter" stroke-linecap="square"/>
-                <polygon points="330,36 322,32.7 322,39.3" fill="#94a3b8"/>
-            </svg>
-        </div>
         <table class="schedule-print-table">
             <colgroup>
                 <col style="width:120px">
@@ -105,43 +88,40 @@
                 <tr>
                     <td>Task A</td>
                     <td>5d</td>
-                    <td class="print-bar-cell"><div class="print-bar-track"><div class="print-bar" style="left:10%;width:30%"></div></div></td>
+                    <td class="print-bar-cell"><div class="print-bar-track"><svg class="print-row-links" viewBox="0 0 100 100" preserveAspectRatio="none"><path d="M 40 50 L 43 50" fill="none" stroke="#94a3b8" stroke-width="2"/><path d="M 43 50 L 43 100" fill="none" stroke="#94a3b8" stroke-width="2"/></svg><div class="print-bar" style="left:10%;width:30%"></div></div></td>
                 </tr>
                 <tr>
                     <td>Task B</td>
                     <td>8d</td>
-                    <td class="print-bar-cell"><div class="print-bar-track"><div class="print-bar" style="left:45%;width:25%"></div></div></td>
+                    <td class="print-bar-cell"><div class="print-bar-track"><svg class="print-row-links" viewBox="0 0 100 100" preserveAspectRatio="none"><path d="M 43 0 L 43 50 L 55 50" fill="none" stroke="#94a3b8" stroke-width="2"/><polygon points="55,50 52.2,48.7 52.2,51.3" fill="#94a3b8"/></svg><div class="print-bar" style="left:45%;width:25%"></div></div></td>
                 </tr>
             </tbody>
         </table>
     </div>
     <script>
-        function getRowBarMetrics(table, rowIndex) {
+        function getRowLinkMetrics(table, rowIndex) {
             const row = table.querySelectorAll('tbody tr')[rowIndex];
             const track = row.querySelector('.print-bar-track');
             const bar = row.querySelector('.print-bar');
+            const svg = row.querySelector('.print-row-links');
             const trackRect = track.getBoundingClientRect();
             const barRect = bar.getBoundingClientRect();
+            const svgRect = svg.getBoundingClientRect();
             const barLeftPct = ((barRect.left - trackRect.left) / trackRect.width) * 100;
             const barRightPct = ((barRect.right - trackRect.left) / trackRect.width) * 100;
-            return { barLeftPct, barRightPct };
+            return {
+                svgMatchesTrack: Math.abs(svgRect.left - trackRect.left) <= 1
+                    && Math.abs(svgRect.width - trackRect.width) <= 1,
+                barLeftPct,
+                barRightPct
+            };
         }
-        const wrap = document.getElementById('wrap');
         const table = document.querySelector('.schedule-print-table');
-        const layer = document.querySelector('.print-bar-links-layer');
-        const layerRect = layer.getBoundingClientRect();
-        const firstTrack = table.querySelector('tbody tr .print-bar-track');
-        const trackRect = firstTrack.getBoundingClientRect();
         window.__printLinkMetrics = {
-            row0: {
-                ...getRowBarMetrics(table, 0),
-                svgMatchesTrack: Math.abs(layerRect.left - trackRect.left) <= 2
-            },
-            row1: getRowBarMetrics(table, 1),
-            pathCount: document.querySelectorAll('.print-links-overlay path').length,
-            arrowCount: document.querySelectorAll('.print-links-overlay polygon').length,
-            overlayMatchesBarColumn: Math.abs(layerRect.left - trackRect.left) <= 2
-                && Math.abs(layerRect.width - trackRect.width) <= 2
+            row0: getRowLinkMetrics(table, 0),
+            row1: getRowLinkMetrics(table, 1),
+            pathCount: document.querySelectorAll('.print-row-links path').length,
+            arrowCount: document.querySelectorAll('.print-row-links polygon').length
         };
     </script>
 </body>
