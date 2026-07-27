@@ -1579,14 +1579,61 @@
     function refreshGanttGridOnViewShow() {
         if (!ganttReady) return;
         resizeGanttHost();
-        const run = () => refreshGanttGridLayout({ focusTimeline: false, refreshScroll: true });
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
-                run();
-                setTimeout(run, 100);
-                setTimeout(run, 250);
-                setTimeout(run, 500);
+                refreshGanttGridLayout({ focusTimeline: false, refreshScroll: true });
+                setTimeout(() => {
+                    refreshGanttGridLayout({ focusTimeline: false, refreshScroll: true });
+                    twitchGanttGridLayout();
+                }, 120);
+                setTimeout(() => twitchGanttGridLayout(), 350);
+                setTimeout(() => twitchGanttGridLayout(), 650);
             });
+        });
+    }
+
+    function twitchGanttGridLayout() {
+        if (!ganttReady) return;
+        const cols = gantt.config.columns || [];
+        let idx = cols.findIndex(c => c && c.name && c.name !== '_sched_add_col' && c.resize !== false);
+        if (idx < 0) idx = cols.findIndex(c => c && c.name && c.name !== '_sched_add_col');
+        const applyLayout = (finalize) => {
+            restoreColumnWidthsFromConfig();
+            updateGridWidth();
+            if (typeof gantt.setSizes === 'function') gantt.setSizes();
+            gantt.render();
+            syncGanttLayout({ forceLayout: true, refreshScroll: false });
+            if (isOverlayMode()) {
+                applyOverlayDomLayout();
+                positionChartResizerVisual();
+            }
+            enforceGridColumnExtents({ syncRows: true });
+            if (finalize) {
+                ensureColumnResizeGrips();
+                syncWbsGutterSpans();
+                scheduleGridHeaderLayout(true);
+                bindVerticalScrollSync();
+            }
+        };
+        if (idx < 0) {
+            applyLayout(true);
+            return;
+        }
+        const col = cols[idx];
+        const baseW = Math.max(col.min_width || 40, Number(columnWidths[col.name] ?? col.width ?? 80));
+        const nudgeW = Math.max(col.min_width || 40, baseW - 1);
+        col.width = nudgeW;
+        columnWidths[col.name] = nudgeW;
+        gantt.config.grid_width = getColumnsTotalWidth();
+        gantt.config.keep_grid_width = true;
+        lastGridWidthKey = '';
+        applyLayout(false);
+        requestAnimationFrame(() => {
+            col.width = baseW;
+            columnWidths[col.name] = baseW;
+            gantt.config.grid_width = getColumnsTotalWidth();
+            lastGridWidthKey = '';
+            applyLayout(true);
         });
     }
 
@@ -6741,9 +6788,56 @@
         return cols;
     }
 
-    function buildLookAheadPrintColgroup(dataColCount, chartColCount) {
+    function getLookAheadPrintCellPlainText(row, col) {
+        switch (col.key) {
+            case 'priority': return String(row.priority || 'Normal');
+            case 'activity': return String(row.activity || '');
+            case 'start': return String(row.start || '');
+            case 'finish': return String(row.finish || '');
+            case 'resource': return String(row.resource || '');
+            case 'wbs': return String(row.wbsGroup || '');
+            case 'why': return String(row.why || '');
+            case 'notes': return String(row.notes || '');
+            default: return '';
+        }
+    }
+
+    let lookAheadPrintMeasureCtx = null;
+    function measureLookAheadPrintTextPx(text, font) {
+        const sample = String(text || '');
+        if (!sample) return 0;
+        if (!lookAheadPrintMeasureCtx) {
+            const canvas = document.createElement('canvas');
+            lookAheadPrintMeasureCtx = canvas.getContext('2d');
+        }
+        lookAheadPrintMeasureCtx.font = font;
+        return Math.ceil(lookAheadPrintMeasureCtx.measureText(sample).width);
+    }
+
+    function computeLookAheadPrintColumnWidths(rows, cols) {
+        const bodyFont = '8pt "Segoe UI", Arial, sans-serif';
+        const headFont = '700 7pt "Segoe UI", Arial, sans-serif';
+        const pad = 14;
+        const widths = new Map();
+        cols.forEach(col => {
+            let maxPx = measureLookAheadPrintTextPx(col.label, headFont) + pad;
+            rows.forEach(row => {
+                const text = getLookAheadPrintCellPlainText(row, col);
+                maxPx = Math.max(maxPx, measureLookAheadPrintTextPx(text, bodyFont) + pad);
+            });
+            if (col.key === 'priority') maxPx = Math.max(maxPx, 58);
+            if (col.key === 'start' || col.key === 'finish') maxPx = Math.max(maxPx, 72);
+            widths.set(col.key, Math.max(36, Math.ceil(maxPx)));
+        });
+        return widths;
+    }
+
+    function buildLookAheadPrintColgroup(cols, chartColCount, widths) {
         let html = '<colgroup>';
-        for (let i = 0; i < dataColCount; i++) html += '<col class="la-print-col-fit" />';
+        cols.forEach(col => {
+            const w = widths?.get(col.key);
+            html += w ? `<col style="width:${w}px" />` : '<col class="la-print-col-fit" />';
+        });
         for (let i = 0; i < chartColCount; i++) html += '<col class="la-print-col-chart" />';
         return `${html}</colgroup>`;
     }
@@ -6781,6 +6875,7 @@
 
     function buildLookAheadPrintTableHtml(rows, ctx, ps) {
         const cols = getLookAheadPrintColumns(ps);
+        const widths = computeLookAheadPrintColumnWidths(rows, cols);
         const head = `<tr>${buildLookAheadPrintDataHead(cols)}</tr>`;
         let body = rows.map(row => {
             const meta = getLookAheadPriorityMeta(row.priority);
@@ -6790,7 +6885,7 @@
 
         return wrapLookAheadPrintBody(`<div class="la-print-table-layout">
             <table class="lookahead-print-table">
-                ${buildLookAheadPrintColgroup(cols.length, 0)}
+                ${buildLookAheadPrintColgroup(cols, 0, widths)}
                 <thead>${head}</thead>
                 <tbody>${body}</tbody>
             </table>
@@ -6801,6 +6896,7 @@
         const range = getLookAheadPeriodBounds(ctx);
         const timescale = buildLookAheadTimescaleHtml(range, lookAheadTimescaleTickCount(ctx));
         const cols = getLookAheadPrintColumns(ps);
+        const widths = computeLookAheadPrintColumnWidths(rows, cols);
         const colSpan = cols.length;
         let body = '';
         rows.forEach(row => {
@@ -6821,7 +6917,7 @@
 
         return wrapLookAheadPrintBody(`<div class="la-print-gantt-layout">
             <table class="lookahead-print-combo la-print-gantt-combo">
-                ${buildLookAheadPrintColgroup(cols.length, 1)}
+                ${buildLookAheadPrintColgroup(cols, 1, widths)}
                 <thead>
                     <tr>
                         ${buildLookAheadPrintDataHead(cols)}
@@ -6838,6 +6934,7 @@
     function buildLookAheadPrintCalendarHtml(rows, ctx, ps) {
         const days = getLookAheadCalendarDays(ctx);
         const cols = getLookAheadPrintColumns(ps);
+        const widths = computeLookAheadPrintColumnWidths(rows, cols);
         const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         const dayHead = days.map(d => {
             const wknd = d.getDay() === 0 || d.getDay() === 6;
@@ -6868,7 +6965,7 @@
 
         return wrapLookAheadPrintBody(`<div class="la-print-calendar-layout">
             <table class="lookahead-print-combo la-print-cal-combo">
-                ${buildLookAheadPrintColgroup(cols.length, days.length)}
+                ${buildLookAheadPrintColgroup(cols, days.length, widths)}
                 <thead>
                     <tr>
                         ${buildLookAheadPrintDataHead(cols)}
