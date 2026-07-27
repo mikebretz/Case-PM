@@ -373,6 +373,24 @@
     });
   }
 
+  async function loadBim4D(asset) {
+    const bar = $('opsBim4D');
+    if (!bar || !asset?.id) return;
+    try {
+      const pid = state.projectId ? `?project_id=${state.projectId}` : '';
+      const data = await api(`/api/operations/bim/${asset.id}/4d${pid}`);
+      window.CasePMBimViewer?.mount4D(bar, data, {
+        onStep(link) {
+          if (link?.element_id && $('opsBimViewer')) {
+            $('opsBimViewer').setAttribute('data-active-element', link.element_id);
+          }
+        },
+      });
+    } catch (e) {
+      bar.innerHTML = '<div class="text-xs text-zinc-500 p-2">4D timeline unavailable.</div>';
+    }
+  }
+
   function mountBimAsset(asset) {
     if (!asset) return;
     state.activeBimAsset = asset;
@@ -383,6 +401,7 @@
       CasePMBimViewer.mount(viewer, asset.file_url, asset.file_ext, { fill: true });
     }
     $('opsBimPopout')?.toggleAttribute('disabled', !asset.id);
+    loadBim4D(asset);
   }
 
   function renderBimPanel() {
@@ -416,6 +435,7 @@
           </div>
           <div id="opsBimViewer"></div>
         </div>
+        <div id="opsBim4D" class="flex-shrink-0 mt-2"></div>
         <details class="ops-bim-list-wrap" ${assets.length ? 'open' : ''}>
           <summary>Models (${assets.length})</summary>
           <div id="opsBimList"></div>
@@ -527,12 +547,17 @@
     let actions = '';
     if (state.moduleKey === 'correspondence' && record) actions += `<button type="button" id="opsPromoteRfi" class="text-sm text-sky-400 bg-transparent border-none cursor-pointer">Promote to RFI</button>`;
     if (state.moduleKey === 'tm_tickets' && record) actions += `<button type="button" id="opsPromoteCe" class="text-sm text-sky-400 bg-transparent border-none cursor-pointer">→ Change Event</button>`;
-    if (state.moduleKey === 'vendor_invoices' && record) actions += `<button type="button" id="opsValidateInv" class="text-sm text-violet-400 bg-transparent border-none cursor-pointer">Validate vs SOV</button>`;
+    if (state.moduleKey === 'vendor_invoices' && record) {
+      actions += `<button type="button" id="opsValidateInv" class="text-sm text-violet-400 bg-transparent border-none cursor-pointer">Validate vs SOV</button>`;
+      actions += `<button type="button" id="opsOcrInv" class="text-sm text-amber-400 bg-transparent border-none cursor-pointer">OCR scan</button>`;
+    }
+    if (state.moduleKey === 'payment_batches' && record) actions += `<button type="button" id="opsChargePay" class="text-sm text-emerald-400 bg-transparent border-none cursor-pointer">Charge ACH/card</button>`;
     if (state.moduleKey === 'timesheets' && record) actions += `<button type="button" id="opsPostTs" class="text-sm text-emerald-400 bg-transparent border-none cursor-pointer">Post to job cost</button>`;
     if (state.moduleKey === 'direct_costs' && record) actions += `<button type="button" id="opsPostDc" class="text-sm text-emerald-400 bg-transparent border-none cursor-pointer">Post to job cost</button>`;
     if (state.moduleKey === 'transmittals' && record) {
       actions += `<button type="button" id="opsSendTrans" class="text-sm text-sky-400 bg-transparent border-none cursor-pointer">Send & distribute</button>`;
-      actions += `<a href="/api/operations/transmittals/${record.id}/pdf" target="_blank" class="text-sm text-zinc-400 hover:text-white">PDF package</a>`;
+      actions += `<button type="button" id="opsBuildPkg" class="text-sm text-violet-400 bg-transparent border-none cursor-pointer">Build PDF package</button>`;
+      actions += `<a href="/api/operations/transmittals/${record.id}/pdf" target="_blank" class="text-sm text-zinc-400 hover:text-white">Cover sheet</a>`;
     }
     if (state.moduleKey === 'certified_payroll' && record) {
       actions += `<button type="button" id="opsValidatePay" class="text-sm text-violet-400 bg-transparent border-none cursor-pointer">Check prevailing wage</button>`;
@@ -549,6 +574,12 @@
       $('opsPostTs')?.addEventListener('click', () => runAction('post_timesheet'));
       $('opsPostDc')?.addEventListener('click', () => runAction('post_direct_cost'));
       $('opsSendTrans')?.addEventListener('click', () => runAction('send_transmittal'));
+      $('opsBuildPkg')?.addEventListener('click', async () => {
+        await runAction('build_package');
+        if (state.editingId) window.open(`/api/operations/transmittals/${state.editingId}/package`, '_blank');
+      });
+      $('opsChargePay')?.addEventListener('click', () => runAction('charge_payment'));
+      $('opsOcrInv')?.addEventListener('click', () => runInvoiceOcr());
       $('opsValidatePay')?.addEventListener('click', () => runAction('validate_payroll'));
       $('opsFilePay')?.addEventListener('click', () => runAction('file_payroll'));
       $('opsProcessPay')?.addEventListener('click', () => runAction('process_payment'));
@@ -611,11 +642,39 @@
     }
   }
 
+  async function runInvoiceOcr() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.pdf,image/*';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const fd = new FormData();
+      fd.append('file', file);
+      if (projectRequired()) fd.append('project_id', projectRequired());
+      const token = csrfToken();
+      try {
+        const res = await fetch('/api/operations/vendor_invoices/ocr', {
+          method: 'POST', body: fd, credentials: 'same-origin',
+          headers: token ? { 'X-CSRF-Token': token } : {},
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'OCR failed');
+        toast(`OCR: ${data.ocr?.invoice_number || '?'} $${data.ocr?.amount || '?'} — ${(data.matches||[]).length} match(es)`, true);
+      } catch (e) { toast(e.message, false); }
+    };
+    input.click();
+  }
+
   async function runIntegrationSync(integration) {
     try {
-      const data = await api('/api/integrations/sync', {
+      const body = { project_id: projectRequired() };
+      if (integration === 'sage') body.sage = true;
+      if (integration === 'procore') body.procore = true;
+      if (integration === 'autodesk') body.autodesk = true;
+      const data = await api('/api/integrations/sync-full', {
         method: 'POST',
-        body: JSON.stringify({ integration, project_id: projectRequired() }),
+        body: JSON.stringify(body),
       });
       const msg = (data.logs || []).map(l => l.message).join(' · ') || 'Sync complete';
       toast(msg, true);
@@ -625,6 +684,8 @@
   function bindUi() {
     $('opsSyncSage')?.addEventListener('click', () => runIntegrationSync('sage'));
     $('opsSyncProcore')?.addEventListener('click', () => runIntegrationSync('procore'));
+    const autodeskBtn = document.getElementById('opsSyncAutodesk');
+    autodeskBtn?.addEventListener('click', () => runIntegrationSync('autodesk'));
     $('opsQuickAdd')?.addEventListener('click', () => {
       if (SPECIAL.has(state.moduleKey)) {
         if (state.moduleKey === 'report_definitions') openModal(null);

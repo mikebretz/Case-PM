@@ -212,6 +212,17 @@ def register_extended_platform_routes(app, deps):
             result.update(send_transmittal(
                 db, row, Project, deps.get('User'), OperationsTransmittalRecipient, current_user.id,
             ))
+        elif action == 'build_package' and module_key == 'transmittals':
+            result['package_url'] = f'/api/operations/transmittals/{row.id}/package'
+            result['message'] = 'Transmittal package ready — download merged PDF.'
+        elif action == 'charge_payment' and module_key == 'payment_batches':
+            from platform_tier2_services import process_contractor_payment
+            adv = __import__('extended_platform_persistence', fromlist=['_parse_json'])._parse_json(row.advanced_fields_json) or {}
+            pay_result = process_contractor_payment(
+                row.amount, adv.get('payee') or row.title, adv.get('payment_method') or 'ACH',
+                row.project_id, current_user.id,
+            )
+            result.update(pay_result)
         elif action == 'file_payroll' and module_key == 'certified_payroll':
             from platform_gaps_services import file_certified_payroll
             result.update(file_certified_payroll(db, row, Project, current_user.id))

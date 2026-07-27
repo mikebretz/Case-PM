@@ -27,6 +27,10 @@ MODULE_KEYS = (
     'bim_models',
     'client_portal_items',
     'equipment_fleet',
+    'lookahead_plans',
+    'quality_itp',
+    'quality_ncr',
+    'quality_hold_points',
 )
 
 MODULE_LABELS = {
@@ -51,13 +55,17 @@ MODULE_LABELS = {
     'bim_models': 'BIM / 3D Models',
     'client_portal_items': 'Client Portal+',
     'equipment_fleet': 'Equipment Fleet',
+    'lookahead_plans': 'Look-Ahead Plans',
+    'quality_itp': 'Inspection & Test Plans',
+    'quality_ncr': 'Non-Conformance Reports',
+    'quality_hold_points': 'Quality Hold Points',
 }
 
 MODULE_CATEGORIES = {
     'field': {
         'label': 'Field Operations',
         'icon': 'fa-hard-hat',
-        'modules': ('tm_tickets', 'timesheets', 'action_plans', 'materials_tracking', 'crew_planning', 'equipment_fleet'),
+        'modules': ('tm_tickets', 'timesheets', 'action_plans', 'materials_tracking', 'crew_planning', 'equipment_fleet', 'lookahead_plans'),
     },
     'communications': {
         'label': 'Communications',
@@ -84,6 +92,11 @@ MODULE_CATEGORIES = {
         'icon': 'fa-house-user',
         'modules': ('client_portal_items',),
     },
+    'quality': {
+        'label': 'Quality Programs',
+        'icon': 'fa-clipboard-list',
+        'modules': ('quality_itp', 'quality_ncr', 'quality_hold_points'),
+    },
 }
 
 # Simple defaults: 3 fields shown first; advanced fields hidden until expanded.
@@ -93,6 +106,7 @@ MODULE_SCHEMAS = {
         'advanced': [
             ('number', 'Transmittal #', 'text'), ('cc_party', 'CC', 'text'),
             ('distribution_list', 'Distribution List (name <email>, comma-separated)', 'textarea'),
+            ('attachment_ids', 'Document IDs to include in PDF package (comma-separated)', 'text'),
             ('purpose', 'Purpose', 'select',
              ['For Review', 'For Approval', 'For Information', 'As Requested']),
             ('required_action', 'Required Action', 'textarea'), ('notes', 'Notes', 'textarea'),
@@ -301,6 +315,42 @@ MODULE_SCHEMAS = {
         ],
         'statuses': ('Available', 'On Site', 'Maintenance', 'Retired'),
         'project_scoped': False,
+    },
+    'lookahead_plans': {
+        'simple': [('title', 'Week Of', 'text'), ('work_date', 'Start Date', 'date'), ('crew_size', 'Crew Size', 'number')],
+        'advanced': [
+            ('number', 'Plan #', 'text'), ('activities_json', 'Activities JSON [{task, start, finish, crew}]', 'textarea'),
+            ('constraints', 'Constraints / Risks', 'textarea'), ('notes', 'Notes', 'textarea'),
+        ],
+        'statuses': ('Draft', 'Published', 'In Progress', 'Complete'),
+        'project_scoped': True,
+    },
+    'quality_itp': {
+        'simple': [('title', 'ITP Name', 'text'), ('work_date', 'Planned Date', 'date'), ('discipline', 'Discipline', 'text')],
+        'advanced': [
+            ('number', 'ITP #', 'text'), ('spec_section', 'Spec Section', 'text'),
+            ('hold_points_json', 'Hold Points JSON', 'textarea'), ('notes', 'Notes', 'textarea'),
+        ],
+        'statuses': ('Draft', 'Active', 'On Hold', 'Closed'),
+        'project_scoped': True,
+    },
+    'quality_ncr': {
+        'simple': [('title', 'NCR Description', 'text'), ('work_date', 'Date Found', 'date'), ('severity', 'Severity', 'select', ['Minor', 'Major', 'Critical'])],
+        'advanced': [
+            ('number', 'NCR #', 'text'), ('location', 'Location', 'text'),
+            ('root_cause', 'Root Cause', 'textarea'), ('corrective_action', 'Corrective Action', 'textarea'),
+        ],
+        'statuses': ('Open', 'Under Review', 'Corrective Action', 'Closed'),
+        'project_scoped': True,
+    },
+    'quality_hold_points': {
+        'simple': [('title', 'Hold Point', 'text'), ('work_date', 'Scheduled', 'date'), ('inspector', 'Inspector', 'text')],
+        'advanced': [
+            ('number', 'HP #', 'text'), ('trade', 'Trade', 'text'),
+            ('checklist_json', 'Checklist JSON', 'textarea'), ('notes', 'Notes', 'textarea'),
+        ],
+        'statuses': ('Pending', 'Ready', 'Inspected', 'Released', 'Failed'),
+        'project_scoped': True,
     },
 }
 

@@ -110,6 +110,64 @@ def define_extended_platform_models(db):
         created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
         created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    class PushSubscription(db.Model):
+        __tablename__ = 'push_subscription'
+        id = db.Column(db.Integer, primary_key=True)
+        user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+        endpoint = db.Column(db.Text, nullable=False)
+        keys_json = db.Column(db.Text)
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class ClientPortalSelection(db.Model):
+        __tablename__ = 'client_portal_selection'
+        id = db.Column(db.Integer, primary_key=True)
+        project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False, index=True)
+        title = db.Column(db.String(300))
+        category = db.Column(db.String(80))
+        options_json = db.Column(db.Text)
+        selected_option = db.Column(db.String(200))
+        status = db.Column(db.String(30), default='Pending')
+        due_date = db.Column(db.Date)
+        assigned_user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class ClientPortalDrawRequest(db.Model):
+        __tablename__ = 'client_portal_draw_request'
+        id = db.Column(db.Integer, primary_key=True)
+        project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False, index=True)
+        title = db.Column(db.String(300))
+        amount = db.Column(db.Float, default=0)
+        period = db.Column(db.String(40))
+        status = db.Column(db.String(30), default='Pending')
+        notes = db.Column(db.Text)
+        assigned_user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class ClientPortalPayment(db.Model):
+        __tablename__ = 'client_portal_payment'
+        id = db.Column(db.Integer, primary_key=True)
+        project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False, index=True)
+        title = db.Column(db.String(300))
+        amount = db.Column(db.Float, default=0)
+        payment_method = db.Column(db.String(40), default='ACH')
+        status = db.Column(db.String(30), default='Pending')
+        external_ref = db.Column(db.String(120))
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class OperationsBimScheduleLink(db.Model):
+        __tablename__ = 'operations_bim_schedule_link'
+        id = db.Column(db.Integer, primary_key=True)
+        bim_asset_id = db.Column(db.Integer, db.ForeignKey('operations_bim_asset.id'), nullable=False, index=True)
+        project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
+        schedule_task_id = db.Column(db.String(80))
+        task_name = db.Column(db.String(300))
+        start_date = db.Column(db.Date)
+        finish_date = db.Column(db.Date)
+        cost_code = db.Column(db.String(80))
+        budget_amount = db.Column(db.Float, default=0)
+        model_element_id = db.Column(db.String(120))
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
     return {
         'ExtendedModuleRecord': ExtendedModuleRecord,
         'OperationsAiMessage': OperationsAiMessage,
@@ -119,4 +177,9 @@ def define_extended_platform_models(db):
         'OperationsTransmittalRecipient': OperationsTransmittalRecipient,
         'ClientPortalApproval': ClientPortalApproval,
         'IntegrationSyncLog': IntegrationSyncLog,
+        'PushSubscription': PushSubscription,
+        'ClientPortalSelection': ClientPortalSelection,
+        'ClientPortalDrawRequest': ClientPortalDrawRequest,
+        'ClientPortalPayment': ClientPortalPayment,
+        'OperationsBimScheduleLink': OperationsBimScheduleLink,
     }

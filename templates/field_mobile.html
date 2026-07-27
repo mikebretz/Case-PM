@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block content %}
+<script>
+window.CASEPM_FIELD_CTX = {
+  projectId: {{ active_project.id if active_project else 'null' }},
+  projectName: {{ (active_project.name if active_project else '')|tojson }},
+};
+</script>
+<style>
+.fm-page { padding:0.75rem; max-width:480px; margin:0 auto; display:flex; flex-direction:column; gap:0.75rem; min-height:calc(100vh - 5rem); }
+.fm-btn { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:0.5rem; padding:1.25rem; border-radius:1rem; background:#18181b; border:1px solid #3f3f46; color:#fff; font-size:0.9rem; font-weight:600; min-height:88px; }
+.fm-btn i { font-size:1.5rem; color:#10b981; }
+.fm-queue { font-size:0.75rem; color:#a1a1aa; text-align:center; }
+</style>
+
+<div class="fm-page">
+  <div>
+    <h1 class="text-xl font-semibold text-white">Field Capture</h1>
+    <p class="text-xs text-zinc-500 mt-0.5">Works offline — syncs when connected.</p>
+  </div>
+
+  <div class="grid grid-cols-2 gap-3">
+    <button type="button" class="fm-btn" data-capture="daily_log"><i class="fa-solid fa-clipboard-list"></i>Daily Log</button>
+    <button type="button" class="fm-btn" data-capture="punch"><i class="fa-solid fa-hammer"></i>Punch Item</button>
+    <button type="button" class="fm-btn" data-capture="photo"><i class="fa-solid fa-camera"></i>Photo Note</button>
+    <button type="button" class="fm-btn" data-capture="safety"><i class="fa-solid fa-shield-halved"></i>Safety</button>
+  </div>
+
+  <textarea id="fmNotes" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-3 text-sm text-white min-h-[80px]" placeholder="Quick notes…"></textarea>
+  <button type="button" id="fmSave" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-semibold text-white">Save (offline OK)</button>
+  <button type="button" id="fmSync" class="w-full py-2 border border-zinc-700 rounded-lg text-sm text-zinc-300">Sync now</button>
+  <div id="fmQueue" class="fm-queue">Queue: 0 pending</div>
+</div>
+
+<script src="{{ url_for('static', filename='js/field-mobile-app.js') }}"></script>
+{% endblock %}

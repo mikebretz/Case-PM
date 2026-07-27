@@ -11,30 +11,30 @@ window.CASEPM_CLIENT_PORTAL_CTX = {
 .cp-page { display:flex; flex-direction:column; flex:1; min-height:0; padding:1rem; gap:1rem; }
 .cp-card { background:#18181b; border:1px solid #3f3f46; border-radius:0.75rem; }
 .cp-row { display:flex; gap:0.75rem; padding:0.85rem 1rem; border-bottom:1px solid #27272a; align-items:flex-start; }
-.cp-row:hover { background:#202023; }
+.cp-tab { padding:0.5rem 1rem; font-size:0.85rem; border-radius:0.5rem; color:#a1a1aa; cursor:pointer; border:none; background:transparent; }
+.cp-tab.active { background:#27272a; color:#fff; }
 </style>
 
 <div class="cp-page">
-  <div class="flex items-center justify-between gap-3 flex-shrink-0">
-    <div>
-      <h1 class="text-2xl font-semibold text-white">Client Portal</h1>
-      <p class="text-sm text-zinc-400 mt-0.5">Approvals, updates, and shared documents for owners and clients.</p>
-    </div>
+  <div>
+    <h1 class="text-2xl font-semibold text-white">Client Portal</h1>
+    <p class="text-sm text-zinc-400 mt-0.5">Approvals, selections, draw requests, and payments.</p>
   </div>
 
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0">
-    <div class="cp-card flex flex-col min-h-0 overflow-hidden">
-      <div class="px-4 py-3 border-b border-zinc-800 font-semibold">Pending approvals</div>
-      <div id="cpApprovals" class="flex-1 overflow-auto text-sm">
-        <div class="p-6 text-zinc-500 text-center">Loading…</div>
-      </div>
-    </div>
-    <div class="cp-card flex flex-col min-h-0 overflow-hidden">
-      <div class="px-4 py-3 border-b border-zinc-800 font-semibold">Project updates</div>
-      <div id="cpItems" class="flex-1 overflow-auto text-sm p-2">
-        <div class="p-6 text-zinc-500 text-center">Loading…</div>
-      </div>
-    </div>
+  <div class="flex gap-2 flex-wrap">
+    <button type="button" class="cp-tab active" data-tab="approvals">Approvals</button>
+    <button type="button" class="cp-tab" data-tab="selections">Selections</button>
+    <button type="button" class="cp-tab" data-tab="draws">Draw Requests</button>
+    <button type="button" class="cp-tab" data-tab="payments">Payments</button>
+    <button type="button" class="cp-tab" data-tab="updates">Updates</button>
+  </div>
+
+  <div class="cp-card flex flex-col min-h-0 overflow-hidden flex-1">
+    <div id="cpApprovals" class="cp-panel flex-1 overflow-auto text-sm"></div>
+    <div id="cpSelections" class="cp-panel hidden flex-1 overflow-auto text-sm"></div>
+    <div id="cpDraws" class="cp-panel hidden flex-1 overflow-auto text-sm"></div>
+    <div id="cpPayments" class="cp-panel hidden flex-1 overflow-auto text-sm"></div>
+    <div id="cpItems" class="cp-panel hidden flex-1 overflow-auto text-sm p-2"></div>
   </div>
 </div>
 
@@ -42,7 +42,7 @@ window.CASEPM_CLIENT_PORTAL_CTX = {
   <div class="px-5 py-4 border-b border-zinc-700 font-semibold">Your response</div>
   <div class="p-5 space-y-3">
     <input type="hidden" id="cpApprovalId">
-    <textarea id="cpResponseText" class="w-full bg-zinc-800 border border-zinc-700 rounded-md p-3 text-sm text-white min-h-[100px]" placeholder="Comments or approval notes…"></textarea>
+    <textarea id="cpResponseText" class="w-full bg-zinc-800 border border-zinc-700 rounded-md p-3 text-sm text-white min-h-[100px]"></textarea>
     <select id="cpDecision" class="w-full bg-zinc-800 border border-zinc-700 rounded-md p-2 text-sm text-white">
       <option value="Approved">Approve</option>
       <option value="Rejected">Reject</option>
