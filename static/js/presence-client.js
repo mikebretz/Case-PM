@@ -198,6 +198,7 @@
   }
 
   async function sendHeartbeat(includeThumb) {
+    if (global.__CASEPM_SESSION_EXPIRED) return;
     if (!currentUserId()) return;
     const payload = collectPresenceState();
     if (includeThumb) {
