@@ -2885,7 +2885,38 @@ textarea.lookahead-input {
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
     min-width: 4px;
 }
-.la-gantt-empty, .la-cal-empty { padding: 2rem; text-align: center; color: #71717a; }
+.la-gantt-chart-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: stretch;
+}
+.la-gantt-chart-grid .la-gantt-ts-row,
+.la-gantt-chart-grid .la-gantt-row {
+    display: contents;
+}
+.la-gantt-chart-grid .la-gantt-label {
+    width: auto;
+    max-width: 42vw;
+    white-space: nowrap;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: #e4e4e7;
+    border-right: 1px solid #27272a;
+    border-bottom: 1px solid #1f1f23;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.la-gantt-chart-grid .la-gantt-corner {
+    font-weight: 600;
+    color: #71717a;
+    text-transform: uppercase;
+    font-size: 10px;
+}
+.la-gantt-chart-grid .la-gantt-ts-cell,
+.la-gantt-chart-grid .la-gantt-track {
+    border-bottom: 1px solid #1f1f23;
+    min-width: 0;
+}
 
 /* Calendar view */
 .la-cal-view {
@@ -2895,7 +2926,29 @@ textarea.lookahead-input {
     background: rgba(9, 9, 11, 0.7);
 }
 .la-cal-meta { padding: 12px 14px; border-bottom: 1px solid #27272a; display: flex; flex-wrap: wrap; gap: 1rem; font-size: 13px; }
-.la-cal-grid-wrap { min-width: 720px; }
+.la-cal-grid-table {
+    display: grid;
+    grid-template-columns: auto repeat(var(--la-cal-days, 14), minmax(40px, 1fr));
+    align-items: stretch;
+}
+.la-cal-grid-table .la-cal-head,
+.la-cal-grid-table .la-cal-row {
+    display: contents;
+}
+.la-cal-grid-table .la-cal-head-cells,
+.la-cal-grid-table .la-cal-day-cells {
+    display: contents;
+}
+.la-cal-grid-table .la-cal-row-label {
+    width: auto;
+    max-width: 42vw;
+    white-space: nowrap;
+}
+.la-cal-day-cells .la-cal-cell {
+    min-height: 32px;
+    border-bottom: 1px solid #1f1f23;
+}
+.la-gantt-empty, .la-cal-empty { padding: 2rem; text-align: center; color: #71717a; grid-column: 1 / -1; }
 .la-cal-head, .la-cal-row { display: flex; border-bottom: 1px solid #1f1f23; }
 .la-cal-row-label {
     width: 180px;
@@ -3054,13 +3107,95 @@ textarea.lookahead-input {
     letter-spacing: 0.04em;
     font-weight: 700;
 }
+.la-print-act-col,
+.la-print-act-fit,
+.la-print-activity {
+    width: 1%;
+    white-space: nowrap;
+}
+.lookahead-print-combo {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: auto;
+    font-size: 8pt;
+}
+.lookahead-print-combo th,
+.lookahead-print-combo td {
+    border: 1px solid #d1d5db;
+    padding: 4px 6px;
+    vertical-align: middle;
+    color: #111827;
+}
+.lookahead-print-combo thead th {
+    background: #f3f4f6;
+    font-weight: 700;
+    font-size: 7pt;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+.la-print-chart-col {
+    min-width: 8rem;
+}
+.la-print-gantt-track-cell {
+    padding: 2px 4px !important;
+    min-width: 10rem;
+}
+.la-print-gantt-combo .la-print-gantt-ts-track {
+    position: relative;
+    min-height: 18px;
+    padding: 0 20px;
+}
+.la-print-gantt-combo .la-print-gantt-track {
+    position: relative;
+    min-height: 1.1rem;
+    background: repeating-linear-gradient(to right, transparent, transparent 9.9%, #e5e7eb 9.9%, #e5e7eb 10%);
+    border-radius: 2px;
+}
+.la-print-cal-combo .la-print-cal-dayhead,
+.la-print-cal-combo .la-print-cal-daycell {
+    text-align: center;
+    padding: 4px 2px;
+    min-width: 2rem;
+    font-size: 7pt;
+}
+.la-print-cal-combo .la-print-cal-dayhead {
+    background: #f9fafb;
+    line-height: 1.2;
+}
+.la-print-cal-combo .la-print-cal-dayhead.la-print-cal-weekend,
+.la-print-cal-combo .la-print-cal-daycell.la-print-cal-weekend {
+    background: #e5e7eb;
+    color: #4b5563;
+}
+.la-print-cal-combo .la-print-cal-daycell.la-print-cal-active {
+    background: #fff;
+}
+.la-print-cal-combo .la-print-cal-dow {
+    display: block;
+    font-weight: 700;
+    font-size: 6.5pt;
+}
+.la-print-cal-combo .la-print-cal-num {
+    display: block;
+    font-size: 6.5pt;
+    color: #374151;
+}
+.la-print-cal-combo .la-print-cal-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    margin: 0 auto;
+}
+.la-print-cal-combo .la-print-cal-dot.la-pri-high { background: #ef4444; }
+.la-print-cal-combo .la-print-cal-dot.la-pri-medium { background: #eab308; }
+.la-print-cal-combo .la-print-cal-dot.la-pri-normal { background: #3b82f6; }
 .la-print-pri-col { width: 7%; }
-.la-print-act-col { width: 28%; }
-.la-print-date-col { width: 9%; }
-.la-print-res-col { width: 10%; }
-.la-print-wbs-col { width: 12%; }
-.la-print-why-col { width: 16%; }
-.la-print-notes-col { width: 14%; }
+.la-print-date-col { width: 8%; white-space: nowrap; }
+.la-print-res-col { width: 9%; }
+.la-print-wbs-col { width: 8%; }
+.la-print-why-col { width: 14%; }
+.la-print-notes-col { width: 12%; }
 .la-print-activity,
 .la-print-why,
 .la-print-notes {

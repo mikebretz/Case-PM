@@ -179,10 +179,13 @@
     function getLookAheadPeriodBounds(ctx) {
         const DAY_MS = 86400000;
         const start = new Date(ctx.dataDate.getFullYear(), ctx.dataDate.getMonth(), ctx.dataDate.getDate());
-        let end = typeof CasePMSchedule !== 'undefined' && CasePMSchedule.addWorkDays
-            ? CasePMSchedule.addWorkDays(start, ctx.horizon)
-            : null;
-        if (!end) end = new Date(start.getTime() + Math.max(ctx.horizon, 1) * DAY_MS);
+        const horizon = Math.max(1, Number(ctx.horizon) || 14);
+        let end;
+        if (typeof CasePMSchedule !== 'undefined' && CasePMSchedule.addCalendarDays) {
+            end = CasePMSchedule.addCalendarDays(start, horizon - 1);
+        } else {
+            end = new Date(start.getTime() + (horizon - 1) * DAY_MS);
+        }
         end = new Date(end.getFullYear(), end.getMonth(), end.getDate());
         const endMs = Math.max(end.getTime(), start.getTime());
         return {
@@ -262,6 +265,18 @@
     function getLookAheadPeriodLabel(ctx) {
         const period = getLookAheadPeriodBounds(ctx);
         return `${formatLookAheadDate(period.start)} – ${formatLookAheadDate(period.end)}`;
+    }
+
+    function getLookAheadHorizonLabel(horizon) {
+        const days = Math.max(1, Number(horizon) || 14);
+        return `${days} calendar day${days === 1 ? '' : 's'}`;
+    }
+
+    function rowActiveOnLookAheadDay(row, dayDate) {
+        const bounds = lookAheadRowDateBounds(row);
+        if (!bounds) return false;
+        const dayMs = new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate()).getTime();
+        return dayMs >= bounds.startMs && dayMs <= bounds.endMs;
     }
 
     function lookAheadBarPct(dateStr, range) {
@@ -418,7 +433,8 @@
 
     function getLookAheadContext() {
         const dataDate = CasePMSchedule.parseDate(document.getElementById('dataDateInput')?.value) || new Date();
-        const horizon = parseInt(document.getElementById('lookaheadDaysInput')?.value, 10) || 14;
+        let horizon = parseInt(document.getElementById('lookaheadDaysInput')?.value, 10) || 14;
+        if (horizon === 30) horizon = 42;
         const periodKey = formatLookAheadDate(dataDate);
         return { dataDate, horizon, periodKey };
     }
@@ -6551,29 +6567,32 @@
         return `<div class="la-gantt-view sched-look-ahead-gantt">
             <div class="la-gantt-meta lookahead-meta">
                 <span>Period: <b>${getLookAheadPeriodLabel(ctx)}</b></span>
-                <span>${ctx.horizon} work days</span>
+                <span>${getLookAheadHorizonLabel(ctx.horizon)}</span>
                 <span>${rows.length} activities</span>
             </div>
-            <div class="la-gantt-chart">
-                <div class="la-gantt-ts-row sched-look-ahead-ts"><div class="la-gantt-label-spacer"></div><div class="la-gantt-ts-cell">${timescale}</div></div>
+            <div class="la-gantt-chart la-gantt-chart-grid">
+                <div class="la-gantt-ts-row sched-look-ahead-ts">
+                    <div class="la-gantt-label la-gantt-corner">Activity</div>
+                    <div class="la-gantt-ts-cell">${timescale}</div>
+                </div>
                 ${body}
             </div>
         </div>`;
     }
 
-    function buildLookAheadCalendarDayGrid(days) {
+    function buildLookAheadCalendarDayCells(row, days, meta) {
         return days.map(d => {
             const wknd = d.getDay() === 0 || d.getDay() === 6;
-            return `<div class="la-cal-daycell${wknd ? ' la-cal-weekend' : ''}"></div>`;
+            const active = rowActiveOnLookAheadDay(row, d);
+            const dot = active ? `<span class="la-cal-dot ${meta.cls}" title="${escHtml(row.activity || '')}"></span>` : '';
+            return `<div class="la-cal-cell${wknd ? ' la-cal-weekend' : ''}${active ? ' la-cal-active' : ''}">${dot}</div>`;
         }).join('');
     }
 
     function buildLookAheadCalendarHtml(rows, ctx) {
         const days = getLookAheadCalendarDays(ctx);
-        const range = getLookAheadPeriodBounds(ctx);
         const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        const rowH = scheduleSettings.default_row_height || 24;
-        const barH = scheduleSettings.default_bar_height || 16;
+        const dayCount = days.length;
         let header = days.map(d => {
             const wknd = d.getDay() === 0 || d.getDay() === 6;
             const scaleDate = formatLookAheadScaleDate(d);
@@ -6582,27 +6601,19 @@
         let body = '';
         rows.forEach(row => {
             const meta = getLookAheadPriorityMeta(row.priority);
-            const seg = lookAheadBarSegment(row, range);
-            const barColor = getLookAheadBarColor(row.priority);
-            const bar = seg
-                ? `<div class="la-cal-bar sched-look-ahead-bar ${meta.cls}" style="left:${seg.left}%;width:${seg.width}%;height:${barH}px;background:${barColor}"></div>`
-                : '';
-            body += `<div class="la-cal-row ${meta.cls} sched-look-ahead-row" style="min-height:${rowH}px">
+            body += `<div class="la-cal-row ${meta.cls} sched-look-ahead-row">
                 <div class="la-cal-row-label" title="${escHtml(row.activity || '')}">${escHtml(row.activity || '—')}</div>
-                <div class="la-cal-chart">
-                    <div class="la-cal-day-grid">${buildLookAheadCalendarDayGrid(days)}</div>
-                    <div class="la-cal-bar-track sched-look-ahead-track">${bar}</div>
-                </div>
+                <div class="la-cal-cells la-cal-day-cells">${buildLookAheadCalendarDayCells(row, days, meta)}</div>
             </div>`;
         });
         if (!rows.length) body = `<div class="la-cal-empty">No activities in this ${ctx.horizon}-day window.</div>`;
-        return `<div class="la-cal-view sched-look-ahead-cal">
+        return `<div class="la-cal-view sched-look-ahead-cal" style="--la-cal-days:${dayCount}">
             <div class="la-cal-meta lookahead-meta">
                 <span>Period: <b>${getLookAheadPeriodLabel(ctx)}</b></span>
-                <span>${ctx.horizon} work days</span>
+                <span>${getLookAheadHorizonLabel(ctx.horizon)}</span>
                 <span>${rows.length} activities</span>
             </div>
-            <div class="la-cal-grid-wrap">
+            <div class="la-cal-grid-wrap la-cal-grid-table">
                 <div class="la-cal-head"><div class="la-cal-row-label la-cal-corner">Activity</div><div class="la-cal-cells la-cal-head-cells">${header}</div></div>
                 ${body}
             </div>
@@ -6656,7 +6667,7 @@
                 <div class="la-print-period-meta">
                     <span><strong>Period:</strong> ${getLookAheadPeriodLabel(ctx)}</span>
                     <span><strong>Status date:</strong> ${ctx.periodKey}</span>
-                    <span><strong>Horizon:</strong> ${ctx.horizon} work days</span>
+                    <span><strong>Horizon:</strong> ${getLookAheadHorizonLabel(ctx.horizon)}</span>
                     <span><strong>Activities:</strong> ${rows.length}</span>
                 </div>
             </div>`;
@@ -6675,31 +6686,59 @@
         </div>`;
     }
 
-    function buildLookAheadPrintTableHtml(rows, ctx, ps) {
-        let head = `<tr>
-            <th class="la-print-pri-col">Priority</th>
-            <th class="la-print-act-col">Activity</th>
-            <th class="la-print-date-col">Start</th>
-            <th class="la-print-date-col">Finish</th>`;
-        if (ps.include_resource !== false) head += `<th class="la-print-res-col">Resource</th>`;
-        head += `<th class="la-print-wbs-col">WBS</th>`;
-        if (ps.include_why !== false) head += `<th class="la-print-why-col">Why</th>`;
-        if (ps.include_notes !== false) head += `<th class="la-print-notes-col">Notes</th>`;
-        head += `</tr>`;
+    function getLookAheadPrintColumns(ps) {
+        const cols = [
+            { key: 'priority', label: 'Priority', class: 'la-print-pri-col' },
+            { key: 'activity', label: 'Activity', class: 'la-print-act-col la-print-act-fit' },
+            { key: 'start', label: 'Start', class: 'la-print-date-col' },
+            { key: 'finish', label: 'Finish', class: 'la-print-date-col' }
+        ];
+        if (ps.include_resource !== false) cols.push({ key: 'resource', label: 'Resource', class: 'la-print-res-col' });
+        cols.push({ key: 'wbs', label: 'WBS', class: 'la-print-wbs-col' });
+        if (ps.include_why !== false) cols.push({ key: 'why', label: 'Why', class: 'la-print-why-col' });
+        if (ps.include_notes !== false) cols.push({ key: 'notes', label: 'Notes', class: 'la-print-notes-col' });
+        return cols;
+    }
 
+    function buildLookAheadPrintDataCell(row, col, meta) {
+        switch (col.key) {
+            case 'priority':
+                return `<span class="la-print-pri ${meta.cls}">${escHtml(row.priority || 'Normal')}</span>`;
+            case 'activity':
+                return escHtml(row.activity || '');
+            case 'start':
+                return escHtml(row.start || '');
+            case 'finish':
+                return escHtml(row.finish || '');
+            case 'resource':
+                return escHtml(row.resource || '');
+            case 'wbs':
+                return escHtml(row.wbsGroup || '');
+            case 'why':
+                return `<span class="la-print-why">${escHtml(row.why || '')}</span>`;
+            case 'notes':
+                return `<span class="la-print-notes">${escHtml(row.notes || '')}</span>`;
+            default:
+                return '';
+        }
+    }
+
+    function buildLookAheadPrintDataHead(cols) {
+        return cols.map(c => `<th class="${c.class}">${escHtml(c.label)}</th>`).join('');
+    }
+
+    function buildLookAheadPrintDataRow(row, cols, ps, meta) {
+        return cols.map(c => `<td class="${c.class}">${buildLookAheadPrintDataCell(row, c, meta)}</td>`).join('');
+    }
+
+    function buildLookAheadPrintTableHtml(rows, ctx, ps) {
+        const cols = getLookAheadPrintColumns(ps);
+        const head = `<tr>${buildLookAheadPrintDataHead(cols)}</tr>`;
         let body = rows.map(row => {
             const meta = getLookAheadPriorityMeta(row.priority);
-            let cells = `<td><span class="la-print-pri ${meta.cls}">${escHtml(row.priority || 'Normal')}</span></td>
-                <td class="la-print-activity">${escHtml(row.activity || '')}</td>
-                <td>${escHtml(row.start || '')}</td>
-                <td>${escHtml(row.finish || '')}</td>`;
-            if (ps.include_resource !== false) cells += `<td>${escHtml(row.resource || '')}</td>`;
-            cells += `<td>${escHtml(row.wbsGroup || '')}</td>`;
-            if (ps.include_why !== false) cells += `<td class="la-print-why">${escHtml(row.why || '')}</td>`;
-            if (ps.include_notes !== false) cells += `<td class="la-print-notes">${escHtml(row.notes || '')}</td>`;
-            return `<tr class="la-print-row ${meta.cls}">${cells}</tr>`;
+            return `<tr class="la-print-row ${meta.cls}">${buildLookAheadPrintDataRow(row, cols, ps, meta)}</tr>`;
         }).join('');
-        if (!body) body = `<tr><td colspan="8" class="la-print-empty">No activities in this period.</td></tr>`;
+        if (!body) body = `<tr><td colspan="${cols.length}" class="la-print-empty">No activities in this period.</td></tr>`;
 
         return wrapLookAheadPrintBody(`<div class="la-print-table-layout">
             <table class="lookahead-print-table">
@@ -6712,6 +6751,8 @@
     function buildLookAheadPrintGanttHtml(rows, ctx, ps) {
         const range = getLookAheadPeriodBounds(ctx);
         const timescale = buildLookAheadTimescaleHtml(range, lookAheadTimescaleTickCount(ctx));
+        const cols = getLookAheadPrintColumns(ps);
+        const colSpan = cols.length;
         let body = '';
         rows.forEach(row => {
             const meta = getLookAheadPriorityMeta(row.priority);
@@ -6720,64 +6761,71 @@
             const bar = seg
                 ? `<div class="la-print-gantt-bar ${meta.cls}" style="left:${seg.left}%;width:${seg.width}%;background:${barColor}"></div>`
                 : '';
-            body += `<div class="la-print-gantt-row ${meta.cls}">
-                <div class="la-print-gantt-label">${escHtml(row.activity || '—')}</div>
-                <div class="la-print-gantt-track sched-look-ahead-track">${bar}</div>
-            </div>`;
+            body += `<tr class="la-print-row la-print-gantt-data-row ${meta.cls}">
+                ${buildLookAheadPrintDataRow(row, cols, ps, meta)}
+                <td class="la-print-gantt-track-cell"><div class="la-print-gantt-track sched-look-ahead-track">${bar}</div></td>
+            </tr>`;
         });
-        if (!rows.length) body = `<div class="la-print-empty-block">No activities in this period.</div>`;
+        if (!rows.length) {
+            body = `<tr><td colspan="${colSpan + 1}" class="la-print-empty">No activities in this period.</td></tr>`;
+        }
 
         return wrapLookAheadPrintBody(`<div class="la-print-gantt-layout">
-            <div class="la-print-gantt-chart">
-                <div class="la-print-gantt-ts"><div class="la-print-gantt-label-spacer"></div><div class="la-print-gantt-ts-track">${timescale}</div></div>
-                ${body}
-            </div>
+            <table class="lookahead-print-combo la-print-gantt-combo">
+                <thead>
+                    <tr>
+                        ${buildLookAheadPrintDataHead(cols)}
+                        <th class="la-print-chart-col">
+                            <div class="la-print-gantt-ts-track">${timescale}</div>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>${body}</tbody>
+            </table>
         </div>`, ctx, rows, ps);
     }
 
     function buildLookAheadPrintCalendarHtml(rows, ctx, ps) {
         const days = getLookAheadCalendarDays(ctx);
-        const range = getLookAheadPeriodBounds(ctx);
-        const dow = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-        let header = days.map(d => {
+        const cols = getLookAheadPrintColumns(ps);
+        const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const dayHead = days.map(d => {
             const wknd = d.getDay() === 0 || d.getDay() === 6;
             const scaleDate = formatLookAheadScaleDate(d);
-            return `<div class="la-print-cal-day${wknd ? ' la-print-cal-weekend' : ''}">
+            return `<th class="la-print-cal-dayhead${wknd ? ' la-print-cal-weekend' : ''}">
                 <span class="la-print-cal-dow">${dow[d.getDay()]}</span>
                 <span class="la-print-cal-num">${escHtml(scaleDate)}</span>
-            </div>`;
+            </th>`;
         }).join('');
 
         let body = '';
         rows.forEach(row => {
             const meta = getLookAheadPriorityMeta(row.priority);
-            const seg = lookAheadBarSegment(row, range);
-            const barColor = getLookAheadBarColor(row.priority);
-            const dayGrid = days.map(d => {
+            const dayCells = days.map(d => {
                 const wknd = d.getDay() === 0 || d.getDay() === 6;
-                return `<div class="la-print-cal-bgcell${wknd ? ' la-print-cal-weekend' : ''}"></div>`;
+                const active = rowActiveOnLookAheadDay(row, d);
+                const dot = active ? `<span class="la-print-cal-dot ${meta.cls}" title="${escHtml(row.activity || '')}"></span>` : '';
+                return `<td class="la-print-cal-daycell${wknd ? ' la-print-cal-weekend' : ''}${active ? ' la-print-cal-active' : ''}">${dot}</td>`;
             }).join('');
-            const bar = seg
-                ? `<div class="la-print-cal-bar ${meta.cls}" style="left:${seg.left}%;width:${seg.width}%;background:${barColor}"></div>`
-                : '';
-            body += `<div class="la-print-cal-row ${meta.cls}">
-                <div class="la-print-cal-label">${escHtml(row.activity || '—')}</div>
-                <div class="la-print-cal-chart">
-                    <div class="la-print-cal-bg">${dayGrid}</div>
-                    <div class="la-print-cal-bar-track sched-look-ahead-track">${bar}</div>
-                </div>
-            </div>`;
+            body += `<tr class="la-print-row la-print-cal-data-row ${meta.cls}">
+                ${buildLookAheadPrintDataRow(row, cols, ps, meta)}
+                ${dayCells}
+            </tr>`;
         });
-        if (!rows.length) body = `<div class="la-print-empty-block">No activities in this period.</div>`;
+        if (!rows.length) {
+            body = `<tr><td colspan="${cols.length + days.length}" class="la-print-empty">No activities in this period.</td></tr>`;
+        }
 
         return wrapLookAheadPrintBody(`<div class="la-print-calendar-layout">
-            <div class="la-print-cal-grid">
-                <div class="la-print-cal-head">
-                    <div class="la-print-cal-label la-print-cal-corner">Activity</div>
-                    <div class="la-print-cal-cells la-print-cal-head-cells">${header}</div>
-                </div>
-                ${body}
-            </div>
+            <table class="lookahead-print-combo la-print-cal-combo">
+                <thead>
+                    <tr>
+                        ${buildLookAheadPrintDataHead(cols)}
+                        ${dayHead}
+                    </tr>
+                </thead>
+                <tbody>${body}</tbody>
+            </table>
         </div>`, ctx, rows, ps);
     }
 
@@ -6921,7 +6969,7 @@
             viewHtml = `
             <div class="lookahead-meta mb-3 flex flex-wrap gap-4 text-sm">
                 <span>Period: <b>${getLookAheadPeriodLabel(ctx)}</b></span>
-                <span>Horizon: <b>${horizon} work days</b></span>
+                <span>Horizon: <b>${getLookAheadHorizonLabel(horizon)}</b></span>
                 <span>Rows: <b>${rows.length}</b></span>
                 <span class="text-zinc-500 text-xs">Drag <i class="fa-solid fa-grip-vertical"></i> to reorder · edit cells inline</span>
             </div>
