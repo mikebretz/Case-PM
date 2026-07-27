@@ -372,11 +372,7 @@
                 schedStart = ls.get(id);
                 schedEnd = lf.get(id);
             }
-            const evm = computeEVM(Object.assign({}, t, {
-                start_date: schedStart,
-                end_date: schedEnd
-            }), dataDate);
-            updates.set(id, {
+            const patch = {
                 start_date: schedStart,
                 end_date: schedEnd,
                 early_start: es.get(id),
@@ -386,9 +382,15 @@
                 total_float: totalFloat,
                 free_float: totalFloat,
                 $slack: totalFloat,
-                $critical: critical,
-                ...evm
-            });
+                $critical: critical
+            };
+            if (!opts.skipEvm) {
+                Object.assign(patch, computeEVM(Object.assign({}, t, {
+                    start_date: schedStart,
+                    end_date: schedEnd
+                }), dataDate));
+            }
+            updates.set(id, patch);
         });
 
         // Roll summary dates from children
