@@ -200,6 +200,7 @@ def _project_to_gantt(project) -> dict[str, Any]:
 
     data: list[dict[str, Any]] = []
     uid_map: dict[int, int] = {}
+    gid_is_summary: dict[int, bool] = {}
     pending_links: list[tuple[int, int, int, int]] = []
     links: list[dict[str, Any]] = []
     link_id = 1
@@ -241,9 +242,14 @@ def _project_to_gantt(project) -> dict[str, Any]:
 
         summary = bool(task.getSummary())
         milestone = bool(task.getMilestone())
+        gid_is_summary[gid] = summary
         outline = int(task.getOutlineLevel() or 1)
         start = _format_date(task.getStart())
         finish = _format_date(task.getFinish())
+        if not start:
+            start = _format_date(task.getEarlyStart())
+        if not finish:
+            finish = _format_date(task.getEarlyFinish())
         duration = _duration_days(task.getDuration(), defaults)
         pct = task.getPercentageComplete()
         try:
@@ -295,9 +301,13 @@ def _project_to_gantt(project) -> dict[str, Any]:
                     _lag_days(rel.getLag(), defaults),
                 ))
 
+    skipped_summary_links = 0
     for target_gid, pred_uid, type_val, lag in pending_links:
         source = uid_map.get(pred_uid)
         if not source:
+            continue
+        if gid_is_summary.get(source) or gid_is_summary.get(target_gid):
+            skipped_summary_links += 1
             continue
         links.append({
             'id': link_id,
@@ -325,6 +335,7 @@ def _project_to_gantt(project) -> dict[str, Any]:
         'link_count': len(links),
         'skipped_inactive': skipped_inactive,
         'skipped_null': skipped_null,
+        'skipped_summary_links': skipped_summary_links,
     }
     if date_values:
         import_meta['date_start'] = min(date_values)

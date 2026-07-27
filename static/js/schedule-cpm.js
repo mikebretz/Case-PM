@@ -361,6 +361,7 @@
         const dataDate = parseDate(opts.dataDate) || today;
 
         const updates = new Map();
+        const preserveDates = !!opts.preserveDates;
         leaves.forEach(id => {
             const t = taskMap.get(id);
             const totalFloat = Math.max(0, calendarDaysBetween(es.get(id), ls.get(id)));
@@ -373,8 +374,6 @@
                 schedEnd = lf.get(id);
             }
             const patch = {
-                start_date: schedStart,
-                end_date: schedEnd,
                 early_start: es.get(id),
                 early_finish: ef.get(id),
                 late_start: ls.get(id),
@@ -384,44 +383,51 @@
                 $slack: totalFloat,
                 $critical: critical
             };
+            if (!preserveDates) {
+                patch.start_date = schedStart;
+                patch.end_date = schedEnd;
+            }
             if (!opts.skipEvm) {
+                const evmStart = preserveDates ? (parseDate(t.start_date) || schedStart) : schedStart;
+                const evmEnd = preserveDates ? (parseDate(t.end_date) || schedEnd) : schedEnd;
                 Object.assign(patch, computeEVM(Object.assign({}, t, {
-                    start_date: schedStart,
-                    end_date: schedEnd
+                    start_date: evmStart,
+                    end_date: evmEnd
                 }), dataDate));
             }
             updates.set(id, patch);
         });
 
-        // Roll summary dates from children
-        function rollup(parentId) {
-            const kids = childIds.get(String(parentId)) || [];
-            if (!kids.length) return;
-            kids.forEach(rollup);
-            if (!taskMap.has(String(parentId))) return;
-            let minS = null;
-            let maxE = null;
-            kids.forEach(cid => {
-                const u = updates.get(cid);
-                const t = taskMap.get(cid);
-                const s = u?.start_date || parseDate(t.start_date);
-                const e = u?.end_date || parseDate(t.end_date);
-                if (s && (!minS || s < minS)) minS = s;
-                if (e && (!maxE || e > maxE)) maxE = e;
-            });
-            if (minS) {
-                updates.set(String(parentId), {
-                    start_date: minS,
-                    end_date: maxE || minS,
-                    total_float: null,
-                    free_float: null,
-                    $slack: null,
-                    $critical: false
+        if (!preserveDates) {
+            function rollup(parentId) {
+                const kids = childIds.get(String(parentId)) || [];
+                if (!kids.length) return;
+                kids.forEach(rollup);
+                if (!taskMap.has(String(parentId))) return;
+                let minS = null;
+                let maxE = null;
+                kids.forEach(cid => {
+                    const u = updates.get(cid);
+                    const t = taskMap.get(cid);
+                    const s = u?.start_date || parseDate(t.start_date);
+                    const e = u?.end_date || parseDate(t.end_date);
+                    if (s && (!minS || s < minS)) minS = s;
+                    if (e && (!maxE || e > maxE)) maxE = e;
                 });
+                if (minS) {
+                    updates.set(String(parentId), {
+                        start_date: minS,
+                        end_date: maxE || minS,
+                        total_float: null,
+                        free_float: null,
+                        $slack: null,
+                        $critical: false
+                    });
+                }
             }
+            ['0', 0].forEach(r => rollup(r));
+            childIds.forEach((_, pid) => rollup(pid));
         }
-        ['0', 0].forEach(r => rollup(r));
-        childIds.forEach((_, pid) => rollup(pid));
 
         return { updates, wbsMap: buildWbsMap(tasks) };
     }
