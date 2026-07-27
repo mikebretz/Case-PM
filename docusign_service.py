@@ -31,6 +31,7 @@ def integration_info():
             'DOCUSIGN_USER_ID',
             'DOCUSIGN_ACCOUNT_ID',
             'DOCUSIGN_PRIVATE_KEY or DOCUSIGN_PRIVATE_KEY_PATH',
+            'DOCUSIGN_CONNECT_HMAC_SECRET (recommended for webhooks)',
         ],
     }
 
@@ -174,3 +175,57 @@ def parse_webhook_payload(body_bytes):
     except (TypeError, json.JSONDecodeError, UnicodeDecodeError):
         return None
     return data
+
+
+def _webhook_secret() -> str:
+    return (
+        os.environ.get('DOCUSIGN_CONNECT_HMAC_SECRET', '').strip()
+        or os.environ.get('DOCUSIGN_WEBHOOK_SECRET', '').strip()
+    )
+
+
+def verify_webhook_signature(body_bytes: bytes, headers) -> bool:
+    """Validate DocuSign Connect HMAC signature when a webhook secret is configured."""
+    secret = _webhook_secret()
+    if not secret:
+        if is_configured():
+            return False
+        return os.environ.get('DOCUSIGN_ALLOW_UNSIGNED_WEBHOOKS', '').lower() in ('1', 'true', 'yes')
+
+    import hmac
+    import hashlib
+
+    hdr = ''
+    if headers is not None:
+        hdr = (
+            headers.get('X-DocuSign-Signature-1')
+            or headers.get('x-docusign-signature-1')
+            or ''
+        ).strip()
+    if hdr:
+        parts = {}
+        for segment in hdr.split(','):
+            if '=' in segment:
+                key, value = segment.split('=', 1)
+                parts[key.strip()] = value.strip()
+        timestamp = parts.get('t', '')
+        signature = parts.get('v1', '')
+        if not timestamp or not signature:
+            return False
+        payload = f'{timestamp}.'.encode('utf-8') + (body_bytes or b'')
+        computed = hmac.new(secret.encode('utf-8'), payload, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(computed, signature)
+
+    legacy = ''
+    if headers is not None:
+        legacy = (
+            headers.get('X-DocuSign-Signature')
+            or headers.get('x-docusign-signature')
+            or ''
+        ).strip()
+    if legacy:
+        expected = base64.b64encode(
+            hmac.new(secret.encode('utf-8'), body_bytes or b'', hashlib.sha256).digest()
+        ).decode('ascii')
+        return hmac.compare_digest(expected, legacy)
+    return False

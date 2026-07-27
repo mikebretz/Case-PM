@@ -101,10 +101,21 @@ def register_platform_gaps_routes(app, deps):
     @app.route('/api/integrations/logs')
     @login_required
     def api_integrations_logs():
+        from financial_security import require_financial_project_access
+        from project_access import get_assigned_project_ids, user_bypasses_project_scope
         q = IntegrationSyncLog.query.order_by(IntegrationSyncLog.created_at.desc()).limit(50)
         project_id = request.args.get('project_id', type=int)
         if project_id:
+            try:
+                require_financial_project_access(current_user, project_id, Project)
+            except (ValueError, PermissionError) as exc:
+                return jsonify({'error': str(exc)}), 403
             q = q.filter_by(project_id=project_id)
+        elif not user_bypasses_project_scope(current_user):
+            allowed = get_assigned_project_ids(current_user, Project)
+            if not allowed:
+                return jsonify({'logs': []})
+            q = q.filter(IntegrationSyncLog.project_id.in_(allowed))
         rows = q.all()
         return jsonify({'logs': [{
             'id': r.id, 'integration': r.integration, 'direction': r.direction,
@@ -116,7 +127,12 @@ def register_platform_gaps_routes(app, deps):
     @login_required
     def api_transmittal_pdf(record_id):
         from platform_gaps_services import build_transmittal_pdf_for_record
+        from financial_security import require_financial_project_access
         row = ExtendedModuleRecord.query.filter_by(id=record_id, module_key='transmittals').first_or_404()
+        try:
+            require_financial_project_access(current_user, row.project_id, Project)
+        except (ValueError, PermissionError) as exc:
+            return jsonify({'error': str(exc)}), 403
         pdf = build_transmittal_pdf_for_record(row, Project, OperationsTransmittalRecipient)
         return send_file(
             io.BytesIO(pdf),
@@ -142,7 +158,12 @@ def register_platform_gaps_routes(app, deps):
     @login_required
     def api_wh347_pdf(record_id):
         from platform_gaps_services import generate_certified_payroll
+        from financial_security import require_financial_project_access
         row = ExtendedModuleRecord.query.filter_by(id=record_id, module_key='certified_payroll').first_or_404()
+        try:
+            require_financial_project_access(current_user, row.project_id, Project)
+        except (ValueError, PermissionError) as exc:
+            return jsonify({'error': str(exc)}), 403
         pdf, violations = generate_certified_payroll(db, row, Project)
         resp = send_file(
             io.BytesIO(pdf),

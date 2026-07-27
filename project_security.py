@@ -30,6 +30,9 @@ _ENTITY_PATH_RULES = (
     (re.compile(r'^/api/safety/training-events/(\d+)(?:/|$)'), 'SafetyTrainingEvent'),
     (re.compile(r'^/api/weekly-reports/(\d+)(?:/|$)'), 'WeeklyReport'),
     (re.compile(r'^/api/documents/(\d+)(?:/|$)'), 'Document'),
+    (re.compile(r'^/api/commitments/(\d+)(?:/|$)'), 'Commitment'),
+    (re.compile(r'^/api/change-orders/(\d+)(?:/|$)'), 'ChangeOrder'),
+    (re.compile(r'^/api/pcos/(\d+)(?:/|$)'), 'PotentialChangeOrder'),
     (re.compile(r'^/api/projects/(\d+)(?:/|$)'), '__project__'),
 )
 
@@ -45,6 +48,7 @@ _UPLOAD_RULES = (
     (re.compile(r'^/uploads/contracts/(?P<pid>\d+)/'), '__project__'),
     (re.compile(r'^/uploads/spec_books/(?P<pid>\d+)/'), '__project__'),
     (re.compile(r'^/uploads/commitments/(?P<eid>\d+)/'), 'Commitment'),
+    (re.compile(r'^/uploads/change_orders/pco_(?P<eid>\d+)/'), 'PotentialChangeOrder'),
     (re.compile(r'^/uploads/change_orders/(?P<eid>\d+)/'), 'ChangeOrder'),
 )
 

@@ -187,9 +187,29 @@ def serialize_log(row, user=None):
     }
 
 
+_CLIENT_AUDIT_ALLOWED = frozenset({
+    'action', 'detail', 'details', 'metadata', 'target_type', 'target_id',
+    'module', 'category', 'severity', 'project_id', 'project_name',
+    'company_id', 'company_name', 'change_order_id', 'entity_ref', 'client_id',
+})
+
+
+def sanitize_client_audit_fields(fields: dict | None) -> dict:
+    """Strip fields that must not be supplied by API clients (forgery/tampering)."""
+    if not isinstance(fields, dict):
+        return {}
+    cleaned = {k: fields[k] for k in _CLIENT_AUDIT_ALLOWED if k in fields}
+    cleaned.pop('timestamp', None)
+    cleaned.pop('user_id', None)
+    cleaned.pop('user_name', None)
+    cleaned.pop('user_email', None)
+    return cleaned
+
+
 def record_audit(db, AuditLog, user, **fields):
     """Insert one audit row. `user` may be None for system events."""
     ensure_audit_log_schema(db)
+    fields = sanitize_client_audit_fields(fields)
     action = (fields.get('action') or 'Action').strip()[:100]
     if not action:
         action = 'Action'
@@ -204,15 +224,15 @@ def record_audit(db, AuditLog, user, **fields):
             return existing
 
     row = AuditLog(
-        user_id=getattr(user, 'id', None) if user else fields.get('user_id'),
+        user_id=getattr(user, 'id', None) if user else None,
         action=action,
         target_type=(fields.get('target_type') or '')[:50] or None,
         target_id=fields.get('target_id'),
         details=str(detail)[:4000] if detail else None,
-        timestamp=_coerce_timestamp(fields.get('timestamp')),
+        timestamp=_coerce_timestamp(None),
         module=(fields.get('module') or 'app')[:80],
-        user_name=(fields.get('user_name') or (user.full_name if user else ''))[:150] or None,
-        user_email=(fields.get('user_email') or (getattr(user, 'email', '') if user else ''))[:120] or None,
+        user_name=(user.full_name if user else '')[:150] or None,
+        user_email=(getattr(user, 'email', '') if user else '')[:120] or None,
         project_id=fields.get('project_id'),
         project_name=(fields.get('project_name') or '')[:200] or None,
         company_id=fields.get('company_id'),

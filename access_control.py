@@ -24,6 +24,12 @@ def clear_session_activity():
     session.pop(SESSION_ACTIVITY_KEY, None)
     session.modified = True
 
+
+def regenerate_session_on_login():
+    """Discard pre-auth session identifiers to prevent session fixation."""
+    session.clear()
+    session.modified = True
+
 FINANCIAL_MODULES = frozenset({
     'budget', 'forecast', 'commitments', 'pay_applications',
     'pay_applications_gc', 'pay_applications_sub', 'pay_applications_lien_waivers',
