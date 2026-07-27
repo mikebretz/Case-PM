@@ -2852,10 +2852,243 @@ textarea.lookahead-input {
     display: none;
 }
 
+/* Look-ahead print document (light theme — separate from on-screen dark UI) */
+.lookahead-print-doc {
+    font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+    color: #111827;
+    background: #fff;
+    line-height: 1.35;
+}
+.la-print-header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 12px 24px;
+    padding-bottom: 10px;
+    margin-bottom: 12px;
+    border-bottom: 2px solid #1f2937;
+}
+.la-print-title {
+    margin: 0;
+    font-size: 18pt;
+    font-weight: 700;
+    color: #111827;
+    letter-spacing: -0.02em;
+}
+.la-print-project {
+    margin: 4px 0 0;
+    font-size: 11pt;
+    color: #374151;
+    font-weight: 600;
+}
+.la-print-header-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(9rem, auto));
+    gap: 4px 16px;
+    font-size: 9pt;
+}
+.la-print-k {
+    display: block;
+    font-size: 7pt;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #6b7280;
+    font-weight: 700;
+}
+.la-print-v {
+    display: block;
+    color: #111827;
+    font-weight: 600;
+}
+.lookahead-print-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8.5pt;
+    table-layout: fixed;
+}
+.lookahead-print-table th,
+.lookahead-print-table td {
+    border: 1px solid #d1d5db;
+    padding: 5px 7px;
+    vertical-align: top;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+}
+.lookahead-print-table th {
+    background: #f3f4f6;
+    color: #374151;
+    font-size: 7.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 700;
+}
+.la-print-pri-col { width: 7%; }
+.la-print-act-col { width: 28%; }
+.la-print-date-col { width: 9%; }
+.la-print-res-col { width: 10%; }
+.la-print-wbs-col { width: 12%; }
+.la-print-why-col { width: 16%; }
+.la-print-notes-col { width: 14%; }
+.la-print-activity,
+.la-print-why,
+.la-print-notes {
+    white-space: normal;
+    line-height: 1.4;
+}
+.la-print-pri {
+    display: inline-block;
+    font-size: 7pt;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 2px 6px;
+    border-radius: 999px;
+}
+.la-print-pri.la-pri-high { color: #b91c1c; background: #fee2e2; }
+.la-print-pri.la-pri-medium { color: #a16207; background: #fef9c3; }
+.la-print-pri.la-pri-normal { color: #1d4ed8; background: #dbeafe; }
+.la-print-row.la-pri-high { border-left: 3px solid #ef4444; }
+.la-print-row.la-pri-medium { border-left: 3px solid #eab308; }
+.la-print-row.la-pri-normal { border-left: 3px solid #3b82f6; }
+.la-print-empty,
+.la-print-empty-block {
+    padding: 1.5rem;
+    text-align: center;
+    color: #6b7280;
+    font-style: italic;
+}
+
+/* Print Gantt */
+.la-print-gantt-chart { margin-top: 4px; }
+.la-print-gantt-ts {
+    display: flex;
+    margin-bottom: 4px;
+    border-bottom: 1px solid #d1d5db;
+    padding-bottom: 4px;
+}
+.la-print-gantt-label-spacer { width: 38%; flex-shrink: 0; }
+.la-print-gantt-ts-track { flex: 1; position: relative; height: 18px; }
+.la-print-gantt-ts-track .la-ts-label {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    font-size: 7pt;
+    color: #4b5563;
+    white-space: nowrap;
+}
+.la-print-gantt-row {
+    display: flex;
+    align-items: stretch;
+    min-height: 1.6rem;
+    border-bottom: 1px solid #e5e7eb;
+    page-break-inside: avoid;
+}
+.la-print-gantt-row.la-pri-high { background: #fef2f2; }
+.la-print-gantt-row.la-pri-medium { background: #fffbeb; }
+.la-print-gantt-row.la-pri-normal { background: #eff6ff; }
+.la-print-gantt-label {
+    width: 38%;
+    flex-shrink: 0;
+    padding: 5px 8px 5px 0;
+    font-size: 8.5pt;
+    font-weight: 500;
+    color: #111827;
+    white-space: normal;
+    line-height: 1.35;
+    border-right: 1px solid #e5e7eb;
+}
+.la-print-gantt-track {
+    flex: 1;
+    position: relative;
+    min-height: 1.25rem;
+    margin: 4px 0;
+    background: repeating-linear-gradient(to right, transparent, transparent 9.9%, #e5e7eb 9.9%, #e5e7eb 10%);
+    border-radius: 2px;
+}
+.la-print-gantt-bar {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    border-radius: 3px;
+    min-width: 3px;
+}
+.la-print-gantt-bar.la-pri-high { background: #ef4444; }
+.la-print-gantt-bar.la-pri-medium { background: #eab308; }
+.la-print-gantt-bar.la-pri-normal { background: #3b82f6; }
+
+/* Print calendar */
+.la-print-cal-grid { margin-top: 4px; border: 1px solid #d1d5db; border-radius: 4px; overflow: hidden; }
+.la-print-cal-head,
+.la-print-cal-row { display: flex; border-bottom: 1px solid #e5e7eb; }
+.la-print-cal-row:last-child { border-bottom: none; }
+.la-print-cal-label {
+    width: 26%;
+    flex-shrink: 0;
+    padding: 5px 8px;
+    font-size: 8pt;
+    font-weight: 500;
+    color: #111827;
+    white-space: normal;
+    line-height: 1.35;
+    border-right: 1px solid #e5e7eb;
+    background: #fafafa;
+}
+.la-print-cal-corner {
+    font-size: 7pt;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6b7280;
+    font-weight: 700;
+}
+.la-print-cal-cells { display: flex; flex: 1; }
+.la-print-cal-day {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+    padding: 3px 1px;
+    font-size: 7pt;
+    border-right: 1px solid #e5e7eb;
+    background: #f9fafb;
+}
+.la-print-cal-day:last-child { border-right: none; }
+.la-print-cal-day.la-print-cal-weekend { background: #e5e7eb; color: #4b5563; }
+.la-print-cal-dow { display: block; font-weight: 700; }
+.la-print-cal-num { display: block; color: #374151; }
+.la-print-cal-cell {
+    flex: 1;
+    min-width: 0;
+    min-height: 1.1rem;
+    border-right: 1px solid #f3f4f6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.la-print-cal-cell:last-child { border-right: none; }
+.la-print-cal-cell.la-print-cal-weekend { background: #f3f4f6; }
+.la-print-cal-cell.la-print-cal-active { background: #fff; }
+.la-print-cal-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+}
+.la-print-cal-dot.la-pri-high { background: #ef4444; }
+.la-print-cal-dot.la-pri-medium { background: #eab308; }
+.la-print-cal-dot.la-pri-normal { background: #3b82f6; }
+.la-print-cal-row.la-pri-high .la-print-cal-label { border-left: 3px solid #ef4444; }
+.la-print-cal-row.la-pri-medium .la-print-cal-label { border-left: 3px solid #eab308; }
+.la-print-cal-row.la-pri-normal .la-print-cal-label { border-left: 3px solid #3b82f6; }
+
+.lookahead-print-doc.la-print-compact .lookahead-print-table { font-size: 7.5pt; }
+.lookahead-print-doc.la-print-compact .lookahead-print-table th,
+.lookahead-print-doc.la-print-compact .lookahead-print-table td { padding: 3px 5px; }
+.lookahead-print-doc.la-print-compact .la-print-gantt-label,
+.lookahead-print-doc.la-print-compact .la-print-cal-label { font-size: 7.5pt; padding: 3px 6px; }
+
 @media print {
     body.printing-lookahead {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
+        background: #fff !important;
     }
     body.printing-lookahead #appShell > #appHeaderBar,
     body.printing-lookahead #appSidebar,
@@ -2867,7 +3100,7 @@ textarea.lookahead-input {
     body.printing-lookahead #calendarViewPanel,
     body.printing-lookahead #traceViewPanel,
     body.printing-lookahead #portfolioViewPanel,
-    body.printing-lookahead #lookaheadPrintSheet,
+    body.printing-lookahead #lookaheadViewPanel,
     body.printing-lookahead .no-print {
         display: none !important;
     }
@@ -2875,36 +3108,27 @@ textarea.lookahead-input {
         padding: 0 !important;
         overflow: visible !important;
         display: block !important;
+        background: #fff !important;
     }
     body.printing-lookahead .schedule-page-root {
         overflow: visible !important;
         height: auto !important;
+        background: #fff !important;
     }
-    body.printing-lookahead #lookaheadViewPanel {
-        display: flex !important;
-        position: static !important;
+    body.printing-lookahead #lookaheadPrintSheet {
+        display: block !important;
+        position: relative !important;
         visibility: visible !important;
         width: 100% !important;
-        height: auto !important;
-        overflow: visible !important;
-        border: none !important;
-        background: transparent !important;
+        padding: 0 !important;
+        background: #fff !important;
+        color: #111827 !important;
     }
-    body.printing-lookahead #lookaheadViewPanel > .lookahead-panel {
-        height: auto !important;
-        overflow: visible !important;
-        page-break-inside: avoid;
+    body.printing-lookahead.la-print-fit-one-page #lookaheadPrintSheet .lookahead-print-doc {
+        max-height: 100vh;
+        overflow: hidden;
     }
-    body.printing-lookahead #lookaheadContent {
-        overflow: visible !important;
-        height: auto !important;
-    }
-    body.printing-lookahead .lookahead-table-wrap {
-        overflow: visible !important;
-    }
-    body.printing-lookahead .lookahead-input {
-        border-color: transparent !important;
-        background: transparent !important;
-        box-shadow: none !important;
-    }
+    body.printing-lookahead.la-print-fit-one-page .lookahead-print-table { font-size: 7.5pt; }
+    body.printing-lookahead.la-print-fit-one-page .la-print-gantt-label,
+    body.printing-lookahead.la-print-fit-one-page .la-print-cal-label { font-size: 7.5pt; }
 }
