@@ -879,7 +879,7 @@ body.schedule-chart-resizing {
 }
 .gantt_grid_data {
     overflow-x: scroll !important;
-    overflow-y: auto !important;
+    overflow-y: hidden !important;
     scrollbar-width: none;
 }
 .gantt_grid_data .gantt_row {
