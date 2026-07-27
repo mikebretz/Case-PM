@@ -45,6 +45,8 @@ SAGE_EVENT_MAP = {
     'CommitmentDocuSignSent': {'module': 'AP', 'action': 'docusign_sent'},
     'CommitmentExecuted': {'module': 'AP', 'action': 'commitment_executed'},
     'ManualSync': {'module': 'General', 'action': 'sync'},
+    'TimesheetPosted': {'module': 'JobCost', 'action': 'post_labor'},
+    'DirectCostPosted': {'module': 'JobCost', 'action': 'post_direct_cost'},
 }
 
 # Sage CRE module/action overrides by commitment document type

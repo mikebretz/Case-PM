@@ -236,6 +236,14 @@
     const host = $('opsAiHost');
     host.innerHTML = `
       <div class="ops-chat">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs text-zinc-500" id="opsAiProvider">AI assistant — set OPENAI_API_KEY or ANTHROPIC_API_KEY for live LLM</span>
+          <div class="flex gap-2">
+            <button type="button" class="ops-ai-task px-2 py-1 text-xs border border-zinc-700 rounded" data-task="rfi_draft">RFI draft</button>
+            <button type="button" class="ops-ai-task px-2 py-1 text-xs border border-zinc-700 rounded" data-task="submittal_review">Submittal review</button>
+            <button type="button" class="ops-ai-task px-2 py-1 text-xs border border-zinc-700 rounded" data-task="scope_gap">Scope gaps</button>
+          </div>
+        </div>
         <div class="ops-chat-msgs" id="opsChatMsgs">${state.aiMessages.map(m => `
           <div class="ops-chat-bubble ${m.role}">${shell.esc(m.content)}</div>`).join('') || '<p class="text-zinc-500 text-sm">Ask anything about this project — schedule risk, billing, change orders, safety.</p>'}
         </div>
@@ -246,6 +254,21 @@
       </div>`;
     $('opsChatSend')?.addEventListener('click', sendAiMessage);
     $('opsChatInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') sendAiMessage(); });
+    host.querySelectorAll('.ops-ai-task').forEach(btn => {
+      btn.addEventListener('click', () => runAiAssist(btn.dataset.task));
+    });
+  }
+
+  async function runAiAssist(task) {
+    try {
+      const data = await api('/api/operations/ai/assist', {
+        method: 'POST',
+        body: JSON.stringify({ task, project_id: projectRequired() }),
+      });
+      state.aiMessages.push({ role: 'assistant', content: data.response });
+      if (data.llm_configured) $('opsAiProvider').textContent = `Powered by ${data.provider || 'LLM'}`;
+      renderAiPanel();
+    } catch (e) { toast(e.message, false); }
   }
 
   async function sendAiMessage() {
@@ -263,6 +286,7 @@
       state.aiThreadId = data.thread_id;
       state.aiMessages = data.messages || state.aiMessages;
       if (data.response) state.aiMessages.push({ role: 'assistant', content: data.response });
+      if (data.llm_configured) $('opsAiProvider').textContent = `Powered by ${data.provider || 'LLM'}`;
       renderAiPanel();
       const msgs = $('opsChatMsgs');
       if (msgs) msgs.scrollTop = msgs.scrollHeight;
@@ -505,6 +529,16 @@
     if (state.moduleKey === 'tm_tickets' && record) actions += `<button type="button" id="opsPromoteCe" class="text-sm text-sky-400 bg-transparent border-none cursor-pointer">→ Change Event</button>`;
     if (state.moduleKey === 'vendor_invoices' && record) actions += `<button type="button" id="opsValidateInv" class="text-sm text-violet-400 bg-transparent border-none cursor-pointer">Validate vs SOV</button>`;
     if (state.moduleKey === 'timesheets' && record) actions += `<button type="button" id="opsPostTs" class="text-sm text-emerald-400 bg-transparent border-none cursor-pointer">Post to job cost</button>`;
+    if (state.moduleKey === 'direct_costs' && record) actions += `<button type="button" id="opsPostDc" class="text-sm text-emerald-400 bg-transparent border-none cursor-pointer">Post to job cost</button>`;
+    if (state.moduleKey === 'transmittals' && record) {
+      actions += `<button type="button" id="opsSendTrans" class="text-sm text-sky-400 bg-transparent border-none cursor-pointer">Send & distribute</button>`;
+      actions += `<a href="/api/operations/transmittals/${record.id}/pdf" target="_blank" class="text-sm text-zinc-400 hover:text-white">PDF package</a>`;
+    }
+    if (state.moduleKey === 'certified_payroll' && record) {
+      actions += `<button type="button" id="opsValidatePay" class="text-sm text-violet-400 bg-transparent border-none cursor-pointer">Check prevailing wage</button>`;
+      actions += `<button type="button" id="opsFilePay" class="text-sm text-emerald-400 bg-transparent border-none cursor-pointer">File WH-347</button>`;
+      actions += `<a href="/api/operations/certified_payroll/${record.id}/wh347" target="_blank" class="text-sm text-zinc-400 hover:text-white">Download WH-347</a>`;
+    }
     if (state.moduleKey === 'payment_batches' && record) actions += `<button type="button" id="opsProcessPay" class="text-sm text-emerald-400 bg-transparent border-none cursor-pointer">Process payment batch</button>`;
     if (state.moduleKey === 'report_definitions' && record) actions += `<button type="button" id="opsRunSaved" class="text-sm text-emerald-400 bg-transparent border-none cursor-pointer">Run report</button>`;
     if (actions) {
@@ -513,6 +547,10 @@
       $('opsPromoteCe')?.addEventListener('click', () => runAction('promote_change_event'));
       $('opsValidateInv')?.addEventListener('click', () => runAction('validate_invoice'));
       $('opsPostTs')?.addEventListener('click', () => runAction('post_timesheet'));
+      $('opsPostDc')?.addEventListener('click', () => runAction('post_direct_cost'));
+      $('opsSendTrans')?.addEventListener('click', () => runAction('send_transmittal'));
+      $('opsValidatePay')?.addEventListener('click', () => runAction('validate_payroll'));
+      $('opsFilePay')?.addEventListener('click', () => runAction('file_payroll'));
       $('opsProcessPay')?.addEventListener('click', () => runAction('process_payment'));
       $('opsRunSaved')?.addEventListener('click', () => runAction('run_report'));
     }
@@ -527,7 +565,8 @@
       if (data.validation) toast((data.validation.messages || []).join(' · ') || 'Validated', !data.validation.valid === false);
       if (data.message) toast(data.message, true);
       if (data.report) { state.lastReport = data.report; if (state.moduleKey === 'report_definitions') { $('opsReportHost')?.classList.remove('hidden'); renderReportBuilder(); renderReportOutput(data.report); } }
-      if (data.warnings?.length) toast(data.warnings.join(' · '), false);
+      if (data.violations?.length) toast(`Prevailing wage: ${data.violations.length} violation(s)`, false);
+      if (data.valid === true) toast('Prevailing wage compliance OK', true);
       await loadRecords();
       $('opsModal').close();
     } catch (e) { toast(e.message, false); }
@@ -572,7 +611,20 @@
     }
   }
 
+  async function runIntegrationSync(integration) {
+    try {
+      const data = await api('/api/integrations/sync', {
+        method: 'POST',
+        body: JSON.stringify({ integration, project_id: projectRequired() }),
+      });
+      const msg = (data.logs || []).map(l => l.message).join(' · ') || 'Sync complete';
+      toast(msg, true);
+    } catch (e) { toast(e.message, false); }
+  }
+
   function bindUi() {
+    $('opsSyncSage')?.addEventListener('click', () => runIntegrationSync('sage'));
+    $('opsSyncProcore')?.addEventListener('click', () => runIntegrationSync('procore'));
     $('opsQuickAdd')?.addEventListener('click', () => {
       if (SPECIAL.has(state.moduleKey)) {
         if (state.moduleKey === 'report_definitions') openModal(null);

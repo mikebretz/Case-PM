@@ -142,6 +142,11 @@ def register_extended_platform_routes(app, deps):
             payload = {'record': serialize_record(row)}
             if module_key == 'vendor_invoices' and row.project_id:
                 payload['validation'] = validate_vendor_invoice(row, Commitment, CommitmentAllocation, row.project_id)
+            if module_key == 'transmittals':
+                from platform_gaps_services import get_transmittal_recipients
+                OperationsTransmittalRecipient = deps.get('OperationsTransmittalRecipient')
+                if OperationsTransmittalRecipient:
+                    payload['recipients'] = get_transmittal_recipients(OperationsTransmittalRecipient, row.id)
             if module_key == 'payment_batches':
                 lines = OperationsPaymentLine.query.filter_by(batch_record_id=row.id).all()
                 payload['payment_lines'] = [
@@ -190,9 +195,32 @@ def register_extended_platform_routes(app, deps):
             result['change_event_id'] = ce.id
             result['change_event_number'] = ce.number
         elif action == 'post_timesheet' and module_key == 'timesheets':
-            row.status = 'Posted'
-            db.session.commit()
-            result['message'] = 'Timesheet posted to job cost queue.'
+            from platform_gaps_services import post_timesheet_to_job_cost
+            result.update(post_timesheet_to_job_cost(
+                db, row, BudgetProjectState, SageSyncEvent, Project, current_user.id,
+            ))
+        elif action == 'post_direct_cost' and module_key == 'direct_costs':
+            from platform_gaps_services import post_direct_cost_to_job_cost
+            result.update(post_direct_cost_to_job_cost(
+                db, row, BudgetProjectState, SageSyncEvent, Project, current_user.id,
+            ))
+        elif action == 'send_transmittal' and module_key == 'transmittals':
+            from platform_gaps_services import send_transmittal
+            OperationsTransmittalRecipient = deps.get('OperationsTransmittalRecipient')
+            if not OperationsTransmittalRecipient:
+                return jsonify({'error': 'Transmittal recipients not configured'}), 500
+            result.update(send_transmittal(
+                db, row, Project, deps.get('User'), OperationsTransmittalRecipient, current_user.id,
+            ))
+        elif action == 'file_payroll' and module_key == 'certified_payroll':
+            from platform_gaps_services import file_certified_payroll
+            result.update(file_certified_payroll(db, row, Project, current_user.id))
+        elif action == 'validate_payroll' and module_key == 'certified_payroll':
+            from platform_gaps_services import generate_certified_payroll
+            _, violations = generate_certified_payroll(db, row, Project)
+            result['violations'] = violations
+            result['valid'] = len(violations) == 0
+            result['message'] = 'Compliance OK' if not violations else f'{len(violations)} prevailing wage violation(s)'
         elif action == 'process_payment' and module_key == 'payment_batches':
             pay_result = process_payment_batch(db, models_dict(), row, current_user.id)
             result.update(pay_result)
