@@ -110,8 +110,38 @@
     let filterCriticalOnly = false;
     let clipboardTaskId = null;
     const columnEditors = new Map();
+    let schedulePerformanceMode = false;
+    let scheduleTaskCount = 0;
+    let bulkLoadDepth = 0;
+    let undoDebounceTimer = null;
+    let ganttRenderHookTimer = null;
+    let printBuildInProgress = false;
 
-    function pushUndoState() {
+    function countScheduleTasks() {
+        if (!ganttReady) return 0;
+        let count = 0;
+        gantt.eachTask(() => { count += 1; });
+        return count;
+    }
+
+    function applySchedulePerformanceProfile() {
+        if (!ganttReady) return;
+        scheduleTaskCount = countScheduleTasks();
+        schedulePerformanceMode = scheduleTaskCount >= 120;
+        if (!schedulePerformanceMode) return;
+
+        gantt.config.smart_rendering = true;
+        gantt.config.static_background = true;
+        rollingCalendarBounds = null;
+        applyRollingCalendarRange(true);
+
+        if (scheduleTaskCount >= 250 && (scheduleSettings.timescale || 'day') === 'day') {
+            scheduleSettings.timescale = 'week';
+            applyTimescaleScales('week');
+        }
+    }
+
+    function pushUndoStateNow() {
         if (!ganttReady || undoPaused) return;
         const snap = JSON.stringify(serializeSchedule());
         if (undoStack.length && undoStack[undoStack.length - 1] === snap) return;
@@ -119,6 +149,16 @@
         if (undoStack.length > UNDO_MAX) undoStack.shift();
         redoStack = [];
         updateUndoButtons();
+    }
+
+    function pushUndoState() {
+        if (!ganttReady || undoPaused) return;
+        if (schedulePerformanceMode || bulkLoadDepth > 0) {
+            clearTimeout(undoDebounceTimer);
+            undoDebounceTimer = setTimeout(pushUndoStateNow, 700);
+            return;
+        }
+        pushUndoStateNow();
     }
 
     function restoreUndoState(json) {
@@ -702,8 +742,9 @@
         ensureColumnResizeGripsLayer(metrics);
     }
 
-    function enforceGridColumnExtents() {
+    function enforceGridColumnExtents(options) {
         if (!ganttReady) return;
+        const opts = options || {};
         restoreColumnWidthsFromConfig();
         const cols = gantt.config.columns || [];
         const { columns: metrics, total } = getColumnLayoutMetrics();
@@ -746,6 +787,16 @@
         for (let i = 0; i < headCount; i++) {
             applyMetricToCell(headCells[i], metrics[i], cols[i], { head: true });
             if (cols[i]?.name === '_sched_add_col') headCells[i].classList.add('sched-add-col-header');
+        }
+
+        if (schedulePerformanceMode && !opts.includeRows) {
+            metrics.forEach((m, i) => {
+                if (cols[i]) cols[i].width = m.width;
+            });
+            syncGridScrollContentWidth(total);
+            layoutColumnResizeGrips(metrics);
+            applyColumnHighlight();
+            return;
         }
 
         document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
@@ -1414,25 +1465,34 @@
     }
 
     function computeRollingCalendarBounds() {
-        const defaults = getDefaultCalendarBounds();
-        let start = new Date(defaults.start.getTime());
-        let end = new Date(defaults.end.getTime());
+        let minStart = null;
+        let maxEnd = null;
+        let taskCount = 0;
         if (ganttReady) {
             gantt.eachTask(t => {
+                taskCount += 1;
                 const ts = toGanttDate(t.start_date);
                 const te = toGanttDate(t.end_date);
-                if (ts) {
-                    const padded = ganttDateAdd(ts, -60, 'day');
-                    if (padded && padded < start) start = padded;
-                }
-                if (te) {
-                    const padded = ganttDateAdd(te, 120, 'day');
-                    if (padded && padded > end) end = padded;
-                }
+                if (ts && (!minStart || ts < minStart)) minStart = new Date(ts.getTime());
+                if (te && (!maxEnd || te > maxEnd)) maxEnd = new Date(te.getTime());
             });
         }
-        if (CasePMSchedule.calendarDaysBetween(start, end) < ROLLING_MIN_SPAN_DAYS) {
-            end = CasePMSchedule.addCalendarDays(start, ROLLING_MIN_SPAN_DAYS);
+
+        const large = taskCount >= 120;
+        if (!minStart || !maxEnd) {
+            return getDefaultCalendarBounds();
+        }
+
+        const padDays = large ? 21 : 60;
+        let start = ganttDateAdd(minStart, -padDays, 'day');
+        let end = ganttDateAdd(maxEnd, padDays, 'day');
+        const minSpan = large ? 90 : ROLLING_MIN_SPAN_DAYS;
+        if (CasePMSchedule.calendarDaysBetween(start, end) < minSpan) {
+            end = CasePMSchedule.addCalendarDays(start, minSpan);
+        }
+        const maxSpan = large ? 365 * 3 : 365 * 8;
+        if (CasePMSchedule.calendarDaysBetween(start, end) > maxSpan) {
+            end = CasePMSchedule.addCalendarDays(start, maxSpan);
         }
         return { start, end };
     }
@@ -2848,6 +2908,8 @@
     }
 
     function bindColumnResizeEnhancements() {
+        if (bindColumnResizeEnhancements.done) return;
+        bindColumnResizeEnhancements.done = true;
         bindColumnResizeDrag();
         bindColumnReorderDrag();
         bindGridHorizontalScrollSync();
@@ -3725,6 +3787,8 @@
         gantt.config.link_line_width = scheduleSettings.link_width || 2;
         gantt.config.link_arrow_size = 10;
         gantt.config.link_wrapper_width = 20;
+        gantt.config.smart_rendering = true;
+        gantt.config.static_background = true;
         gantt.config.link_attribute = 'data-link-id';
 
         gantt.config.min_column_width = 50;
@@ -3794,7 +3858,7 @@
 
         gantt.attachEvent('onTaskLoading', (task) => {
             sanitizeTaskDates(task);
-            applyTaskBarColor(task);
+            if (bulkLoadDepth === 0) applyTaskBarColor(task);
             return true;
         });
 
@@ -4000,23 +4064,34 @@
         gantt.attachEvent('onBeforeGanttRender', () => {
             if (isOverlayMode()) enforceGridColumnExtents();
         });
-        gantt.attachEvent('onGanttRender', () => {
-            refreshWbsCodes();
+
+        function runGanttRenderHooks() {
+            if (!schedulePerformanceMode) refreshWbsCodes();
             updateStatusBar();
             updateDeadlineMarkers();
             ensureTimelineScrollbar();
             restoreTimelineScrollAfterRender();
             refreshTimelinePanBar();
-            bindColumnResizeEnhancements();
-            bindGridSelectionHandlers();
-            applyCellAlignToDom();
+            if (!bindColumnResizeEnhancements.done) bindColumnResizeEnhancements();
+            if (!bindGridSelectionHandlers.done) bindGridSelectionHandlers();
+            if (!schedulePerformanceMode) applyCellAlignToDom();
             updateAlignToolbarButtons();
             if (isOverlayMode()) applyOverlayDomLayout();
             syncWbsGutterSpans();
             ensureAddColumnHeader();
             bindWbsGutterScrollSync();
             enforceGridColumnExtents();
-            queueEnforceGridColumnExtents();
+            if (!schedulePerformanceMode) queueEnforceGridColumnExtents();
+        }
+
+        gantt.attachEvent('onGanttRender', () => {
+            updateStatusBar();
+            if (schedulePerformanceMode) {
+                clearTimeout(ganttRenderHookTimer);
+                ganttRenderHookTimer = setTimeout(runGanttRenderHooks, 200);
+                return;
+            }
+            runGanttRenderHooks();
         });
 
         document.addEventListener('keydown', onScheduleKeyDown);
@@ -4168,6 +4243,8 @@
         if (!payload || !payload.data) return false;
         const opts = options || {};
         const importing = !!opts.importing;
+        bulkLoadDepth += 1;
+        try {
         customColumns = payload.customColumns || [];
         hiddenColumns = payload.hiddenColumns || [];
         columnWidths = payload.columnWidths || {};
@@ -4237,7 +4314,14 @@
                 syncGanttLayout();
             }, importing ? 300 : 150);
         }
+        applySchedulePerformanceProfile();
+        if (schedulePerformanceMode) {
+            showScheduleAlert(`Large schedule loaded (${scheduleTaskCount} activities). Switched to performance mode for smoother scrolling.`, 'info');
+        }
         return true;
+        } finally {
+            bulkLoadDepth = Math.max(0, bulkLoadDepth - 1);
+        }
     }
 
     function finalizeScheduleImport(payload) {
@@ -6102,7 +6186,6 @@
         const showEvm = ps.include_evm === true;
         const showSummary = ps.include_summary !== false;
         const visibleCols = showTable ? getPrintVisibleGridColumns(ps) : [];
-        const showLinks = ps.include_predecessor_links !== false;
         const printFontPt = parseInt(ps.font_size_pt, 10) || 8;
         const printRowH = gantt.config.row_height || parseInt(ps.row_height_px, 10) || 24;
         const evmExtraCols = showEvm && !visibleCols.some(v => v.col.name === 'cpi');
@@ -6120,6 +6203,8 @@
             tasks.push(t);
             if (t.type !== 'project' && isTaskCritical(t)) critical++;
         });
+        const taskTotal = tasks.length;
+        const showLinks = ps.include_predecessor_links !== false && showInlineBars && taskTotal <= 300;
         const projectEvm = CasePMSchedule.computeProjectEVM
             ? CasePMSchedule.computeProjectEVM(tasks, dataDate)
             : null;
@@ -6127,10 +6212,11 @@
         let rows = '';
         const rowMap = new Map();
         let rowIdx = 0;
+        const rowParts = [];
         if (showTable && visibleCols.length) {
             gantt.eachTask(t => { rowMap.set(t.id, rowIdx++); });
         }
-        const linkSegmentsByRow = (showLinks && showInlineBars && rowIdx)
+        const linkSegmentsByRow = (showLinks && rowIdx)
             ? buildPrintLinkSegmentsByRow(rowMap, startMs, span, textTablePx)
             : null;
         rowIdx = 0;
@@ -6157,8 +6243,9 @@
                 const barCell = showInlineBars
                     ? `<td class="print-bar-cell"><div class="print-bar-track">${rowLinkSvg}${buildPrintBarMarkup(t, startMs, span)}</div></td>`
                     : '';
-                rows += `<tr class="${summary ? 'print-summary' : ''}${wbsCls ? ' ' + wbsCls : ''}">${cells}${evmExtra}${barCell}</tr>`;
+                rowParts.push(`<tr class="${summary ? 'print-summary' : ''}${wbsCls ? ' ' + wbsCls : ''}">${cells}${evmExtra}${barCell}</tr>`);
             });
+            rows = rowParts.join('');
         }
 
         let chartBlock = '';
@@ -6311,48 +6398,63 @@
     }
 
     function printGantt() {
-        buildPrintSheet();
-        const sheet = document.getElementById('schedulePrintSheet');
-        if (!sheet || !sheet.innerHTML.trim()) {
-            showScheduleAlert('Nothing to print — add activities first.', 'warning');
-            return;
-        }
-        const ps = scheduleSettings.print_settings || {};
-        const orient = sheet.dataset.printOrientation || ps.orientation || 'landscape';
-        const paper = ps.paper_size || 'letter';
-        const margin = parseFloat(ps.margin_in) || 0.35;
-        const scale = parseInt(ps.print_scale, 10) || 100;
-        let pageStyle = document.getElementById('sched-print-page-style');
-        if (!pageStyle) {
-            pageStyle = document.createElement('style');
-            pageStyle.id = 'sched-print-page-style';
-            document.head.appendChild(pageStyle);
-        }
-        const pageSize = paper === 'a4' ? 'A4' : (paper === 'legal' ? 'legal' : (paper === 'tabloid' ? 'tabloid' : 'letter'));
-        pageStyle.textContent = `@media print {
+        if (printBuildInProgress) return;
+        printBuildInProgress = true;
+        setSaveStatus('Preparing print…');
+        const runPrint = () => {
+            try {
+                buildPrintSheet();
+                const sheet = document.getElementById('schedulePrintSheet');
+                if (!sheet || !sheet.innerHTML.trim()) {
+                    showScheduleAlert('Nothing to print — add activities first.', 'warning');
+                    return;
+                }
+                const ps = scheduleSettings.print_settings || {};
+                const orient = sheet.dataset.printOrientation || ps.orientation || 'landscape';
+                const paper = ps.paper_size || 'letter';
+                const margin = parseFloat(ps.margin_in) || 0.35;
+                const scale = parseInt(ps.print_scale, 10) || 100;
+                let pageStyle = document.getElementById('sched-print-page-style');
+                if (!pageStyle) {
+                    pageStyle = document.createElement('style');
+                    pageStyle.id = 'sched-print-page-style';
+                    document.head.appendChild(pageStyle);
+                }
+                const pageSize = paper === 'a4' ? 'A4' : (paper === 'legal' ? 'legal' : (paper === 'tabloid' ? 'tabloid' : 'letter'));
+                pageStyle.textContent = `@media print {
             @page { size: ${pageSize} ${orient}; margin: ${margin}in; }
             body.printing-gantt #schedulePrintSheet { zoom: ${scale / 100}; }
         }`;
-        document.body.classList.toggle('printing-gantt-show-footer', sheet.dataset.printFooter === '1');
-        document.body.classList.toggle('printing-gantt-fit-page', ps.fit_to_page === true);
-        document.body.classList.toggle('printing-gantt-portrait', orient === 'portrait');
-        document.body.classList.add('printing-gantt');
-        sheet.setAttribute('aria-hidden', 'false');
-        const cleanup = () => {
-            window.removeEventListener('afterprint', cleanup);
-            sheet.setAttribute('aria-hidden', 'true');
-            document.body.classList.remove(
-                'printing-gantt',
-                'printing-gantt-show-footer',
-                'printing-gantt-portrait',
-                'printing-gantt-fit-page'
-            );
+                document.body.classList.toggle('printing-gantt-show-footer', sheet.dataset.printFooter === '1');
+                document.body.classList.toggle('printing-gantt-fit-page', ps.fit_to_page === true);
+                document.body.classList.toggle('printing-gantt-portrait', orient === 'portrait');
+                document.body.classList.add('printing-gantt');
+                sheet.setAttribute('aria-hidden', 'false');
+                const cleanup = () => {
+                    window.removeEventListener('afterprint', cleanup);
+                    sheet.setAttribute('aria-hidden', 'true');
+                    document.body.classList.remove(
+                        'printing-gantt',
+                        'printing-gantt-show-footer',
+                        'printing-gantt-portrait',
+                        'printing-gantt-fit-page'
+                    );
+                    setSaveStatus('Ready');
+                };
+                window.addEventListener('afterprint', cleanup);
+                requestAnimationFrame(() => {
+                    window.print();
+                    setTimeout(cleanup, 1500);
+                });
+            } finally {
+                printBuildInProgress = false;
+            }
         };
-        window.addEventListener('afterprint', cleanup);
-        requestAnimationFrame(() => {
-            window.print();
-            setTimeout(cleanup, 1500);
-        });
+        if (scheduleTaskCount > 200) {
+            setTimeout(runPrint, 30);
+        } else {
+            runPrint();
+        }
     }
 
     function printLookAhead() {
