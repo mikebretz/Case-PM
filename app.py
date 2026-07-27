@@ -4685,6 +4685,38 @@ def api_rfi_promote_pco(rfi_id):
     return jsonify({'ok': True, 'pco': pco_to_dict(pco, allocs), 'pco_id': pco.id})
 
 
+@app.route('/api/rfis/<int:rfi_id>/promote-change-event', methods=['POST'])
+@login_required
+def api_rfi_promote_change_event(rfi_id):
+    """Create a change event from an RFI with ROM and schedule impact."""
+    from change_event_persistence import change_event_to_dict, create_change_event_from_rfi
+    from sage_service import create_and_process_sage_event
+    rfi = RFI.query.get_or_404(rfi_id)
+    body = request.get_json(silent=True) or {}
+    try:
+        ce = create_change_event_from_rfi(
+            rfi,
+            ChangeEvent=ChangeEvent,
+            ChangeEventLineItem=ChangeEventLineItem,
+            db=db,
+            generate_next_number=generate_next_number,
+            user_id=current_user.id,
+            body=body,
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    create_and_process_sage_event(
+        SageSyncEvent, Project, db, rfi.project_id,
+        'ChangeEventCreated',
+        message=f'Change Event {ce.number} created from RFI {rfi.number}',
+        payload={'change_event_id': ce.id, 'rfi_id': rfi.id, 'rom_amount': ce.rom_amount},
+        user_id=current_user.id,
+        auto_process=True,
+    )
+    db.session.commit()
+    return jsonify({'ok': True, 'change_event': change_event_to_dict(ce), 'change_event_id': ce.id})
+
+
 @app.route('/uploads/rfis/<int:rfi_id>/<path:filename>')
 @login_required
 def serve_rfi_attachment(rfi_id, filename):

@@ -12,6 +12,16 @@ class MessagingPermissionTests(unittest.TestCase):
         from permissions_catalog import ACCESS_RANK
         self.rank = ACCESS_RANK
 
+    def _ensure_architect_project_access(self, project_id=1):
+        from app import db, User
+        from case_workflow import ensure_workflow_models_bound, ProjectMembership
+        from portal_sub_access import grant_project_membership
+
+        ensure_workflow_models_bound()
+        arch = User.query.filter_by(email='test@arch.com').first()
+        if arch and grant_project_membership(project_id, arch, db, ProjectMembership=ProjectMembership, role='Architect'):
+            db.session.commit()
+
     def _user(self, role, permissions_json=None):
         return SimpleNamespace(
             role=role,
@@ -115,6 +125,7 @@ class MessagingPermissionTests(unittest.TestCase):
             admin = User.query.filter_by(email='admin@casepm.local').first()
             self.assertIsNotNone(arch)
             self.assertIsNotNone(admin)
+            self._ensure_architect_project_access(1)
             with app.test_client() as client:
                 _login_client(client, arch, app)
                 client.get('/email?tab=internal')

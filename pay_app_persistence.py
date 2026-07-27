@@ -876,8 +876,18 @@ def schedule_impact_to_days(schedule_impact):
     return 0
 
 
-def apply_schedule_impact(ScheduleData, Project, db, project_id, schedule_impact, co_number, description):
-    days = schedule_impact_to_days(schedule_impact)
+def apply_schedule_impact(
+    ScheduleData, Project, db, project_id, schedule_impact, co_number, description,
+    *, schedule_impact_days=None,
+):
+    days = 0
+    if schedule_impact_days is not None:
+        try:
+            days = int(schedule_impact_days)
+        except (TypeError, ValueError):
+            days = 0
+    if days <= 0:
+        days = schedule_impact_to_days(schedule_impact)
     if days <= 0:
         return None
 

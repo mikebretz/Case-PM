@@ -31,6 +31,7 @@ from scripts.simulate_financial_project import (  # noqa: E402
     SimResult,
     _approve_commitment,
     _ensure_sim_users,
+    ensure_sub_sov_registered_for_commitments,
 )
 
 TRADE_MIX_SMALL = [
@@ -310,6 +311,11 @@ def _setup_project(rt: ProjectRuntime, models: dict, global_month: int) -> None:
         rt.commitments.append(com)
     db.session.commit()
 
+    from pay_app_persistence import get_pay_app_state
+    _, pay_state = get_pay_app_state(PayAppProjectState, project.id)
+    ensure_sub_sov_registered_for_commitments(pay_state, rt.commitments)
+    save_pay_app_state(PayAppProjectState, db, project.id, pay_state, user_id=None)
+
     approved = 0
     for com in rt.commitments:
         st = _approve_commitment(com, models['CommitmentAllocation'], rt.users, models)
@@ -332,6 +338,7 @@ def _setup_project(rt: ProjectRuntime, models: dict, global_month: int) -> None:
 def _spawn_rfis(rt: ProjectRuntime, models: dict, count: int, global_month: int) -> None:
     if count <= 0:
         return
+    from datetime import date, timedelta
     from rfi_persistence import apply_rfi_fields, workflow_rfi, add_response
     from workflow_responder import execute_rfi_action
 
@@ -352,6 +359,9 @@ def _spawn_rfis(rt: ProjectRuntime, models: dict, count: int, global_month: int)
             priority='Critical' if atypical else 'Medium',
             status='Draft',
             date=datetime.utcnow().date(),
+            due_date=date.today() + timedelta(days=14),
+            rfi_manager_name='Sim PM',
+            assignees_json=json.dumps([{'name': 'Sim Architect', 'email': 'test@arch.com'}]),
             created_by_id=users['pm'].id,
             ball_in_court_role='RFI Manager',
             is_private=1 if atypical else 0,

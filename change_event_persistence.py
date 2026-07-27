@@ -513,6 +513,68 @@ def apply_change_event_fields(ce, data):
         ce.contingency_release_amount = float(data['contingency_release_amount'] or 0)
 
 
+def create_change_event_from_rfi(
+    rfi,
+    *,
+    ChangeEvent,
+    ChangeEventLineItem=None,
+    db,
+    generate_next_number,
+    user_id,
+    body=None,
+):
+    """Create a change event from an RFI with cost/schedule impact metadata."""
+    body = body or {}
+    existing = ChangeEvent.query.filter_by(linked_rfi_id=rfi.id, project_id=rfi.project_id).first()
+    if existing:
+        raise ValueError(f'Change event {existing.number} already linked to RFI {rfi.number}')
+
+    rom = body.get('rom_amount')
+    if rom is None:
+        rom = getattr(rfi, 'cost_impact_amount', None) or 0
+    try:
+        rom = float(rom or 0)
+    except (TypeError, ValueError):
+        rom = 0
+
+    sched_days = body.get('schedule_impact_days')
+    if sched_days is None:
+        sched_days = getattr(rfi, 'schedule_impact_days', None) or 0
+    try:
+        sched_days = int(sched_days or 0)
+    except (TypeError, ValueError):
+        sched_days = 0
+
+    ce = ChangeEvent(
+        project_id=rfi.project_id,
+        number=generate_next_number('CE', ChangeEvent, doc_type='change_event', project_id=rfi.project_id),
+        title=body.get('title') or f'CE from {rfi.number}: {rfi.subject}',
+        description=body.get('description') or rfi.official_answer or rfi.question,
+        status='Open',
+        reason=body.get('reason') or 'RFI Cost Impact',
+        priority=rfi.priority or 'Medium',
+        rom_amount=rom,
+        schedule_impact_days=sched_days,
+        linked_rfi_id=rfi.id,
+        ball_in_court_role='Project Manager',
+        created_by_id=user_id,
+    )
+    db.session.add(ce)
+    db.session.flush()
+
+    cost_code = (body.get('cost_code') or getattr(rfi, 'cost_code', None) or '01-0000').strip()
+    if rom and ChangeEventLineItem is not None:
+        db.session.add(ChangeEventLineItem(
+            change_event_id=ce.id,
+            sort_order=0,
+            description=body.get('line_description') or f'ROM from RFI {rfi.number}',
+            cost_code=cost_code,
+            cost_type=body.get('cost_type') or 'Subcontract',
+            amount=rom,
+        ))
+    return ce
+
+
 def apply_rfq_fields(rfq, data):
     for field in ('title', 'description', 'company_name', 'company_id', 'linked_commitment_ref',
                   'quote_notes', 'quoted_by'):

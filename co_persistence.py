@@ -1290,6 +1290,7 @@ def run_change_order_accounting_sync(
             apply_schedule_impact(
                 ScheduleData, Project, db, co.project_id,
                 co.schedule_impact, co.number, co.description,
+                schedule_impact_days=getattr(co, 'schedule_impact_days', None),
             )
         except Exception as exc:
             result['errors'].append({'target': 'schedule', 'error': str(exc)})

@@ -26,6 +26,7 @@ from scripts.simulate_financial_project import (  # noqa: E402
     SimResult,
     _approve_commitment,
     _ensure_sim_users,
+    ensure_sub_sov_registered_for_commitments,
 )
 
 
@@ -192,6 +193,10 @@ def _setup_stress_project(models, contract_value=50_000_000.0, trade_mix=None, g
         commitments.append(com)
     db.session.commit()
 
+    _, pay_state = get_pay_app_state(PayAppProjectState, project.id)
+    ensure_sub_sov_registered_for_commitments(pay_state, commitments)
+    save_pay_app_state(PayAppProjectState, db, project.id, pay_state, user_id=None)
+
     for com in commitments:
         _approve_commitment(com, CommitmentAllocation, users, models)
 
@@ -223,6 +228,9 @@ def _bill_subs(
 
     sub_sov = pay_state.get('subcontractorSOV') or {}
     keys = list(sub_sov.keys())
+    if not keys:
+        save_pay_app_state(PayAppProjectState, models['db'], project_id, pay_state, user_id=None)
+        return pay_state, []
     count = max(1, int(len(keys) * fraction)) if fraction < 1.0 else len(keys)
     if fraction < 1.0:
         start = rotate_offset % len(keys)

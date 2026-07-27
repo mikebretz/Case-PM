@@ -987,6 +987,9 @@
         renderDrawer(json.commitment);
       }
       toast(json.final_approved ? `${c.number} approved — synced to budget & SOV` : `${c.number} → ${json.new_status}`);
+      if (json.sov_sync_result?.auto_registered && json.sov_sync_result?.warning) {
+        toast(json.sov_sync_result.warning, false);
+      }
       if (action === 'approve' || action === 'reject') closeDrawer();
     } catch (err) {
       alert(err.message);
