@@ -304,6 +304,7 @@ MODULE_ROUTE_GUARD = {
     'operations_center_page': 'operations_center',
     'operations_bim_viewer_page': 'operations_center',
     'client_portal_page': 'operations_center',
+    'field_mobile_page': 'daily_log',
 }
 
 
@@ -1953,6 +1954,11 @@ OperationsBimAsset = _extended_models['OperationsBimAsset']
 OperationsTransmittalRecipient = _extended_models['OperationsTransmittalRecipient']
 ClientPortalApproval = _extended_models['ClientPortalApproval']
 IntegrationSyncLog = _extended_models['IntegrationSyncLog']
+PushSubscription = _extended_models['PushSubscription']
+ClientPortalSelection = _extended_models['ClientPortalSelection']
+ClientPortalDrawRequest = _extended_models['ClientPortalDrawRequest']
+ClientPortalPayment = _extended_models['ClientPortalPayment']
+OperationsBimScheduleLink = _extended_models['OperationsBimScheduleLink']
 
 
 class Company(db.Model):
@@ -17176,6 +17182,33 @@ register_platform_gaps_routes(app, {
     'User': User,
     'Commitment': Commitment,
     'PayAppProjectState': PayAppProjectState,
+})
+
+
+from platform_tier2_routes import register_platform_tier2_routes
+register_platform_tier2_routes(app, {
+    'db': db,
+    'request': request,
+    'jsonify': jsonify,
+    'login_required': login_required,
+    'current_user': current_user,
+    'get_current_project_id': get_current_project_id,
+    'render_template': render_template,
+    'get_active_project': get_active_project,
+    'Notification': Notification,
+    'ExtendedModuleRecord': ExtendedModuleRecord,
+    'Project': Project,
+    'Commitment': Commitment,
+    'OperationsBimAsset': OperationsBimAsset,
+    'OperationsBimScheduleLink': OperationsBimScheduleLink,
+    'PushSubscription': PushSubscription,
+    'ClientPortalSelection': ClientPortalSelection,
+    'ClientPortalDrawRequest': ClientPortalDrawRequest,
+    'ClientPortalPayment': ClientPortalPayment,
+    'IntegrationSyncLog': IntegrationSyncLog,
+    'ClientPortalApproval': ClientPortalApproval,
+    'RFI': RFI,
+    'ChangeOrder': ChangeOrder,
 })
 
 

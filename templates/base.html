@@ -94,6 +94,46 @@
             background: rgba(0, 0, 0, 0.72);
         }
 
+        /* Notifications slide-over (reliable alternative to <dialog>) */
+        .notifications-drawer {
+            position: fixed;
+            inset: 0;
+            z-index: 1000002;
+            pointer-events: none;
+            visibility: hidden;
+        }
+        .notifications-drawer.is-open {
+            pointer-events: auto;
+            visibility: visible;
+        }
+        .notifications-backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.72);
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .notifications-drawer.is-open .notifications-backdrop {
+            opacity: 1;
+        }
+        .notifications-sheet {
+            position: absolute;
+            top: 0;
+            right: 0;
+            height: 100%;
+            width: min(420px, 100vw);
+            background: #18181b;
+            border-left: 1px solid #3f3f46;
+            transform: translateX(100%);
+            transition: transform 0.25s ease;
+            display: flex;
+            flex-direction: column;
+            box-shadow: -8px 0 32px rgba(0, 0, 0, 0.45);
+        }
+        .notifications-drawer.is-open .notifications-sheet {
+            transform: translateX(0);
+        }
+
         #casepmApprovalResponder {
             width: min(56rem, calc(100vw - 1.5rem));
             max-width: none;
@@ -363,7 +403,6 @@
     </script>
     <script src="{{ static_v('js/casepm-money.js') }}"></script>
     <script src="{{ static_v('js/casepm-project-storage.js') }}"></script>
-    <script src="{{ static_v('js/notifications-panel.js') }}"></script>
     {% if current_user.is_authenticated %}
     <script src="{{ static_v('js/casepm-security.js') }}"></script>
     {% endif %}
@@ -376,6 +415,7 @@
     <script src="{{ static_v('js/casepm-user-profile.js') }}"></script>
     <script src="{{ static_v('js/page-help-guides.js') }}"></script>
     <script src="{{ static_v('js/casepm-page-help.js') }}"></script>
+    <script src="{{ static_v('js/casepm-dialog.js') }}"></script>
     {% if current_user.is_authenticated and is_developer %}
     <script>
         window.CASEPM_IS_DEVELOPER = true;
@@ -528,7 +568,7 @@
             <span class="hidden md:inline">How to use</span>
         </button>
         {% endif %}
-        <button type="button" id="notificationsBell" class="relative flex items-center justify-center w-9 h-9 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors" title="Notifications">
+        <button type="button" id="notificationsBell" onclick="typeof CasePMNotifications!=='undefined'?CasePMNotifications.open():document.getElementById('notificationsPanel')?.classList.add('is-open')" class="relative flex items-center justify-center w-9 h-9 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors" title="Notifications" aria-haspopup="dialog" aria-controls="notificationsPanel" aria-expanded="false">
             <i class="fa-solid fa-bell"></i>
             <span id="notificationsBadge" class="hidden absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center">0</span>
         </button>
@@ -719,6 +759,11 @@
                     <span>Operations</span>
                 </a>
 
+                <a href="{{ url_for('field_mobile_page', project_id=active_project.id) if active_project else url_for('field_mobile_page') }}" data-nav-module="daily_log" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'field_mobile_page' %}active{% endif %}">
+                    <i class="fa-solid fa-mobile-screen w-5"></i>
+                    <span>Field App</span>
+                </a>
+
                 <a href="{{ url_for('client_portal_page', project_id=active_project.id) if active_project else url_for('client_portal_page') }}" data-nav-module="operations_center" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'client_portal_page' %}active{% endif %}">
                     <i class="fa-solid fa-house-user w-5"></i>
                     <span>Client Portal</span>
@@ -882,32 +927,40 @@
     </dialog>
 
     <!-- ==================== NOTIFICATIONS PANEL ==================== -->
-    <dialog id="notificationsPanel" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-md shadow-2xl">
-        <div class="p-6">
-            <div class="flex items-center justify-between mb-4">
-                <div>
-                    <div class="font-semibold text-lg">Notifications</div>
-                    <div id="notificationsCount" class="text-xs text-zinc-500">Loading…</div>
+    <div id="notificationsPanel" class="notifications-drawer" aria-hidden="true">
+        <div id="notificationsBackdrop" class="notifications-backdrop" aria-hidden="true"></div>
+        <div class="notifications-sheet" role="dialog" aria-modal="true" aria-labelledby="notificationsTitle">
+            <div class="p-6 flex flex-col flex-1 min-h-0">
+                <div class="flex items-center justify-between mb-4 flex-shrink-0">
+                    <div>
+                        <div id="notificationsTitle" class="font-semibold text-lg">Notifications</div>
+                        <div id="notificationsCount" class="text-xs text-zinc-500">Loading…</div>
+                    </div>
+                    <button type="button" id="notificationsClose" class="text-zinc-400 hover:text-white" aria-label="Close notifications">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
                 </div>
-                <button type="button" onclick="document.getElementById('notificationsPanel').close()" class="text-zinc-400 hover:text-white">
-                    <i class="fa-solid fa-times text-xl"></i>
-                </button>
-            </div>
 
-            <div id="notificationsList" class="space-y-3 max-h-96 overflow-auto pr-2">
-                <div class="p-4 text-center text-zinc-500 text-sm">Loading…</div>
-            </div>
+                <div id="notificationsList" class="space-y-3 flex-1 overflow-auto pr-2 min-h-0">
+                    <div class="p-4 text-center text-zinc-500 text-sm">Loading…</div>
+                </div>
 
-            <div class="mt-4 pt-4 border-t border-zinc-800 flex gap-2">
-                <button type="button" id="notificationsMarkAll" class="flex-1 py-2 text-sm text-zinc-400 hover:text-white font-medium">
-                    Mark all read
-                </button>
-                <button type="button" id="notificationsViewAll" class="flex-1 py-2 text-sm text-emerald-400 hover:text-emerald-300 font-medium">
-                    View all
-                </button>
+                <div class="mt-4 pt-4 border-t border-zinc-800 flex flex-col gap-2 flex-shrink-0">
+                    <button type="button" id="notificationsEnablePush" class="hidden w-full py-2 text-sm text-sky-400 hover:text-sky-300 font-medium">
+                        <i class="fa-solid fa-bell mr-1"></i> Enable push notifications
+                    </button>
+                    <div class="flex gap-2">
+                        <button type="button" id="notificationsMarkAll" class="flex-1 py-2 text-sm text-zinc-400 hover:text-white font-medium">
+                            Mark all read
+                        </button>
+                        <button type="button" id="notificationsViewAll" class="flex-1 py-2 text-sm text-emerald-400 hover:text-emerald-300 font-medium">
+                            View all
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
-    </dialog>
+    </div>
 
     <!-- ==================== USER MENU ==================== -->
     <dialog id="userMenu" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-72 shadow-2xl">
@@ -1363,6 +1416,7 @@ if ('serviceWorker' in navigator) {
   });
 }
 </script>
+<script src="{{ static_v('js/notifications-panel.js') }}"></script>
 
 </body>
 </html>

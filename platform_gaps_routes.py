@@ -46,9 +46,9 @@ def register_platform_gaps_routes(app, deps):
     @app.route('/api/client-portal/feed')
     @login_required
     def api_client_portal_feed():
-        from platform_gaps_services import build_client_portal_feed
+        from platform_tier2_services import client_portal_extended_feed
         project_id = request.args.get('project_id', type=int) or (get_current_project_id() if get_current_project_id else None)
-        return jsonify(build_client_portal_feed(db, models_dict(), current_user, project_id))
+        return jsonify(client_portal_extended_feed(db, models_dict(), current_user, project_id))
 
     @app.route('/api/client-portal/approvals/<int:approval_id>/respond', methods=['POST'])
     @login_required

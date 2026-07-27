@@ -66,5 +66,39 @@
     return window.open(url, 'casepm-bim-viewer', 'width=1400,height=900,resizable=yes,scrollbars=yes');
   }
 
-  global.CasePMBimViewer = { mount, toggleFullscreen, bindFullscreen, openPopout };
+  function mount4D(container, timeline, options) {
+    if (!container) return;
+    const opts = options || {};
+    const links = (timeline && timeline.links) || [];
+    const activeIdx = opts.activeIndex != null ? opts.activeIndex : 0;
+    const active = links[activeIdx] || null;
+
+    container.innerHTML = `
+      <div class="bim-4d-bar flex flex-wrap items-center gap-2 p-2 bg-zinc-900 border border-zinc-700 rounded-lg text-xs">
+        <span class="text-zinc-400 font-medium">4D / 5D</span>
+        <input type="range" id="bim4dSlider" class="flex-1 min-w-[120px]" min="0" max="${Math.max(links.length - 1, 0)}" value="${activeIdx}" ${links.length ? '' : 'disabled'}>
+        <span id="bim4dLabel" class="text-zinc-300 truncate max-w-[200px]">${active ? escHtml(active.task_name) : 'No schedule links'}</span>
+        ${active && active.budget_amount ? `<span class="text-emerald-400">$${Number(active.budget_amount).toLocaleString()}</span>` : ''}
+      </div>`;
+
+    const slider = container.querySelector('#bim4dSlider');
+    const label = container.querySelector('#bim4dLabel');
+    if (!slider || !links.length) return;
+
+    slider.addEventListener('input', () => {
+      const idx = parseInt(slider.value, 10);
+      const link = links[idx];
+      if (label && link) {
+        label.textContent = `${link.task_name || 'Task'}${link.start_date ? ` · ${link.start_date}` : ''}`;
+      }
+      if (typeof opts.onStep === 'function') opts.onStep(link, idx);
+    });
+  }
+
+  function escHtml(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  global.CasePMBimViewer = { mount, toggleFullscreen, bindFullscreen, openPopout, mount4D };
 })(window);
