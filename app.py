@@ -6533,9 +6533,52 @@ def api_save_schedule():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/schedule/create', methods=['POST'])
+@app.route('/api/schedule/import-mpp', methods=['POST'])
 @login_required
-def create_schedule_task():
+def api_import_schedule_mpp():
+    """Import a native MS Project .mpp file into gantt schedule format."""
+    from schedule_mpp_import import MppImportError, mpp_import_available, parse_mpp_bytes
+
+    if not mpp_import_available():
+        return jsonify({
+            'error': 'MPP import is not available on this server (requires Java and the mpxj package).'
+        }), 503
+
+    project_id = request.args.get('project_id', type=int)
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    if not Project.query.get(project_id):
+        return jsonify({'error': 'Invalid project_id'}), 400
+
+    upload = request.files.get('file')
+    if upload is None or not upload.filename:
+        return jsonify({'error': 'file required'}), 400
+
+    filename = secure_filename(upload.filename) or upload.filename
+    if not filename.lower().endswith('.mpp'):
+        return jsonify({'error': 'Only .mpp files are supported for native MS Project import.'}), 400
+
+    content = upload.read()
+    max_bytes = 25 * 1024 * 1024
+    if len(content) > max_bytes:
+        return jsonify({'error': 'File too large (max 25 MB).'}), 400
+
+    try:
+        payload = parse_mpp_bytes(content, filename=filename)
+    except MppImportError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': f'Import failed: {exc}'}), 500
+
+    return jsonify({
+        'ok': True,
+        'project_id': project_id,
+        'payload': payload,
+        'task_count': len(payload.get('data') or []),
+        'link_count': len(payload.get('links') or []),
+    })
+
+
     try:
         project_id = request.form.get('project_id')
         description = request.form.get('description')

@@ -5369,6 +5369,11 @@
 
     function importFile(file) {
         if (!file) return;
+        const lower = (file.name || '').toLowerCase();
+        if (lower.endsWith('.mpp')) {
+            importMppFile(file);
+            return;
+        }
         const reader = new FileReader();
         reader.onload = (e) => {
             try {
@@ -5390,6 +5395,38 @@
             }
         };
         reader.readAsText(file);
+    }
+
+    async function importMppFile(file) {
+        const projectId = getSelectedProjectId();
+        if (!projectId) {
+            showScheduleAlert('Select a project before importing an MPP file.', 'warning');
+            return;
+        }
+        showScheduleAlert('Importing MS Project file…', 'info');
+        try {
+            const form = new FormData();
+            form.append('file', file, file.name);
+            const res = await fetch(`/api/schedule/import-mpp?project_id=${projectId}`, {
+                method: 'POST',
+                body: form,
+                credentials: 'same-origin'
+            });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(body.error || `Import failed (${res.status})`);
+            }
+            const payload = body.payload;
+            if (!payload || !payload.data) throw new Error('No tasks in file');
+            loadSchedulePayload(payload);
+            runSchedule();
+            queueSave();
+            const count = body.task_count || payload.data.length;
+            showScheduleAlert(`Imported ${count} items from ${payload.source || file.name}`, 'success');
+            logActivity('Imported schedule', file.name);
+        } catch (err) {
+            showScheduleAlert('Import failed: ' + (err.message || err), 'error');
+        }
     }
 
     function runResourceLeveling() {
