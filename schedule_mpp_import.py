@@ -227,6 +227,56 @@ def _work_days_between(start_str: str, end_str: str) -> int:
     return max(1, count)
 
 
+def _task_scheduled_dates(task) -> tuple[str | None, str | None]:
+    """Read MSP scheduled start/finish (not early/late CPM dates)."""
+    start = None
+    finish = None
+    for start_attr in ('getStart', 'getScheduledStart'):
+        if hasattr(task, start_attr):
+            try:
+                start = _format_date(getattr(task, start_attr)())
+            except Exception:
+                start = None
+            if start:
+                break
+    for finish_attr in ('getFinish', 'getScheduledFinish'):
+        if hasattr(task, finish_attr):
+            try:
+                finish = _format_date(getattr(task, finish_attr)())
+            except Exception:
+                finish = None
+            if finish:
+                break
+    return start, finish
+
+
+def _finalize_native_payload(data: list[dict[str, Any]], links: list[dict[str, Any]], import_meta: dict[str, Any]) -> dict[str, Any]:
+    """Normalize imported tasks into Case PM native schedule shape."""
+    for row in data:
+        row.pop('_outline', None)
+        if row.get('start_date'):
+            row['start_date'] = str(row['start_date'])[:10]
+        if row.get('end_date'):
+            row['end_date'] = str(row['end_date'])[:10]
+        if row.get('type') == 'milestone':
+            row['duration'] = 0
+            if row.get('start_date'):
+                row['end_date'] = row['start_date']
+        elif row.get('start_date') and row.get('end_date') and row.get('type') != 'project':
+            try:
+                row['duration'] = _work_days_between(row['start_date'], row['end_date'])
+            except ValueError:
+                pass
+    _rollup_summary_dates(data)
+    return {
+        'data': data,
+        'links': links,
+        'source': 'Case PM schedule',
+        'import_meta': import_meta,
+        'settings': {'native_schedule': True},
+    }
+
+
 def _project_to_gantt(project) -> dict[str, Any]:
     defaults = project.getProjectProperties()
     tasks = project.getTasks()
@@ -279,9 +329,7 @@ def _project_to_gantt(project) -> dict[str, Any]:
         milestone = bool(task.getMilestone())
         gid_is_summary[gid] = summary
         outline = int(task.getOutlineLevel() or 1)
-        # Scheduled Start/Finish only — Early dates from MSP CPM can differ from bar dates.
-        start = _format_date(task.getStart())
-        finish = _format_date(task.getFinish())
+        start, finish = _task_scheduled_dates(task)
         duration = _duration_days(task.getDuration(), defaults)
         pct = task.getPercentageComplete()
         try:
@@ -387,13 +435,7 @@ def _project_to_gantt(project) -> dict[str, Any]:
         except ValueError:
             pass
 
-    return {
-        'data': data,
-        'links': links,
-        'source': 'Case PM schedule',
-        'import_meta': import_meta,
-        'settings': {'native_schedule': True},
-    }
+    return _finalize_native_payload(data, links, import_meta)
 
 
 def parse_mpp_bytes(content: bytes, *, filename: str = 'schedule.mpp') -> dict[str, Any]:
