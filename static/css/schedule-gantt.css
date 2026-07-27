@@ -446,6 +446,12 @@ body.schedule-chart-resizing {
     z-index: 40 !important;
     pointer-events: auto !important;
 }
+.schedule-overlay-mode #gantt_here [data-cell-id="scrollVer"],
+.schedule-overlay-mode #gantt_here [data-cell-id="scrollVer"] .gantt_layout_outer_scroll {
+    height: 100% !important;
+    min-height: 0 !important;
+    overflow-y: scroll !important;
+}
 .schedule-split-mode #scheduleOverlayControls,
 .schedule-split-mode #scheduleChartResizer,
 .schedule-split-mode .schedule-timeline-pan {
