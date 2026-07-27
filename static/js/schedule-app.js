@@ -1900,20 +1900,52 @@
         bindWheel(ganttHost);
     }
 
+    function getWheelZone(clientX) {
+        const hostEl = document.getElementById('gantt_here');
+        const hostRect = hostEl?.getBoundingClientRect();
+        if (!hostRect) return 'grid';
+        if (!isOverlayMode()) {
+            const timelineCell = hostEl.querySelector('.gantt_layout_root > .gantt_layout_cell:nth-child(3)');
+            const gridCell = hostEl.querySelector('.gantt_layout_root > .gantt_layout_cell:nth-child(1)');
+            if (timelineCell) {
+                const tr = timelineCell.getBoundingClientRect();
+                if (clientX >= tr.left + 4) return 'chart';
+            }
+            if (gridCell) {
+                const gr = gridCell.getBoundingClientRect();
+                if (clientX <= gr.right - 4) return 'grid';
+            }
+            return clientX < hostRect.left + hostRect.width * 0.45 ? 'grid' : 'chart';
+        }
+        const dividerX = hostRect.left + getGridOverlayWidth();
+        return clientX >= dividerX - 4 ? 'chart' : 'grid';
+    }
+
     function onGanttWheel(e) {
         if (!e.target.closest('#gantt_here, #scheduleGanttHost')) return;
         if (e.target.closest('[data-cell-id="scrollVer"], [data-cell-id="scrollHor"], [data-cell-id="gridScroll"]')) {
             return;
         }
+
+        const zone = getWheelZone(e.clientX);
         const absX = Math.abs(e.deltaX);
         const absY = Math.abs(e.deltaY);
-        const inTimeline = e.target.closest('.gantt_layout_cell:nth-child(3)');
-        if (inTimeline && (e.shiftKey || absX > absY * 1.25)) {
-            const raw = e.shiftKey ? e.deltaY : e.deltaX;
-            if (!raw) return;
+        if (absY < 1 && absX < 1) return;
+
+        if (zone === 'chart') {
+            const delta = absX > absY * 1.1 ? e.deltaX : e.deltaY;
+            if (!delta) return;
             e.preventDefault();
             e.stopPropagation();
-            panTimelineByDays(raw > 0 ? 7 : -7);
+            setTimelineScrollX(readTimelineScrollX() + delta);
+            return;
+        }
+
+        if (zone === 'grid' && absY >= absX * 0.75 && !e.shiftKey) {
+            if (scrollGanttVertically(e.deltaY)) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
         }
     }
 
