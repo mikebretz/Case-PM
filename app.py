@@ -685,6 +685,17 @@ class UserEmailConnection(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class UserEmailSecurity(db.Model):
+    __tablename__ = 'user_email_security'
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
+    blocked_senders_json = db.Column(db.Text)
+    safe_senders_json = db.Column(db.Text)
+    false_positives_json = db.Column(db.Text)
+    reports_json = db.Column(db.Text)
+    preferences_json = db.Column(db.Text)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 @login_manager.user_loader
 def load_user(user_id):
     try:
@@ -15688,11 +15699,174 @@ def api_email_sync_mailbox():
             db=db,
             UserEmailConnection=UserEmailConnection,
             UserEmailMailbox=UserEmailMailbox,
+            UserEmailSecurity=UserEmailSecurity,
             limit=int(body.get('limit') or 40),
         )
         return jsonify({'ok': True, 'user_id': uid, **result})
     except Exception as exc:
         return jsonify({'error': str(exc)}), 400
+
+
+@app.route('/api/email/security', methods=['GET', 'PUT'])
+@login_required
+def api_email_security_state():
+    from email_security_persistence import load_security_state, save_security_state, update_preferences
+    try:
+        uid = _email_mailbox_user_id()
+    except Exception:
+        return jsonify({'error': 'Mailbox access denied'}), 403
+    if uid is None:
+        return jsonify({'error': 'Mailbox access denied'}), 403
+    if request.method == 'GET':
+        state = load_security_state(uid, db=db, UserEmailSecurity=UserEmailSecurity)
+        return jsonify({'ok': True, 'user_id': uid, **state})
+    body = request.get_json(silent=True) or {}
+    if body.get('preferences'):
+        state = update_preferences(uid, body['preferences'], db=db, UserEmailSecurity=UserEmailSecurity)
+        return jsonify({'ok': True, 'user_id': uid, **state})
+    state = load_security_state(uid, db=db, UserEmailSecurity=UserEmailSecurity)
+    for key in ('blocked_senders', 'safe_senders'):
+        if key in body and isinstance(body[key], list):
+            state[key] = body[key]
+    saved = save_security_state(uid, state, db=db, UserEmailSecurity=UserEmailSecurity)
+    return jsonify({'ok': True, 'user_id': uid, **saved})
+
+
+@app.route('/api/email/security/scan', methods=['POST'])
+@login_required
+def api_email_security_scan():
+    from email_security import scan_messages_batch, apply_quarantine_actions
+    from email_security_persistence import load_security_state
+    from user_email_connection_persistence import connection_status
+    body = request.get_json(silent=True) or {}
+    try:
+        uid = _email_mailbox_user_id()
+    except Exception:
+        return jsonify({'error': 'Mailbox access denied'}), 403
+    if uid is None:
+        return jsonify({'error': 'Mailbox access denied'}), 403
+    messages = body.get('messages')
+    if messages is None:
+        from email_mailbox_persistence import load_user_mailbox
+        payload = load_user_mailbox(uid, UserEmailMailbox=UserEmailMailbox)
+        messages = payload.get('messages') or []
+    if not isinstance(messages, list):
+        return jsonify({'error': 'messages must be an array'}), 400
+    sec = load_security_state(uid, db=db, UserEmailSecurity=UserEmailSecurity)
+    prefs = sec.get('preferences') or {}
+    conn = connection_status(uid, UserEmailConnection=UserEmailConnection, User=User)
+    user_email = conn.get('email_address') or getattr(current_user, 'email', '') or ''
+    batch = scan_messages_batch(
+        messages,
+        junk_level=prefs.get('junkLevel') or 'standard',
+        blocked_senders=sec.get('blocked_senders') or [],
+        safe_senders=sec.get('safe_senders') or [],
+        user_email=user_email,
+        false_positive_overrides=sec.get('false_positives') or [],
+    )
+    updated_messages = messages
+    if body.get('apply_quarantine') and prefs.get('autoQuarantine', True):
+        updated_messages = apply_quarantine_actions(messages, batch['results'])
+    return jsonify({
+        'ok': True,
+        'user_id': uid,
+        'results': batch['results'],
+        'summary': batch['summary'],
+        'messages': updated_messages if body.get('apply_quarantine') else None,
+    })
+
+
+@app.route('/api/email/security/report-phishing', methods=['POST'])
+@login_required
+def api_email_security_report_phishing():
+    from email_security_persistence import record_phishing_report
+    body = request.get_json(silent=True) or {}
+    try:
+        uid = _email_mailbox_user_id()
+    except Exception:
+        return jsonify({'error': 'Mailbox access denied'}), 403
+    if uid is None:
+        return jsonify({'error': 'Mailbox access denied'}), 403
+    message = body.get('message') or {}
+    if not message.get('id'):
+        return jsonify({'error': 'message.id required'}), 400
+    report = {
+        'message_id': message.get('id'),
+        'subject': message.get('subject'),
+        'from': message.get('from'),
+        'fromEmail': message.get('fromEmail'),
+        'preview': message.get('preview'),
+        'security': message.get('security'),
+        'notes': body.get('notes') or '',
+    }
+    state = record_phishing_report(uid, report, db=db, UserEmailSecurity=UserEmailSecurity)
+    return jsonify({'ok': True, 'user_id': uid, 'message': 'Phishing reported. Sender blocked and security team notified.', **state})
+
+
+@app.route('/api/email/security/mark-safe', methods=['POST'])
+@login_required
+def api_email_security_mark_safe():
+    from email_security import scan_email_message
+    from email_security_persistence import add_safe_sender, record_false_positive, load_security_state
+    body = request.get_json(silent=True) or {}
+    try:
+        uid = _email_mailbox_user_id()
+    except Exception:
+        return jsonify({'error': 'Mailbox access denied'}), 403
+    if uid is None:
+        return jsonify({'error': 'Mailbox access denied'}), 403
+    message = body.get('message') or {}
+    msg_id = message.get('id')
+    from_email = message.get('fromEmail')
+    if not msg_id:
+        return jsonify({'error': 'message.id required'}), 400
+    if from_email:
+        state = add_safe_sender(uid, from_email, db=db, UserEmailSecurity=UserEmailSecurity)
+    else:
+        state = load_security_state(uid, db=db, UserEmailSecurity=UserEmailSecurity)
+    state = record_false_positive(uid, str(msg_id), db=db, UserEmailSecurity=UserEmailSecurity)
+    scan = scan_email_message(message, safe_senders=state.get('safe_senders') or [], false_positive_overrides=state.get('false_positives') or [])
+    return jsonify({'ok': True, 'user_id': uid, 'scan': scan.to_dict(), **state})
+
+
+@app.route('/api/email/security/not-spam', methods=['POST'])
+@login_required
+def api_email_security_not_spam():
+    from email_security import scan_email_message
+    from email_security_persistence import record_false_positive, load_security_state
+    body = request.get_json(silent=True) or {}
+    try:
+        uid = _email_mailbox_user_id()
+    except Exception:
+        return jsonify({'error': 'Mailbox access denied'}), 403
+    if uid is None:
+        return jsonify({'error': 'Mailbox access denied'}), 403
+    message = body.get('message') or {}
+    msg_id = message.get('id')
+    if not msg_id:
+        return jsonify({'error': 'message.id required'}), 400
+    state = record_false_positive(uid, str(msg_id), db=db, UserEmailSecurity=UserEmailSecurity)
+    scan = scan_email_message(
+        {**message, 'folder': 'inbox'},
+        junk_level=(state.get('preferences') or {}).get('junkLevel', 'standard'),
+        blocked_senders=state.get('blocked_senders') or [],
+        safe_senders=state.get('safe_senders') or [],
+        false_positive_overrides=state.get('false_positives') or [],
+    )
+    return jsonify({'ok': True, 'user_id': uid, 'scan': scan.to_dict(), 'folder': 'inbox', **state})
+
+
+@app.route('/api/email/security/simulate', methods=['POST'])
+@login_required
+@admin_required
+def api_email_security_simulate():
+    from email_security import run_simulation
+    body = request.get_json(silent=True) or {}
+    count = int(body.get('count') or 1000)
+    count = max(10, min(count, 5000))
+    junk_level = str(body.get('junk_level') or 'standard')
+    result = run_simulation(count=count, junk_level=junk_level)
+    return jsonify({'ok': True, **result})
 
 
 # ==================== NOTIFICATIONS ====================

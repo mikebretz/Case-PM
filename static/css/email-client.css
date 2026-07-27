@@ -694,3 +694,101 @@
 .email-attachment-icon-remove:hover {
   color: #f87171;
 }
+
+/* Email security banners and list badges */
+.email-security-banner {
+  border-radius: 0.5rem;
+  border: 1px solid;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.8125rem;
+}
+.email-security-banner-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+.email-security-banner-head > i {
+  margin-top: 0.15rem;
+  font-size: 1rem;
+}
+.email-security-banner-title {
+  font-weight: 600;
+  color: #fafafa;
+}
+.email-security-banner-meta {
+  font-size: 0.75rem;
+  color: #a1a1aa;
+  margin-top: 0.15rem;
+}
+.email-security-banner-list {
+  margin: 0.65rem 0 0.5rem 1.35rem;
+  padding: 0;
+  color: #d4d4d8;
+}
+.email-security-banner-list li {
+  margin-bottom: 0.2rem;
+}
+.email-sec-fp-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+  color: #a1a1aa;
+}
+.email-security-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+}
+.email-sec-btn {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.25);
+  color: #e4e4e7;
+  border-radius: 0.375rem;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.email-sec-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.email-sec-btn-inline {
+  border: none;
+  background: none;
+  color: #60a5fa;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: inherit;
+  padding: 0;
+}
+.email-sec-safe { border-color: #3f3f46; background: rgba(39, 39, 42, 0.5); }
+.email-sec-low { border-color: #ca8a04; background: rgba(113, 63, 18, 0.25); color: #fde68a; }
+.email-sec-medium { border-color: #ea580c; background: rgba(124, 45, 18, 0.28); }
+.email-sec-high { border-color: #dc2626; background: rgba(127, 29, 29, 0.3); }
+.email-sec-critical { border-color: #b91c1c; background: rgba(69, 10, 10, 0.45); }
+.email-sec-list-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  font-size: 0.55rem;
+  flex-shrink: 0;
+}
+.email-sec-list-badge.email-sec-low { background: #713f12; color: #fde68a; }
+.email-sec-list-badge.email-sec-medium { background: #7c2d12; color: #fdba74; }
+.email-sec-list-badge.email-sec-high,
+.email-sec-list-badge.email-sec-critical { background: #7f1d1d; color: #fecaca; }
+.email-remote-image-blocked {
+  display: inline-block;
+  padding: 0.35rem 0.5rem;
+  border: 1px dashed #52525b;
+  border-radius: 0.375rem;
+  color: #a1a1aa;
+  font-size: 0.75rem;
+  margin: 0.25rem 0;
+}
+.email-sec-score {
+  font-variant-numeric: tabular-nums;
+}

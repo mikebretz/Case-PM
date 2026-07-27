@@ -106,7 +106,7 @@
     vacationEnd: '',
     vacationInternalOnly: false,
     junkLevel: 'standard',
-    blockRemoteImages: false,
+    blockRemoteImages: true,
     confidentialModeDefault: false,
     smartCompose: true,
     nudges: true,
@@ -155,6 +155,13 @@
   let signatures = [];
   let templates = [];
   let customFolders = [];
+  let securityState = {
+    blocked_senders: [],
+    safe_senders: [],
+    false_positives: [],
+    preferences: { junkLevel: 'standard', blockRemoteImages: true, showSecurityBanners: true, autoQuarantine: true },
+  };
+  let securityScanSummary = null;
   let undoTimer = null;
   let mailPersistTimer = null;
   let ctx = {
@@ -343,8 +350,87 @@
         if (!loadJson(STORAGE.mail, null)) persistMailLocal();
         if (!isViewingOtherMailbox()) migrateLocalMailboxToServer();
       }
-      return refreshInternalFromServer();
-    });
+      return loadSecurityFromServer().then(() => scanMailboxSecurity({ applyQuarantine: true }));
+    }).then(() => refreshInternalFromServer());
+  }
+
+  async function loadSecurityFromServer() {
+    if (emailInternalOnly()) return;
+    try {
+      const res = await fetch(`/api/email/security${mailboxUserQuery()}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      securityState = {
+        blocked_senders: data.blocked_senders || [],
+        safe_senders: data.safe_senders || [],
+        false_positives: data.false_positives || [],
+        preferences: { ...securityState.preferences, ...(data.preferences || {}) },
+      };
+      if (data.preferences) {
+        settings = { ...settings, ...data.preferences };
+        persistSettingsLocal();
+      }
+      saveJson(STORAGE.blocked, securityState.blocked_senders);
+      saveJson(STORAGE.safe, securityState.safe_senders);
+    } catch (e) {
+      securityState.blocked_senders = loadJson(STORAGE.blocked, []) || [];
+      securityState.safe_senders = loadJson(STORAGE.safe, []) || [];
+      console.warn('Email security preferences unavailable', e);
+    }
+  }
+
+  async function scanMailboxSecurity(opts = {}) {
+    if (emailInternalOnly() || !mailMessages.length) return null;
+    try {
+      const res = await fetch(`/api/email/security/scan${mailboxUserQuery()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: mailMessages,
+          apply_quarantine: !!opts.applyQuarantine,
+          user_id: effectiveUserId(),
+        }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      securityScanSummary = data.summary || null;
+      const results = data.results || {};
+      mailMessages = mailMessages.map(m => {
+        const scan = results[String(m.id)];
+        if (!scan) return m;
+        return { ...m, security: scan };
+      });
+      if (Array.isArray(data.messages) && opts.applyQuarantine) {
+        mailMessages = data.messages;
+      }
+      if (!isViewingOtherMailbox()) persistMailLocal();
+      if (opts.applyQuarantine && canEditViewedMailbox()) persistMail();
+      return data;
+    } catch (e) {
+      console.warn('Email security scan failed', e);
+      return null;
+    }
+  }
+
+  function persistSettingsLocal() { saveJson(STORAGE.settings, settings); global.CasePMEmailSettings = settings; }
+
+  async function syncSecurityPreferences() {
+    if (emailInternalOnly() || isViewingOtherMailbox()) return;
+    try {
+      await fetch(`/api/email/security${mailboxUserQuery()}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          preferences: {
+            junkLevel: settings.junkLevel,
+            blockRemoteImages: settings.blockRemoteImages,
+            showSecurityBanners: true,
+            autoQuarantine: true,
+          },
+          user_id: effectiveUserId(),
+        }),
+      });
+    } catch (_) { /* ignore */ }
   }
 
   async function fetchMailboxOwners() {
@@ -506,7 +592,10 @@
     }
   }
   function persistInternal() { saveJson(STORAGE.internal, internalMessages); }
-  function persistSettings() { saveJson(STORAGE.settings, settings); global.CasePMEmailSettings = settings; }
+  function persistSettings() {
+    persistSettingsLocal();
+    syncSecurityPreferences();
+  }
   function persistCustomFolders() { saveJson(STORAGE.customFolders, customFolders); }
   function persistSignatures() { saveJson(STORAGE.signatures, signatures); }
 
@@ -696,6 +785,70 @@
       </div>`;
   }
 
+  function messageSecurity(m) {
+    return (m && m.security) || null;
+  }
+
+  function securityLevelClass(level) {
+    return {
+      safe: 'email-sec-safe',
+      low: 'email-sec-low',
+      medium: 'email-sec-medium',
+      high: 'email-sec-high',
+      critical: 'email-sec-critical',
+    }[level] || 'email-sec-medium';
+  }
+
+  function renderSecurityBanner(m) {
+    const sec = messageSecurity(m);
+    if (!sec || sec.action === 'allow' || settings.showSecurityBanners === false) return '';
+    const level = sec.risk_level || 'medium';
+    const cls = securityLevelClass(level);
+    const title = sec.action === 'quarantine' || m.folder === 'spam'
+      ? 'This message was quarantined as potential spam or phishing'
+      : 'Security warning — review this message carefully';
+    const warnings = (sec.warnings || []).slice(0, 4).map(w => `<li>${esc(w)}</li>`).join('');
+    const score = typeof sec.risk_score === 'number' ? `<span class="email-sec-score">Risk score: ${sec.risk_score}</span>` : '';
+    const falsePositiveNote = `<p class="email-sec-fp-note">Think this is wrong? Use <strong>Not spam</strong> or <strong>Mark sender safe</strong> below so future messages are corrected.</p>`;
+    return `
+      <div class="email-security-banner ${cls}" role="alert" aria-live="polite">
+        <div class="email-security-banner-head">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <div>
+            <div class="email-security-banner-title">${esc(title)}</div>
+            <div class="email-security-banner-meta">${esc(sec.category || 'suspicious')} · ${score}</div>
+          </div>
+        </div>
+        ${warnings ? `<ul class="email-security-banner-list">${warnings}</ul>` : ''}
+        ${falsePositiveNote}
+        <div class="email-security-banner-actions">
+          <button type="button" class="email-sec-btn" onclick="CasePMEmail.reportPhishing('${m.id}')"><i class="fa-solid fa-shield-virus"></i> Report phishing</button>
+          <button type="button" class="email-sec-btn" onclick="CasePMEmail.markNotSpam('${m.id}')"><i class="fa-solid fa-inbox"></i> Not spam</button>
+          <button type="button" class="email-sec-btn" onclick="CasePMEmail.markSenderSafe('${m.id}')"><i class="fa-solid fa-user-check"></i> Mark sender safe</button>
+        </div>
+      </div>`;
+  }
+
+  function renderSecurityListBadge(m) {
+    const sec = messageSecurity(m);
+    if (!sec || sec.action === 'allow') return '';
+    const level = sec.risk_level || 'medium';
+    const icon = sec.action === 'quarantine' || m.folder === 'spam' ? 'fa-shield-virus' : 'fa-triangle-exclamation';
+    return `<span class="email-sec-list-badge ${securityLevelClass(level)}" title="${esc((sec.warnings || [])[0] || 'Security warning')}"><i class="fa-solid ${icon}"></i></span>`;
+  }
+
+  function sanitizeMailBodyHtml(html, messageId) {
+    let out = html || '';
+    if (settings.blockRemoteImages) {
+      out = out.replace(/<img\b([^>]*)\bsrc\s*=\s*["']([^"']+)["']([^>]*)>/gi, (match, pre, src, post) => {
+        if (/^data:/i.test(src)) return match;
+        const safeSrc = esc(src);
+        return `<span class="email-remote-image-blocked" data-msg-id="${esc(messageId)}" data-remote-src="${safeSrc}"><i class="fa-regular fa-image"></i> Remote image blocked for privacy — <button type="button" class="email-sec-btn-inline" onclick="CasePMEmail.showRemoteImages('${messageId}')">Show images</button></span>`;
+      });
+    }
+    return out;
+  }
+
   function renderMailMessageContent(m, opts) {
     const inPopout = opts?.inPopout;
     const popoutId = opts?.popoutId || m.id;
@@ -721,8 +874,17 @@
           <div><span class="text-zinc-500">Date:</span> ${new Date(m.date).toLocaleString()}</div>
         </div>
         ${m.attachments && m.attachments.length ? `<div class="mb-4">${renderAttachmentIcons(m.attachments, { messageId: m.id })}</div>` : ''}
-        <div class="prose prose-invert max-w-none text-sm text-zinc-300">${m.body || esc(m.preview)}</div>
+        ${renderSecurityBanner(m)}
+        <div class="prose prose-invert max-w-none text-sm text-zinc-300">${sanitizeMailBodyHtml(m.body || esc(m.preview), m.id)}</div>
       </div>`;
+  }
+
+  function showRemoteImages(messageId) {
+    settings.blockRemoteImages = false;
+    persistSettings();
+    const m = getMessage(messageId);
+    if (m && m.folder === 'spam') toast('Remote images enabled. Review links carefully in quarantined mail.', 'warning');
+    renderReadingPane();
   }
 
   function formatFileSize(bytes) {
@@ -2375,6 +2537,7 @@
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-1">
               <span class="text-xs text-zinc-300 truncate flex-1">${esc(m.from)}</span>
+              ${renderSecurityListBadge(m)}
               <span class="text-[10px] text-zinc-500 flex-shrink-0">${fmtDate(m.date)}</span>
             </div>
             <div class="email-msg-subject text-sm text-zinc-300 truncate">${esc(m.subject)}</div>
@@ -3150,7 +3313,93 @@
     });
   }
 
-  function reportPhishing() { toast('Message reported. Sender blocked and IT notified.', 'success'); }
+  async function reportPhishing(id) {
+    const m = getMessage(id || state.selectedId);
+    if (!m) {
+      toast('Select a message to report.', 'warning');
+      return;
+    }
+    const ok = await emailConfirm(`Report "${m.subject}" as phishing? The sender will be blocked.`, {
+      title: 'Report phishing',
+      danger: true,
+      confirmText: 'Report',
+    });
+    if (!ok) return;
+    try {
+      const res = await fetch(`/api/email/security/report-phishing${mailboxUserQuery()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: m, user_id: effectiveUserId() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Report failed');
+      securityState.blocked_senders = data.blocked_senders || securityState.blocked_senders;
+      saveJson(STORAGE.blocked, securityState.blocked_senders);
+      m.folder = 'spam';
+      m.security = { ...(m.security || {}), action: 'block', risk_level: 'critical', risk_score: 100, category: 'phishing' };
+      persistMail();
+      await scanMailboxSecurity();
+      render();
+      toast(data.message || 'Message reported. Sender blocked and IT notified.', 'success');
+    } catch (e) {
+      toast('Could not report phishing: ' + e.message, 'error');
+    }
+  }
+
+  async function markNotSpam(id) {
+    const m = getMessage(id || state.selectedId);
+    if (!m) {
+      toast('Select a message first.', 'warning');
+      return;
+    }
+    try {
+      const res = await fetch(`/api/email/security/not-spam${mailboxUserQuery()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: m, user_id: effectiveUserId() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Request failed');
+      securityState.false_positives = data.false_positives || securityState.false_positives;
+      m.folder = 'inbox';
+      m.security = data.scan || { action: 'allow', risk_level: 'safe', risk_score: 0 };
+      m.securityQuarantined = false;
+      persistMail();
+      render();
+      toast('Marked as not spam. Future similar messages will be scored with your feedback.', 'success');
+    } catch (e) {
+      toast('Could not update: ' + e.message, 'error');
+    }
+  }
+
+  async function markSenderSafe(id) {
+    const m = getMessage(id || state.selectedId);
+    if (!m || !m.fromEmail) {
+      toast('Select a message with a sender address.', 'warning');
+      return;
+    }
+    try {
+      const res = await fetch(`/api/email/security/mark-safe${mailboxUserQuery()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: m, user_id: effectiveUserId() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Request failed');
+      securityState.safe_senders = data.safe_senders || securityState.safe_senders;
+      securityState.false_positives = data.false_positives || securityState.false_positives;
+      saveJson(STORAGE.safe, securityState.safe_senders);
+      m.folder = m.folder === 'spam' ? 'inbox' : m.folder;
+      m.security = data.scan || { action: 'allow', risk_level: 'safe', risk_score: 0 };
+      m.securityQuarantined = false;
+      persistMail();
+      await scanMailboxSecurity();
+      render();
+      toast(`Sender ${m.fromEmail} marked safe.`, 'success');
+    } catch (e) {
+      toast('Could not mark sender safe: ' + e.message, 'error');
+    }
+  }
 
   function markInternalRead(id) {
     const target = id || state.selectedId;
@@ -3210,7 +3459,7 @@
       refreshInternalFromServer().then(() => toast('Internal messages synced.', 'success'));
       return;
     }
-    loadMailboxFromServer().then(() => {
+    loadMailboxFromServer().then(() => loadSecurityFromServer()).then(() => scanMailboxSecurity({ applyQuarantine: true })).then(() => {
       render();
       toast('Mailbox synced.', 'success');
     });
@@ -3417,7 +3666,7 @@
     removeComposeAttachment,
     refreshComposeAttachmentUI,
     archiveSelected, deleteSelected, markReadToggle, flagSelected, starSelected,
-    snoozeSelected, moveSelected, labelSelected, reportPhishing,
+    snoozeSelected, moveSelected, labelSelected, reportPhishing, markNotSpam, markSenderSafe, showRemoteImages,
     addCustomFolder, renameCustomFolder, deleteCustomFolder,
     markInternalRead, approveInternal, dismissInternal, composeInternal,
     toggleMessageCheck, toggleThreadCheck, toggleSelectAllInternal, toggleSelectAllMessages, setInternalThreadSort,
