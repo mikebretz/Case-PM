@@ -43,8 +43,8 @@ def mpp_import_status() -> dict[str, Any]:
     except ImportError:
         status['message'] = 'MPP import packages are not installed (mpxj, jpype1).'
         status['setup_hint'] = (
-            'On the server PC, run INSTALL-PACKAGES.bat or '
-            'venv\\Scripts\\python.exe -m pip install -r requirements.txt, then restart RUN-AS-SERVER.bat.'
+            'Close RUN-AS-SERVER.bat and start it again (it installs packages automatically), '
+            'or run INSTALL-PACKAGES.bat on the server PC.'
         )
         return status
 
@@ -68,6 +68,47 @@ def mpp_import_status() -> dict[str, Any]:
             'then restart RUN-AS-SERVER.bat.'
         )
     return status
+
+
+_install_lock = threading.Lock()
+_install_attempted = False
+
+
+def ensure_mpp_import_dependencies(*, auto_install: bool = True) -> dict[str, Any]:
+    """Install mpxj/jpype1 when missing, then return readiness status."""
+    global _install_attempted
+    status = mpp_import_status()
+    if status['packages_ok'] or not auto_install:
+        return status
+
+    with _install_lock:
+        status = mpp_import_status()
+        if status['packages_ok']:
+            return status
+        if _install_attempted:
+            return status
+        _install_attempted = True
+
+        import subprocess
+        import sys
+
+        print('MPP import: installing mpxj and jpype1 into', sys.executable)
+        try:
+            result = subprocess.run(
+                [sys.executable, '-m', 'pip', 'install', 'mpxj>=14.0.0', 'jpype1>=1.5.0'],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                detail = (result.stderr or result.stdout or '').strip()
+                print('MPP import: package install failed:', detail or f'exit {result.returncode}')
+            else:
+                print('MPP import: packages installed successfully.')
+        except Exception as exc:
+            print(f'MPP import: package install error: {exc}')
+
+    return mpp_import_status()
 
 
 def mpp_import_available() -> bool:
