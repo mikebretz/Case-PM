@@ -396,12 +396,12 @@ body.schedule-chart-resizing {
 }
 .schedule-overlay-mode #gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(3) {
     position: absolute !important;
-    left: 0 !important;
+    left: var(--sched-chart-left, 520px) !important;
     top: 0 !important;
     bottom: 0 !important;
     right: 16px !important;
-    width: auto !important;
-    min-width: 0 !important;
+    width: var(--sched-chart-width, auto) !important;
+    min-width: 280px !important;
     max-width: none !important;
     z-index: 1 !important;
     flex: none !important;
