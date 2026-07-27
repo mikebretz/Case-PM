@@ -948,7 +948,7 @@ def phase_recovery_login(result: SecResult, client, app, models) -> None:
     password = data.get('password', '')
 
     client.post('/logout')
-    rv = client.post('/login', data={'email': email, 'password': password, 'remember': 'on'}, follow_redirects=False)
+    rv = client.post('/recovery', data={'email': email, 'password': password, 'remember': 'on'}, follow_redirects=False)
     if rv.status_code in (302, 303):
         with client.session_transaction() as sess:
             if sess.get('_user_id'):
@@ -957,6 +957,89 @@ def phase_recovery_login(result: SecResult, client, app, models) -> None:
                 result.fail('recovery_login_session', 'auth', 'no session after recovery login')
     else:
         result.fail('recovery_login_session', 'auth', f'HTTP {rv.status_code}', severity='warning')
+
+
+def phase_field_security(result: SecResult, client, app, models, p_a, p_b, iso) -> None:
+    """Cross-project field module and upload IDOR checks."""
+    import os
+    from developer_tools import is_recovery_login
+
+    if is_recovery_login('recovery@casepm.local', 'CasePM-Recovery-2026'):
+        result.fail('recovery_default_disabled', 'field_security', 'default recovery credentials still accepted')
+    else:
+        result.ok('recovery_default_disabled', 'field_security')
+
+    token = _login_client(client, iso, app)
+    headers = _csrf_headers(token)
+
+    rfi_b = models['RFI'](
+        project_id=p_b.id,
+        number=f'FS-RFI-{uuid.uuid4().hex[:6]}',
+        subject='SECRET_CROSS_PROJECT',
+        question='classified',
+        status='Open',
+        ball_in_court_role='Assignee',
+    )
+    models['db'].session.add(rfi_b)
+    models['db'].session.flush()
+
+    PunchItem = getattr(__import__('app', fromlist=['PunchItem']), 'PunchItem', None)
+    punch_b = None
+    if PunchItem is not None:
+        punch_b = PunchItem(
+            project_id=p_b.id,
+            description='TOP_SECRET_PUNCH',
+            status='Open',
+            priority='High',
+        )
+        models['db'].session.add(punch_b)
+    models['db'].session.commit()
+
+    rv_list = client.get(f'/api/rfis?project_id={p_b.id}', headers=headers)
+    if rv_list.status_code == 403:
+        result.ok('field_rfi_list_blocked', 'field_security')
+    else:
+        result.fail('field_rfi_list_blocked', 'field_security', f'HTTP {rv_list.status_code}')
+
+    rv_get = client.get(f'/api/rfis/{rfi_b.id}', headers=headers)
+    if rv_get.status_code == 403:
+        result.ok('field_rfi_get_blocked', 'field_security')
+    else:
+        result.fail('field_rfi_get_blocked', 'field_security', f'HTTP {rv_get.status_code}')
+
+    if punch_b is not None:
+        rv_punch = client.get(f'/api/punch-items?project_id={p_b.id}', headers=headers)
+        if rv_punch.status_code == 403:
+            result.ok('field_punch_list_blocked', 'field_security')
+        else:
+            result.fail('field_punch_list_blocked', 'field_security', f'HTTP {rv_punch.status_code}')
+
+        rv_put = client.put(
+            f'/api/punch-items/{punch_b.id}',
+            json={'description': 'MODIFIED_BY_ATTACKER'},
+            headers=headers,
+        )
+        if rv_put.status_code == 403:
+            result.ok('field_punch_write_blocked', 'field_security')
+        else:
+            result.fail('field_punch_write_blocked', 'field_security', f'HTTP {rv_put.status_code}')
+
+    upload_dir = os.path.join(__import__('app', fromlist=['app']).app.config['UPLOAD_FOLDER'], 'rfis', str(rfi_b.id))
+    os.makedirs(upload_dir, exist_ok=True)
+    leak_path = os.path.join(upload_dir, 'leak.txt')
+    with open(leak_path, 'w', encoding='utf-8') as fh:
+        fh.write('SECRET_RFI_DATA')
+    rv_file = client.get(f'/uploads/rfis/{rfi_b.id}/leak.txt', headers=headers)
+    if rv_file.status_code == 403:
+        result.ok('field_upload_rfi_blocked', 'field_security')
+    else:
+        result.fail('field_upload_rfi_blocked', 'field_security', f'HTTP {rv_file.status_code}')
+
+    rv_proj = client.get(f'/api/projects/{p_b.id}', headers=headers)
+    if rv_proj.status_code == 403:
+        result.ok('field_project_get_blocked', 'field_security')
+    else:
+        result.fail('field_project_get_blocked', 'field_security', f'HTTP {rv_proj.status_code}')
 
 
 def _print_results(result: SecResult) -> int:
@@ -987,7 +1070,7 @@ def main() -> int:
     parser.add_argument(
         '--phase',
         default='all',
-        help='Comma-separated: persistence,auth,csrf,csrf_sweep,idor,read_idor,respond_idor,pay_app_idor,permissions,workflow_event,role_matrix,legacy,workflow,financial,recovery,all',
+        help='Comma-separated: persistence,auth,csrf,csrf_sweep,idor,read_idor,respond_idor,pay_app_idor,permissions,workflow_event,role_matrix,legacy,workflow,financial,recovery,field_security,portal,all',
     )
     args = parser.parse_args()
     phases = {p.strip() for p in args.phase.split(',')}
@@ -995,7 +1078,7 @@ def main() -> int:
         phases = {
             'persistence', 'auth', 'csrf', 'csrf_sweep', 'idor', 'read_idor',
             'respond_idor', 'pay_app_idor', 'permissions', 'workflow_event',
-            'role_matrix', 'legacy', 'workflow', 'financial', 'recovery', 'portal',
+            'role_matrix', 'legacy', 'workflow', 'financial', 'recovery', 'field_security', 'portal',
         }
 
     import app as app_module
@@ -1032,7 +1115,7 @@ def main() -> int:
             p_a = p_b = iso = None
             if phases & {
                 'csrf', 'csrf_sweep', 'idor', 'read_idor', 'respond_idor', 'pay_app_idor',
-                'permissions', 'workflow_event', 'role_matrix', 'legacy', 'recovery', 'portal',
+                'permissions', 'workflow_event', 'role_matrix', 'legacy', 'recovery', 'portal', 'field_security',
             }:
                 p_a, p_b, iso = _setup_projects_and_users(models)
 
@@ -1068,6 +1151,8 @@ def main() -> int:
                 phase_legacy_routes(result, client, app_module.app, models, p_a)
             if 'recovery' in phases:
                 phase_recovery_login(result, client, app_module.app, models)
+            if 'field_security' in phases:
+                phase_field_security(result, client, app_module.app, models, p_a, p_b, iso)
             models['db'].session.rollback()
     finally:
         sig_patch.stop()

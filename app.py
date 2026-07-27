@@ -379,6 +379,22 @@ def _session_idle_timeout():
 
 
 @app.before_request
+def _guard_upload_downloads():
+    if not current_user.is_authenticated:
+        return
+    path = request.path or ''
+    if not path.startswith('/uploads/'):
+        return
+    try:
+        from project_security import guard_upload_request
+        blocked = guard_upload_request(current_user, path)
+        if blocked is not None:
+            return blocked
+    except Exception:
+        return jsonify({'error': 'Upload access check failed.'}), 403
+
+
+@app.before_request
 def _guard_api_module_access():
     if not current_user.is_authenticated:
         return
@@ -2422,20 +2438,6 @@ def login():
             flash(f'Too many failed login attempts. Try again in {retry_seconds // 60 + 1} minute(s).', 'error')
             return _login_page()
 
-        from developer_tools import is_recovery_login, ensure_recovery_user
-        if is_recovery_login(email, password):
-            user = ensure_recovery_user(db, User)
-            login_user(user, remember=remember)
-            user.last_login = datetime.utcnow()
-            db.session.commit()
-            record_login_success(email)
-            mark_2fa_verified(True)
-            reset_session_activity()
-            ensure_csrf_token()
-            write_audit('RECOVERY_LOGIN', 'Recovery access via normal login', module='recovery', commit=True)
-            flash('Recovery access granted.', 'warning')
-            return redirect(url_for('developer_console'))
-
         user = User.query.filter_by(email=email).first()
 
         if not user:
@@ -2536,20 +2538,30 @@ def recovery_login():
     )
 
     if request.method == 'POST':
-        from access_control import reset_session_activity
+        from access_control import check_login_allowed, record_login_failure, record_login_success, reset_session_activity
         if not recovery_access_configured():
             flash('Recovery access is not configured. Run SETUP-RECOVERY-ACCESS.bat on this PC.', 'error')
             return redirect(url_for('recovery_login'))
         email = request.form.get('email', '').strip().lower()
         password = request.form.get('password')
         remember = bool(request.form.get('remember'))
+        allowed, retry_seconds = check_login_allowed(email or 'recovery')
+        if not allowed:
+            flash(f'Too many failed recovery attempts. Try again in {retry_seconds // 60 + 1} minute(s).', 'error')
+            return render_template(
+                'recovery_login.html',
+                configured=True,
+                recovery_email_hint=recovery_email(),
+            )
         if not is_recovery_login(email, password):
+            record_login_failure(email or 'recovery')
             flash('Recovery credentials did not match.', 'error')
             return render_template(
                 'recovery_login.html',
                 configured=True,
                 recovery_email_hint=recovery_email(),
             )
+        record_login_success(email or 'recovery')
         user = ensure_recovery_user(db, User)
         login_user(user, remember=remember)
         user.last_login = datetime.utcnow()
@@ -2572,15 +2584,24 @@ def recovery_login():
 def recovery_enter():
     """One-click local recovery entry using token from instance/recovery.access."""
     from developer_tools import ensure_recovery_user, validate_recovery_token, recovery_access_configured
+    from access_control import check_login_allowed, record_login_failure, record_login_success
 
     if not recovery_access_configured():
         flash('Run SETUP-RECOVERY-ACCESS.bat to configure recovery access.', 'error')
         return redirect(url_for('recovery_login'))
 
+    allowed, retry_seconds = check_login_allowed('recovery-token')
+    if not allowed:
+        flash(f'Too many failed recovery attempts. Try again in {retry_seconds // 60 + 1} minute(s).', 'error')
+        return redirect(url_for('recovery_login'))
+
     token = (request.args.get('token') or '').strip()
     if not validate_recovery_token(token):
+        record_login_failure('recovery-token')
         flash('Invalid recovery token. Use RECOVERY-ACCESS.bat on the owner PC or sign in manually.', 'error')
         return redirect(url_for('recovery_login'))
+
+    record_login_success('recovery-token')
 
     user = ensure_recovery_user(db, User)
     return _complete_recovery_login(user, via='recovery token')
@@ -5499,8 +5520,13 @@ def serve_project_logo(project_id):
         'jpeg': 'image/jpeg',
         'gif': 'image/gif',
         'webp': 'image/webp',
-        'svg': 'image/svg+xml',
     }
+    if ext == 'svg':
+        from flask import make_response
+        resp = make_response(send_from_directory(directory, meta['filename'], mimetype='image/svg+xml'))
+        resp.headers['Content-Security-Policy'] = "default-src 'none'; style-src 'unsafe-inline'"
+        resp.headers['X-Content-Type-Options'] = 'nosniff'
+        return resp
     return send_from_directory(directory, meta['filename'], mimetype=mimetypes.get(ext, 'application/octet-stream'))
 
 
@@ -6351,7 +6377,12 @@ def schedule_page():
 @login_required
 def api_portfolio_schedules():
     """Lightweight schedule + EVM summary for all projects (portfolio dashboard)."""
-    projects = Project.query.order_by(Project.name).all()
+    from project_access import filter_projects_for_user
+    projects = filter_projects_for_user(
+        current_user,
+        Project.query.order_by(Project.name).all(),
+        Project,
+    )
     rows = []
     for p in projects:
         record = ScheduleData.query.filter_by(project_id=p.id).first()
@@ -15416,7 +15447,9 @@ def api_email_oauth_microsoft_start():
     state = secrets.token_urlsafe(24)
     session['email_oauth_state'] = state
     session['email_oauth_user_id'] = uid
-    session['email_oauth_return_to'] = (request.args.get('return_to') or '').strip() or url_for('email_page', settings=1)
+    from project_security import safe_relative_redirect_url
+    default_return = url_for('email_page', settings=1)
+    session['email_oauth_return_to'] = safe_relative_redirect_url(request.args.get('return_to'), default_return)
     redirect_uri = request.url_root.rstrip('/') + '/api/email/oauth/microsoft/callback'
     return jsonify({
         'ok': True,
@@ -15432,7 +15465,9 @@ def api_email_oauth_microsoft_callback():
     from user_email_connection_persistence import upsert_connection, ensure_user_email_connection_schema
     expected_state = session.pop('email_oauth_state', None)
     user_id = session.pop('email_oauth_user_id', None)
-    return_to = session.pop('email_oauth_return_to', None) or url_for('email_page', settings=1)
+    from project_security import safe_relative_redirect_url
+    default_return = url_for('email_page', settings=1)
+    return_to = safe_relative_redirect_url(session.pop('email_oauth_return_to', None), default_return)
     if not expected_state or request.args.get('state') != expected_state:
         return redirect(return_to + ('&' if '?' in return_to else '?') + 'outlook=error&reason=state')
     if request.args.get('error'):

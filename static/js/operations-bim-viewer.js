@@ -4,20 +4,37 @@
 (function (global) {
   'use strict';
 
+  function safeSameOriginPath(fileUrl) {
+    try {
+      const u = new URL(String(fileUrl || ''), window.location.origin);
+      if (u.origin !== window.location.origin) return null;
+      if (!['http:', 'https:'].includes(u.protocol)) return null;
+      return u.pathname + u.search + u.hash;
+    } catch (_) {
+      return null;
+    }
+  }
+
   function mount(container, fileUrl, ext, options) {
     if (!container) return;
     const opts = options || {};
     const fill = opts.fill !== false;
-    container.innerHTML = '';
+    const safeUrl = safeSameOriginPath(fileUrl);
+    container.replaceChildren();
     const lower = (ext || '').toLowerCase();
-    if (lower === 'pdf') {
-      const minH = fill ? '100%' : '400px';
-      container.innerHTML = `<iframe src="${fileUrl}" class="w-full rounded-lg border border-zinc-700" style="height:${minH};min-height:${fill ? '0' : '400px'};" title="PDF"></iframe>`;
+    if (lower === 'pdf' && safeUrl) {
+      const iframe = document.createElement('iframe');
+      iframe.src = safeUrl;
+      iframe.className = 'w-full rounded-lg border border-zinc-700';
+      iframe.title = 'PDF';
+      iframe.style.height = fill ? '100%' : '400px';
+      iframe.style.minHeight = fill ? '0' : '400px';
+      container.appendChild(iframe);
       return;
     }
-    if (['glb', 'gltf'].includes(lower)) {
+    if (['glb', 'gltf'].includes(lower) && safeUrl) {
       const mv = document.createElement('model-viewer');
-      mv.setAttribute('src', fileUrl);
+      mv.setAttribute('src', safeUrl);
       mv.setAttribute('camera-controls', '');
       mv.setAttribute('shadow-intensity', '1');
       mv.setAttribute('auto-rotate', '');
@@ -29,10 +46,18 @@
       container.appendChild(mv);
       return;
     }
-    container.innerHTML = `<div class="p-6 text-center text-zinc-400">
-      <p>Preview not available for .${lower} files.</p>
-      <a href="${fileUrl}" class="text-emerald-400 underline mt-2 inline-block" download>Download model</a>
-    </div>`;
+    const fallback = document.createElement('div');
+    fallback.className = 'p-6 text-center text-zinc-400';
+    fallback.innerHTML = `<p>Preview not available for .${lower} files.</p>`;
+    if (safeUrl) {
+      const link = document.createElement('a');
+      link.href = safeUrl;
+      link.className = 'text-emerald-400 underline mt-2 inline-block';
+      link.download = '';
+      link.textContent = 'Download model';
+      fallback.appendChild(link);
+    }
+    container.appendChild(fallback);
   }
 
   function toggleFullscreen(el) {
