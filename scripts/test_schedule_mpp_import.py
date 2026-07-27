@@ -61,6 +61,8 @@ class ScheduleMppImportTests(unittest.TestCase):
         self.assertEqual(by_name['Task B']['parent'], by_name['Phase 1']['id'])
         self.assertAlmostEqual(by_name['Task A']['progress'], 0.5)
         self.assertEqual(by_name['Task B']['end_date'], '2026-01-10')
+        self.assertEqual(by_name['Phase 1']['start_date'], '2026-01-06')
+        self.assertEqual(by_name['Phase 1']['end_date'], '2026-01-10')
         self.assertEqual(payload['links'][0]['source'], by_name['Task A']['id'])
         self.assertEqual(payload['links'][0]['target'], by_name['Task B']['id'])
 

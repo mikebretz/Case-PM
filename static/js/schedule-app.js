@@ -100,6 +100,7 @@
 
     let editingContext = null;
     let editorClampTimer = null;
+    let editorClampObsTimer = null;
     let floatingEditorActive = false;
     let rollingCalendarBounds = null;
     let initialTimelineFocused = false;
@@ -146,7 +147,7 @@
         const spanDays = rollingCalendarBounds
             ? CasePMSchedule.calendarDaysBetween(rollingCalendarBounds.start, rollingCalendarBounds.end)
             : 0;
-        if ((scheduleTaskCount >= 60 || spanDays > 90) && (scheduleSettings.timescale || 'day') === 'day') {
+        if ((scheduleTaskCount >= 40 || spanDays > 60) && (scheduleSettings.timescale || 'day') === 'day') {
             scheduleSettings.timescale = 'week';
             applyTimescaleScales('week');
         }
@@ -1293,7 +1294,7 @@
                 lastGridWidthKey = gridKey;
                 gantt.setSizes();
             }
-            if (!options.light || sizeChanged) queueEnforceGridColumnExtents();
+            if (!options.light && sizeChanged) queueEnforceGridColumnExtents();
 
             if (isOverlay) applyOverlayDomLayout();
             else positionChartResizerVisual();
@@ -1492,9 +1493,10 @@
         if (!grid || grid.dataset.editorClampBound) return;
         grid.dataset.editorClampBound = '1';
         new MutationObserver(() => {
-            if (document.querySelector('#gantt_here .gantt_grid_editor_placeholder')) {
-                scheduleEditorClampLoop();
-            }
+            if (bulkLoadDepth > 0) return;
+            if (!document.querySelector('#gantt_here .gantt_grid_editor_placeholder')) return;
+            clearTimeout(editorClampObsTimer);
+            editorClampObsTimer = setTimeout(scheduleEditorClampLoop, 120);
         }).observe(grid, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
     }
 
@@ -1525,11 +1527,62 @@
         };
     }
 
+    function isLeafScheduleTask(task) {
+        if (!task || !ganttReady) return false;
+        if (task.type === 'milestone') return true;
+        if (task.type === 'project') return false;
+        return !gantt.hasChild(task.id);
+    }
+
+    function rollupImportedSummaryDates() {
+        if (!ganttReady || !scheduleSettings.preserve_msp_dates) return;
+        const items = [];
+        gantt.eachTask(t => items.push({ task: t, level: getWbsLevel(t) }));
+        items.sort((a, b) => b.level - a.level);
+        const changed = [];
+        items.forEach(({ task }) => {
+            if (!gantt.hasChild(task.id)) return;
+            const kids = (gantt.getChildren(task.id) || []).filter(id => gantt.isTaskExists(id));
+            if (!kids.length) return;
+            let minS = null;
+            let maxE = null;
+            kids.forEach(cid => {
+                const c = gantt.getTask(cid);
+                const s = toGanttDate(c.start_date);
+                const e = toGanttDate(c.end_date);
+                if (s && (!minS || s < minS)) minS = s;
+                if (e && (!maxE || e > maxE)) maxE = e;
+            });
+            let dirty = false;
+            if (minS) {
+                const cur = toGanttDate(task.start_date);
+                if (!cur || cur.getTime() !== minS.getTime()) {
+                    task.start_date = minS;
+                    dirty = true;
+                }
+            }
+            if (maxE) {
+                const cur = toGanttDate(task.end_date);
+                if (!cur || cur.getTime() !== maxE.getTime()) {
+                    task.end_date = maxE;
+                    dirty = true;
+                }
+            }
+            if (dirty) changed.push(task.id);
+        });
+        if (changed.length) {
+            const apply = () => changed.forEach(id => gantt.refreshTask(id));
+            if (typeof gantt.batchUpdate === 'function') gantt.batchUpdate(apply);
+            else apply();
+        }
+    }
+
     function computeRollingCalendarBounds() {
         let minStart = null;
         let maxEnd = null;
         if (ganttReady) {
             gantt.eachTask(t => {
+                if (!isLeafScheduleTask(t)) return;
                 const ts = toGanttDate(t.start_date);
                 const te = toGanttDate(t.end_date);
                 if (ts && (!minStart || ts < minStart)) minStart = new Date(ts.getTime());
@@ -1545,6 +1598,11 @@
         let end = ganttDateAdd(maxEnd, ROLLING_PAD_DAYS, 'day');
         if (CasePMSchedule.calendarDaysBetween(start, end) < ROLLING_MIN_SPAN_DAYS) {
             end = CasePMSchedule.addCalendarDays(start, ROLLING_MIN_SPAN_DAYS);
+        }
+        const spanDays = CasePMSchedule.calendarDaysBetween(start, end);
+        const maxSpan = scheduleSettings.preserve_msp_dates ? 900 : 1200;
+        if (spanDays > maxSpan) {
+            end = CasePMSchedule.addCalendarDays(start, maxSpan);
         }
         return { start, end };
     }
@@ -1626,8 +1684,27 @@
         });
     }
 
+    function getVerticalScrollElement() {
+        return document.querySelector('#gantt_here [data-cell-id="scrollVer"] .gantt_layout_outer_scroll')
+            || document.querySelector('#gantt_here [data-cell-id="scrollVer"]');
+    }
+
+    function scrollGanttVertically(deltaY) {
+        const scrollVerEl = getVerticalScrollElement();
+        if (!scrollVerEl || !deltaY) return false;
+        timelineScrollProgrammatic = true;
+        scrollVerEl.scrollTop += deltaY;
+        syncVerticalScrollViews(scrollVerEl.scrollTop);
+        try {
+            const x = gantt.getScrollState?.()?.x || 0;
+            if (gantt.scrollTo) gantt.scrollTo(x, scrollVerEl.scrollTop);
+        } catch (e) { /* ok */ }
+        requestAnimationFrame(() => { timelineScrollProgrammatic = false; });
+        return true;
+    }
+
     function bindVerticalScrollSync() {
-        const scrollVerEl = document.querySelector('#gantt_here [data-cell-id="scrollVer"] .gantt_layout_outer_scroll, #gantt_here [data-cell-id="scrollVer"]');
+        const scrollVerEl = getVerticalScrollElement();
         if (scrollVerEl && !scrollVerEl.dataset.verScrollBound) {
             scrollVerEl.dataset.verScrollBound = '1';
             scrollVerEl.addEventListener('scroll', () => {
@@ -1650,6 +1727,23 @@
                 requestAnimationFrame(() => { timelineScrollProgrammatic = false; });
             }, { passive: true });
         }
+    }
+
+    function bindGanttVerticalWheel() {
+        const host = document.getElementById('gantt_here');
+        if (!host || host.dataset.vertWheelBound) return;
+        host.dataset.vertWheelBound = '1';
+        host.addEventListener('wheel', e => {
+            if (Math.abs(e.deltaY) <= Math.abs(e.deltaX) && !e.shiftKey) return;
+            const inTimeline = e.target.closest('.gantt_layout_cell:nth-child(3)');
+            if (inTimeline) return;
+            const inGantt = e.target.closest('#gantt_here .gantt_grid_data, #gantt_here .gantt_grid_scale, #gantt_here .gantt_layout_cell:nth-child(1)');
+            if (!inGantt) return;
+            if (scrollGanttVertically(e.deltaY)) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        }, { passive: false, capture: true });
     }
 
     function bindTimelineScrollbarSync() {
@@ -1856,7 +1950,16 @@
             host.addEventListener('wheel', e => {
                 const inTimeline = e.target.closest('.gantt_layout_cell:nth-child(3)');
                 if (!inTimeline) return;
-                const raw = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+                const absX = Math.abs(e.deltaX);
+                const absY = Math.abs(e.deltaY);
+                if (absY > absX && !e.shiftKey) {
+                    if (scrollGanttVertically(e.deltaY)) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }
+                    return;
+                }
+                const raw = absX > absY ? e.deltaX : (e.shiftKey ? e.deltaY : 0);
                 if (!raw) return;
                 e.preventDefault();
                 e.stopPropagation();
@@ -1866,6 +1969,7 @@
         }
         bindTimelineScrollbarSync();
         bindVerticalScrollSync();
+        bindGanttVerticalWheel();
 
         const gridData = document.querySelector('#gantt_here .gantt_grid_data');
         if (gridData && !gridData.dataset.resizeSyncBound) {
@@ -3361,6 +3465,7 @@
 
     function taskShowsGutterLevel(task, gutterLevel) {
         if (!task || !ganttReady) return false;
+        if (scheduleTaskCount > 25) return gutterLevel === 0;
         if (gutterLevel === 0) return true;
         const maxLevel = WBS_GUTTER_COLORS.length - 1;
         const levelFor = t => Math.min(getWbsLevel(t), maxLevel);
@@ -3383,6 +3488,7 @@
     }
 
     function hierarchyIndentTemplate(task) {
+        if (scheduleTaskCount > 25) return '<div class="sched-wbs-indents sched-wbs-indents-lite"></div>';
         const nextTask = scheduleTaskCount <= 40 ? getNextTaskInTree(task.id) : null;
         let html = '<div class="sched-wbs-indents">';
         for (let i = 0; i < WBS_GUTTER_COLORS.length; i++) {
@@ -3414,7 +3520,7 @@
     }
 
     function syncWbsGutterSpans() {
-        if (!ganttReady) return;
+        if (!ganttReady || scheduleTaskCount > 25) return;
         const items = getVisibleTaskItems();
         if (items.length) lastWbsBandSegments = computeWbsBandSegments(items);
         document.querySelectorAll('#gantt_here .sched-wbs-gutter-layer .sched-wbs-band').forEach(el => el.remove());
@@ -3878,8 +3984,8 @@
         gantt.config.link_line_width = scheduleSettings.link_width || 2;
         gantt.config.link_arrow_size = 10;
         gantt.config.link_wrapper_width = 20;
-        gantt.config.smart_rendering = false;
-        gantt.config.static_background = false;
+        gantt.config.smart_rendering = true;
+        gantt.config.static_background = true;
         gantt.config.link_attribute = 'data-link-id';
 
         gantt.config.min_column_width = 50;
@@ -3948,7 +4054,7 @@
         gantt.attachEvent('onEmptyClick', () => closeFloatingEditor());
 
         gantt.attachEvent('onTaskLoading', (task) => {
-            sanitizeTaskDates(task);
+            sanitizeTaskDates(task, { preserveDates: scheduleSettings.preserve_msp_dates || bulkLoadDepth > 0 });
             if (bulkLoadDepth === 0) applyTaskBarColor(task);
             return true;
         });
@@ -4189,8 +4295,9 @@
         }
 
         gantt.attachEvent('onGanttRender', () => {
+            if (bulkLoadDepth > 0) return;
             clearTimeout(ganttRenderHookTimer);
-            ganttRenderHookTimer = setTimeout(runGanttRenderHooks, 250);
+            ganttRenderHookTimer = setTimeout(runGanttRenderHooks, 400);
         });
 
         document.addEventListener('keydown', onScheduleKeyDown);
@@ -4368,6 +4475,7 @@
         if (payload.settings) scheduleSettings = Object.assign(scheduleSettings, payload.settings);
         if (preserveDates) scheduleSettings.preserve_msp_dates = true;
         sanitizeAllTaskDates({ preserveDates });
+        rollupImportedSummaryDates();
         runSchedule({
             skipScroll: true,
             skipSave: true,
@@ -6727,16 +6835,15 @@
         await loadSchedule();
         applySchedulePerformanceProfile();
         applyRollingCalendarRange();
-        applyTimescaleScales(scheduleSettings.timescale || 'day');
-        updateRowHeightsForLabels();
-        gantt.render();
+        applyTimescaleScales(scheduleSettings.timescale || 'week');
         resizeGanttHost();
         requestAnimationFrame(() => {
             syncScheduleProjectContext();
-            resizeGanttHost();
-            ensureGridVisible();
+            if (typeof gantt.setSizes === 'function') gantt.setSizes();
+            gantt.render();
+            ensureGridVisible({ scrollTop: false, skipRender: true });
             focusInitialTimelineView();
-            queueGridHeaderSync();
+            bindGanttVerticalWheel();
         });
         switchScheduleView('gantt');
         updateAlignToolbarButtons();
