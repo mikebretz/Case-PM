@@ -81,6 +81,7 @@
             margin_in: 0.35,
             print_scale: 100,
             fit_to_page: false,
+            fit_timescale_to_page: true,
             repeat_header: true,
             page_numbers: false,
             print_color_bars: true,
@@ -6433,6 +6434,8 @@
         setChk('printGridLines', ps.print_grid_lines !== false);
         setChk('printShowNonwork', ps.print_show_nonwork === true);
         setChk('printFitToPage', ps.fit_to_page === true);
+        setChk('printFitTimescale', ps.fit_timescale_to_page !== false);
+        updatePrintChartWidthFieldState();
         setChk('printRepeatHeader', ps.repeat_header !== false);
         setChk('printPageNumbers', ps.page_numbers === true);
         setChk('printColorBars', ps.print_color_bars !== false);
@@ -6446,6 +6449,15 @@
                 : 'No fully visible columns — drag chart divider or scroll grid.';
         }
         dlg.showModal();
+    }
+
+    function updatePrintChartWidthFieldState() {
+        const fit = document.getElementById('printFitTimescale')?.checked !== false;
+        const widthInput = document.getElementById('printChartWidthPct');
+        if (widthInput) {
+            widthInput.disabled = fit;
+            widthInput.classList.toggle('opacity-50', fit);
+        }
     }
 
     function savePrintSettings() {
@@ -6475,6 +6487,7 @@
             print_show_nonwork: document.getElementById('printShowNonwork')?.checked === true,
             print_scale: parseInt(document.getElementById('printScale')?.value, 10) || 100,
             fit_to_page: document.getElementById('printFitToPage')?.checked === true,
+            fit_timescale_to_page: document.getElementById('printFitTimescale')?.checked !== false,
             repeat_header: document.getElementById('printRepeatHeader')?.checked !== false,
             page_numbers: document.getElementById('printPageNumbers')?.checked === true,
             print_color_bars: document.getElementById('printColorBars')?.checked !== false,
@@ -6516,10 +6529,57 @@
         return getPrintTimelinePct(date, startMs, span);
     }
 
-    function getPrintLinkMetrics(textTablePx, barColPct, rowHeightPx) {
+    function getPrintPageWidthPx(ps) {
+        const marginIn = parseFloat(ps?.margin_in) || 0.35;
+        const paper = ps?.paper_size || 'letter';
+        const orient = ps?.orientation || 'landscape';
+        const paperWidths = { letter: 8.5, legal: 8.5, tabloid: 11, a4: 8.27 };
+        const paperHeight = { letter: 11, legal: 14, tabloid: 17, a4: 11.69 };
+        const pageWIn = orient === 'landscape'
+            ? (paperHeight[paper] || 11)
+            : (paperWidths[paper] || 8.5);
+        const scale = (parseInt(ps?.print_scale, 10) || 100) / 100;
+        return Math.max(480, Math.round((pageWIn - marginIn * 2) * 96 * scale));
+    }
+
+    function getPrintTimelineRange(ps) {
+        const DAY_MS = 86400000;
+        const WEEK_MS = 7 * DAY_MS;
+        const range = gantt.getSubtaskDates?.();
+        let taskStart = range?.start_date ? toGanttDate(range.start_date)?.getTime() : null;
+        let taskEnd = range?.end_date ? toGanttDate(range.end_date)?.getTime() : null;
+        if (ganttReady) {
+            gantt.eachTask(t => {
+                const ts = toGanttDate(t.start_date)?.getTime();
+                const te = toGanttDate(t.end_date)?.getTime();
+                if (ts != null && (taskStart == null || ts < taskStart)) taskStart = ts;
+                if (te != null && (taskEnd == null || te > taskEnd)) taskEnd = te;
+            });
+        }
+        const fitTimescale = ps?.fit_timescale_to_page !== false;
+        if (fitTimescale && taskStart != null && taskEnd != null) {
+            const startMs = taskStart - WEEK_MS;
+            const endMs = taskEnd + WEEK_MS;
+            return { startMs, endMs, span: Math.max(endMs - startMs, DAY_MS), fitTimescale: true };
+        }
+        const onScreenStart = toGanttDate(gantt.config.start_date)?.getTime();
+        const onScreenEnd = toGanttDate(gantt.config.end_date)?.getTime();
+        const startMs = onScreenStart || taskStart || Date.now();
+        const endMs = onScreenEnd || taskEnd || (startMs + DAY_MS * 30);
+        return { startMs, endMs, span: Math.max(endMs - startMs, DAY_MS), fitTimescale: false };
+    }
+
+    function getPrintChartWidthPx(textTablePx, barColPct, fitTimescale, ps) {
+        const pageW = getPrintPageWidthPx(ps);
+        if (fitTimescale) return Math.max(240, pageW - textTablePx);
+        const chartPct = barColPct || parseInt(ps?.chart_width_pct, 10) || 58;
+        return Math.max(320, Math.round(pageW * (chartPct / 100)));
+    }
+
+    function getPrintLinkMetrics(textTablePx, barColPct, rowHeightPx, ps) {
+        const fitTimescale = ps?.fit_timescale_to_page !== false;
         const chartPct = barColPct || parseInt(scheduleSettings.print_settings?.chart_width_pct, 10) || 58;
-        const pageW = window.innerWidth || 1200;
-        const estBarPx = Math.max(320, Math.round(pageW * (chartPct / 100)));
+        const estBarPx = getPrintChartWidthPx(textTablePx, chartPct, fitTimescale, ps || scheduleSettings.print_settings);
         const arrowPx = gantt.config.link_arrow_size || 10;
         const wrapperPx = gantt.config.link_wrapper_width || 20;
         const stroke = scheduleSettings.link_color || '#b0b0b0';
@@ -6660,9 +6720,9 @@
         }
     }
 
-    function buildPrintLinkSegmentsByRow(rowMap, startMs, span, textTablePx, barColPct, rowHeightPx) {
+    function buildPrintLinkSegmentsByRow(rowMap, startMs, span, textTablePx, barColPct, rowHeightPx, ps) {
         const byRow = new Map();
-        const metrics = getPrintLinkMetrics(textTablePx, barColPct, rowHeightPx);
+        const metrics = getPrintLinkMetrics(textTablePx, barColPct, rowHeightPx, ps);
         gantt.getLinks().forEach(link => {
             if (!gantt.isTaskExists(link.source) || !gantt.isTaskExists(link.target)) return;
             const src = gantt.getTask(link.source);
@@ -6730,14 +6790,11 @@
         const range = gantt.getSubtaskDates();
         const dataDate = document.getElementById('dataDateInput')?.value || scheduleSettings.data_date || CasePMSchedule.formatDate(new Date());
         const printed = new Date().toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-        const DAY_MS = 86400000;
-        const onScreenStart = toGanttDate(gantt.config.start_date)?.getTime();
-        const onScreenEnd = toGanttDate(gantt.config.end_date)?.getTime();
-        const scheduleStartMs = onScreenStart || (range?.start_date ? toGanttDate(range.start_date)?.getTime() : Date.now());
-        const scheduleEndMs = onScreenEnd || (range?.end_date ? toGanttDate(range.end_date)?.getTime() : scheduleStartMs + DAY_MS * 30);
-        const startMs = scheduleStartMs;
-        const endMs = scheduleEndMs;
-        const span = Math.max(endMs - startMs, DAY_MS);
+        const timeline = getPrintTimelineRange(ps);
+        const startMs = timeline.startMs;
+        const endMs = timeline.endMs;
+        const span = timeline.span;
+        const fitTimescale = timeline.fitTimescale;
         const printTimescaleMode = scheduleSettings.timescale || ps.print_timescale || 'week';
         const timescale = buildPrintTimescale(startMs, span, printTimescaleMode);
         const showInlineBars = ps.include_inline_bars !== false;
@@ -6777,10 +6834,10 @@
         if (showTable && visibleCols.length) {
             gantt.eachTask(t => { rowMap.set(t.id, rowIdx++); });
         }
-        const linkMetrics = getPrintLinkMetrics(textTablePx, barColPct, printRowH);
+        const linkMetrics = getPrintLinkMetrics(textTablePx, barColPct, printRowH, ps);
         const linkStroke = linkMetrics.stroke;
         const linkSegmentsByRow = (showLinks && rowIdx)
-            ? buildPrintLinkSegmentsByRow(rowMap, startMs, span, textTablePx, barColPct, printRowH)
+            ? buildPrintLinkSegmentsByRow(rowMap, startMs, span, textTablePx, barColPct, printRowH, ps)
             : null;
         rowIdx = 0;
         if (showTable && visibleCols.length) {
@@ -6922,13 +6979,15 @@
             const gridCls = ps.print_grid_lines !== false ? ' print-show-grid' : '';
             const repeatCls = ps.repeat_header !== false ? ' print-repeat-header' : '';
             const fitCls = ps.fit_to_page ? ' print-fit-page' : '';
+            const fitTimescaleCls = fitTimescale ? ' print-fit-timescale' : '';
             const colorBarsCls = ps.print_color_bars === false ? ' print-mono-bars' : '';
             const evmColGroup = evmExtraCols
                 ? `<col class="print-data-col" style="width:${EVM_COL_PX}px"><col class="print-data-col" style="width:${EVM_COL_PX}px">`
                 : '';
-            const colGroup = `<colgroup>${visibleCols.map(({ width }) => `<col class="print-data-col" style="width:${width}px">`).join('')}${evmColGroup}${showInlineBars ? `<col class="print-bar-col" style="width:${barColPct}%">` : ''}</colgroup>`;
+            const barColStyle = fitTimescale ? '' : ` style="width:${barColPct}%"`;
+            const colGroup = `<colgroup>${visibleCols.map(({ width }) => `<col class="print-data-col" style="width:${width}px">`).join('')}${evmColGroup}${showInlineBars ? `<col class="print-bar-col"${barColStyle}>` : ''}</colgroup>`;
             const linkStyleVars = `--gantt-link-color:${linkStroke};--gantt-link-width:${linkMetrics.strokeWidth}px`;
-            return `<div class="print-schedule-wrap${wbsCls}${gridCls}${repeatCls}${fitCls}${colorBarsCls}" style="--print-font-size:${printFontPt}pt;--print-row-height:${printRowH}px;--print-cols-width:${textTablePx}px;${linkStyleVars}" data-print-orientation="${ps.orientation || 'landscape'}">
+            return `<div class="print-schedule-wrap${wbsCls}${gridCls}${repeatCls}${fitCls}${fitTimescaleCls}${colorBarsCls}" style="--print-font-size:${printFontPt}pt;--print-row-height:${printRowH}px;--print-cols-width:${textTablePx}px;${linkStyleVars}" data-print-orientation="${ps.orientation || 'landscape'}">
                 <table class="schedule-print-table schedule-print-table-compact schedule-print-table-visible-cols schedule-print-table-screen-cols schedule-print-table-fill-page">
                 ${colGroup}
                 <thead><tr>
@@ -6971,7 +7030,8 @@
             'printing-gantt',
             'printing-gantt-show-footer',
             'printing-gantt-portrait',
-            'printing-gantt-fit-page'
+            'printing-gantt-fit-page',
+            'printing-gantt-fit-timescale'
         );
         printBuildInProgress = false;
         if (!ganttReady) {
@@ -7018,6 +7078,7 @@
         }`;
                 document.body.classList.toggle('printing-gantt-show-footer', sheet.dataset.printFooter === '1');
                 document.body.classList.toggle('printing-gantt-fit-page', ps.fit_to_page === true);
+                document.body.classList.toggle('printing-gantt-fit-timescale', ps.fit_timescale_to_page !== false);
                 document.body.classList.toggle('printing-gantt-portrait', orient === 'portrait');
                 document.body.classList.add('printing-gantt');
                 sheet.setAttribute('aria-hidden', 'false');
@@ -7205,7 +7266,7 @@
         undo, redo, fitScheduleView, scrollToToday, panTimeline, resetTimelineCalendar, filterTasks, exportCsv, focusTimelineOnTask,
         runSchedule, switchScheduleView, renderCalendarView, renderLookAhead, focusActivity, sortByStartDate, exportXer, exportMsProjectXml,
         showAllOptionalColumns, hideAllOptionalColumns, showFeaturesChecklist, showKeyboardShortcuts,
-        exportJson, importFile, printGantt, printLookAhead, showPrintSetup, savePrintSettings, setPrintColumnToggle,
+        exportJson, importFile, printGantt, printLookAhead, showPrintSetup, savePrintSettings, setPrintColumnToggle, updatePrintChartWidthFieldState,
         showHeaderFooterSetup, saveHeaderFooterSettings, onHeaderLogoSelected, clearHeaderLogo,
         saveSchedule,
         loadSchedule, loadP6DemoSchedule, clearSchedule, showColumnManager, showAddColumnDialog, removeColumn, removeSelectedColumn, selectGridColumn, hideAllOptionalColumns, addFieldColumn, queueSave,
