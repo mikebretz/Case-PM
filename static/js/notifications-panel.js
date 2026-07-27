@@ -203,7 +203,15 @@
 
   window.CasePMNotifications = { refresh, open: openPanel, close: closePanel, toggle: togglePanel };
 
+  function ensurePanelMounted() {
+    const el = panel();
+    if (el && el.parentElement !== document.body) {
+      document.body.appendChild(el);
+    }
+  }
+
   function bindUi() {
+    ensurePanelMounted();
     const bell = bellEl();
     if (bell && !bell.dataset.bound) {
       bell.dataset.bound = '1';

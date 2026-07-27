@@ -570,7 +570,7 @@
             <span class="hidden md:inline">How to use</span>
         </button>
         {% endif %}
-        <button type="button" id="notificationsBell" onclick="typeof CasePMNotifications!=='undefined'?CasePMNotifications.open():document.getElementById('notificationsPanel')?.classList.add('is-open')" class="relative flex items-center justify-center w-9 h-9 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors" title="Notifications" aria-haspopup="dialog" aria-controls="notificationsPanel" aria-expanded="false">
+        <button type="button" id="notificationsBell" class="relative flex items-center justify-center w-9 h-9 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors" title="Notifications" aria-haspopup="dialog" aria-controls="notificationsPanel" aria-expanded="false">
             <i class="fa-solid fa-bell"></i>
             <span id="notificationsBadge" class="hidden absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center">0</span>
         </button>
