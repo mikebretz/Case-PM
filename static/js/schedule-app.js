@@ -741,17 +741,21 @@
     /** dhtmlx layout pane width = divider viewport only (overlay mode). */
     function syncGridLayoutColumnWidth() {
         if (!gantt.config.layout?.cols?.[0]) return;
+        const hostW = document.getElementById('gantt_here')?.offsetWidth || 1200;
+        const scrollW = gantt.config.scroll_size || 16;
         if (isOverlayMode()) {
-            const paneW = getGridOverlayWidth();
-            gantt.config.layout.cols[0].width = paneW;
-            gantt.config.layout.cols[0].min_width = 200;
+            // Grid viewport is CSS-positioned; keep layout col minimal so timeline gets full width.
+            gantt.config.layout.cols[0].width = 1;
+            gantt.config.layout.cols[0].min_width = 1;
+            if (gantt.config.layout.cols[2]) {
+                gantt.config.layout.cols[2].width = Math.max(240, hostW - scrollW);
+                gantt.config.layout.cols[2].min_width = 240;
+            }
         } else {
-            const hostW = document.getElementById('gantt_here')?.offsetWidth || 1200;
             const paneW = getGridOverlayWidth();
             gantt.config.layout.cols[0].width = paneW;
             gantt.config.layout.cols[0].min_width = 200;
             if (gantt.config.layout.cols[2]) {
-                const scrollW = gantt.config.scroll_size || 16;
                 gantt.config.layout.cols[2].width = Math.max(240, hostW - paneW - scrollW - 4);
                 gantt.config.layout.cols[2].min_width = 240;
             }
@@ -903,6 +907,23 @@
             grip.style.pointerEvents = 'auto';
             layer.appendChild(grip);
         });
+    }
+
+    let headerLayoutTimer = null;
+
+    function scheduleGridHeaderLayout(force) {
+        if (!ganttReady || !isOverlayMode()) return;
+        clearTimeout(headerLayoutTimer);
+        headerLayoutTimer = setTimeout(() => {
+            const heads = document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell');
+            if (!heads.length) return;
+            const { columns: metrics } = getColumnLayoutMetrics();
+            if (!force && metrics[0] && heads[0]) {
+                const w = heads[0].getBoundingClientRect().width;
+                if (w >= metrics[0].width - 6) return;
+            }
+            enforceGridColumnExtents();
+        }, force ? 0 : 32);
     }
 
     function layoutColumnResizeGrips(metrics) {
@@ -1445,8 +1466,8 @@
 
             const cells = root.querySelectorAll(':scope > .gantt_layout_cell');
             if (gantt.config.layout?.cols?.[0]) {
-                gantt.config.layout.cols[0].width = gridPaneW;
-                gantt.config.layout.cols[0].min_width = 200;
+                gantt.config.layout.cols[0].width = 1;
+                gantt.config.layout.cols[0].min_width = 1;
             }
             if (gantt.config.layout?.cols?.[2]) {
                 gantt.config.layout.cols[2].width = timelineFullW;
@@ -3262,6 +3283,7 @@
             applyCellAlignToDom();
             if (persist) queueSave();
         }
+        scheduleGridHeaderLayout(true);
     }
 
     function resetColumnWidths() {
@@ -4134,22 +4156,21 @@
 
         const gridW = getColumnsTotalWidth();
         const hostW = document.getElementById('gantt_here')?.offsetWidth || 1000;
-        const gridPaneW = Math.max(320, scheduleSettings.grid_overlay_width_px || Math.round(hostW * (1 - (scheduleSettings.timeline_pct ?? 0.48))));
         const scrollW = gantt.config.scroll_size || 16;
-        const timelineW = Math.max(280, hostW - gridPaneW - scrollW - 4);
+        const timelineW = Math.max(280, hostW - scrollW - 4);
         gantt.config.grid_width = gridW;
         gantt.config.layout = {
             css: 'gantt_container',
             cols: [
                 {
-                    width: gridPaneW,
-                    min_width: 200,
+                    width: 1,
+                    min_width: 1,
                     rows: [
                         { view: 'grid', scrollX: 'gridScroll', scrollY: 'scrollVer' },
                         { view: 'scrollbar', id: 'gridScroll', height: 20 }
                     ]
                 },
-                { resizer: true, width: 6 },
+                { resizer: true, width: 0 },
                 {
                     width: timelineW,
                     min_width: 240,
@@ -4423,6 +4444,7 @@
 
         function runGanttRenderHooks() {
             queueStatusBarUpdate();
+            scheduleGridHeaderLayout();
             if (!bindColumnResizeEnhancements.done) bindColumnResizeEnhancements();
             if (!bindGridSelectionHandlers.done) bindGridSelectionHandlers();
             updateAlignToolbarButtons();
@@ -4452,6 +4474,7 @@
         enforceGridColumnExtents({ syncRows: true });
         syncGanttLayout({ forceLayout: true, refreshScroll: true });
         positionChartResizerVisual();
+        scheduleGridHeaderLayout(true);
         bindColumnResizeEnhancements();
         bindGridSelectionHandlers();
         syncScheduleProjectContext();
@@ -4691,6 +4714,7 @@
             syncGanttLayout({ forceLayout: true, refreshScroll: true });
             enforceGridColumnExtents();
             positionChartResizerVisual();
+            scheduleGridHeaderLayout(true);
             focusInitialTimelineView();
             bindVerticalScrollSync();
         }, importing ? 120 : 40);
@@ -6840,6 +6864,32 @@
         sheet.dataset.printOrientation = ps.orientation || 'landscape';
     }
 
+    function restoreGanttAfterPrint() {
+        const sheet = document.getElementById('schedulePrintSheet');
+        if (sheet) {
+            sheet.innerHTML = '';
+            sheet.setAttribute('aria-hidden', 'true');
+        }
+        document.body.classList.remove(
+            'printing-gantt',
+            'printing-gantt-show-footer',
+            'printing-gantt-portrait',
+            'printing-gantt-fit-page'
+        );
+        printBuildInProgress = false;
+        if (!ganttReady) {
+            setSaveStatus('Ready');
+            return;
+        }
+        requestAnimationFrame(() => {
+            applyOverlayDomLayout();
+            syncGridLayoutColumnWidth();
+            if (typeof gantt.setSizes === 'function') gantt.setSizes();
+            scheduleGridHeaderLayout(true);
+            setSaveStatus('Ready');
+        });
+    }
+
     function printGantt() {
         if (printBuildInProgress) return;
         printBuildInProgress = true;
@@ -6850,6 +6900,7 @@
                 const sheet = document.getElementById('schedulePrintSheet');
                 if (!sheet || !sheet.innerHTML.trim()) {
                     showScheduleAlert('Nothing to print — add activities first.', 'warning');
+                    printBuildInProgress = false;
                     return;
                 }
                 const ps = scheduleSettings.print_settings || {};
@@ -6873,24 +6924,21 @@
                 document.body.classList.toggle('printing-gantt-portrait', orient === 'portrait');
                 document.body.classList.add('printing-gantt');
                 sheet.setAttribute('aria-hidden', 'false');
+                let cleaned = false;
                 const cleanup = () => {
+                    if (cleaned) return;
+                    cleaned = true;
                     window.removeEventListener('afterprint', cleanup);
-                    sheet.setAttribute('aria-hidden', 'true');
-                    document.body.classList.remove(
-                        'printing-gantt',
-                        'printing-gantt-show-footer',
-                        'printing-gantt-portrait',
-                        'printing-gantt-fit-page'
-                    );
-                    setSaveStatus('Ready');
+                    restoreGanttAfterPrint();
                 };
                 window.addEventListener('afterprint', cleanup);
                 requestAnimationFrame(() => {
                     window.print();
-                    setTimeout(cleanup, 1500);
+                    setTimeout(cleanup, 500);
                 });
-            } finally {
+            } catch (e) {
                 printBuildInProgress = false;
+                restoreGanttAfterPrint();
             }
         };
         if (scheduleTaskCount > 120) {
