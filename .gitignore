@@ -8,9 +8,11 @@ __pycache__/
 tests/
 uploads/
 instance/
+instance/server.env
+*.db
+*.db-journal
 .env
 .env.*
-*.db-journal
 *.log
 .DS_Store
 Thumbs.db
