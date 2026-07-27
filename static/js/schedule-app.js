@@ -41,6 +41,8 @@
         calendar: 'standard',
         lookahead_days: 14,
         lookahead_plans: [],
+        lookahead_view_mode: 'table',
+        lookahead_print_mode: 'table',
         timescale: 'day',
         default_bar_color: '#3794ff',
         critical_bar_color: '#f1707b',
@@ -131,6 +133,66 @@
     let schedulePayloadSource = '';
     let scheduleImportMeta = null;
     let lookaheadDraft = null;
+    let lookAheadDragRowId = null;
+
+    function getLookAheadPriorityMeta(priority) {
+        if (priority === 'High') return { cls: 'la-pri-high', color: '#ef4444', label: 'High' };
+        if (priority === 'Medium') return { cls: 'la-pri-medium', color: '#eab308', label: 'Medium' };
+        return { cls: 'la-pri-normal', color: '#3b82f6', label: 'Normal' };
+    }
+
+    function updateLookAheadRowPriorityStyle(tr) {
+        if (!tr) return;
+        const pri = tr.querySelector('.la-priority')?.value || 'Normal';
+        const meta = getLookAheadPriorityMeta(pri);
+        tr.classList.remove('la-pri-high', 'la-pri-medium', 'la-pri-normal');
+        tr.classList.add(meta.cls);
+        const sel = tr.querySelector('.la-priority');
+        if (sel) sel.dataset.pri = pri;
+    }
+
+    function getLookAheadViewMode() {
+        return scheduleSettings.lookahead_view_mode || 'table';
+    }
+
+    function getLookAheadPrintMode() {
+        const el = document.getElementById('lookaheadPrintMode');
+        return el?.value || scheduleSettings.lookahead_print_mode || getLookAheadViewMode() || 'table';
+    }
+
+    function setLookAheadViewMode(mode) {
+        if (getLookAheadViewMode() === 'table') syncLookAheadDraftFromDom();
+        scheduleSettings.lookahead_view_mode = mode;
+        document.querySelectorAll('.lookahead-view-btn').forEach(btn => {
+            btn.classList.toggle('active-tool', btn.dataset.laView === mode);
+        });
+        renderLookAhead({ skipReload: true });
+    }
+
+    function setLookAheadPrintMode(mode) {
+        scheduleSettings.lookahead_print_mode = mode || 'table';
+    }
+
+    function getLookAheadDateRange(rows, ctx) {
+        const DAY_MS = 86400000;
+        let min = ctx.dataDate.getTime();
+        let max = min + Math.max(ctx.horizon, 10) * DAY_MS;
+        (rows || []).forEach(r => {
+            const s = parseLookAheadDateInput(r.start)?.getTime();
+            const f = parseLookAheadDateInput(r.finish)?.getTime() || s;
+            if (s != null) min = Math.min(min, s);
+            if (f != null) max = Math.max(max, f);
+        });
+        min -= 7 * DAY_MS;
+        max += 7 * DAY_MS;
+        return { startMs: min, endMs: max, span: Math.max(max - min, DAY_MS) };
+    }
+
+    function lookAheadBarPct(dateStr, range) {
+        const t = parseLookAheadDateInput(dateStr)?.getTime();
+        if (t == null || !range?.span) return null;
+        return Math.max(0, Math.min(100, ((t - range.startMs) / range.span) * 100));
+    }
 
     function lookAheadUid() {
         return 'la-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
@@ -240,6 +302,9 @@
             if (e.target.matches('.la-start, .la-finish')) {
                 e.target.value = normalizeLookAheadDateInput(e.target.value);
             }
+            if (e.target.matches('.la-priority')) {
+                updateLookAheadRowPriorityStyle(e.target.closest('tr'));
+            }
             syncLookAheadDraftFromDom();
         });
         wrap.addEventListener('click', e => {
@@ -252,6 +317,52 @@
             }
             const focus = e.target.closest('.la-focus-task');
             if (focus && focus.dataset.taskId) focusActivity(focus.dataset.taskId);
+        });
+    }
+
+    function initLookAheadRowDrag() {
+        const tbody = document.getElementById('lookaheadTableBody');
+        if (!tbody || tbody.dataset.dragBound) return;
+        tbody.dataset.dragBound = '1';
+        tbody.addEventListener('dragstart', e => {
+            const tr = e.target.closest('tr[data-row-id]');
+            if (!tr || !e.target.closest('.la-drag-handle')) {
+                e.preventDefault();
+                return;
+            }
+            lookAheadDragRowId = tr.dataset.rowId;
+            tr.classList.add('la-dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', lookAheadDragRowId);
+        });
+        tbody.addEventListener('dragend', () => {
+            tbody.querySelectorAll('.la-dragging, .la-drag-over').forEach(el => {
+                el.classList.remove('la-dragging', 'la-drag-over');
+            });
+            lookAheadDragRowId = null;
+        });
+        tbody.addEventListener('dragover', e => {
+            e.preventDefault();
+            const tr = e.target.closest('tr[data-row-id]');
+            if (!tr || tr.dataset.rowId === lookAheadDragRowId) return;
+            tbody.querySelectorAll('.la-drag-over').forEach(el => el.classList.remove('la-drag-over'));
+            tr.classList.add('la-drag-over');
+        });
+        tbody.addEventListener('dragleave', e => {
+            const tr = e.target.closest('tr[data-row-id]');
+            if (tr) tr.classList.remove('la-drag-over');
+        });
+        tbody.addEventListener('drop', e => {
+            e.preventDefault();
+            const targetTr = e.target.closest('tr[data-row-id]');
+            const sourceTr = tbody.querySelector(`tr[data-row-id="${lookAheadDragRowId}"]`);
+            if (!sourceTr || !targetTr || sourceTr === targetTr) return;
+            const rect = targetTr.getBoundingClientRect();
+            const before = e.clientY < rect.top + rect.height / 2;
+            if (before) targetTr.before(sourceTr);
+            else targetTr.after(sourceTr);
+            syncLookAheadDraftFromDom();
+            tbody.querySelectorAll('.la-drag-over').forEach(el => el.classList.remove('la-drag-over'));
         });
     }
 
@@ -6091,18 +6202,178 @@
         });
     }
 
+    function buildLookAheadTableBodyHtml(rows) {
+        const priOptions = ['High', 'Medium', 'Normal'];
+        if (!rows.length) {
+            return `<tr><td colspan="10" class="px-4 py-10 text-center text-zinc-500">No activities in this window. Click <b>Add row</b> or <b>Refresh from schedule</b>.</td></tr>`;
+        }
+        return rows.map(row => {
+            const meta = getLookAheadPriorityMeta(row.priority);
+            const priSel = priOptions.map(p => `<option value="${p}"${row.priority === p ? ' selected' : ''}>${p}</option>`).join('');
+            const focusBtn = row.taskId
+                ? `<button type="button" class="la-focus-task text-sky-400 hover:text-sky-300 text-xs" data-task-id="${row.taskId}" title="Show on Gantt"><i class="fa-solid fa-arrow-up-right-from-square"></i></button>`
+                : '';
+            return `<tr data-row-id="${row.id}" data-task-id="${row.taskId || ''}" class="lookahead-row ${meta.cls}">
+                <td class="px-1 py-1 text-center no-print la-drag-cell"><span class="la-drag-handle" draggable="true" title="Drag to reorder"><i class="fa-solid fa-grip-vertical"></i></span></td>
+                <td class="px-2 py-1"><select class="la-priority lookahead-priority-select" data-pri="${row.priority || 'Normal'}">${priSel}</select></td>
+                <td class="px-2 py-1"><div class="flex items-center gap-1">${focusBtn}<input type="text" class="la-activity lookahead-input flex-1" value="${escHtml(row.activity || '')}"></div></td>
+                <td class="px-2 py-1"><input type="text" class="la-start lookahead-input w-full" value="${escHtml(row.start || '')}" placeholder="M/D/YYYY"></td>
+                <td class="px-2 py-1"><input type="text" class="la-finish lookahead-input w-full" value="${escHtml(row.finish || '')}" placeholder="M/D/YYYY"></td>
+                <td class="px-2 py-1"><input type="text" class="la-resource lookahead-input w-full" value="${escHtml(row.resource || '')}"></td>
+                <td class="px-2 py-1"><input type="text" class="la-wbs lookahead-input w-full" value="${escHtml(row.wbsGroup || '')}"></td>
+                <td class="px-2 py-1"><input type="text" class="la-why lookahead-input w-full text-xs" value="${escHtml(row.why || '')}"></td>
+                <td class="px-2 py-1"><textarea class="la-notes lookahead-input w-full" rows="2">${escHtml(row.notes || '')}</textarea></td>
+                <td class="px-2 py-1 text-center no-print"><button type="button" class="la-delete-row text-zinc-500 hover:text-red-400" title="Delete row"><i class="fa-solid fa-trash-can"></i></button></td>
+            </tr>`;
+        }).join('');
+    }
+
+    function buildLookAheadTimescaleHtml(range, ticks) {
+        const n = ticks || 8;
+        let cells = '';
+        for (let i = 0; i <= n; i++) {
+            const pct = (i / n) * 100;
+            const d = new Date(range.startMs + (range.span * i / n));
+            cells += `<span class="la-ts-label" style="left:${pct}%">${formatLookAheadDate(d)}</span>`;
+        }
+        return `<div class="la-timescale">${cells}</div>`;
+    }
+
+    function buildLookAheadGanttHtml(rows, ctx, opts) {
+        const range = getLookAheadDateRange(rows, ctx);
+        const timescale = buildLookAheadTimescaleHtml(range, 8);
+        const rowH = opts?.print ? 22 : 28;
+        let body = '';
+        rows.forEach(row => {
+            const meta = getLookAheadPriorityMeta(row.priority);
+            const left = lookAheadBarPct(row.start, range);
+            const right = lookAheadBarPct(row.finish || row.start, range);
+            const width = left != null && right != null ? Math.max(1.5, right - left) : 0;
+            const bar = left != null && width > 0
+                ? `<div class="la-gantt-bar ${meta.cls}" style="left:${left}%;width:${width}%"></div>`
+                : '';
+            body += `<div class="la-gantt-row ${meta.cls}" style="height:${rowH}px">
+                <div class="la-gantt-label" title="${escHtml(row.activity || '')}">${escHtml(row.activity || '—')}</div>
+                <div class="la-gantt-track">${bar}</div>
+            </div>`;
+        });
+        if (!rows.length) {
+            body = `<div class="la-gantt-empty">No activities to display.</div>`;
+        }
+        return `<div class="la-gantt-view${opts?.print ? ' la-gantt-view-print' : ''}">
+            <div class="la-gantt-meta lookahead-meta">
+                <span>Period: <b>${ctx.periodKey}</b></span>
+                <span>${ctx.horizon} work days</span>
+                <span>${rows.length} activities</span>
+            </div>
+            <div class="la-gantt-chart">
+                <div class="la-gantt-ts-row"><div class="la-gantt-label-spacer"></div><div class="la-gantt-ts-cell">${timescale}</div></div>
+                ${body}
+            </div>
+        </div>`;
+    }
+
+    function buildLookAheadCalendarHtml(rows, ctx, opts) {
+        const DAY_MS = 86400000;
+        const start = new Date(ctx.dataDate.getFullYear(), ctx.dataDate.getMonth(), ctx.dataDate.getDate());
+        const days = [];
+        const dayCount = Math.max(14, ctx.horizon + 4);
+        for (let i = 0; i < dayCount; i++) {
+            days.push(new Date(start.getTime() + i * DAY_MS));
+        }
+        const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        let header = days.map(d => {
+            const wknd = d.getDay() === 0 || d.getDay() === 6;
+            return `<div class="la-cal-dayhead${wknd ? ' la-cal-weekend' : ''}"><span class="la-cal-dow">${dow[d.getDay()]}</span><span class="la-cal-num">${d.getMonth() + 1}/${d.getDate()}</span></div>`;
+        }).join('');
+        let body = '';
+        rows.forEach(row => {
+            const meta = getLookAheadPriorityMeta(row.priority);
+            const rs = parseLookAheadDateInput(row.start);
+            const rf = parseLookAheadDateInput(row.finish || row.start);
+            const rsT = rs ? new Date(rs.getFullYear(), rs.getMonth(), rs.getDate()).getTime() : null;
+            const rfT = rf ? new Date(rf.getFullYear(), rf.getMonth(), rf.getDate()).getTime() : rsT;
+            let cells = days.map(d => {
+                const wknd = d.getDay() === 0 || d.getDay() === 6;
+                const dayT = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+                const active = rsT != null && dayT >= rsT && dayT <= rfT;
+                const isStart = rsT != null && dayT === rsT;
+                return `<div class="la-cal-cell${wknd ? ' la-cal-weekend' : ''}${active ? ' la-cal-active' : ''}${isStart ? ' la-cal-start' : ''}">${active ? `<span class="la-cal-dot ${meta.cls}"></span>` : ''}</div>`;
+            }).join('');
+            body += `<div class="la-cal-row ${meta.cls}">
+                <div class="la-cal-row-label" title="${escHtml(row.activity || '')}">${escHtml(row.activity || '—')}</div>
+                <div class="la-cal-cells">${cells}</div>
+            </div>`;
+        });
+        if (!rows.length) body = `<div class="la-cal-empty">No activities to display.</div>`;
+        return `<div class="la-cal-view${opts?.print ? ' la-cal-view-print' : ''}">
+            <div class="la-cal-meta lookahead-meta">
+                <span>Period: <b>${ctx.periodKey}</b></span>
+                <span>${ctx.horizon} work days</span>
+                <span>${rows.length} activities</span>
+            </div>
+            <div class="la-cal-grid-wrap">
+                <div class="la-cal-head"><div class="la-cal-row-label la-cal-corner">Activity</div><div class="la-cal-cells la-cal-head-cells">${header}</div></div>
+                ${body}
+            </div>
+        </div>`;
+    }
+
+    function buildLookAheadPrintTableHtml(rows, ctx) {
+        const priOptions = ['High', 'Medium', 'Normal'];
+        let body = rows.map(row => {
+            const meta = getLookAheadPriorityMeta(row.priority);
+            return `<tr class="${meta.cls}">
+                <td><span class="la-print-pri ${meta.cls}">${escHtml(row.priority || 'Normal')}</span></td>
+                <td>${escHtml(row.activity || '')}</td>
+                <td>${escHtml(row.start || '')}</td>
+                <td>${escHtml(row.finish || '')}</td>
+                <td>${escHtml(row.resource || '')}</td>
+                <td>${escHtml(row.wbsGroup || '')}</td>
+                <td class="text-xs">${escHtml(row.why || '')}</td>
+                <td>${escHtml(row.notes || '')}</td>
+            </tr>`;
+        }).join('');
+        if (!body) body = `<tr><td colspan="8" class="c">No activities</td></tr>`;
+        return `<div class="lookahead-print-doc">
+            <h1 class="la-print-title">Two-Week Look-Ahead</h1>
+            <p class="la-print-sub">Period start ${ctx.periodKey} · ${ctx.horizon} work days · ${rows.length} activities</p>
+            <table class="lookahead-print-table">
+                <thead><tr>
+                    <th>Priority</th><th>Activity</th><th>Start</th><th>Finish</th>
+                    <th>Resource</th><th>WBS</th><th>Why</th><th>Notes</th>
+                </tr></thead>
+                <tbody>${body}</tbody>
+            </table>
+        </div>`;
+    }
+
+    function buildLookAheadPrintHtml(rows, ctx, mode) {
+        if (mode === 'gantt') return buildLookAheadGanttHtml(rows, ctx, { print: true });
+        if (mode === 'calendar') return buildLookAheadCalendarHtml(rows, ctx, { print: true });
+        return buildLookAheadPrintTableHtml(rows, ctx);
+    }
+
     function renderLookAhead(options) {
         if (!ganttReady) {
             showScheduleAlert('Schedule is still loading…', 'warning');
             return;
         }
         const opts = options || {};
-        const { dataDate, horizon, periodKey } = getLookAheadContext();
+        const ctx = getLookAheadContext();
+        const { dataDate, horizon, periodKey } = ctx;
         scheduleSettings.data_date = CasePMSchedule.formatDate(dataDate);
         scheduleSettings.lookahead_days = horizon;
 
         if (!opts.skipReload) {
             populateLookAheadPlanSelect();
+            document.querySelectorAll('.lookahead-view-btn').forEach(btn => {
+                btn.classList.toggle('active-tool', btn.dataset.laView === getLookAheadViewMode());
+            });
+            const printModeEl = document.getElementById('lookaheadPrintMode');
+            if (printModeEl && scheduleSettings.lookahead_print_mode) {
+                printModeEl.value = scheduleSettings.lookahead_print_mode;
+            }
         }
 
         const rows = getLookAheadRowsForRender();
@@ -6113,42 +6384,26 @@
         const container = document.getElementById('lookaheadContent');
         if (!container) return;
 
-        const priOptions = ['High', 'Medium', 'Normal'];
-        let bodyHtml = '';
-        if (!rows.length) {
-            bodyHtml = `<tr><td colspan="9" class="px-4 py-8 text-center text-zinc-500">No activities in this window. Click <b>Add row</b> or <b>Refresh from schedule</b>.</td></tr>`;
+        const viewMode = getLookAheadViewMode();
+        let viewHtml = '';
+        if (viewMode === 'gantt') {
+            viewHtml = buildLookAheadGanttHtml(rows, ctx);
+        } else if (viewMode === 'calendar') {
+            viewHtml = buildLookAheadCalendarHtml(rows, ctx);
         } else {
-            rows.forEach(row => {
-                const priClass = row.priority === 'High' ? 'text-red-400' : row.priority === 'Medium' ? 'text-amber-400' : 'text-zinc-300';
-                const priSel = priOptions.map(p => `<option value="${p}"${row.priority === p ? ' selected' : ''}>${p}</option>`).join('');
-                const focusBtn = row.taskId
-                    ? `<button type="button" class="la-focus-task text-sky-400 hover:text-sky-300 text-xs mr-1" data-task-id="${row.taskId}" title="Show on Gantt"><i class="fa-solid fa-arrow-up-right-from-square"></i></button>`
-                    : '';
-                bodyHtml += `<tr data-row-id="${row.id}" data-task-id="${row.taskId || ''}" class="lookahead-row">
-                    <td class="px-2 py-1"><select class="la-priority lookahead-input ${priClass}">${priSel}</select></td>
-                    <td class="px-2 py-1">${focusBtn}<input type="text" class="la-activity lookahead-input w-full" value="${escHtml(row.activity || '')}"></td>
-                    <td class="px-2 py-1"><input type="text" class="la-start lookahead-input w-full" value="${escHtml(row.start || '')}" placeholder="M/D/YYYY"></td>
-                    <td class="px-2 py-1"><input type="text" class="la-finish lookahead-input w-full" value="${escHtml(row.finish || '')}" placeholder="M/D/YYYY"></td>
-                    <td class="px-2 py-1"><input type="text" class="la-resource lookahead-input w-full" value="${escHtml(row.resource || '')}"></td>
-                    <td class="px-2 py-1"><input type="text" class="la-wbs lookahead-input w-full" value="${escHtml(row.wbsGroup || '')}"></td>
-                    <td class="px-2 py-1"><input type="text" class="la-why lookahead-input w-full text-xs" value="${escHtml(row.why || '')}"></td>
-                    <td class="px-2 py-1"><textarea class="la-notes lookahead-input w-full" rows="2">${escHtml(row.notes || '')}</textarea></td>
-                    <td class="px-2 py-1 text-center no-print"><button type="button" class="la-delete-row text-zinc-500 hover:text-red-400" title="Delete row"><i class="fa-solid fa-trash-can"></i></button></td>
-                </tr>`;
-            });
-        }
-
-        container.innerHTML = `
-            <div class="lookahead-meta mb-3 flex flex-wrap gap-4 text-sm text-zinc-400">
-                <span>Period start: <b class="text-white">${periodKey}</b></span>
-                <span>Horizon: <b class="text-white">${horizon} work days</b></span>
-                <span>Rows: <b class="text-white">${rows.length}</b></span>
+            viewHtml = `
+            <div class="lookahead-meta mb-3 flex flex-wrap gap-4 text-sm">
+                <span>Period start: <b>${periodKey}</b></span>
+                <span>Horizon: <b>${horizon} work days</b></span>
+                <span>Rows: <b>${rows.length}</b></span>
+                <span class="text-zinc-500 text-xs">Drag <i class="fa-solid fa-grip-vertical"></i> to reorder · edit cells inline</span>
             </div>
-            <div class="lookahead-table-wrap overflow-auto border border-zinc-800 rounded-lg">
+            <div class="lookahead-table-wrap overflow-auto">
                 <table class="lookahead-table w-full text-sm">
                     <thead>
-                        <tr class="lookahead-head text-xs uppercase text-zinc-400 border-b border-zinc-800 bg-zinc-950">
-                            <th class="text-left px-2 py-2 w-24">Priority</th>
+                        <tr class="lookahead-head text-xs uppercase">
+                            <th class="w-8 no-print"></th>
+                            <th class="text-left px-2 py-2 w-28">Priority</th>
                             <th class="text-left px-2 py-2 min-w-[10rem]">Activity</th>
                             <th class="text-left px-2 py-2 w-28">Start</th>
                             <th class="text-left px-2 py-2 w-28">Finish</th>
@@ -6156,15 +6411,20 @@
                             <th class="text-left px-2 py-2 w-28">WBS</th>
                             <th class="text-left px-2 py-2 min-w-[8rem]">Why</th>
                             <th class="text-left px-2 py-2 min-w-[12rem]">Notes</th>
-                            <th class="text-center px-2 py-2 w-10 no-print"></th>
+                            <th class="w-10 no-print"></th>
                         </tr>
                     </thead>
-                    <tbody id="lookaheadTableBody">${bodyHtml}</tbody>
+                    <tbody id="lookaheadTableBody">${buildLookAheadTableBodyHtml(rows)}</tbody>
                 </table>
             </div>`;
+        }
 
+        container.innerHTML = viewHtml;
         document.getElementById('lookaheadCount').textContent = String(rows.length);
-        bindLookAheadTableEvents();
+        if (viewMode === 'table') {
+            bindLookAheadTableEvents();
+            initLookAheadRowDrag();
+        }
     }
 
     function escHtml(str) {
@@ -7351,10 +7611,20 @@
     }
 
     function printLookAhead() {
-        syncLookAheadDraftFromDom();
-        renderLookAhead({ skipReload: true });
+        if (getLookAheadViewMode() === 'table') syncLookAheadDraftFromDom();
+        const rows = lookaheadDraft?.rows?.length
+            ? lookaheadDraft.rows.map(r => ({ ...r }))
+            : getLookAheadRowsForRender();
+        const ctx = getLookAheadContext();
+        const mode = getLookAheadPrintMode();
+        scheduleSettings.lookahead_print_mode = mode;
+        const sheet = document.getElementById('lookaheadPrintSheet');
         const panel = document.getElementById('lookaheadViewPanel');
         const deliver = () => {
+            if (sheet) {
+                sheet.innerHTML = buildLookAheadPrintHtml(rows, ctx, mode);
+                sheet.setAttribute('aria-hidden', 'false');
+            }
             document.body.classList.add('printing-lookahead');
             panel?.classList.add('print-active');
             setTimeout(() => {
@@ -7362,13 +7632,17 @@
                 setTimeout(() => {
                     document.body.classList.remove('printing-lookahead');
                     panel?.classList.remove('print-active');
+                    if (sheet) {
+                        sheet.innerHTML = '';
+                        sheet.setAttribute('aria-hidden', 'true');
+                    }
                 }, 500);
             }, 200);
         };
-        if (typeof CasePMOutput !== 'undefined' && panel) {
-            const html = CasePMOutput.wrapHtmlDocument('Schedule Look-Ahead', panel.innerHTML);
+        if (typeof CasePMOutput !== 'undefined' && sheet) {
+            const html = CasePMOutput.wrapHtmlDocument('Two-Week Look-Ahead', buildLookAheadPrintHtml(rows, ctx, mode));
             CasePMOutput.deliverHtml({
-                title: 'Schedule Look-Ahead',
+                title: 'Two-Week Look-Ahead',
                 html,
                 filenameBase: 'Schedule_LookAhead',
                 sourceModule: 'schedule',
@@ -7510,7 +7784,7 @@
         toggleCriticalPath, toggleCriticalFilter, setBaseline, showBaselineManager, activateBaseline, deleteBaseline,
         undo, redo, fitScheduleView, scrollToToday, panTimeline, resetTimelineCalendar, filterTasks, exportCsv, focusTimelineOnTask,
         runSchedule, switchScheduleView, renderCalendarView, renderLookAhead, focusActivity, sortByStartDate, exportXer, exportMsProjectXml,
-        saveLookAheadPlan, refreshLookAheadFromSchedule, addLookAheadRow, loadSelectedLookAheadPlan,
+        saveLookAheadPlan, refreshLookAheadFromSchedule, addLookAheadRow, loadSelectedLookAheadPlan, setLookAheadViewMode, setLookAheadPrintMode,
         showAllOptionalColumns, hideAllOptionalColumns, showFeaturesChecklist, showKeyboardShortcuts,
         exportJson, importFile, printGantt, printLookAhead, showPrintSetup, savePrintSettings, setPrintColumnToggle, updatePrintChartWidthFieldState,
         showHeaderFooterSetup, saveHeaderFooterSettings, onHeaderLogoSelected, clearHeaderLogo,
