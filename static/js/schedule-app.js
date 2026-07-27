@@ -6431,16 +6431,20 @@
         return getPrintTimelinePct(date, startMs, span);
     }
 
-    function getPrintLinkMetrics(textTablePx, barColPct) {
+    function getPrintLinkMetrics(textTablePx, barColPct, rowHeightPx) {
         const chartPct = barColPct || parseInt(scheduleSettings.print_settings?.chart_width_pct, 10) || 58;
         const pageW = window.innerWidth || 1200;
         const estBarPx = Math.max(320, Math.round(pageW * (chartPct / 100)));
         const arrowPx = gantt.config.link_arrow_size || 10;
         const wrapperPx = gantt.config.link_wrapper_width || 20;
         const stroke = scheduleSettings.link_color || '#b0b0b0';
+        const rowHPx = rowHeightPx || parseInt(scheduleSettings.print_settings?.row_height_px, 10) || 16;
         return {
             arrowPct: (arrowPx / estBarPx) * 100,
             wrapperPct: (wrapperPx / estBarPx) * 100,
+            barWidthPx: estBarPx,
+            rowHeightPx: rowHPx,
+            arrowPx,
             stroke,
             strokeWidth: scheduleSettings.link_width || gantt.config.link_line_width || 1,
         };
@@ -6451,10 +6455,10 @@
     }
 
     function buildPrintLinkPolyline(lineType, x1, y1, x2, y2, metrics) {
-        const f = metrics.arrowPct * 2;
+        const f = metrics.linkOffset != null ? metrics.linkOffset : (metrics.arrowPct * 2);
         const u = y2 - y1;
         let c = x2 - x1;
-        const rowH = 1;
+        const rowH = metrics.rowH != null ? metrics.rowH : 1;
         let x = x1;
         let y = y1;
         const pts = [{ x, y }];
@@ -6513,91 +6517,39 @@
         return pts;
     }
 
-    function buildPrintLinkArrow(x2, y2, prev, stroke) {
-        const size = 3.5;
-        const row = Math.round(y2 - 0.5);
-        const localY = (y2 - row) * 100;
+    function printLinkPointsToPathD(points) {
+        if (!points.length) return '';
+        const clamped = points.map(p => ({ x: clampPrintLinkX(p.x), y: p.y }));
+        return clamped.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+    }
+
+    function buildPrintLinkArrowPx(end, prev, stroke, size) {
+        const x2 = end.x;
+        const y2 = end.y;
         const px = prev?.x ?? x2 - size;
         const py = prev?.y ?? y2;
-        const dx = x2 - px;
-        const dy = y2 - py;
-        if (Math.abs(dx) >= Math.abs(dy)) {
-            if (dx >= 0) {
-                return `<polygon points="${x2},${localY} ${x2 - size},${localY - size * 0.6} ${x2 - size},${localY + size * 0.6}" fill="${stroke}"/>`;
-            }
-            return `<polygon points="${x2},${localY} ${x2 + size},${localY - size * 0.6} ${x2 + size},${localY + size * 0.6}" fill="${stroke}"/>`;
-        }
-        if (dy >= 0) {
-            return `<polygon points="${x2},${localY} ${x2 - size * 0.6},${localY - size} ${x2 + size * 0.6},${localY - size}" fill="${stroke}"/>`;
-        }
-        return `<polygon points="${x2},${localY} ${x2 - size * 0.6},${localY + size} ${x2 + size * 0.6},${localY + size}" fill="${stroke}"/>`;
+        let dx = x2 - px;
+        let dy = y2 - py;
+        const len = Math.hypot(dx, dy);
+        if (len < 0.001) { dx = 1; dy = 0; } else { dx /= len; dy /= len; }
+        const baseX = x2 - dx * size;
+        const baseY = y2 - dy * size;
+        const perpX = -dy * size * 0.55;
+        const perpY = dx * size * 0.55;
+        return `<polygon points="${x2},${y2} ${baseX + perpX},${baseY + perpY} ${baseX - perpX},${baseY - perpY}" fill="${stroke}"/>`;
     }
 
-    function buildPrintLinkStartArrow(x1, y1, next, stroke) {
-        const size = 3.5;
-        const row = Math.round(y1 - 0.5);
-        const localY = (y1 - row) * 100;
-        const nx = next?.x ?? x1 + size;
-        const ny = next?.y ?? y1;
-        const dx = nx - x1;
-        const dy = ny - y1;
-        if (Math.abs(dx) >= Math.abs(dy)) {
-            if (dx >= 0) {
-                return `<polygon points="${x1},${localY} ${x1 + size},${localY - size * 0.6} ${x1 + size},${localY + size * 0.6}" fill="${stroke}"/>`;
-            }
-            return `<polygon points="${x1},${localY} ${x1 - size},${localY - size * 0.6} ${x1 - size},${localY + size * 0.6}" fill="${stroke}"/>`;
-        }
-        if (dy >= 0) {
-            return `<polygon points="${x1},${localY} ${x1 - size * 0.6},${localY + size} ${x1 + size * 0.6},${localY + size}" fill="${stroke}"/>`;
-        }
-        return `<polygon points="${x1},${localY} ${x1 - size * 0.6},${localY - size} ${x1 + size * 0.6},${localY - size}" fill="${stroke}"/>`;
-    }
-
-    function addPrintPolylineSegments(byRow, add, linkPath, stroke, points) {
-        const clamped = points.map(p => ({ x: clampPrintLinkX(p.x), y: p.y }));
-        for (let i = 0; i < clamped.length - 1; i++) {
-            const a = clamped[i];
-            const b = clamped[i + 1];
-            const isLastSeg = i === clamped.length - 2;
-            if (Math.abs(a.y - b.y) < 0.001) {
-                const row = Math.round(a.y - 0.5);
-                const localY = (a.y - row) * 100;
-                const xLo = Math.min(a.x, b.x);
-                const xHi = Math.max(a.x, b.x);
-                const segStart = Math.max(0, xLo);
-                if (xHi > segStart) {
-                    add(row, linkPath(`M ${segStart} ${localY} L ${xHi} ${localY}`, stroke, isLastSeg));
-                }
-            } else if (Math.abs(a.x - b.x) < 0.001) {
-                const yLo = Math.min(a.y, b.y);
-                const yHi = Math.max(a.y, b.y);
-                let row = Math.floor(yLo);
-                const lastRow = Math.floor(yHi - 0.0001);
-                while (row <= lastRow) {
-                    const segTop = Math.max(yLo, row);
-                    const segBot = Math.min(yHi, row + 1);
-                    if (segBot > segTop && a.x >= 0) {
-                        add(row, linkPath(
-                            `M ${a.x} ${(segTop - row) * 100} L ${b.x} ${(segBot - row) * 100}`,
-                            stroke,
-                            isLastSeg && row === lastRow
-                        ));
-                    }
-                    row += 1;
-                }
-            }
-        }
-    }
-
-    function buildPrintLinkSegmentsByRow(rowMap, startMs, span, textTablePx, barColPct) {
-        const byRow = new Map();
-        const add = (rowIndex, fragment) => {
-            if (!byRow.has(rowIndex)) byRow.set(rowIndex, []);
-            byRow.get(rowIndex).push(fragment);
-        };
-        const metrics = getPrintLinkMetrics(textTablePx, barColPct);
-        const linkPath = (d, stroke, withArrow) =>
-            `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${metrics.strokeWidth}" stroke-linejoin="miter" stroke-linecap="square" vector-effect="non-scaling-stroke"${withArrow ? ' marker-end="url(#print-link-arrow)"' : ''}/>`;
+    function buildPrintLinksOverlaySvg(rowMap, startMs, span, rowCount, metrics) {
+        if (!rowCount || !rowMap?.size) return '';
+        const barW = metrics.barWidthPx;
+        const rowH = metrics.rowHeightPx;
+        const totalH = rowCount * rowH;
+        const stroke = metrics.stroke;
+        const strokeWidth = metrics.strokeWidth;
+        const arrowPx = Math.max(5, metrics.arrowPx || 8);
+        const polyMetrics = { linkOffset: arrowPx * 2, rowH };
+        const paths = [];
+        const arrows = [];
 
         gantt.getLinks().forEach(link => {
             if (!gantt.isTaskExists(link.source) || !gantt.isTaskExists(link.target)) return;
@@ -6607,22 +6559,19 @@
             const ti = resolvePrintRowMapIndex(rowMap, link.target);
             if (si == null || ti == null) return;
             const lineType = getPrintLinkLineType(link);
-            const x1 = getPrintTaskEndpointX(src, lineType.fromStart, startMs, span);
-            const x2 = getPrintTaskEndpointX(tgt, lineType.toStart, startMs, span);
-            const y1 = si + 0.5;
-            const y2 = ti + 0.5;
-            const points = buildPrintLinkPolyline(lineType, x1, y1, x2, y2, metrics);
-            addPrintPolylineSegments(byRow, add, linkPath, metrics.stroke, points);
+            const x1 = (getPrintTaskEndpointX(src, lineType.fromStart, startMs, span) / 100) * barW;
+            const x2 = (getPrintTaskEndpointX(tgt, lineType.toStart, startMs, span) / 100) * barW;
+            const y1 = (si + 0.5) * rowH;
+            const y2 = (ti + 0.5) * rowH;
+            const points = buildPrintLinkPolyline(lineType, x1, y1, x2, y2, polyMetrics);
+            if (points.length < 2) return;
+            const d = printLinkPointsToPathD(points);
+            paths.push(`<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linejoin="miter" stroke-linecap="square" shape-rendering="geometricPrecision"/>`);
+            arrows.push(buildPrintLinkArrowPx(points[points.length - 1], points[points.length - 2], stroke, arrowPx));
         });
-        return byRow;
-    }
 
-    function buildPrintRowLinkSvg(rowIndex, linkSegmentsByRow, stroke) {
-        const segments = linkSegmentsByRow?.get(rowIndex);
-        if (!segments?.length) return '';
-        const color = stroke || scheduleSettings.link_color || '#b0b0b0';
-        const markerId = `print-link-arrow-${rowIndex}`;
-        return `<svg class="print-row-links" viewBox="0 0 100 100" preserveAspectRatio="none"><defs><marker id="${markerId}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="4" markerHeight="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="${color}"/></marker></defs>${segments.join('').replace(/url\(#print-link-arrow\)/g, `url(#${markerId})`)}</svg>`;
+        if (!paths.length) return '';
+        return `<svg class="print-links-overlay" viewBox="0 0 ${barW} ${totalH}" preserveAspectRatio="none" aria-hidden="true">${paths.join('')}${arrows.join('')}</svg>`;
     }
 
     function buildPrintTimescale(startMs, span, mode) {
@@ -6714,14 +6663,19 @@
         if (showTable && visibleCols.length) {
             gantt.eachTask(t => { rowMap.set(t.id, rowIdx++); });
         }
-        const linkSegmentsByRow = (showLinks && rowIdx)
-            ? buildPrintLinkSegmentsByRow(rowMap, startMs, span, textTablePx, barColPct)
-            : null;
-        const linkStroke = scheduleSettings.link_color || '#b0b0b0';
+        const textColCount = visibleCols.length + (evmExtraCols ? 2 : 0);
+        const linkMetrics = getPrintLinkMetrics(textTablePx, barColPct, printRowH);
+        const linkStroke = linkMetrics.stroke;
+        const linkTopPx = printRowH + (showInlineBars && textColCount ? 14 : 0);
+        const printLinkRowCount = rowIdx;
+        const linkOverlaySvg = (showLinks && printLinkRowCount)
+            ? buildPrintLinksOverlaySvg(rowMap, startMs, span, printLinkRowCount, linkMetrics)
+            : '';
+        const linkHeightPx = printLinkRowCount * printRowH;
         rowIdx = 0;
         if (showTable && visibleCols.length) {
             gantt.eachTask(t => {
-                const currentRow = rowIdx++;
+                rowIdx++;
                 const level = t.$level || 0;
                 const cells = visibleCols.map(({ col, width: colW }) => {
                     const align = getPrintColumnAlignClass(col);
@@ -6738,9 +6692,8 @@
                     : '';
                 const summary = isSummaryTask(t);
                 const wbsCls = getWbsLevelClass(t);
-                const rowLinkSvg = buildPrintRowLinkSvg(currentRow, linkSegmentsByRow, linkStroke);
                 const barCell = showInlineBars
-                    ? `<td class="print-bar-cell"><div class="print-bar-track">${rowLinkSvg}${buildPrintBarMarkup(t, startMs, span)}</div></td>`
+                    ? `<td class="print-bar-cell"><div class="print-bar-track">${buildPrintBarMarkup(t, startMs, span)}</div></td>`
                     : '';
                 rowParts.push(`<tr class="${summary ? 'print-summary' : ''}${wbsCls ? ' ' + wbsCls : ''}">${cells}${evmExtra}${barCell}</tr>`);
             });
@@ -6789,9 +6742,9 @@
             const hierarchyCls = col.name === 'hierarchy' ? ' print-col-hierarchy' : '';
             return `<th class="print-col-${col.name}${align}${hierarchyCls}">${label}</th>`;
         }).join('');
-        const textColCount = visibleCols.length + (evmHeader ? 2 : 0);
-        const tsRow = showInlineBars && textColCount
-            ? `<tr class="print-ts-row"><td colspan="${textColCount}"></td><td class="print-bar-cell">${timescale}</td></tr>` : '';
+        const textColCountForTs = visibleCols.length + (evmHeader ? 2 : 0);
+        const tsRow = showInlineBars && textColCountForTs
+            ? `<tr class="print-ts-row"><td colspan="${textColCountForTs}"></td><td class="print-bar-cell">${timescale}</td></tr>` : '';
         const evmSummary = showEvm && projectEvm ? `
             <div class="sched-print-evm-grid mt-2 text-xs">
                 <div><span class="sched-print-label">BAC</span><strong>$${projectEvm.bac.toLocaleString()}</strong></div>
@@ -6863,7 +6816,12 @@
                 ? `<col class="print-data-col" style="width:${EVM_COL_PX}px"><col class="print-data-col" style="width:${EVM_COL_PX}px">`
                 : '';
             const colGroup = `<colgroup>${visibleCols.map(({ width }) => `<col class="print-data-col" style="width:${width}px">`).join('')}${evmColGroup}${showInlineBars ? `<col class="print-bar-col" style="width:${barColPct}%">` : ''}</colgroup>`;
-            return `<div class="print-schedule-wrap${wbsCls}${gridCls}${repeatCls}${fitCls}${colorBarsCls}" style="--print-font-size:${printFontPt}pt;--print-row-height:${printRowH}px;--print-cols-width:${textTablePx}px" data-print-orientation="${ps.orientation || 'landscape'}">
+            const linkLayer = linkOverlaySvg
+                ? `<div class="print-bar-links-layer" style="--print-links-top:${linkTopPx}px;--print-links-height:${linkHeightPx}px">${linkOverlaySvg}</div>`
+                : '';
+            const linkStyleVars = `--gantt-link-color:${linkStroke};--gantt-link-width:${linkMetrics.strokeWidth}px`;
+            return `<div class="print-schedule-wrap${wbsCls}${gridCls}${repeatCls}${fitCls}${colorBarsCls}" style="--print-font-size:${printFontPt}pt;--print-row-height:${printRowH}px;--print-cols-width:${textTablePx}px;${linkStyleVars}" data-print-orientation="${ps.orientation || 'landscape'}">
+                ${linkLayer}
                 <table class="schedule-print-table schedule-print-table-compact schedule-print-table-visible-cols schedule-print-table-screen-cols schedule-print-table-fill-page">
                 ${colGroup}
                 <thead><tr>
