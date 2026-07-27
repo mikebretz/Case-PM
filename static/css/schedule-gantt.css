@@ -2904,7 +2904,27 @@ textarea.lookahead-input {
     border-right: 1px solid #27272a;
     border-bottom: 1px solid #1f1f23;
     overflow: hidden;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.la-gantt-label-text,
+.la-cal-label-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.la-gantt-chart-grid .la-delete-row,
+.la-cal-row-label .la-delete-row {
+    flex-shrink: 0;
+    padding: 2px 4px;
+    font-size: 11px;
+    line-height: 1;
+    background: transparent;
+    border: none;
+    cursor: pointer;
 }
 .la-gantt-chart-grid .la-gantt-corner {
     font-weight: 600;
@@ -2943,6 +2963,9 @@ textarea.lookahead-input {
     width: auto;
     max-width: 42vw;
     white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 .la-cal-day-cells .la-cal-cell {
     min-height: 32px;
@@ -3089,15 +3112,13 @@ textarea.lookahead-input {
     width: 100%;
     border-collapse: collapse;
     font-size: 8.5pt;
-    table-layout: fixed;
+    table-layout: auto;
 }
 .lookahead-print-table th,
 .lookahead-print-table td {
     border: 1px solid #d1d5db;
     padding: 5px 7px;
     vertical-align: top;
-    word-wrap: break-word;
-    overflow-wrap: anywhere;
 }
 .lookahead-print-table th {
     background: #f3f4f6;
@@ -3107,17 +3128,23 @@ textarea.lookahead-input {
     letter-spacing: 0.04em;
     font-weight: 700;
 }
-.la-print-act-col,
-.la-print-act-fit,
-.la-print-activity {
+.la-print-col-fit,
+.lookahead-print-combo .la-print-col-fit,
+.lookahead-print-table .la-print-col-fit {
     width: 1%;
     white-space: nowrap;
 }
 .lookahead-print-combo {
     width: 100%;
     border-collapse: collapse;
-    table-layout: auto;
+    table-layout: fixed;
     font-size: 8pt;
+}
+.lookahead-print-combo col.la-print-col-fit {
+    width: 1%;
+}
+.lookahead-print-combo col.la-print-col-chart {
+    width: auto;
 }
 .lookahead-print-combo th,
 .lookahead-print-combo td {
@@ -3133,12 +3160,14 @@ textarea.lookahead-input {
     text-transform: uppercase;
     letter-spacing: 0.02em;
 }
-.la-print-chart-col {
-    min-width: 8rem;
+.la-print-chart-col,
+.la-print-col-chart-head {
+    width: auto;
+    padding: 2px 4px !important;
 }
 .la-print-gantt-track-cell {
     padding: 2px 4px !important;
-    min-width: 10rem;
+    width: auto;
 }
 .la-print-gantt-combo .la-print-gantt-ts-track {
     position: relative;
@@ -3155,8 +3184,8 @@ textarea.lookahead-input {
 .la-print-cal-combo .la-print-cal-daycell {
     text-align: center;
     padding: 4px 2px;
-    min-width: 2rem;
     font-size: 7pt;
+    width: auto;
 }
 .la-print-cal-combo .la-print-cal-dayhead {
     background: #f9fafb;
@@ -3190,17 +3219,11 @@ textarea.lookahead-input {
 .la-print-cal-combo .la-print-cal-dot.la-pri-high { background: #ef4444; }
 .la-print-cal-combo .la-print-cal-dot.la-pri-medium { background: #eab308; }
 .la-print-cal-combo .la-print-cal-dot.la-pri-normal { background: #3b82f6; }
-.la-print-pri-col { width: 7%; }
-.la-print-date-col { width: 8%; white-space: nowrap; }
-.la-print-res-col { width: 9%; }
-.la-print-wbs-col { width: 8%; }
-.la-print-why-col { width: 14%; }
-.la-print-notes-col { width: 12%; }
 .la-print-activity,
 .la-print-why,
 .la-print-notes {
-    white-space: normal;
-    line-height: 1.4;
+    white-space: nowrap;
+    line-height: 1.35;
 }
 .la-print-pri {
     display: inline-block;
