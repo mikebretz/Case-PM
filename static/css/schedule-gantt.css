@@ -442,9 +442,19 @@ body.schedule-chart-resizing {
     background: var(--sched-scroll-bg) !important;
     border-top: 1px solid var(--sched-border) !important;
 }
-.schedule-overlay-mode #gantt_here .gantt_grid_column_resize_wrap {
-    z-index: 40 !important;
-    pointer-events: auto !important;
+.schedule-overlay-mode #gantt_here .gantt_grid_scale .gantt_grid_column_resize_wrap:not(.sched-col-resize-grip) {
+    display: none !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+}
+.sched-col-grip-layer .sched-col-resize-grip .gantt_grid_column_resize {
+    opacity: 0.55 !important;
+    visibility: visible !important;
+    display: block !important;
+}
+.sched-col-grip-layer .sched-col-resize-grip:hover .gantt_grid_column_resize,
+.sched-col-grip-layer .sched-col-resize-grip:active .gantt_grid_column_resize {
+    opacity: 1 !important;
 }
 .schedule-overlay-mode #gantt_here [data-cell-id="scrollVer"],
 .schedule-overlay-mode #gantt_here [data-cell-id="scrollVer"] .gantt_layout_outer_scroll {
