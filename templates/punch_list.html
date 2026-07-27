@@ -55,6 +55,7 @@ window.CASEPM_PUNCH_CTX = {
     <div class="text-xs text-zinc-500 hidden lg:block">Tap the circle to check off · Photos · Assignees</div>
   </div>
   <div class="flex items-center gap-2 flex-wrap justify-end">
+    {% with page_help_key='punch_list' %}{% include '_page_help_btn.html' %}{% endwith %}
     <div class="flex items-center rounded-md overflow-hidden border border-zinc-700 punch-hide-mobile">
       <button type="button" id="punchViewList" class="px-3 py-2 text-sm bg-zinc-700"><i class="fa-solid fa-list"></i></button>
       <button type="button" id="punchViewBoard" class="px-3 py-2 text-sm bg-zinc-800"><i class="fa-solid fa-table-columns"></i></button>

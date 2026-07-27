@@ -57,7 +57,6 @@ API_PREFIX_MODULE = [
     ('/api/client-portal', 'operations_center'),
     ('/api/push', 'notifications'),
     ('/api/payments', 'pay_applications'),
-    ('/api/field', 'daily_log'),
     ('/api/meeting-minutes', 'meeting_minutes'),
     ('/api/documents', 'documents'),
     ('/api/document-folders', 'documents'),

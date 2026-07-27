@@ -1,14 +1,14 @@
 {
   "name": "Case PM",
   "short_name": "Case PM",
-  "description": "Construction project management — field and office",
-  "start_url": "/field",
+  "description": "Construction project management",
+  "start_url": "/dashboard",
   "display": "standalone",
   "background_color": "#18181b",
   "theme_color": "#10b981",
   "orientation": "any",
   "shortcuts": [
-    { "name": "Field Capture", "url": "/field", "icons": [] },
+    { "name": "Daily Log", "url": "/daily-log", "icons": [] },
     { "name": "Operations", "url": "/operations", "icons": [] },
     { "name": "Client Portal", "url": "/client-portal", "icons": [] }
   ]

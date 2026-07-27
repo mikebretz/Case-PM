@@ -1,6 +1,6 @@
-/* Case PM — offline field shell + web push */
-const CACHE = 'casepm-v2';
-const PRECACHE = ['/field', '/dashboard', '/static/js/field-mobile-app.js'];
+/* Case PM — offline shell + web push */
+const CACHE = 'casepm-v3';
+const PRECACHE = ['/dashboard', '/daily-log'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(PRECACHE).catch(() => {})));
@@ -21,7 +21,7 @@ self.addEventListener('fetch', (e) => {
       const copy = res.clone();
       caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
       return res;
-    }).catch(() => caches.match(e.request).then(r => r || caches.match('/field')))
+    }).catch(() => caches.match(e.request).then(r => r || caches.match('/dashboard')))
   );
 });
 

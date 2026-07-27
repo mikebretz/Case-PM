@@ -105,7 +105,7 @@
     armedPhoto: null,    // {blob, url}
     photoSeq: 0,
     companies: [],
-    detailed: true,
+    detailed: false,
     mobile: false,
     // camera
     stream: null, facingMode: 'environment', listening: false, recognition: null,
@@ -751,7 +751,8 @@
 
   function setMode(detailed) {
     state.detailed = detailed;
-    el('dlogModeLabel').textContent = detailed ? 'Detailed' : 'Simple';
+    const label = el('dlogModeLabel');
+    if (label) label.textContent = detailed ? 'Simple view' : 'More detail';
     document.querySelectorAll('.dlog-detailed').forEach((n) => n.classList.toggle('hidden', !detailed));
   }
 
@@ -806,7 +807,7 @@
     state.mobile = isMobile();
     buildSectionsHost();
     bind();
-    if (state.mobile) setMode(false);
+    setMode(false);
     loadList();
     loadCompanies();
   }

@@ -227,6 +227,8 @@
             transition: transform 0.15s;
         }
         .casepm-help-substep-toggle[aria-expanded="true"] .casepm-help-substep-chevron { transform: rotate(90deg); color: #a78bfa; }
+        .casepm-help-why { line-height: 1.45; }
+        .casepm-page-help-toolbar-btn { flex-shrink: 0; }
         .casepm-help-substep-detail {
             margin: 0.25rem 0 0.5rem 1.25rem;
             padding: 0.5rem 0.65rem;
@@ -759,10 +761,6 @@
                     <span>Operations</span>
                 </a>
 
-                <a href="{{ url_for('field_mobile_page', project_id=active_project.id) if active_project else url_for('field_mobile_page') }}" data-nav-module="daily_log" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'field_mobile_page' %}active{% endif %}">
-                    <i class="fa-solid fa-mobile-screen w-5"></i>
-                    <span>Field App</span>
-                </a>
 
                 <a href="{{ url_for('client_portal_page', project_id=active_project.id) if active_project else url_for('client_portal_page') }}" data-nav-module="operations_center" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'client_portal_page' %}active{% endif %}">
                     <i class="fa-solid fa-house-user w-5"></i>
