@@ -138,7 +138,7 @@
         scheduleTaskCount = countScheduleTasks();
         schedulePerformanceMode = true;
 
-        const useVirtual = scheduleTaskCount >= 25;
+        const useVirtual = scheduleTaskCount >= 80;
         gantt.config.smart_rendering = useVirtual;
         gantt.config.static_background = useVirtual;
         const ganttHost = document.getElementById('gantt_here');
@@ -688,9 +688,15 @@
             gantt.config.layout.cols[0].width = paneW;
             gantt.config.layout.cols[0].min_width = 200;
         } else {
-            const contentW = getGridContentWidth();
-            gantt.config.layout.cols[0].width = contentW;
-            gantt.config.layout.cols[0].min_width = contentW;
+            const hostW = document.getElementById('gantt_here')?.offsetWidth || 1200;
+            const paneW = getGridOverlayWidth();
+            gantt.config.layout.cols[0].width = paneW;
+            gantt.config.layout.cols[0].min_width = 200;
+            if (gantt.config.layout.cols[2]) {
+                const scrollW = gantt.config.scroll_size || 16;
+                gantt.config.layout.cols[2].width = Math.max(240, hostW - paneW - scrollW - 4);
+                gantt.config.layout.cols[2].min_width = 240;
+            }
         }
     }
 
@@ -891,6 +897,11 @@
             row.style.width = total + 'px';
             row.style.minWidth = total + 'px';
             row.style.maxWidth = 'none';
+            const cells = row.querySelectorAll(':scope > .gantt_cell');
+            const cellCount = Math.min(cells.length, metrics.length);
+            for (let i = 0; i < cellCount; i++) {
+                applyMetricToCell(cells[i], metrics[i], cols[i]);
+            }
         });
 
         metrics.forEach((m, i) => {
@@ -1155,15 +1166,22 @@
 
     function syncLayoutTimelineWidth() {
         const hostW = document.getElementById('gantt_here')?.offsetWidth || 1000;
+        const scrollW = gantt.config?.scroll_size || 16;
         if (isOverlayMode()) {
             syncGridLayoutColumnWidth();
             if (gantt.config.layout?.cols?.[2]) gantt.config.layout.cols[2].width = hostW;
             return;
         }
         const gridPaneW = getGridOverlayWidth();
-        const timelineW = Math.max(240, hostW - gridPaneW - 24);
-        if (gantt.config.layout?.cols?.[0]) gantt.config.layout.cols[0].width = gridPaneW;
-        if (gantt.config.layout?.cols?.[2]) gantt.config.layout.cols[2].width = timelineW;
+        const timelineW = Math.max(240, hostW - gridPaneW - scrollW - 4);
+        if (gantt.config.layout?.cols?.[0]) {
+            gantt.config.layout.cols[0].width = gridPaneW;
+            gantt.config.layout.cols[0].min_width = 200;
+        }
+        if (gantt.config.layout?.cols?.[2]) {
+            gantt.config.layout.cols[2].width = timelineW;
+            gantt.config.layout.cols[2].min_width = 240;
+        }
     }
 
     function syncGridColumnsFromConfig() {
@@ -1417,9 +1435,8 @@
             scheduleSettings.timeline_width_px = null;
         }
         const host = document.getElementById('scheduleGanttHost');
-        host?.classList.remove('schedule-split-mode');
-        host?.classList.add('schedule-overlay-mode');
-        bindChartResizer();
+        host?.classList.remove('schedule-overlay-mode');
+        host?.classList.add('schedule-split-mode');
         bindColumnResizeDrag();
         bindLayoutResizePersistence();
 
@@ -1716,8 +1733,9 @@
             const state = gantt.getScrollState?.() || {};
             x = state.x || 0;
             y = state.y || 0;
-        } catch (e) { /* ok */ }
+        } catch (e) { return false; }
         const nextY = Math.max(0, y + deltaY);
+        if (nextY === y && deltaY > 0) return false;
         timelineScrollProgrammatic = true;
         try {
             if (typeof gantt.scrollTo === 'function') gantt.scrollTo(x, nextY);
@@ -1738,6 +1756,9 @@
         host.dataset.ganttWheelBound = '1';
         host.addEventListener('wheel', e => {
             if (!e.target.closest('#gantt_here')) return;
+            if (e.target.closest('[data-cell-id="scrollVer"], [data-cell-id="scrollHor"], [data-cell-id="gridScroll"]')) {
+                return;
+            }
             const absX = Math.abs(e.deltaX);
             const absY = Math.abs(e.deltaY);
             const inTimeline = e.target.closest('.gantt_layout_cell:nth-child(3)');
@@ -1749,7 +1770,11 @@
                 panTimelineByDays(raw > 0 ? 7 : -7);
                 return;
             }
-            if (absY > 0 && scrollGanttVertically(e.deltaY)) {
+            if (absY <= absX && !e.shiftKey) return;
+            const before = gantt.getScrollState?.()?.y || 0;
+            if (!scrollGanttVertically(e.deltaY)) return;
+            const after = gantt.getScrollState?.()?.y || 0;
+            if (after !== before) {
                 e.preventDefault();
                 e.stopPropagation();
             }
@@ -1762,7 +1787,14 @@
             scrollVerEl.dataset.verScrollBound = '1';
             scrollVerEl.addEventListener('scroll', () => {
                 if (timelineScrollProgrammatic) return;
-                syncVerticalScrollViews(scrollVerEl.scrollTop);
+                const y = scrollVerEl.scrollTop;
+                timelineScrollProgrammatic = true;
+                syncVerticalScrollViews(y);
+                try {
+                    const x = gantt.getScrollState?.()?.x || 0;
+                    if (gantt.scrollTo) gantt.scrollTo(x, y);
+                } catch (e) { /* ok */ }
+                requestAnimationFrame(() => { timelineScrollProgrammatic = false; });
             }, { passive: true });
         }
         const gridData = document.querySelector('#gantt_here .gantt_grid_data');
@@ -4014,7 +4046,9 @@
 
         const gridW = getColumnsTotalWidth();
         const hostW = document.getElementById('gantt_here')?.offsetWidth || 1000;
-        const gridPaneW = Math.max(360, scheduleSettings.grid_overlay_width_px || Math.round(hostW * 0.52));
+        const gridPaneW = Math.max(320, scheduleSettings.grid_overlay_width_px || Math.round(hostW * (1 - (scheduleSettings.timeline_pct ?? 0.48))));
+        const scrollW = gantt.config.scroll_size || 16;
+        const timelineW = Math.max(280, hostW - gridPaneW - scrollW - 4);
         gantt.config.grid_width = gridW;
         gantt.config.layout = {
             css: 'gantt_container',
@@ -4027,10 +4061,10 @@
                         { view: 'scrollbar', id: 'gridScroll', height: 20 }
                     ]
                 },
-                { width: 0, min_width: 0, max_width: 0 },
+                { resizer: true, width: 1 },
                 {
-                    width: hostW,
-                    min_width: hostW,
+                    width: timelineW,
+                    min_width: 240,
                     rows: [
                         { view: 'timeline', scrollX: 'scrollHor', scrollY: 'scrollVer' },
                         { view: 'scrollbar', id: 'scrollHor', height: 20 }
