@@ -91,7 +91,9 @@ MODULE_SCHEMAS = {
     'transmittals': {
         'simple': [('title', 'Subject', 'text'), ('to_party', 'To', 'text'), ('due_date', 'Response Due', 'date')],
         'advanced': [
-            ('number', 'Transmittal #', 'text'), ('cc_party', 'CC', 'text'), ('purpose', 'Purpose', 'select',
+            ('number', 'Transmittal #', 'text'), ('cc_party', 'CC', 'text'),
+            ('distribution_list', 'Distribution List (name <email>, comma-separated)', 'textarea'),
+            ('purpose', 'Purpose', 'select',
              ['For Review', 'For Approval', 'For Information', 'As Requested']),
             ('required_action', 'Required Action', 'textarea'), ('notes', 'Notes', 'textarea'),
         ],
@@ -124,6 +126,7 @@ MODULE_SCHEMAS = {
         'simple': [('title', 'Crew / Description', 'text'), ('work_date', 'Week Ending', 'date'), ('total_hours', 'Total Hours', 'number')],
         'advanced': [
             ('number', 'Timesheet #', 'text'), ('cost_code', 'Cost Code', 'text'),
+            ('hourly_rate', 'Burdened Hourly Rate ($)', 'number'),
             ('crew_members', 'Crew Members', 'textarea'), ('notes', 'Notes', 'textarea'),
         ],
         'statuses': ('Draft', 'Submitted', 'Approved', 'Posted'),
@@ -231,7 +234,8 @@ MODULE_SCHEMAS = {
         'simple': [('title', 'Payroll Period', 'text'), ('work_date', 'Week Ending', 'date'), ('total_hours', 'Total Hours', 'number')],
         'advanced': [
             ('number', 'WH-347 #', 'text'), ('contractor_name', 'Contractor', 'text'),
-            ('workers_json', 'Workers (JSON)', 'textarea'), ('notes', 'Notes', 'textarea'),
+            ('workers_json', 'Workers JSON [{name, classification, hours, gross_pay}]', 'textarea'),
+            ('notes', 'Notes', 'textarea'),
         ],
         'statuses': ('Draft', 'Submitted', 'Approved', 'Filed'),
         'project_scoped': True,

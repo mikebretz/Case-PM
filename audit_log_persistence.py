@@ -88,6 +88,7 @@ ENDPOINT_TO_MODULE = {
     'drawings_page': 'drawings',
     'deliveries_page': 'deliveries',
     'operations_center_page': 'operations_center',
+    'client_portal_page': 'operations_center',
     'meeting_minutes_page': 'meeting_minutes',
     'email_page': 'email',
     'program_settings': 'program_settings',

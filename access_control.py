@@ -53,7 +53,8 @@ API_PREFIX_MODULE = [
     ('/api/photos', 'photos'),
     ('/api/inspections', 'inspections'),
     ('/api/deliveries', 'deliveries'),
-    ('/api/operations', 'operations_center'),
+    ('/api/integrations', 'operations_center'),
+    ('/api/client-portal', 'operations_center'),
     ('/api/meeting-minutes', 'meeting_minutes'),
     ('/api/documents', 'documents'),
     ('/api/document-folders', 'documents'),
@@ -339,6 +340,7 @@ def guard_api_request(current_user):
         if flags.get('client_portal_only') and module_key not in (
             'dashboard', 'projects', 'project_directory', 'documents', 'drawings', 'rfis', 'submittals',
             'change_orders', 'pay_applications', 'schedule', 'email', 'internal_messages', 'notifications',
+            'operations_center',
         ):
             return jsonify({'error': 'Client portal access only — module not available.'}), 403
 

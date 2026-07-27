@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block content %}
+<script>
+window.CASEPM_CLIENT_PORTAL_CTX = {
+  projectId: {{ active_project.id if active_project else 'null' }},
+  projectName: {{ (active_project.name if active_project else '')|tojson }},
+};
+</script>
+<style>
+.cp-page { display:flex; flex-direction:column; flex:1; min-height:0; padding:1rem; gap:1rem; }
+.cp-card { background:#18181b; border:1px solid #3f3f46; border-radius:0.75rem; }
+.cp-row { display:flex; gap:0.75rem; padding:0.85rem 1rem; border-bottom:1px solid #27272a; align-items:flex-start; }
+.cp-row:hover { background:#202023; }
+</style>
+
+<div class="cp-page">
+  <div class="flex items-center justify-between gap-3 flex-shrink-0">
+    <div>
+      <h1 class="text-2xl font-semibold text-white">Client Portal</h1>
+      <p class="text-sm text-zinc-400 mt-0.5">Approvals, updates, and shared documents for owners and clients.</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0">
+    <div class="cp-card flex flex-col min-h-0 overflow-hidden">
+      <div class="px-4 py-3 border-b border-zinc-800 font-semibold">Pending approvals</div>
+      <div id="cpApprovals" class="flex-1 overflow-auto text-sm">
+        <div class="p-6 text-zinc-500 text-center">Loading…</div>
+      </div>
+    </div>
+    <div class="cp-card flex flex-col min-h-0 overflow-hidden">
+      <div class="px-4 py-3 border-b border-zinc-800 font-semibold">Project updates</div>
+      <div id="cpItems" class="flex-1 overflow-auto text-sm p-2">
+        <div class="p-6 text-zinc-500 text-center">Loading…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<dialog id="cpRespondModal" class="modal casepm-dialog bg-zinc-900 border border-zinc-700 rounded-lg w-full max-w-md p-0">
+  <div class="px-5 py-4 border-b border-zinc-700 font-semibold">Your response</div>
+  <div class="p-5 space-y-3">
+    <input type="hidden" id="cpApprovalId">
+    <textarea id="cpResponseText" class="w-full bg-zinc-800 border border-zinc-700 rounded-md p-3 text-sm text-white min-h-[100px]" placeholder="Comments or approval notes…"></textarea>
+    <select id="cpDecision" class="w-full bg-zinc-800 border border-zinc-700 rounded-md p-2 text-sm text-white">
+      <option value="Approved">Approve</option>
+      <option value="Rejected">Reject</option>
+      <option value="Needs Info">Request more information</option>
+    </select>
+  </div>
+  <div class="px-5 py-3 border-t border-zinc-700 flex justify-end gap-2">
+    <button type="button" id="cpCancel" class="px-4 py-2 text-sm border border-zinc-700 rounded-md">Cancel</button>
+    <button type="button" id="cpSubmit" class="px-5 py-2 text-sm bg-emerald-600 rounded-md font-semibold">Submit</button>
+  </div>
+</dialog>
+
+<script src="{{ url_for('static', filename='js/client-portal-app.js') }}"></script>
+{% endblock %}

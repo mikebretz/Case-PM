@@ -363,7 +363,7 @@
     </script>
     <script src="{{ static_v('js/casepm-money.js') }}"></script>
     <script src="{{ static_v('js/casepm-project-storage.js') }}"></script>
-    <script src="{{ static_v('js/casepm-dialog.js') }}"></script>
+    <script src="{{ static_v('js/notifications-panel.js') }}"></script>
     {% if current_user.is_authenticated %}
     <script src="{{ static_v('js/casepm-security.js') }}"></script>
     {% endif %}
@@ -528,6 +528,10 @@
             <span class="hidden md:inline">How to use</span>
         </button>
         {% endif %}
+        <button type="button" id="notificationsBell" class="relative flex items-center justify-center w-9 h-9 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors" title="Notifications">
+            <i class="fa-solid fa-bell"></i>
+            <span id="notificationsBadge" class="hidden absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center">0</span>
+        </button>
         <div class="flex items-center gap-3 cursor-pointer" onclick="typeof showUserProfileModal === 'function' && showUserProfileModal()" title="User Profile">
             <div class="flex items-center gap-2.5">
                 <div class="w-8 h-8 bg-zinc-700 rounded-full overflow-hidden flex-shrink-0">
@@ -715,6 +719,11 @@
                     <span>Operations</span>
                 </a>
 
+                <a href="{{ url_for('client_portal_page', project_id=active_project.id) if active_project else url_for('client_portal_page') }}" data-nav-module="operations_center" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'client_portal_page' %}active{% endif %}">
+                    <i class="fa-solid fa-house-user w-5"></i>
+                    <span>Client Portal</span>
+                </a>
+
                 <a href="{{ url_for('inspections_page', project_id=active_project.id) if active_project else url_for('inspections_page') }}" data-nav-module="inspections" class="nav-link nav-staff-only nav-architect-visible flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'inspections_page' %}active{% endif %}">
                     <i class="fa-solid fa-clipboard-check w-5"></i>
                     <span>Permits &amp; Inspections</span>
@@ -878,49 +887,23 @@
             <div class="flex items-center justify-between mb-4">
                 <div>
                     <div class="font-semibold text-lg">Notifications</div>
-                    <div class="text-xs text-zinc-500">3 new updates</div>
+                    <div id="notificationsCount" class="text-xs text-zinc-500">Loading…</div>
                 </div>
-                <button onclick="document.getElementById('notificationsPanel').close()" class="text-zinc-400 hover:text-white">
+                <button type="button" onclick="document.getElementById('notificationsPanel').close()" class="text-zinc-400 hover:text-white">
                     <i class="fa-solid fa-times text-xl"></i>
                 </button>
             </div>
 
-            <div class="space-y-3 max-h-96 overflow-auto pr-2">
-                <div class="flex gap-3 p-3 bg-zinc-800 rounded-2xl">
-                    <div class="w-8 h-8 bg-emerald-600/20 text-emerald-400 rounded-xl flex items-center justify-center flex-shrink-0">
-                        <i class="fa-solid fa-exclamation-triangle"></i>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <div class="font-medium text-sm">RFI #RFI-047 requires response</div>
-                        <div class="text-xs text-zinc-500">From: Architect • 2 hours ago</div>
-                    </div>
-                </div>
-
-                <div class="flex gap-3 p-3 bg-zinc-800 rounded-2xl">
-                    <div class="w-8 h-8 bg-amber-600/20 text-amber-400 rounded-xl flex items-center justify-center flex-shrink-0">
-                        <i class="fa-solid fa-file-invoice-dollar"></i>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <div class="font-medium text-sm">Pay App #PA-012 ready for review</div>
-                        <div class="text-xs text-zinc-500">Due in 3 days • Just now</div>
-                    </div>
-                </div>
-
-                <div class="flex gap-3 p-3 bg-zinc-800 rounded-2xl">
-                    <div class="w-8 h-8 bg-blue-600/20 text-blue-400 rounded-xl flex items-center justify-center flex-shrink-0">
-                        <i class="fa-solid fa-shield-alt"></i>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <div class="font-medium text-sm">Safety observation submitted</div>
-                        <div class="text-xs text-zinc-500">By: Mike B. • Yesterday</div>
-                    </div>
-                </div>
+            <div id="notificationsList" class="space-y-3 max-h-96 overflow-auto pr-2">
+                <div class="p-4 text-center text-zinc-500 text-sm">Loading…</div>
             </div>
 
-            <div class="mt-4 pt-4 border-t border-zinc-800">
-                <button onclick="document.getElementById('notificationsPanel').close()" 
-                        class="w-full py-2 text-sm text-emerald-400 hover:text-emerald-300 font-medium">
-                    View all notifications
+            <div class="mt-4 pt-4 border-t border-zinc-800 flex gap-2">
+                <button type="button" id="notificationsMarkAll" class="flex-1 py-2 text-sm text-zinc-400 hover:text-white font-medium">
+                    Mark all read
+                </button>
+                <button type="button" id="notificationsViewAll" class="flex-1 py-2 text-sm text-emerald-400 hover:text-emerald-300 font-medium">
+                    View all
                 </button>
             </div>
         </div>

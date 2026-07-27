@@ -165,19 +165,16 @@ def ai_chat(db, models, project_id, thread_id, message, user_id):
     base = generate_ai_insight(
         project_id, 'ai_insights', message, Project, ExtendedModuleRecord, RFI, ChangeOrder,
     )
-    extra = []
-    if len(prior) > 1:
-        extra.append(f'\n**Follow-up context:** You also asked about: {"; ".join(prior[:-1])}')
-    if 'schedule' in (message or '').lower():
-        extra.append('\n- Review the Schedule module for critical path and baseline variance.')
-    if 'pay' in (message or '').lower() or 'billing' in (message or '').lower():
-        extra.append('\n- Check Pay Applications for G702 status and sub lien waiver compliance.')
-    if 'change' in (message or '').lower():
-        extra.append('\n- Open Change Orders → Change Events for ROM and pending PCOs.')
-    if 'risk' in (message or '').lower():
-        extra.append('\n- Cross-check open RFIs, overdue punch, and pending vendor invoices.')
-
-    response = base + '\n'.join(extra)
+    from llm_service import chat_completion, llm_configured
+    history_msgs = [{'role': h.role, 'content': h.content} for h in history if h.content][-8:]
+    system = (
+        'You are an expert construction project management assistant for Case PM. '
+        'Answer questions about schedule, billing, RFIs, change orders, safety, and job cost. '
+        'Be concise and actionable. Use bullet points when listing risks or next steps.'
+    )
+    llm_messages = history_msgs + [{'role': 'user', 'content': (message or '').strip()}]
+    llm_text, provider = chat_completion(llm_messages, system_prompt=system)
+    response = llm_text if llm_text else base
     asst = OperationsAiMessage(
         thread_id=thread_id,
         project_id=project_id,
@@ -190,6 +187,8 @@ def ai_chat(db, models, project_id, thread_id, message, user_id):
     return {
         'thread_id': thread_id,
         'response': response,
+        'provider': provider if llm_text else 'rules',
+        'llm_configured': llm_configured(),
         'messages': [{'role': m.role, 'content': m.content, 'created_at': m.created_at.isoformat() if m.created_at else None} for m in history + [asst]],
     }
 

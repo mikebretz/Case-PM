@@ -303,6 +303,7 @@ MODULE_ROUTE_GUARD = {
     'project_directory_page': 'project_directory',
     'operations_center_page': 'operations_center',
     'operations_bim_viewer_page': 'operations_center',
+    'client_portal_page': 'operations_center',
 }
 
 
@@ -1949,6 +1950,9 @@ OperationsAiMessage = _extended_models['OperationsAiMessage']
 OperationsPaymentLine = _extended_models['OperationsPaymentLine']
 OperationsReportRun = _extended_models['OperationsReportRun']
 OperationsBimAsset = _extended_models['OperationsBimAsset']
+OperationsTransmittalRecipient = _extended_models['OperationsTransmittalRecipient']
+ClientPortalApproval = _extended_models['ClientPortalApproval']
+IntegrationSyncLog = _extended_models['IntegrationSyncLog']
 
 
 class Company(db.Model):
@@ -17133,6 +17137,10 @@ register_extended_platform_routes(app, {
     'OperationsPaymentLine': OperationsPaymentLine,
     'OperationsReportRun': OperationsReportRun,
     'OperationsBimAsset': OperationsBimAsset,
+    'OperationsTransmittalRecipient': OperationsTransmittalRecipient,
+    'ClientPortalApproval': ClientPortalApproval,
+    'IntegrationSyncLog': IntegrationSyncLog,
+    'User': User,
     'PunchItem': PunchItem,
     'Project': Project,
     'Commitment': Commitment,
@@ -17143,6 +17151,31 @@ register_extended_platform_routes(app, {
     'SageSyncEvent': SageSyncEvent,
     'RFI': RFI,
     'ChangeEvent': ChangeEvent,
+})
+
+
+from platform_gaps_routes import register_platform_gaps_routes
+register_platform_gaps_routes(app, {
+    'db': db,
+    'request': request,
+    'jsonify': jsonify,
+    'login_required': login_required,
+    'current_user': current_user,
+    'get_current_project_id': get_current_project_id,
+    'render_template': render_template,
+    'get_active_project': get_active_project,
+    'ExtendedModuleRecord': ExtendedModuleRecord,
+    'OperationsTransmittalRecipient': OperationsTransmittalRecipient,
+    'ClientPortalApproval': ClientPortalApproval,
+    'IntegrationSyncLog': IntegrationSyncLog,
+    'BudgetProjectState': BudgetProjectState,
+    'SageSyncEvent': SageSyncEvent,
+    'Project': Project,
+    'RFI': RFI,
+    'ChangeOrder': ChangeOrder,
+    'User': User,
+    'Commitment': Commitment,
+    'PayAppProjectState': PayAppProjectState,
 })
 
 

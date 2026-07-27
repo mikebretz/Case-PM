@@ -67,10 +67,56 @@ def define_extended_platform_models(db):
         created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
         created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    class OperationsTransmittalRecipient(db.Model):
+        __tablename__ = 'operations_transmittal_recipient'
+        id = db.Column(db.Integer, primary_key=True)
+        transmittal_record_id = db.Column(db.Integer, db.ForeignKey('extended_module_record.id'), nullable=False, index=True)
+        name = db.Column(db.String(200))
+        email = db.Column(db.String(200))
+        status = db.Column(db.String(30), default='Pending')
+        ack_token = db.Column(db.String(64), unique=True, index=True)
+        sent_at = db.Column(db.DateTime)
+        acknowledged_at = db.Column(db.DateTime)
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class ClientPortalApproval(db.Model):
+        __tablename__ = 'client_portal_approval'
+        id = db.Column(db.Integer, primary_key=True)
+        project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False, index=True)
+        item_type = db.Column(db.String(40), nullable=False)
+        item_id = db.Column(db.Integer, nullable=False)
+        title = db.Column(db.String(300))
+        description = db.Column(db.Text)
+        action_url = db.Column(db.String(500))
+        status = db.Column(db.String(30), default='Pending')
+        assigned_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+        client_response = db.Column(db.Text)
+        responded_at = db.Column(db.DateTime)
+        created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class IntegrationSyncLog(db.Model):
+        __tablename__ = 'integration_sync_log'
+        id = db.Column(db.Integer, primary_key=True)
+        integration = db.Column(db.String(30), nullable=False, index=True)
+        direction = db.Column(db.String(10), default='push')
+        entity_type = db.Column(db.String(40))
+        entity_id = db.Column(db.Integer)
+        project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
+        status = db.Column(db.String(30), default='queued')
+        message = db.Column(db.String(500))
+        payload_json = db.Column(db.Text)
+        response_json = db.Column(db.Text)
+        created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
     return {
         'ExtendedModuleRecord': ExtendedModuleRecord,
         'OperationsAiMessage': OperationsAiMessage,
         'OperationsPaymentLine': OperationsPaymentLine,
         'OperationsReportRun': OperationsReportRun,
         'OperationsBimAsset': OperationsBimAsset,
+        'OperationsTransmittalRecipient': OperationsTransmittalRecipient,
+        'ClientPortalApproval': ClientPortalApproval,
+        'IntegrationSyncLog': IntegrationSyncLog,
     }

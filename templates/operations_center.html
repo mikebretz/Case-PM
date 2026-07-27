@@ -60,9 +60,19 @@ window.CASEPM_OPS_CTX = {
       <h1 class="text-2xl font-semibold text-white">Operations Center</h1>
       <p class="text-sm text-zinc-400 mt-0.5">Quick Add for essentials — expand for full detail.</p>
     </div>
+    <div class="flex items-center gap-2 flex-shrink-0">
     <button type="button" id="opsQuickAdd" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">
       <i class="fa-solid fa-plus mr-1"></i> Quick Add
     </button>
+    <div class="flex gap-2">
+      <button type="button" id="opsSyncSage" class="px-3 py-2 text-xs border border-zinc-700 rounded-md hover:bg-zinc-800 text-zinc-300" title="Pull Sage job cost & push sync event">
+        <i class="fa-solid fa-rotate mr-1"></i> Sage Sync
+      </button>
+      <button type="button" id="opsSyncProcore" class="px-3 py-2 text-xs border border-zinc-700 rounded-md hover:bg-zinc-800 text-zinc-300" title="Import RFIs from Procore or map users">
+        <i class="fa-solid fa-plug mr-1"></i> Procore Sync
+      </button>
+    </div>
+    </div>
   </div>
 
   <div class="ops-shell">
