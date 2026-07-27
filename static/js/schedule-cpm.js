@@ -10,6 +10,17 @@
     function parseDate(value) {
         if (!value) return null;
         if (value instanceof Date) return new Date(value.getTime());
+        if (typeof value === 'string') {
+            const text = value.trim();
+            const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (iso) {
+                const y = Number(iso[1]);
+                const m = Number(iso[2]) - 1;
+                const day = Number(iso[3]);
+                const local = new Date(y, m, day);
+                return Number.isNaN(local.getTime()) ? null : local;
+            }
+        }
         const d = new Date(value);
         return Number.isNaN(d.getTime()) ? null : d;
     }
@@ -101,6 +112,15 @@
 
     function buildWbsMap(tasks) {
         const map = new Map();
+        const imported = new Map();
+        (tasks || []).forEach(t => {
+            const code = String(t.wbs || '').trim();
+            if (code) imported.set(String(t.id), code);
+        });
+        if (imported.size) {
+            imported.forEach((code, id) => map.set(id, code));
+            return map;
+        }
         const byParent = new Map();
         (tasks || []).forEach(t => {
             const p = String(t.parent || 0);

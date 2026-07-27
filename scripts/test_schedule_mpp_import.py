@@ -43,6 +43,12 @@ class ScheduleMppImportTests(unittest.TestCase):
         for key in ('available', 'packages_ok', 'java_ok', 'message', 'setup_hint'):
             self.assertIn(key, status)
 
+    def test_calendar_days_duration_matches_gantt(self):
+        from schedule_mpp_import import _calendar_days_between
+
+        self.assertEqual(_calendar_days_between('2026-01-06', '2026-01-08'), 2)
+        self.assertEqual(_calendar_days_between('2026-01-06', '2026-01-06'), 1)
+
     def test_parse_mspdi_via_mpxj(self):
         from schedule_mpp_import import parse_mpp_bytes
 

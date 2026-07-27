@@ -206,7 +206,7 @@ def _rollup_summary_dates(data: list[dict[str, Any]]) -> None:
             row['end_date'] = max(ends)
         if row.get('start_date') and row.get('end_date') and row.get('type') == 'project':
             try:
-                row['duration'] = _work_days_between(row['start_date'], row['end_date'])
+                row['duration'] = _calendar_days_between(row['start_date'], row['end_date'])
             except ValueError:
                 pass
 
@@ -227,11 +227,20 @@ def _work_days_between(start_str: str, end_str: str) -> int:
     return max(1, count)
 
 
+def _calendar_days_between(start_str: str, end_str: str) -> int:
+    """Calendar-day span for dhtmlx-gantt (work_time=false): end = start + duration."""
+    start = datetime.strptime(start_str, '%Y-%m-%d').date()
+    end = datetime.strptime(end_str, '%Y-%m-%d').date()
+    if end < start:
+        return 1
+    return max(1, (end - start).days)
+
+
 def _task_scheduled_dates(task) -> tuple[str | None, str | None]:
-    """Read MSP scheduled start/finish (not early/late CPM dates)."""
+    """Read MSP scheduled start/finish (not actual/early/late CPM dates)."""
     start = None
     finish = None
-    for start_attr in ('getStart', 'getScheduledStart'):
+    for start_attr in ('getScheduledStart', 'getStart'):
         if hasattr(task, start_attr):
             try:
                 start = _format_date(getattr(task, start_attr)())
@@ -239,7 +248,7 @@ def _task_scheduled_dates(task) -> tuple[str | None, str | None]:
                 start = None
             if start:
                 break
-    for finish_attr in ('getFinish', 'getScheduledFinish'):
+    for finish_attr in ('getScheduledFinish', 'getFinish'):
         if hasattr(task, finish_attr):
             try:
                 finish = _format_date(getattr(task, finish_attr)())
@@ -264,7 +273,7 @@ def _finalize_native_payload(data: list[dict[str, Any]], links: list[dict[str, A
                 row['end_date'] = row['start_date']
         elif row.get('start_date') and row.get('end_date') and row.get('type') != 'project':
             try:
-                row['duration'] = _work_days_between(row['start_date'], row['end_date'])
+                row['duration'] = _calendar_days_between(row['start_date'], row['end_date'])
             except ValueError:
                 pass
     _rollup_summary_dates(data)
@@ -337,6 +346,14 @@ def _project_to_gantt(project) -> dict[str, Any]:
         except (TypeError, ValueError):
             progress = 0.0
 
+        wbs_code = None
+        try:
+            wbs_raw = task.getWBS()
+            if wbs_raw is not None:
+                wbs_code = str(wbs_raw).strip() or None
+        except Exception:
+            wbs_code = None
+
         row: dict[str, Any] = {
             'id': gid,
             'text': name,
@@ -347,21 +364,22 @@ def _project_to_gantt(project) -> dict[str, Any]:
             '_outline': outline,
             'activity_id': str(uid),
         }
+        if wbs_code:
+            row['wbs'] = wbs_code
         if start:
             row['start_date'] = start
             date_values.append(start)
         if finish:
             row['end_date'] = finish
             date_values.append(finish)
-        if start and finish and not milestone:
-            row['duration'] = _work_days_between(start, finish)
-        elif duration is not None:
-            row['duration'] = 0 if milestone else max(1, duration)
-        elif start and finish:
-            row['duration'] = 0 if milestone else _work_days_between(start, finish)
-        elif milestone and start:
-            row['end_date'] = start
+        if milestone:
             row['duration'] = 0
+            if start:
+                row['end_date'] = start
+        elif start and finish:
+            row['duration'] = _calendar_days_between(start, finish)
+        elif duration is not None:
+            row['duration'] = max(1, duration)
 
         data.append(row)
 
