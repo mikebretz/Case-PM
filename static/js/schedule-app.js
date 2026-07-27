@@ -134,8 +134,8 @@
         scheduleTaskCount = countScheduleTasks();
         schedulePerformanceMode = true;
 
-        gantt.config.smart_rendering = true;
-        gantt.config.static_background = true;
+        gantt.config.smart_rendering = scheduleTaskCount > 120;
+        gantt.config.static_background = scheduleTaskCount > 120;
         applyRollingCalendarRange();
 
         const spanDays = rollingCalendarBounds
@@ -165,6 +165,18 @@
             taskOrderIndex.set(String(t.id), taskOrderList.length);
             taskOrderList.push(t);
         });
+    }
+
+    function ensureGridVisible() {
+        if (!ganttReady) return;
+        applySchedulePerformanceProfile();
+        if (typeof gantt.setSizes === 'function') gantt.setSizes();
+        gantt.render();
+        syncGanttLayout();
+        enforceGridColumnExtents();
+        try {
+            if (typeof gantt.scrollTo === 'function') gantt.scrollTo(0, 0);
+        } catch (e) { /* ok */ }
     }
 
     function queueStatusBarUpdate() {
@@ -816,16 +828,6 @@
             if (cols[i]?.name === '_sched_add_col') headCells[i].classList.add('sched-add-col-header');
         }
 
-        if (!opts.includeRows) {
-            metrics.forEach((m, i) => {
-                if (cols[i]) cols[i].width = m.width;
-            });
-            syncGridScrollContentWidth(total);
-            layoutColumnResizeGrips(metrics);
-            applyColumnHighlight();
-            return;
-        }
-
         document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
             row.style.width = total + 'px';
             row.style.minWidth = total + 'px';
@@ -1036,7 +1038,8 @@
             height: '100%',
             'z-index': '30',
             flex: 'none',
-            overflow: 'auto',
+            'overflow-x': 'auto',
+            'overflow-y': 'hidden',
             background: 'var(--sched-bg, #1e1e1e)',
             'box-sizing': 'border-box',
             border: 'none',
@@ -1250,16 +1253,13 @@
 
             syncLayoutTimelineWidth();
 
-            const needsSetSizes = !isOverlay && !options.skipSetSizes && sizeKey !== lastOverlayKey && !options.light;
-            if (needsSetSizes && typeof gantt.setSizes === 'function') {
+            const sizeChanged = sizeKey !== lastOverlayKey || gridKey !== lastGridWidthKey;
+            if (!options.skipSetSizes && typeof gantt.setSizes === 'function' && (sizeChanged || isOverlay)) {
                 lastOverlayKey = sizeKey;
                 lastGridWidthKey = gridKey;
                 gantt.setSizes();
-                queueEnforceGridColumnExtents();
-            } else {
-                if (isOverlay) queueEnforceGridColumnExtents();
-                else syncGridContentLayout();
             }
+            queueEnforceGridColumnExtents();
 
             if (isOverlay) applyOverlayDomLayout();
             else positionChartResizerVisual();
@@ -3349,10 +3349,7 @@
     function refreshWbsGutterDisplay() {
         if (!ganttReady) return;
         clearTimeout(wbsGutterRefreshTimer);
-        wbsGutterRefreshTimer = setTimeout(() => {
-            syncWbsGutterSpans();
-            gantt.render();
-        }, 50);
+        wbsGutterRefreshTimer = setTimeout(() => syncWbsGutterSpans(), 50);
     }
 
     function bindWbsGutterScrollSync() {
@@ -3802,8 +3799,8 @@
         gantt.config.link_line_width = scheduleSettings.link_width || 2;
         gantt.config.link_arrow_size = 10;
         gantt.config.link_wrapper_width = 20;
-        gantt.config.smart_rendering = true;
-        gantt.config.static_background = true;
+        gantt.config.smart_rendering = scheduleTaskCount > 120;
+        gantt.config.static_background = scheduleTaskCount > 120;
         gantt.config.link_attribute = 'data-link-id';
 
         gantt.config.min_column_width = 50;
@@ -4099,9 +4096,6 @@
             handleColumnResize(index, column, new_width, true, true);
             columnResizeScrollLeft = null;
         });
-        gantt.attachEvent('onBeforeGanttRender', () => {
-            if (isOverlayMode()) enforceGridColumnExtents();
-        });
 
         function runGanttRenderHooks() {
             queueStatusBarUpdate();
@@ -4229,9 +4223,9 @@
         if (!ganttReady) return;
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => {
-            if (!isOverlayMode() && typeof gantt.setSizes === 'function') gantt.setSizes();
+            if (typeof gantt.setSizes === 'function') gantt.setSizes();
             gantt.render();
-            syncGanttLayout({ skipSetSizes: isOverlayMode() });
+            syncGanttLayout();
             refreshTimelinePanBar();
         }, 80);
     }
@@ -4290,7 +4284,7 @@
         if (typeof gantt.batchUpdate === 'function') gantt.batchUpdate(parseSchedule);
         else parseSchedule();
         rebuildTaskOrderCache();
-        if ((payload.data?.length || 0) > 200) gantt.config.smart_rendering = true;
+        if ((payload.data?.length || 0) > 120) gantt.config.smart_rendering = true;
         sanitizeAllTaskDates();
         runSchedule({ skipScroll: true, skipSave: true, skipLog: importing, batch: true, light: importing });
         baselines = payload.baselines || [];
@@ -4347,6 +4341,7 @@
         if (importing && scheduleTaskCount >= 60) {
             showScheduleAlert(`Schedule imported (${scheduleTaskCount} activities). Performance mode enabled — week timescale and tight calendar for smoother scrolling.`, 'info');
         }
+        requestAnimationFrame(() => ensureGridVisible());
         return true;
         } finally {
             bulkLoadDepth = Math.max(0, bulkLoadDepth - 1);
@@ -4356,11 +4351,9 @@
     function finalizeScheduleImport(payload) {
         setSaveStatus('Finalizing import…');
         requestAnimationFrame(() => {
-            applySchedulePerformanceProfile();
             gantt.eachTask(t => applyTaskBarColor(t));
             updateDeadlineMarkers();
-            gantt.render();
-            syncGanttLayout({ light: true });
+            ensureGridVisible();
             pushUndoState();
             queueSave();
             const count = payload?.data?.length || 0;
@@ -6616,7 +6609,7 @@
         requestAnimationFrame(() => {
             syncScheduleProjectContext();
             resizeGanttHost();
-            syncGanttLayout();
+            ensureGridVisible();
             focusInitialTimelineView();
             queueGridHeaderSync();
         });
