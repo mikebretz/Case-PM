@@ -134,8 +134,8 @@
         scheduleTaskCount = countScheduleTasks();
         schedulePerformanceMode = true;
 
-        gantt.config.smart_rendering = scheduleTaskCount > 300;
-        gantt.config.static_background = scheduleTaskCount > 300;
+        gantt.config.smart_rendering = false;
+        gantt.config.static_background = false;
         applyRollingCalendarRange();
 
         const spanDays = rollingCalendarBounds
@@ -183,12 +183,15 @@
 
     function ensureGridVisible() {
         if (!ganttReady) return;
-        applySchedulePerformanceProfile();
+        filterCriticalOnly = false;
+        taskFilterQuery = '';
+        document.getElementById('criticalFilterBtn')?.classList.remove('active-tool');
+        const filterInput = document.getElementById('scheduleFilterInput');
+        if (filterInput) filterInput.value = '';
+        gantt.config.smart_rendering = false;
+        gantt.config.static_background = false;
         expandAllTasks();
-        if (scheduleTaskCount <= 300) {
-            gantt.config.smart_rendering = false;
-            gantt.config.static_background = false;
-        }
+        applySchedulePerformanceProfile();
         if (typeof gantt.setSizes === 'function') gantt.setSizes();
         gantt.render();
         syncGanttLayout();
@@ -851,11 +854,6 @@
             row.style.width = total + 'px';
             row.style.minWidth = total + 'px';
             row.style.maxWidth = 'none';
-            const cells = row.querySelectorAll(':scope > .gantt_cell');
-            const cellCount = Math.min(cells.length, metrics.length);
-            for (let i = 0; i < cellCount; i++) {
-                applyMetricToCell(cells[i], metrics[i], cols[i]);
-            }
         });
 
         metrics.forEach((m, i) => {
@@ -1273,7 +1271,7 @@
             syncLayoutTimelineWidth();
 
             const sizeChanged = sizeKey !== lastOverlayKey || gridKey !== lastGridWidthKey;
-            if (!options.skipSetSizes && typeof gantt.setSizes === 'function' && (sizeChanged || isOverlay)) {
+            if (!options.skipSetSizes && typeof gantt.setSizes === 'function' && sizeChanged) {
                 lastOverlayKey = sizeKey;
                 lastGridWidthKey = gridKey;
                 gantt.setSizes();
@@ -1382,8 +1380,8 @@
             scheduleSettings.timeline_width_px = null;
         }
         const host = document.getElementById('scheduleGanttHost');
-        host?.classList.remove('schedule-split-mode');
-        host?.classList.add('schedule-overlay-mode');
+        host?.classList.remove('schedule-overlay-mode');
+        host?.classList.add('schedule-split-mode');
         bindChartResizer();
         bindColumnResizeDrag();
         bindLayoutResizePersistence();
@@ -3818,8 +3816,8 @@
         gantt.config.link_line_width = scheduleSettings.link_width || 2;
         gantt.config.link_arrow_size = 10;
         gantt.config.link_wrapper_width = 20;
-        gantt.config.smart_rendering = scheduleTaskCount > 300;
-        gantt.config.static_background = scheduleTaskCount > 300;
+        gantt.config.smart_rendering = false;
+        gantt.config.static_background = false;
         gantt.config.link_attribute = 'data-link-id';
 
         gantt.config.min_column_width = 50;
@@ -4124,15 +4122,13 @@
             if (!bindColumnResizeEnhancements.done) bindColumnResizeEnhancements();
             if (!bindGridSelectionHandlers.done) bindGridSelectionHandlers();
             updateAlignToolbarButtons();
-            syncWbsGutterSpans();
             ensureAddColumnHeader();
             bindWbsGutterScrollSync();
-            queueEnforceGridColumnExtents();
         }
 
         gantt.attachEvent('onGanttRender', () => {
             clearTimeout(ganttRenderHookTimer);
-            ganttRenderHookTimer = setTimeout(runGanttRenderHooks, 120);
+            ganttRenderHookTimer = setTimeout(runGanttRenderHooks, 250);
         });
 
         document.addEventListener('keydown', onScheduleKeyDown);

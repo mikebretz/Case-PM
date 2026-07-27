@@ -861,17 +861,17 @@ body.schedule-chart-resizing {
 #gantt_here .gantt_grid_scale:has(.sched-grid-header-chrome)::before {
     display: none;
 }
-/* Absolute column layout — rows stay position:absolute (dhtmlx top offsets); never relative */
-#gantt_here .gantt_grid_scale .gantt_grid_head_cell,
-#gantt_here .gantt_grid_data .gantt_row > .gantt_cell {
+/* Header columns use absolute layout for resize grips; data rows use native dhtmlx flow */
+#gantt_here .gantt_grid_scale .gantt_grid_head_cell {
     position: absolute !important;
 }
 #gantt_here .gantt_grid_data .gantt_row {
-    position: absolute !important;
+    position: relative !important;
 }
 #gantt_here .gantt_grid_data .gantt_row > .gantt_cell {
-    top: 0 !important;
-    height: 100% !important;
+    position: relative !important;
+    top: auto !important;
+    height: auto !important;
 }
 .sched-grid-scroll-sentinel {
     pointer-events: none !important;
