@@ -1211,8 +1211,16 @@ body.sched-col-dragging .gantt_grid_scale {
     z-index: 40 !important;
 }
 #gantt_here [data-cell-id="scrollVer"] .gantt_layout_outer_scroll {
-    overflow-y: auto !important;
+    overflow-y: scroll !important;
+    overflow-x: hidden !important;
     pointer-events: auto !important;
+}
+#gantt_here [data-cell-id="scrollVer"] .gantt_layout_outer_scroll::-webkit-scrollbar {
+    width: 10px;
+}
+#gantt_here [data-cell-id="scrollVer"] .gantt_layout_outer_scroll::-webkit-scrollbar-thumb {
+    background: var(--sched-border-strong, #666);
+    border-radius: 4px;
 }
 #gantt_here [data-cell-id="gridScroll"] {
     overflow-x: auto !important;
@@ -1908,6 +1916,10 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         white-space: nowrap;
     }
     .print-ts-row td { padding: 0 !important; border-top: none !important; }
+    .print-bar-cell {
+        overflow: hidden;
+        position: relative;
+    }
     .print-bar-track {
         position: relative;
         width: 100%;
@@ -1915,7 +1927,7 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         height: 16px;
         background: transparent;
         border: none;
-        overflow: hidden;
+        overflow: visible;
     }
     .print-row-links {
         position: absolute;
@@ -1923,7 +1935,7 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         width: 100%;
         height: 100%;
         pointer-events: none;
-        overflow: hidden;
+        overflow: visible;
         z-index: 1;
     }
     .print-row-links path,
@@ -1931,7 +1943,7 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         vector-effect: non-scaling-stroke;
     }
     .print-row-links path {
-        stroke: #d0d0d0 !important;
+        stroke: #888888 !important;
     }
     .print-row-links polygon {
         stroke: none;
