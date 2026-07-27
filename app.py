@@ -422,7 +422,13 @@ def _guard_module_route_access():
             flash('Client portal access only — module not available.', 'error')
             return redirect(url_for('dashboard'))
         try:
-            from portal_sub_access import is_sub_vendor_portal_user, sub_vendor_module_allowed, portal_home_redirect
+            from portal_sub_access import (
+                is_sub_vendor_portal_user,
+                sub_vendor_module_allowed,
+                is_consultant_portal_user,
+                consultant_portal_module_allowed,
+                portal_home_redirect,
+            )
             route_module = module_key
             if ep == 'email_page':
                 has_email = user_has_module_access(current_user, 'email', 'view')
@@ -434,6 +440,9 @@ def _guard_module_route_access():
             if is_sub_vendor_portal_user(current_user) and not sub_vendor_module_allowed(current_user, route_module):
                 flash('This module is not available for subcontractor portal users.', 'error')
                 return portal_home_redirect(current_user)
+            if is_consultant_portal_user(current_user) and not consultant_portal_module_allowed(current_user, route_module):
+                flash('This module is not available for consultant portal users.', 'error')
+                return redirect(url_for('dashboard'))
         except Exception:
             pass
         if ep == 'email_page':
@@ -845,12 +854,13 @@ def inject_project_context():
         return {'current_user_profile': {}}
     portal = {}
     try:
-        from case_workflow import get_role_permissions, user_portal_type, is_sub_user, is_architect_user
+        from case_workflow import get_role_permissions, user_portal_type, is_sub_user, is_architect_user, is_consultant_portal_user
         from portal_sub_access import is_sub_vendor_portal_user
         portal = {
             'portal_type': user_portal_type(current_user),
             'is_sub_portal': is_sub_user(current_user),
             'is_architect_portal': is_architect_user(current_user),
+            'is_consultant_portal': is_consultant_portal_user(current_user),
             'is_sub_vendor_portal': is_sub_vendor_portal_user(current_user),
             'role_permissions': get_role_permissions(current_user),
         }
@@ -961,11 +971,21 @@ def inject_developer_flag():
         from access_control import FINANCIAL_MODULES, user_global_flags
         from case_workflow import user_has_module_access, user_module_perms
         from permissions_catalog import all_module_keys
+        from portal_sub_access import (
+            is_sub_vendor_portal_user,
+            sub_vendor_module_allowed,
+            is_consultant_portal_user,
+            consultant_portal_module_allowed,
+        )
         flags = user_global_flags(current_user)
         def can_access_module(module_key, min_access='view'):
             if is_privileged:
                 return True
             if flags.get('hide_financials') and module_key in FINANCIAL_MODULES:
+                return False
+            if is_sub_vendor_portal_user(current_user) and not sub_vendor_module_allowed(current_user, module_key):
+                return False
+            if is_consultant_portal_user(current_user) and not consultant_portal_module_allowed(current_user, module_key):
                 return False
             return user_has_module_access(current_user, module_key, min_access)
         all_keys = all_module_keys()
@@ -2979,6 +2999,12 @@ def api_dashboard_summary():
             payload['estimating'] = build_dashboard_estimating_tile(Estimate, BidPackage, BidInvitation, int(project_id))
         except Exception:
             payload['estimating'] = {}
+    try:
+        from external_portal_security import user_should_hide_financials, redact_dashboard_payload
+        if user_should_hide_financials(current_user):
+            payload = redact_dashboard_payload(payload)
+    except Exception:
+        pass
     return jsonify(payload)
 
 
@@ -3018,6 +3044,12 @@ def api_dashboard_portfolio():
         compute_rfi_dashboard=compute_rfi_dashboard,
         compute_co_dashboard=co_dashboard,
     )
+    try:
+        from external_portal_security import user_should_hide_financials, redact_portfolio_payload
+        if user_should_hide_financials(current_user):
+            payload = redact_portfolio_payload(payload)
+    except Exception:
+        pass
     return jsonify(payload)
 
 
@@ -16388,7 +16420,14 @@ def api_change_orders_dashboard():
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
-    return jsonify(compute_dashboard_stats(ChangeOrder, PotentialChangeOrder, int(project_id)))
+    stats = compute_dashboard_stats(ChangeOrder, PotentialChangeOrder, int(project_id))
+    try:
+        from external_portal_security import user_should_hide_financials, redact_financial_fields
+        if user_should_hide_financials(current_user):
+            stats = redact_financial_fields(stats)
+    except Exception:
+        pass
+    return jsonify(stats)
 
 
 @app.route('/api/change-orders/cost-codes', methods=['GET'])
@@ -16435,7 +16474,14 @@ def api_list_change_orders():
         item = co_to_dict(co, allocs, revisions)
         enrich_co_dict_links(item, ChangeOrder)
         result.append(item)
-    return jsonify({'change_orders': result})
+    payload = {'change_orders': result}
+    try:
+        from external_portal_security import user_should_hide_financials, redact_financial_fields
+        if user_should_hide_financials(current_user):
+            payload = redact_financial_fields(payload)
+    except Exception:
+        pass
+    return jsonify(payload)
 
 
 @app.route('/api/change-orders/<int:co_id>', methods=['GET'])
@@ -16455,7 +16501,14 @@ def api_get_change_order(co_id):
     owner_co = None
     if payload.get('linked_owner_co_id'):
         owner_co = ChangeOrder.query.get(payload['linked_owner_co_id'])
-    return jsonify(enrich_co_dict_links(payload, ChangeOrder, owner_co=owner_co))
+    payload = enrich_co_dict_links(payload, ChangeOrder, owner_co=owner_co)
+    try:
+        from external_portal_security import user_should_hide_financials, redact_financial_fields
+        if user_should_hide_financials(current_user):
+            payload = redact_financial_fields(payload)
+    except Exception:
+        pass
+    return jsonify(payload)
 
 
 @app.route('/api/change-orders/<int:co_id>/allocate', methods=['POST'])

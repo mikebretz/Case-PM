@@ -11,7 +11,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from permissions_catalog import permissions_from_role  # noqa: E402
-from case_workflow import user_has_module_access  # noqa: E402
+from case_workflow import user_has_module_access, is_consultant_portal_user  # noqa: E402
 
 
 class _User:
@@ -51,10 +51,19 @@ def test_architect_template_hides_financials_flag() -> None:
     assert perms.get('portal') == 'consultant'
 
 
+def test_owner_uses_consultant_portal() -> None:
+    from case_workflow import is_consultant_portal_user
+    perms = permissions_from_role('Owner')
+    user = _User('Owner', json.dumps(perms))
+    assert is_consultant_portal_user(user)
+    assert user_has_module_access(user, 'schedule', 'client_view')
+
+
 def main() -> int:
     test_architect_cannot_access_schedule_rfq_or_bid_portal_modules()
     test_architect_can_access_review_and_directory_modules()
     test_architect_template_hides_financials_flag()
+    test_owner_uses_consultant_portal()
     print('test_architect_portal_permissions: OK')
     return 0
 

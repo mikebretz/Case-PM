@@ -37,6 +37,18 @@
     contract:      { label: 'Contract Summary',   icon: 'fa-file-signature',      default: false, h: 1 },
   };
 
+  const HIDE_FINANCIALS = !!ctx.hideFinancials;
+  const EXTERNAL_PORTAL = !!ctx.externalPortal;
+  const BLOCKED_EXTERNAL_TILES = new Set([
+    'financial', 'forecast_chart', 'commitments', 'estimating',
+    'budget_breakdown', 'contract', 'daily_logs', 'safety',
+  ]);
+
+  function tileAllowed(id) {
+    if (HIDE_FINANCIALS && BLOCKED_EXTERNAL_TILES.has(id)) return false;
+    return true;
+  }
+
   const DEFAULT_ORDER = Object.keys(TILE_DEFS);
 
   let state = {
@@ -108,7 +120,8 @@
     const t = {};
     Object.keys(TILE_DEFS).forEach((id) => {
       const def = TILE_DEFS[id];
-      t[id] = { visible: def.default, w: TILE_W, h: def.h, x: undefined, y: undefined };
+      const visible = def.default && tileAllowed(id);
+      t[id] = { visible, w: TILE_W, h: def.h, x: undefined, y: undefined };
     });
     return t;
   }
@@ -184,9 +197,9 @@
     const items = [
       { label: 'Active Projects', value: k.active_projects ?? 0, sub: k.total_projects === 1 ? '1 total project' : `${k.total_projects ?? 0} total`, color: 'text-white', url: null },
       { label: 'Open RFIs', value: k.open_rfis ?? 0, sub: k.overdue_rfis ? `${k.overdue_rfis} overdue` : 'On track', color: 'text-yellow-400', url: u.rfis },
-      { label: 'Pending COs', value: k.open_change_orders ?? 0, sub: k.pending_co_amount ? fmtMoney(k.pending_co_amount) : 'No pending $', color: 'text-orange-400', url: u.changeOrders },
+      { label: 'Pending COs', value: k.open_change_orders ?? 0, sub: (HIDE_FINANCIALS || !k.pending_co_amount) ? `${k.open_change_orders ?? 0} open` : fmtMoney(k.pending_co_amount), color: 'text-orange-400', url: u.changeOrders },
       { label: 'Open Punch', value: k.open_punch_items ?? 0, sub: k.high_priority_punch ? `${k.high_priority_punch} high priority` : 'All priorities', color: 'text-red-400', url: u.punchList },
-      { label: 'Week Hours', value: k.week_hours ?? 0, sub: 'Manpower this week', color: 'text-sky-400', url: u.dailyLog },
+      ...(EXTERNAL_PORTAL ? [] : [{ label: 'Week Hours', value: k.week_hours ?? 0, sub: 'Manpower this week', color: 'text-sky-400', url: u.dailyLog }]),
       { label: 'Progress', value: k.overall_progress != null ? `${k.overall_progress}%` : '—', sub: 'Schedule overall', color: 'text-emerald-400', url: u.schedule },
     ];
     return `<div class="dash-tile-body dash-kpi-grid">${items.map((it) => `

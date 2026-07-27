@@ -347,9 +347,16 @@ def guard_api_request(current_user):
             return jsonify({'error': 'Client portal access only — module not available.'}), 403
 
         try:
-            from portal_sub_access import is_sub_vendor_portal_user, sub_vendor_module_allowed
+            from portal_sub_access import (
+                is_sub_vendor_portal_user,
+                sub_vendor_module_allowed,
+                is_consultant_portal_user,
+                consultant_portal_module_allowed,
+            )
             if is_sub_vendor_portal_user(current_user) and not sub_vendor_module_allowed(current_user, module_key):
                 return jsonify({'error': 'Subcontractor portal access only — module not available.'}), 403
+            if is_consultant_portal_user(current_user) and not consultant_portal_module_allowed(current_user, module_key):
+                return jsonify({'error': 'Consultant portal access only — module not available.'}), 403
         except Exception:
             pass
 

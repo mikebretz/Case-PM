@@ -115,6 +115,18 @@
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
   }
 
+  function hideFinancialAmounts() {
+    const p = global.CASEPM_PORTAL || {};
+    const g = (p.permissions && p.permissions.global) || {};
+    if (p.hideFinancials || g.hide_financials) return true;
+    const body = document.body;
+    return !!(body && body.getAttribute('data-user-security-hide-financials') === '1');
+  }
+
+  function fmtAmount(n) {
+    return hideFinancialAmounts() ? '—' : fmt(n);
+  }
+
   function fmtDate(iso) {
     if (!iso) return '—';
     return new Date(iso).toLocaleDateString();
@@ -509,8 +521,8 @@
         <td class="px-4 py-3 font-mono text-xs">${co.linked_commitment_ref || '—'}</td>
         <td class="px-4 py-3 font-mono text-xs text-sky-400">${ownerCoLink(co.linked_owner_co_id, co)}</td>
         <td class="px-4 py-3 text-xs">${co.sub_co_kind || '—'}</td>
-        <td class="px-4 py-3 text-right font-mono">${fmt(co.amount)}</td>
-        <td class="px-4 py-3 text-right font-mono text-xs">${co.billed_amount != null ? fmt(co.billed_amount) : '—'}</td>
+        <td class="px-4 py-3 text-right font-mono">${fmtAmount(co.amount)}</td>
+        <td class="px-4 py-3 text-right font-mono text-xs">${co.billed_amount != null ? fmtAmount(co.billed_amount) : '—'}</td>
         <td class="px-4 py-3 text-right font-mono text-xs ${varianceCls}">${variance != null ? fmt(variance) : '—'}</td>
         <td class="px-4 py-3 text-center">${statusBadge(co.status)}</td>
         <td class="px-4 py-3 text-center">${ballBadge(co.ball_in_court_role)}</td>
@@ -554,7 +566,7 @@
         <td class="px-4 py-3 max-w-[200px] truncate">${co.title || co.description}</td>
         <td class="px-4 py-3 text-xs text-zinc-400">${co.company_name || '—'}</td>
         <td class="px-4 py-3 font-mono text-xs">${co.cost_code || (co.allocations?.[0]?.cost_code) || '—'}</td>
-        <td class="px-4 py-3 text-right font-mono">${fmt(co.amount)}</td>
+        <td class="px-4 py-3 text-right font-mono">${fmtAmount(co.amount)}</td>
         <td class="px-4 py-3 text-center">${statusBadge(co.status)}</td>
         <td class="px-4 py-3 text-center">${subCount ? `<span class="text-[10px] text-amber-400 font-medium">${subCount} SCO</span>` : '<span class="text-zinc-600">—</span>'}</td>
         <td class="px-4 py-3 text-center">${ballBadge(co.ball_in_court_role)}</td>
@@ -584,7 +596,7 @@
         <td class="px-4 py-3 font-mono text-sky-400 whitespace-nowrap">${p.number}</td>
         <td class="px-4 py-3 max-w-[240px] truncate">${p.title}</td>
         <td class="px-4 py-3 text-xs text-zinc-400">${p.company_name || '—'}</td>
-        <td class="px-4 py-3 text-right font-mono">${fmt(p.estimated_amount)}</td>
+        <td class="px-4 py-3 text-right font-mono">${fmtAmount(p.estimated_amount)}</td>
         <td class="px-4 py-3 text-center">${statusBadge(p.status)}</td>
         <td class="px-4 py-3 text-center">${ballBadge(p.ball_in_court_role)}</td>
         <td class="px-4 py-3 text-center" onclick="event.stopPropagation()">
@@ -1080,7 +1092,7 @@
     ).join('') || '<div class="text-zinc-500">No allocations</div>';
     document.getElementById('coApprovalSummary').innerHTML = `
       <div class="flex justify-between"><span class="text-zinc-500">Title</span><span class="text-right max-w-[65%]">${esc(co.title || co.description)}</span></div>
-      <div class="flex justify-between"><span class="text-zinc-500">Amount</span><span class="font-mono text-emerald-400">${fmt(co.amount)}</span></div>
+      <div class="flex justify-between"><span class="text-zinc-500">Amount</span><span class="font-mono text-emerald-400">${fmtAmount(co.amount)}</span></div>
       <div class="flex justify-between"><span class="text-zinc-500">Status</span><span>${statusBadge(co.status)}</span></div>
       <div class="pt-2 border-t border-zinc-800">
         <div class="text-[10px] uppercase tracking-wide text-zinc-500 mb-1">SOV Allocations</div>
@@ -1229,7 +1241,7 @@
       <div class="space-y-2">
         <p><span class="text-zinc-500">Status</span><br>${statusBadge(co.status)}</p>
         <p><span class="text-zinc-500">Ball in court</span><br>${ballBadge(co.ball_in_court_role)}</p>
-        <p><span class="text-zinc-500">Amount</span><br><span class="font-mono text-lg">${fmt(co.amount)}</span></p>
+        <p><span class="text-zinc-500">Amount</span><br><span class="font-mono text-lg">${fmtAmount(co.amount)}</span></p>
         <p><span class="text-zinc-500">Schedule impact</span><br>${co.schedule_impact_days || 0} days</p>
         <p><span class="text-zinc-500">Company</span><br>${esc(co.company_name || '—')}</p>
         <p><span class="text-zinc-500">Contact</span><br>${esc(co.contact_name || '—')}</p>
@@ -1293,7 +1305,7 @@
     const bodyHtml = `
       <div class="space-y-2">
         <p><span class="text-zinc-500">Status</span><br>${statusBadge(p.status)}</p>
-        <p><span class="text-zinc-500">ROM</span><br><span class="font-mono text-lg">${fmt(p.estimated_amount)}</span></p>
+        <p><span class="text-zinc-500">ROM</span><br><span class="font-mono text-lg">${fmtAmount(p.estimated_amount)}</span></p>
         <p><span class="text-zinc-500">Company</span><br>${esc(p.company_name || '—')}</p>
         <p><span class="text-zinc-500">Contact</span><br>${esc(p.contact_name || '—')}</p>
         <p><span class="text-zinc-500">Description</span><br>${esc(p.description || '—')}</p>
@@ -1344,7 +1356,7 @@
       status: p.status,
       ball: p.ball_in_court_role,
       summaryHtml: `
-        <div class="flex justify-between text-sm"><span class="text-zinc-500">ROM</span><span class="font-mono text-emerald-400">${fmt(p.estimated_amount)}</span></div>
+        <div class="flex justify-between text-sm"><span class="text-zinc-500">ROM</span><span class="font-mono text-emerald-400">${fmtAmount(p.estimated_amount)}</span></div>
         <div class="flex justify-between text-sm"><span class="text-zinc-500">Company</span><span>${esc(p.company_name || '—')}</span></div>
         <div class="flex justify-between text-sm"><span class="text-zinc-500">Status</span><span>${statusBadge(p.status)}</span></div>
         <div class="pt-2 border-t border-zinc-800 mt-2"><div class="text-[10px] uppercase tracking-wide text-zinc-500 mb-1">Allocations</div>${allocLines}</div>
