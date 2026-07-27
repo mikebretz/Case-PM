@@ -27,7 +27,7 @@ class MppImportError(Exception):
 
 def mpp_import_status() -> dict[str, Any]:
     """Return readiness details for native MPP import on this server."""
-    import shutil
+    from java_runtime import java_runtime_status
 
     status: dict[str, Any] = {
         'available': False,
@@ -48,11 +48,11 @@ def mpp_import_status() -> dict[str, Any]:
         )
         return status
 
-    if not shutil.which('java'):
-        status['message'] = 'Java is not installed or not on PATH.'
-        status['setup_hint'] = (
-            'Install Java 17+ from https://adoptium.net/ (Temurin JRE), '
-            'restart the Command Prompt, then restart RUN-AS-SERVER.bat.'
+    java_status = java_runtime_status()
+    if not java_status.get('jvm_path'):
+        status['message'] = java_status.get('message') or 'Java is not available for MPP import.'
+        status['setup_hint'] = java_status.get('setup_hint') or (
+            'Run INSTALL-JAVA-FOR-MPP.bat on the server PC, then restart RUN-AS-SERVER.bat.'
         )
         return status
 
@@ -64,8 +64,7 @@ def mpp_import_status() -> dict[str, Any]:
     except Exception as exc:
         status['message'] = f'MPP import could not start Java/MPXJ: {exc}'
         status['setup_hint'] = (
-            'Install Java 17+ from https://adoptium.net/, verify "java -version" works, '
-            'then restart RUN-AS-SERVER.bat.'
+            'Run INSTALL-JAVA-FOR-MPP.bat on the server PC, then restart RUN-AS-SERVER.bat.'
         )
     return status
 
@@ -108,6 +107,9 @@ def ensure_mpp_import_dependencies(*, auto_install: bool = True) -> dict[str, An
         except Exception as exc:
             print(f'MPP import: package install error: {exc}')
 
+    from java_runtime import ensure_java_runtime
+    ensure_java_runtime(auto_download=auto_install)
+
     return mpp_import_status()
 
 
@@ -123,6 +125,7 @@ def _ensure_jvm() -> None:
             return
         import jpype
         import mpxj
+        from java_runtime import resolve_jvm_path
 
         if jpype.isJVMStarted():
             _jvm_started = True
@@ -131,7 +134,10 @@ def _ensure_jvm() -> None:
         jars += glob.glob(str(Path(mpxj.__file__).parent / 'lib' / '*.jar'))
         if not jars:
             raise MppImportError('MPXJ libraries are not installed.')
-        jpype.startJVM(classpath=jars, convertStrings=True)
+        jvm_path = resolve_jvm_path()
+        if not jvm_path:
+            raise MppImportError('Java runtime not found for MPP import.')
+        jpype.startJVM(jvm_path, classpath=jars, convertStrings=True)
         _jvm_started = True
 
 

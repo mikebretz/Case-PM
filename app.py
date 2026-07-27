@@ -17657,7 +17657,10 @@ if __name__ == '__main__':
             print(f'   Run: {sys.executable} -m pip install -r requirements.txt')
 
         try:
+            from java_runtime import ensure_java_runtime
             from schedule_mpp_import import ensure_mpp_import_dependencies
+
+            ensure_java_runtime(auto_download=True)
             mpp_status = ensure_mpp_import_dependencies()
             if mpp_status['available']:
                 print('✅ MS Project MPP import ready')

@@ -39,6 +39,15 @@ if errorlevel 1 (
     echo.
 )
 
+echo Checking Java for MS Project MPP import...
+"%PY%" scripts\ensure_java_runtime.py
+call "%~dp0_load_server_env.bat"
+if errorlevel 1 (
+    echo WARNING: Java is not ready for MPP import yet.
+    echo Run INSTALL-JAVA-FOR-MPP.bat on this PC if the download did not complete.
+    echo.
+)
+
 netsh advfirewall firewall show rule name="Case PM Server (TCP 5000)" >nul 2>&1
 if errorlevel 1 (
     echo.
