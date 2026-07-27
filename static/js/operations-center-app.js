@@ -189,7 +189,7 @@
         ${shell.statusChip(r.status)}
       </div>`).join('');
     host.querySelectorAll('.ops-row').forEach(row => {
-      row.addEventListener('click', () => openModal(parseInt(row.dataset.id, 10)));
+      row.addEventListener('click', () => { openModal(parseInt(row.dataset.id, 10)); });
     });
   }
 
@@ -406,9 +406,21 @@
     return 'New item';
   }
 
-  function openModal(recordId) {
+  async function openModal(recordId) {
+    if (!state.moduleKey) {
+      toast('Select a module on the left first.', false);
+      return;
+    }
     if (!state.schema?.simple?.length) {
-      toast('Loading form… try again in a moment.', false);
+      try {
+        await loadRecords();
+      } catch (e) {
+        toast(e.message, false);
+        return;
+      }
+    }
+    if (!state.schema?.simple?.length) {
+      toast('Form not available for this module.', false);
       return;
     }
     if (!recordId && state.schema.project_scoped !== false && !projectRequired()) {
@@ -538,10 +550,18 @@
     updateProjectBanner();
   }
 
-  init().catch(err => {
-    console.error(err);
-    toast(err.message, false);
-    const host = $('opsListHost');
-    if (host) host.innerHTML = `<div class="p-6 text-red-400">${shell.esc(err.message)}</div>`;
-  });
+  function boot() {
+    init().catch(err => {
+      console.error(err);
+      toast(err.message, false);
+      const host = $('opsListHost');
+      if (host) host.innerHTML = `<div class="p-6 text-red-400">${shell.esc(err.message)}</div>`;
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
 })();
