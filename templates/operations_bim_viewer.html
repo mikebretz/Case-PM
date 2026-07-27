@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>{{ asset.title if asset else 'BIM Viewer' }} — Case PM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    html, body { height: 100%; margin: 0; overflow: hidden; background: #09090b; color: #fff; }
+    #bimPopoutRoot { display: flex; flex-direction: column; height: 100vh; width: 100vw; }
+    .bim-popout-bar { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 0.85rem; background: #18181b; border-bottom: 1px solid #3f3f46; }
+    #bimPopoutViewer { flex: 1; min-height: 0; background: #0a0a0b; }
+    #bimPopoutViewer model-viewer, #bimPopoutViewer iframe { width: 100%; height: 100%; border: 0; }
+  </style>
+</head>
+<body>
+  <div id="bimPopoutRoot">
+    <div class="bim-popout-bar">
+      <div class="min-w-0">
+        <div class="font-semibold text-sm truncate">{{ asset.title if asset else 'BIM Viewer' }}</div>
+        {% if asset %}
+        <div class="text-xs text-zinc-500 truncate">{{ asset.filename }} · .{{ asset.file_ext }}</div>
+        {% endif %}
+      </div>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <button type="button" id="bimPopoutFullscreen" class="px-3 py-1.5 text-xs rounded-md border border-zinc-700 hover:bg-zinc-800">
+          <i class="fa-solid fa-expand mr-1"></i> Full screen
+        </button>
+      </div>
+    </div>
+    <div id="bimPopoutViewer"></div>
+  </div>
+
+  <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
+  <script src="{{ url_for('static', filename='js/operations-bim-viewer.js') }}"></script>
+  <script>
+  (function () {
+    const asset = {{ asset|tojson if asset else 'null' }};
+    const viewer = document.getElementById('bimPopoutViewer');
+    const root = document.getElementById('bimPopoutRoot');
+    const fsBtn = document.getElementById('bimPopoutFullscreen');
+
+    if (!asset || !asset.file_url) {
+      viewer.innerHTML = '<p class="text-zinc-500 p-6">Model not found. Close this window and open again from Operations Center.</p>';
+      return;
+    }
+
+    window.CasePMBimViewer.mount(viewer, asset.file_url, asset.file_ext, { fill: true });
+    window.CasePMBimViewer.bindFullscreen(root, fsBtn);
+  })();
+  </script>
+</body>
+</html>

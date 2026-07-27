@@ -26,7 +26,22 @@ window.CASEPM_OPS_CTX = {
 .ops-toast { position:fixed; bottom:1.5rem; right:1.5rem; z-index:9999; padding:0.75rem 1rem; border-radius:0.5rem; font-size:0.875rem; max-width:360px; box-shadow:0 8px 24px rgba(0,0,0,.4); }
 .ops-toast.ok { background:#065f46; color:#ecfdf5; }
 .ops-toast.err { background:#7f1d1d; color:#fef2f2; }
-#opsBimViewer { width:100%; height:420px; background:#0a0a0b; border-radius:0.5rem; border:1px solid #3f3f46; }
+#opsBimViewer { width:100%; height:100%; min-height:0; background:#0a0a0b; border-radius:0.5rem; border:1px solid #3f3f46; }
+.ops-bim-layout { display:flex; flex-direction:column; flex:1; min-height:0; height:100%; }
+.ops-bim-stage { flex:1; min-height:280px; min-width:0; position:relative; display:flex; flex-direction:column; }
+#opsBimViewer { flex:1; min-height:0; }
+.ops-bim-stage:fullscreen { background:#09090b; border-radius:0; padding:0; width:100vw; height:100vh; }
+.ops-bim-stage:fullscreen #opsBimViewer { border-radius:0; border:none; }
+.ops-bim-stage:fullscreen .ops-bim-stage-bar { border-radius:0; }
+.ops-bim-stage-bar { display:flex; align-items:center; justify-content:space-between; gap:0.75rem; padding:0.35rem 0.65rem; background:#27272a; border:1px solid #3f3f46; border-bottom:none; border-radius:0.5rem 0.5rem 0 0; flex-shrink:0; }
+.ops-bim-list-wrap { flex-shrink:0; max-height:9rem; overflow-y:auto; border:1px solid #3f3f46; border-radius:0.5rem; margin-top:0.75rem; }
+.ops-bim-list-wrap summary { cursor:pointer; padding:0.5rem 0.75rem; font-size:0.8rem; color:#a1a1aa; user-select:none; }
+.ops-bim-list-wrap[open] summary { border-bottom:1px solid #27272a; }
+.ops-page.ops-bim-active { min-height:calc(100vh - 6.5rem); }
+.ops-page.ops-bim-active .ops-stats-card { display:none; }
+.ops-page.ops-bim-active .ops-shell { flex:1; min-height:0; }
+#opsBimHost { display:flex; flex-direction:column; flex:1; min-height:0; overflow:hidden; }
+#opsBimHost model-viewer, #opsBimHost iframe { width:100% !important; height:100% !important; min-height:0; border:0; border-radius:0 0 0.5rem 0.5rem; }
 .ops-chat { display:flex; flex-direction:column; height:100%; min-height:360px; }
 .ops-chat-msgs { flex:1; overflow-y:auto; padding:0.75rem; space-y:0.5rem; }
 .ops-chat-bubble { max-width:85%; padding:0.65rem 0.85rem; border-radius:0.75rem; margin-bottom:0.5rem; font-size:0.875rem; white-space:pre-wrap; }
@@ -53,7 +68,7 @@ window.CASEPM_OPS_CTX = {
   <div class="ops-shell">
     <aside class="ops-sidebar" id="opsSidebar"></aside>
     <section class="ops-main">
-      <div class="ops-card p-4 mb-3 flex-shrink-0">
+      <div class="ops-card p-4 mb-3 flex-shrink-0 ops-stats-card">
         <div class="flex flex-wrap items-center gap-3 justify-between">
           <div>
             <div id="opsModuleTitle" class="text-lg font-semibold text-white">—</div>
@@ -66,7 +81,7 @@ window.CASEPM_OPS_CTX = {
         <div id="opsWipHost" class="hidden flex-1 overflow-auto p-4"></div>
         <div id="opsAiHost" class="hidden flex-1 flex flex-col p-4"></div>
         <div id="opsReportHost" class="hidden flex-1 overflow-auto p-4"></div>
-        <div id="opsBimHost" class="hidden flex-1 overflow-auto p-4"></div>
+        <div id="opsBimHost" class="hidden flex-1 min-h-0 overflow-hidden p-4"></div>
         <div id="opsListHost" class="flex-1 overflow-auto"></div>
       </div>
     </section>
