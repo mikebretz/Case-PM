@@ -134,8 +134,8 @@
         scheduleTaskCount = countScheduleTasks();
         schedulePerformanceMode = true;
 
-        gantt.config.smart_rendering = scheduleTaskCount > 120;
-        gantt.config.static_background = scheduleTaskCount > 120;
+        gantt.config.smart_rendering = scheduleTaskCount > 300;
+        gantt.config.static_background = scheduleTaskCount > 300;
         applyRollingCalendarRange();
 
         const spanDays = rollingCalendarBounds
@@ -167,9 +167,28 @@
         });
     }
 
+    function expandAllTasks() {
+        if (!ganttReady) return;
+        gantt.eachTask(t => {
+            if (gantt.hasChild(t.id)) t.open = true;
+        });
+    }
+
+    function isImportedSchedulePayload(payload) {
+        if (!payload) return false;
+        if (payload.import_meta) return true;
+        const src = String(payload.source || '');
+        return src.includes('MS Project') || src.includes('MPP');
+    }
+
     function ensureGridVisible() {
         if (!ganttReady) return;
         applySchedulePerformanceProfile();
+        expandAllTasks();
+        if (scheduleTaskCount <= 300) {
+            gantt.config.smart_rendering = false;
+            gantt.config.static_background = false;
+        }
         if (typeof gantt.setSizes === 'function') gantt.setSizes();
         gantt.render();
         syncGanttLayout();
@@ -3799,8 +3818,8 @@
         gantt.config.link_line_width = scheduleSettings.link_width || 2;
         gantt.config.link_arrow_size = 10;
         gantt.config.link_wrapper_width = 20;
-        gantt.config.smart_rendering = scheduleTaskCount > 120;
-        gantt.config.static_background = scheduleTaskCount > 120;
+        gantt.config.smart_rendering = scheduleTaskCount > 300;
+        gantt.config.static_background = scheduleTaskCount > 300;
         gantt.config.link_attribute = 'data-link-id';
 
         gantt.config.min_column_width = 50;
@@ -4277,16 +4296,24 @@
         repairSqueezedColumnWidths();
         ensureDefaultColumnAlignments();
         updateGridWidth();
+        const preserveDates = importing || isImportedSchedulePayload(payload);
         const parseSchedule = () => {
             gantt.clearAll();
             gantt.parse({ data: payload.data, links: payload.links || [] });
+            expandAllTasks();
         };
         if (typeof gantt.batchUpdate === 'function') gantt.batchUpdate(parseSchedule);
         else parseSchedule();
         rebuildTaskOrderCache();
-        if ((payload.data?.length || 0) > 120) gantt.config.smart_rendering = true;
         sanitizeAllTaskDates();
-        runSchedule({ skipScroll: true, skipSave: true, skipLog: importing, batch: true, light: importing });
+        runSchedule({
+            skipScroll: true,
+            skipSave: true,
+            skipLog: importing,
+            batch: true,
+            light: true,
+            preserveDates
+        });
         baselines = payload.baselines || [];
         if (payload.settings) scheduleSettings = Object.assign(scheduleSettings, payload.settings);
         applyP6RowMetrics();
@@ -5177,7 +5204,8 @@
         const links = gantt.getLinks().map(l => Object.assign({}, l));
         const { updates, wbsMap } = CasePMSchedule.runCPM(tasks, links, {
             dataDate,
-            skipEvm: !!opts.light
+            skipEvm: !!opts.light,
+            preserveDates: !!opts.preserveDates
         });
         const evmFields = ['bcws', 'bcwp', 'acwp', 'cpi', 'spi', 'cost_variance', 'schedule_variance', 'schedule_percent_complete'];
         const cpmFields = ['early_start', 'early_finish', 'late_start', 'late_finish'];
