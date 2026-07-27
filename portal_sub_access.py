@@ -1,5 +1,65 @@
-"""Sub/vendor portal — limited modules, company-scoped pay apps and projects."""
+"""Sub/vendor and consultant portal — limited modules and scoped data access."""
 from __future__ import annotations
+
+
+# Modules consultant (architect / owner) portal users may ever reach — err on caution.
+CONSULTANT_PORTAL_ALLOWED_MODULES = frozenset({
+    'dashboard',
+    'projects',
+    'project_directory',
+    'drawings',
+    'documents',
+    'rfis',
+    'submittals',
+    'change_orders',
+    'change_orders_log',
+    'change_orders_pco',
+    'change_orders_sub',
+    'photos',
+    'punch_list',
+    'inspections',
+    'meeting_minutes',
+    'schedule',
+    'daily_log',
+    'weekly_report',
+    'safety',
+    'safety_reports',
+    'internal_messages',
+    'notifications',
+})
+
+CONSULTANT_PORTAL_ALWAYS_MODULES = frozenset({
+    'notifications',
+})
+
+
+def is_consultant_portal_user(user) -> bool:
+    """Architect, owner, and other consultant-portal roles."""
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    try:
+        from case_workflow import user_portal_type
+        if user_portal_type(user) == 'consultant':
+            return True
+    except Exception:
+        pass
+    role = (getattr(user, 'role', None) or '').strip()
+    return role in ('Architect', 'Owner')
+
+
+def consultant_portal_module_allowed(user, module_key: str) -> bool:
+    """Whether a consultant portal user may reach this module at all."""
+    if not is_consultant_portal_user(user):
+        return True
+    if module_key in CONSULTANT_PORTAL_ALWAYS_MODULES:
+        return True
+    if module_key not in CONSULTANT_PORTAL_ALLOWED_MODULES:
+        return False
+    try:
+        from case_workflow import user_has_module_access
+        return user_has_module_access(user, module_key, 'client_view')
+    except Exception:
+        return False
 
 
 SUB_VENDOR_ALLOWED_MODULES = frozenset({
@@ -1110,6 +1170,7 @@ def build_portal_context_payload(user, Company, db, helpers: dict) -> dict:
         linked = company_id is not None
 
     global_flags = perms.get('global') if isinstance(perms.get('global'), dict) else {}
+    hide_financials = bool(global_flags.get('hide_financials'))
     can_approve = {}
     for mod in ('Pay Applications', 'Change Orders', 'Submittals', 'RFIs', 'Budget'):
         try:
@@ -1147,6 +1208,8 @@ def build_portal_context_payload(user, Company, db, helpers: dict) -> dict:
         'permissions': perms,
         'isSub': is_sub,
         'isArchitect': is_arch,
+        'isConsultant': is_consultant_portal_user(user),
+        'hideFinancials': hide_financials,
         'isSubVendorPayPortal': sub_vendor,
         'emailInternalOnly': bool(
             (global_flags or {}).get('email_internal_only')

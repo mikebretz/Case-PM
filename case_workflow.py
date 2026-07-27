@@ -541,8 +541,17 @@ def is_sub_user(user):
     )
 
 
+def is_consultant_portal_user(user):
+    if not user:
+        return False
+    if user_portal_type(user) == 'consultant':
+        return True
+    return (getattr(user, 'role', None) or '') in ('Architect', 'Owner')
+
+
 def is_architect_user(user):
-    return user.role == 'Architect'
+    """Consultant portal styling — architect and owner roles share the simplified nav."""
+    return is_consultant_portal_user(user)
 
 
 def notify_user(user_id, title, message, link=None):

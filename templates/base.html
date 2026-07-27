@@ -316,6 +316,10 @@
         .portal-sub-vendor .nav-link[data-nav-module="schedule"] {
             display: none !important;
         }
+        .portal-sub .rfi-staff-only,
+        .portal-architect .rfi-staff-only {
+            display: none !important;
+        }
 
         .app-sidebar {
             width: 14rem;
@@ -446,7 +450,8 @@
       data-active-project-id="{{ active_project.id if active_project else '' }}"
       data-active-project-name="{{ active_project.name if active_project else '' }}"
       data-active-project-number="{{ active_project.number if active_project and active_project.number else (active_project.accounting_project_number if active_project and active_project.accounting_project_number else '') }}"
-      data-active-project-address="{{ active_project.address if active_project and active_project.address else '' }}">
+      data-active-project-address="{{ active_project.address if active_project and active_project.address else '' }}"
+      data-user-security-hide-financials="{{ '1' if user_security_flags.hide_financials else '0' }}">
 
     {% if current_user.is_authenticated %}
 
@@ -475,7 +480,7 @@
     {% endif %}
     {% if is_architect_portal %}
     <div class="portal-banner-architect hidden items-center justify-between px-5 py-1.5 bg-sky-950/80 border-b border-sky-800 text-xs text-sky-200 flex-shrink-0">
-        <span><i class="fa-solid fa-compass-drafting mr-2"></i><strong>Architect Portal</strong> — review submittals, RFIs, and change orders</span>
+        <span><i class="fa-solid fa-compass-drafting mr-2"></i><strong>{% if current_user.role == 'Architect' %}Architect{% else %}Consultant{% endif %} Portal</strong> — review submittals, RFIs, and change orders</span>
         <a href="{{ url_for('email_page') }}?tab=internal" class="text-sky-400 hover:underline">Approvals inbox</a>
     </div>
     {% endif %}
@@ -762,7 +767,7 @@
                 </a>
 
 
-                <a href="{{ url_for('client_portal_page', project_id=active_project.id) if active_project else url_for('client_portal_page') }}" data-nav-module="operations_center" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'client_portal_page' %}active{% endif %}">
+                <a href="{{ url_for('client_portal_page', project_id=active_project.id) if active_project else url_for('client_portal_page') }}" data-nav-module="operations_center" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'client_portal_page' %}active{% endif %}">
                     <i class="fa-solid fa-house-user w-5"></i>
                     <span>Client Portal</span>
                 </a>

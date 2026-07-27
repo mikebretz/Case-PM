@@ -8,6 +8,8 @@
 window.CASEPM_DASHBOARD_CTX = {
   userId: {{ current_user.id }},
   projectId: {{ active_project.id if active_project else 'null' }},
+  hideFinancials: {{ (user_security_flags.hide_financials if user_security_flags else false)|tojson }},
+  externalPortal: {{ (is_sub_portal or is_consultant_portal|default(is_architect_portal))|tojson }},
   urls: {
     dailyLog: {{ url_for('daily_log')|tojson }},
     rfis: {{ url_for('rfis_page')|tojson }},
