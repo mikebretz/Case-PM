@@ -666,6 +666,20 @@
     input.click();
   }
 
+  async function runSagePull() {
+    try {
+      const data = await api('/api/sage/pull', {
+        method: 'POST',
+        body: JSON.stringify({ project_id: projectRequired() }),
+      });
+      const parts = [];
+      if (data.sub_payments_applied != null) parts.push(`${data.sub_payments_applied} sub payments`);
+      if (data.owner_billings_applied != null) parts.push(`${data.owner_billings_applied} owner billings`);
+      if (data.actuals_applied != null) parts.push(`${data.actuals_applied} actuals`);
+      toast(parts.length ? `Sage pull: ${parts.join(', ')}` : (data.message || 'Sage pull complete'), true);
+    } catch (e) { toast(e.message, false); }
+  }
+
   async function runIntegrationSync(integration) {
     try {
       const body = { project_id: projectRequired() };
@@ -682,6 +696,7 @@
   }
 
   function bindUi() {
+    $('opsPullSage')?.addEventListener('click', () => runSagePull());
     $('opsSyncSage')?.addEventListener('click', () => runIntegrationSync('sage'));
     $('opsSyncProcore')?.addEventListener('click', () => runIntegrationSync('procore'));
     const autodeskBtn = document.getElementById('opsSyncAutodesk');

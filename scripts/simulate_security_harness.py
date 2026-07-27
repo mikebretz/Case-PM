@@ -232,12 +232,17 @@ def phase_auth_session(result: SecResult, models, app) -> None:
 
 
 def phase_csrf(result: SecResult, client, app, models, p_a) -> None:
+    from datetime import date, timedelta
     pm = models['users']['pm']
     token = _login_client(client, pm, app)
 
     rfi = models['RFI'](
         project_id=p_a.id, number=f'CSRF-{uuid.uuid4().hex[:6]}',
-        subject='csrf test', status='Draft', ball_in_court_role='RFI Manager',
+        subject='csrf test', question='csrf test question', status='Draft',
+        ball_in_court_role='RFI Manager',
+        due_date=date.today() + timedelta(days=7),
+        rfi_manager_name='Test Manager',
+        assignees_json=json.dumps([{'name': 'Assignee', 'email': 'assignee@test.com'}]),
         created_by_id=pm.id,
     )
     models['db'].session.add(rfi)
@@ -790,12 +795,17 @@ def phase_role_matrix(result: SecResult, client, app, models, p_a) -> None:
 
 def phase_csrf_sweep(result: SecResult, client, app, models, p_a) -> None:
     """State-changing routes reject requests without CSRF token."""
+    from datetime import date, timedelta
     pm = models['users']['pm']
     token = _login_client(client, pm, app)
 
     rfi = models['RFI'](
         project_id=p_a.id, number=f'CS-{uuid.uuid4().hex[:6]}',
-        subject='csrf sweep', status='Draft', ball_in_court_role='RFI Manager',
+        subject='csrf sweep', question='csrf sweep question', status='Draft',
+        ball_in_court_role='RFI Manager',
+        due_date=date.today() + timedelta(days=7),
+        rfi_manager_name='Test Manager',
+        assignees_json=json.dumps([{'name': 'Assignee', 'email': 'assignee@test.com'}]),
         created_by_id=pm.id,
     )
     co = models['ChangeOrder'](

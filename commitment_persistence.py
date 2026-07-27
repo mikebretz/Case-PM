@@ -527,8 +527,16 @@ def sync_commitment_to_sub_sov(PayAppProjectState, db, commitment, allocations, 
         sub_status = {}
 
     status_entry = sub_status.get(company_key) or {}
+    auto_registered = False
     if not isinstance(status_entry, dict) or not status_entry.get('status'):
-        return {'skipped': True, 'reason': 'not_registered_on_sub_sov'}
+        status_entry = {
+            'status': 'Draft',
+            'companyName': commitment.company_name or company_key,
+            'companyId': str(commitment.company_id or ''),
+            'autoRegisteredFromCommitment': commitment.number,
+        }
+        sub_status[company_key] = status_entry
+        auto_registered = True
 
     lines = sub_sov.get(company_key) or []
     existing_codes = {normalize_cost_code(l.get('cost_code')) for l in lines}
@@ -572,7 +580,15 @@ def sync_commitment_to_sub_sov(PayAppProjectState, db, commitment, allocations, 
     else:
         record = PayAppProjectState(project_id=commitment.project_id, data_json=payload, version=1, updated_by_id=user_id)
         db.session.add(record)
-    return {'company_key': company_key, 'lines_added': added, 'total_lines': len(lines)}
+    result = {'company_key': company_key, 'lines_added': added, 'total_lines': len(lines)}
+    if auto_registered:
+        result['auto_registered'] = True
+        result['warning'] = (
+            f'Subcontractor {commitment.company_name or company_key} was auto-registered on the '
+            f'Sub SOV list from commitment {commitment.number}. Submit and approve their SOV '
+            f'before billing pay applications.'
+        )
+    return result
 
 
 def build_commitment_sage_payload(commitment, allocations=None, extra=None):

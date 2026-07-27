@@ -7,6 +7,16 @@ import zipfile
 
 
 class MessageDeletionArchiveTests(unittest.TestCase):
+    def _ensure_architect_project_access(self, project_id=1):
+        from app import db, User
+        from case_workflow import ensure_workflow_models_bound, ProjectMembership
+        from portal_sub_access import grant_project_membership
+
+        ensure_workflow_models_bound()
+        arch = User.query.filter_by(email='test@arch.com').first()
+        if arch and grant_project_membership(project_id, arch, db, ProjectMembership=ProjectMembership, role='Architect'):
+            db.session.commit()
+
     def test_internal_permanent_delete_archives_before_removal(self):
         from app import app, User
         from scripts.simulate_security_harness import _login_client
@@ -15,6 +25,7 @@ class MessageDeletionArchiveTests(unittest.TestCase):
         with app.app_context():
             arch = User.query.filter_by(email='test@arch.com').first()
             self.assertIsNotNone(arch)
+            self._ensure_architect_project_access(1)
             with app.test_client() as client:
                 _login_client(client, arch, app)
                 client.get('/email?tab=internal')

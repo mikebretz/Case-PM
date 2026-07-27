@@ -133,6 +133,31 @@ def _ensure_sim_users(db, User):
     return users
 
 
+def ensure_sub_sov_registered_for_commitments(pay_state, commitments):
+    """Pre-register subcontract vendors on pay app SOV before commitment approval sync."""
+    sub_status = pay_state.get('subSOVStatus') or {}
+    sub_sov = pay_state.get('subcontractorSOV') or {}
+    if not isinstance(sub_status, dict):
+        sub_status = {}
+    if not isinstance(sub_sov, dict):
+        sub_sov = {}
+    for com in commitments:
+        if getattr(com, 'commitment_type', None) != 'Subcontract':
+            continue
+        key = str(com.company_id) if com.company_id else str(com.company_name or '')
+        if not key:
+            continue
+        sub_status.setdefault(key, {
+            'status': 'Draft',
+            'companyName': com.company_name,
+            'companyId': str(com.company_id or ''),
+        })
+        sub_sov.setdefault(key, [])
+    pay_state['subSOVStatus'] = sub_status
+    pay_state['subcontractorSOV'] = sub_sov
+    return pay_state
+
+
 def _approve_commitment(commitment, CommitmentAllocation, users, app_models):
     from commitment_persistence import commitment_workflow_action, save_allocations
     db = app_models['db']
@@ -831,22 +856,7 @@ def run_simulation(name: str, trade_mix: list, app_models, *, contract_value: fl
 
     # Register subcontract vendors on the pay app SOV before commitment approval sync.
     _, pay_state = get_pay_app_state(PayAppProjectState, project.id)
-    sub_status = pay_state.get('subSOVStatus') or {}
-    sub_sov = pay_state.get('subcontractorSOV') or {}
-    for com in commitments:
-        if com.commitment_type != 'Subcontract':
-            continue
-        key = str(com.company_id) if com.company_id else str(com.company_name or '')
-        if not key:
-            continue
-        sub_status.setdefault(key, {
-            'status': 'Draft',
-            'companyName': com.company_name,
-            'companyId': str(com.company_id or ''),
-        })
-        sub_sov.setdefault(key, [])
-    pay_state['subSOVStatus'] = sub_status
-    pay_state['subcontractorSOV'] = sub_sov
+    ensure_sub_sov_registered_for_commitments(pay_state, commitments)
     save_pay_app_state(PayAppProjectState, db, project.id, pay_state, user_id=None)
 
     approved_count = 0

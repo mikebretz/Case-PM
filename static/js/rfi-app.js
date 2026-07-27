@@ -1346,7 +1346,8 @@
         <button onclick="CasePMRfis.workflow(${r.id}, 'return_to_assignee')" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md">Return to Assignee</button>
         ${r.status === 'Closed' ? `<button onclick="CasePMRfis.workflow(${r.id}, 'reopen')" class="px-3 py-1.5 text-xs bg-amber-900/70 hover:bg-amber-800 rounded-md">Reopen</button>` : ''}
         ${r.status !== 'Void' && r.status !== 'Closed' ? `<button onclick="CasePMRfis.workflow(${r.id}, 'void')" class="px-3 py-1.5 text-xs bg-red-950/70 hover:bg-red-900 rounded-md">Void</button>` : ''}
-        <button onclick="CasePMRfis.promotePco(${r.id})" class="px-3 py-1.5 text-xs bg-violet-800 hover:bg-violet-700 rounded-md"><i class="fa-solid fa-lightbulb mr-1"></i>Create PCO</button>` : ''}
+        <button onclick="CasePMRfis.promotePco(${r.id})" class="px-3 py-1.5 text-xs bg-violet-800 hover:bg-violet-700 rounded-md"><i class="fa-solid fa-lightbulb mr-1"></i>Create PCO</button>
+        <button onclick="CasePMRfis.promoteChangeEvent(${r.id})" class="px-3 py-1.5 text-xs bg-amber-800 hover:bg-amber-700 rounded-md"><i class="fa-solid fa-bolt mr-1"></i>Create Change Event</button>` : ''}
         ${canEditRfis() && isStaffPortal() ? `<button onclick="CasePMRfis.edit(${r.id})" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md"><i class="fa-solid fa-edit mr-1"></i>Edit</button>` : ''}
         ${canDeleteRfi() ? `<button onclick="CasePMRfis.deleteRfi(${r.id})" class="px-3 py-1.5 text-xs bg-red-900/70 hover:bg-red-800 text-red-200 rounded-md"><i class="fa-solid fa-trash mr-1"></i>Delete</button>` : ''}
       </div>`;
@@ -1391,6 +1392,25 @@
     try {
       const json = await api(`/api/rfis/${id}/promote-pco`, { method: 'POST', body: JSON.stringify({ estimated_amount: parseFloat(amount) || 0 }) });
       toast(`PCO ${json.pco?.number || ''} created from RFI`);
+      await loadLinkOptions();
+      if (state.drawerRecord?.id === id) view(id);
+    } catch (e) { alert(e.message); }
+  }
+
+  async function promoteChangeEvent(id) {
+    const r = state.rfis.find((row) => row.id === id) || state.drawerRecord;
+    const defaultRom = r?.cost_impact_amount ? String(r.cost_impact_amount) : '0';
+    const amount = prompt('ROM estimate for change event ($):', defaultRom);
+    if (amount === null) return;
+    try {
+      const json = await api(`/api/rfis/${id}/promote-change-event`, {
+        method: 'POST',
+        body: JSON.stringify({
+          rom_amount: parseFloat(amount) || 0,
+          schedule_impact_days: r?.schedule_impact_days || 0,
+        }),
+      });
+      toast(`Change Event ${json.change_event?.number || ''} created from RFI`);
       await loadLinkOptions();
       if (state.drawerRecord?.id === id) view(id);
     } catch (e) { alert(e.message); }
@@ -1816,6 +1836,7 @@
     workflow,
     markOfficial,
     promotePco,
+    promoteChangeEvent,
     deleteRfi,
     addPlanPin,
     removePin,
