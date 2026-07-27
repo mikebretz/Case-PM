@@ -7,11 +7,6 @@ window.CASEPM_OPS_CTX = {
   projectName: {{ (active_project.name if active_project else '')|tojson }},
 };
 </script>
-<script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
-<script src="{{ url_for('static', filename='js/casepm-module-shell.js') }}"></script>
-<script src="{{ url_for('static', filename='js/operations-bim-viewer.js') }}"></script>
-<script src="{{ url_for('static', filename='js/operations-center-app.js') }}"></script>
-
 <style>
 .ops-page { display:flex; flex-direction:column; flex:1; min-height:0; padding:1rem; box-sizing:border-box; }
 .ops-shell { display:flex; gap:1rem; flex:1; min-height:0; }
@@ -94,4 +89,9 @@ window.CASEPM_OPS_CTX = {
     </div>
   </div>
 </dialog>
+
+<script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
+<script src="{{ url_for('static', filename='js/casepm-module-shell.js') }}"></script>
+<script src="{{ url_for('static', filename='js/operations-bim-viewer.js') }}"></script>
+<script src="{{ url_for('static', filename='js/operations-center-app.js') }}"></script>
 {% endblock %}
