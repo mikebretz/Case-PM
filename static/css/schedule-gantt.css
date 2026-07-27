@@ -1922,6 +1922,9 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
     .print-row-links polygon {
         vector-effect: non-scaling-stroke;
     }
+    .print-row-links polygon {
+        stroke: none;
+    }
     .print-bar {
         position: absolute;
         top: 3px;

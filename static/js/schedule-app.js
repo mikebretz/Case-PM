@@ -3723,6 +3723,8 @@
         gantt.config.show_task_cells = false;
         gantt.config.show_links = true;
         gantt.config.link_line_width = scheduleSettings.link_width || 2;
+        gantt.config.link_arrow_size = 10;
+        gantt.config.link_wrapper_width = 20;
         gantt.config.link_attribute = 'data-link-id';
 
         gantt.config.min_column_width = 50;
@@ -4162,8 +4164,10 @@
         return { data, links, baselines, customColumns, hiddenColumns, columnWidths, columnOrder: scheduleSettings.column_order || columnOrder, settings: scheduleSettings };
     }
 
-    function loadSchedulePayload(payload) {
+    function loadSchedulePayload(payload, options) {
         if (!payload || !payload.data) return false;
+        const opts = options || {};
+        const importing = !!opts.importing;
         customColumns = payload.customColumns || [];
         hiddenColumns = payload.hiddenColumns || [];
         columnWidths = payload.columnWidths || {};
@@ -4174,10 +4178,15 @@
         repairSqueezedColumnWidths();
         ensureDefaultColumnAlignments();
         updateGridWidth();
-        gantt.clearAll();
-        gantt.parse({ data: payload.data, links: payload.links || [] });
+        const parseSchedule = () => {
+            gantt.clearAll();
+            gantt.parse({ data: payload.data, links: payload.links || [] });
+        };
+        if (typeof gantt.batchUpdate === 'function') gantt.batchUpdate(parseSchedule);
+        else parseSchedule();
+        if ((payload.data?.length || 0) > 200) gantt.config.smart_rendering = true;
         sanitizeAllTaskDates();
-        runSchedule({ skipScroll: true });
+        runSchedule({ skipScroll: true, skipSave: true, skipLog: importing, batch: true });
         baselines = payload.baselines || [];
         if (payload.settings) scheduleSettings = Object.assign(scheduleSettings, payload.settings);
         applyP6RowMetrics();
@@ -4204,17 +4213,21 @@
         if (!scheduleSettings.compare_baseline_indices) scheduleSettings.compare_baseline_indices = [];
         refreshWbsCodes();
         applySettingsToUI();
-        gantt.eachTask(t => applyTaskBarColor(t));
+        if (!importing) gantt.eachTask(t => applyTaskBarColor(t));
         syncScheduleProjectContext();
         applyBaselineVariance();
         applyRollingCalendarRange(true);
-        updateRowHeightsForLabels();
+        if (!importing) updateRowHeightsForLabels();
         syncScheduleProjectContext();
         queueGanttLayoutSync();
         gantt.render();
         queueGridHeaderSync();
-        applyCellAlignToDom();
-        pushUndoState();
+        if (!importing) applyCellAlignToDom();
+        if (importing) {
+            finalizeScheduleImport(payload);
+        } else {
+            pushUndoState();
+        }
         updateDataDateMarker();
         updateDeadlineMarkers();
         if (!initialTimelineFocused) {
@@ -4222,9 +4235,26 @@
             setTimeout(() => {
                 focusInitialTimelineView();
                 syncGanttLayout();
-            }, 150);
+            }, importing ? 300 : 150);
         }
         return true;
+    }
+
+    function finalizeScheduleImport(payload) {
+        setSaveStatus('Finalizing import…');
+        requestAnimationFrame(() => {
+            gantt.eachTask(t => applyTaskBarColor(t));
+            updateRowHeightsForLabels();
+            applyCellAlignToDom();
+            gantt.render();
+            syncGanttLayout();
+            pushUndoState();
+            queueSave();
+            const count = payload?.data?.length || 0;
+            const linkCount = payload?.links?.length || 0;
+            setSaveStatus('Import complete');
+            logActivity('Imported schedule', `${count} activities, ${linkCount} links`);
+        });
     }
 
     async function loadSchedule() {
@@ -5041,7 +5071,7 @@
         const { updates, wbsMap } = CasePMSchedule.runCPM(tasks, links, { dataDate });
         const evmFields = ['bcws', 'bcwp', 'acwp', 'cpi', 'spi', 'cost_variance', 'schedule_variance', 'schedule_percent_complete'];
         const cpmFields = ['early_start', 'early_finish', 'late_start', 'late_finish'];
-        updates.forEach((patch, id) => {
+        const applyUpdate = (patch, id) => {
             if (!gantt.isTaskExists(id)) return;
             const task = gantt.getTask(id);
             if (patch.start_date) task.start_date = toGanttDate(patch.start_date);
@@ -5055,8 +5085,13 @@
             task.$slack = patch.$slack;
             task.$critical = patch.$critical;
             sanitizeTaskDates(task);
-            gantt.refreshTask(id);
-        });
+            if (!opts.batch) gantt.refreshTask(id);
+        };
+        if (opts.batch && typeof gantt.batchUpdate === 'function') {
+            gantt.batchUpdate(() => updates.forEach(applyUpdate));
+        } else {
+            updates.forEach(applyUpdate);
+        }
         sanitizeAllTaskDates();
         applyBaselineVariance();
         rollupSummaryProgress();
@@ -5067,8 +5102,8 @@
         updateDataDateMarker();
         syncGanttLayout();
         updateStatusBar();
-        queueSave();
-        logActivity('Ran CPM schedule', `${updates.size} activities calculated`);
+        if (!opts.skipSave) queueSave();
+        if (!opts.skipLog) logActivity('Ran CPM schedule', `${updates.size} activities calculated`);
     }
 
     function showColumnManager() {
@@ -5374,6 +5409,7 @@
             importMppFile(file);
             return;
         }
+        setSaveStatus('Importing…');
         const reader = new FileReader();
         reader.onload = (e) => {
             try {
@@ -5385,12 +5421,10 @@
                     payload = JSON.parse(content);
                 }
                 if (!payload.data) throw new Error('No tasks in file');
-                loadSchedulePayload(payload);
-                runSchedule();
-                queueSave();
+                loadSchedulePayload(payload, { importing: true });
                 showScheduleAlert(`Imported ${payload.data.length} items from ${payload.source || file.name}`, 'success');
-                logActivity('Imported schedule', file.name);
             } catch (err) {
+                setSaveStatus('Import failed');
                 showScheduleAlert('Import failed: ' + (err.message || err), 'error');
             }
         };
@@ -5403,6 +5437,7 @@
             showScheduleAlert('Select a project before importing an MPP file.', 'warning');
             return;
         }
+        setSaveStatus('Importing…');
         showScheduleAlert('Importing MS Project file…', 'info');
         try {
             const form = new FormData();
@@ -5419,13 +5454,12 @@
             }
             const payload = body.payload;
             if (!payload || !payload.data) throw new Error('No tasks in file');
-            loadSchedulePayload(payload);
-            runSchedule();
-            queueSave();
+            loadSchedulePayload(payload, { importing: true });
             const count = body.task_count || payload.data.length;
-            showScheduleAlert(`Imported ${count} items from ${payload.source || file.name}`, 'success');
-            logActivity('Imported schedule', file.name);
+            const linkCount = body.link_count || (payload.links || []).length;
+            showScheduleAlert(`Imported ${count} activities and ${linkCount} links from ${payload.source || file.name}`, 'success');
         } catch (err) {
+            setSaveStatus('Import failed');
             showScheduleAlert('Import failed: ' + (err.message || err), 'error');
         }
     }
@@ -5927,6 +5961,26 @@
         return pts;
     }
 
+    function buildPrintLinkArrow(x2, y2, prev, stroke) {
+        const size = 3.5;
+        const row = Math.round(y2 - 0.5);
+        const localY = (y2 - row) * 100;
+        const px = prev?.x ?? x2 - size;
+        const py = prev?.y ?? y2;
+        const dx = x2 - px;
+        const dy = y2 - py;
+        if (Math.abs(dx) >= Math.abs(dy)) {
+            if (dx >= 0) {
+                return `<polygon points="${x2},${localY} ${x2 - size},${localY - size * 0.6} ${x2 - size},${localY + size * 0.6}" fill="${stroke}"/>`;
+            }
+            return `<polygon points="${x2},${localY} ${x2 + size},${localY - size * 0.6} ${x2 + size},${localY + size * 0.6}" fill="${stroke}"/>`;
+        }
+        if (dy >= 0) {
+            return `<polygon points="${x2},${localY} ${x2 - size * 0.6},${localY - size} ${x2 + size * 0.6},${localY - size}" fill="${stroke}"/>`;
+        }
+        return `<polygon points="${x2},${localY} ${x2 - size * 0.6},${localY + size} ${x2 + size * 0.6},${localY + size}" fill="${stroke}"/>`;
+    }
+
     function addPrintPolylineSegments(byRow, add, linkPath, linkArrow, stroke, points) {
         for (let i = 0; i < points.length - 1; i++) {
             const a = points[i];
@@ -5953,8 +6007,9 @@
             }
         }
         const end = points[points.length - 1];
+        const prev = points.length > 1 ? points[points.length - 2] : null;
         const endRow = Math.round(end.y - 0.5);
-        add(endRow, linkArrow(end.x, stroke));
+        add(endRow, linkArrow(end.x, end.y, prev, stroke));
     }
 
     function buildPrintLinkSegmentsByRow(rowMap, startMs, span, textTablePx) {
@@ -5966,8 +6021,7 @@
         const metrics = getPrintLinkMetrics(textTablePx);
         const linkPath = (d, stroke) =>
             `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${metrics.strokeWidth}" stroke-linejoin="miter" stroke-linecap="square" vector-effect="non-scaling-stroke"/>`;
-        const linkArrow = (x2, stroke) =>
-            `<polygon points="${x2},50 ${x2 - 1.2},49.5 ${x2 - 1.2},50.5" fill="${stroke}"/>`;
+        const linkArrow = (x2, y2, prev, stroke) => buildPrintLinkArrow(x2, y2, prev, stroke);
 
         gantt.getLinks().forEach(link => {
             if (!gantt.isTaskExists(link.source) || !gantt.isTaskExists(link.target)) return;
@@ -6035,7 +6089,7 @@
         const dataDate = document.getElementById('dataDateInput')?.value || scheduleSettings.data_date || CasePMSchedule.formatDate(new Date());
         const printed = new Date().toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
         const DAY_MS = 86400000;
-        const PRINT_CHART_PAD_DAYS = 2;
+        const PRINT_CHART_PAD_DAYS = 7;
         const scheduleStartMs = range?.start_date ? toGanttDate(range.start_date)?.getTime() : Date.now();
         const scheduleEndMs = range?.end_date ? toGanttDate(range.end_date)?.getTime() : scheduleStartMs + DAY_MS * 30;
         const startMs = scheduleStartMs - PRINT_CHART_PAD_DAYS * DAY_MS;

@@ -59,6 +59,29 @@ class ScheduleMppImportTests(unittest.TestCase):
         self.assertEqual(payload['links'][0]['source'], by_name['Task A']['id'])
         self.assertEqual(payload['links'][0]['target'], by_name['Task B']['id'])
 
+    def test_parse_mspdi_links_when_successor_listed_first(self):
+        from schedule_mpp_import import parse_mpp_bytes
+
+        xml = b'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Project xmlns="http://schemas.microsoft.com/project">
+  <Tasks>
+    <Task>
+      <UID>3</UID><ID>3</ID><Name>Task B</Name>
+      <Start>2026-01-09T08:00:00</Start><Finish>2026-01-10T17:00:00</Finish><Duration>PT16H0M0S</Duration>
+      <PredecessorLink><PredecessorUID>2</PredecessorUID><Type>1</Type><LinkLag>0</LinkLag></PredecessorLink>
+    </Task>
+    <Task>
+      <UID>2</UID><ID>2</ID><Name>Task A</Name>
+      <Start>2026-01-06T08:00:00</Start><Finish>2026-01-08T17:00:00</Finish><Duration>PT16H0M0S</Duration>
+    </Task>
+  </Tasks>
+</Project>'''
+        payload = parse_mpp_bytes(xml, filename='links.xml')
+        self.assertEqual(len(payload['links']), 1)
+        by_name = {row['text']: row for row in payload['data']}
+        self.assertEqual(payload['links'][0]['source'], by_name['Task A']['id'])
+        self.assertEqual(payload['links'][0]['target'], by_name['Task B']['id'])
+
     def test_api_rejects_non_mpp_extension(self):
         import app as app_module
         from scripts.simulate_security_harness import _login_client

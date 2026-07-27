@@ -200,6 +200,7 @@ def _project_to_gantt(project) -> dict[str, Any]:
 
     data: list[dict[str, Any]] = []
     uid_map: dict[int, int] = {}
+    pending_links: list[tuple[int, int, int, int]] = []
     links: list[dict[str, Any]] = []
     link_id = 1
     gantt_id = 1
@@ -213,7 +214,7 @@ def _project_to_gantt(project) -> dict[str, Any]:
             continue
         name = (task.getName() or '').strip()
         if not name:
-            continue
+            name = f'Activity {uid}'
 
         gid = gantt_id
         gantt_id += 1
@@ -258,19 +259,27 @@ def _project_to_gantt(project) -> dict[str, Any]:
                 pred_uid = pred_task.getUniqueID()
                 if pred_uid is None:
                     continue
-                source = uid_map.get(int(pred_uid))
-                if not source:
-                    continue
                 rel_type = rel.getType()
                 type_val = int(rel_type.getValue()) if rel_type is not None else 1
-                links.append({
-                    'id': link_id,
-                    'source': source,
-                    'target': gid,
-                    'type': _MS_LINK_TO_GANTT.get(type_val, '0'),
-                    'lag': _lag_days(rel.getLag(), defaults),
-                })
-                link_id += 1
+                pending_links.append((
+                    gid,
+                    int(pred_uid),
+                    type_val,
+                    _lag_days(rel.getLag(), defaults),
+                ))
+
+    for target_gid, pred_uid, type_val, lag in pending_links:
+        source = uid_map.get(pred_uid)
+        if not source:
+            continue
+        links.append({
+            'id': link_id,
+            'source': source,
+            'target': target_gid,
+            'type': _MS_LINK_TO_GANTT.get(type_val, '0'),
+            'lag': lag,
+        })
+        link_id += 1
 
     if not data:
         raise MppImportError('No tasks found in MS Project file.')
