@@ -35,12 +35,21 @@
   }
 
   async function fetchNotifications() {
-    const res = await fetch('/api/notifications', {
-      credentials: 'same-origin',
-      headers: { 'X-Requested-With': 'XMLHttpRequest' },
-    });
-    if (!res.ok) return [];
-    return res.json();
+    try {
+      const res = await fetch('/api/notifications', {
+        credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      });
+      if (!res.ok) {
+        console.warn('notifications API returned', res.status);
+        return [];
+      }
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    } catch (e) {
+      console.warn('notifications fetch failed', e);
+      return [];
+    }
   }
 
   function render(items) {

@@ -1,44 +1,70 @@
 (function(global){ 'use strict';
 
-function inferWhy(subTitle, stepTitle, subBody) {
-  const t = `${subTitle} ${subBody || ''}`.toLowerCase();
-  if (/weather|rain|delay|condition|temperature/.test(t)) {
-    return 'Owners and insurers review weather logs when debating schedule extensions — missing entries weaken your position on delay claims.';
+function inferHelpDetail(subTitle, stepTitle, subBody) {
+  const t = `${subTitle} ${subBody || ''} ${stepTitle}`.toLowerCase();
+  const related = [];
+  const how = [];
+
+  const link = (mods) => mods.map(m => `<strong>${m}</strong>`).join(', ');
+
+  if (/dashboard|tile|overview|morning/.test(t)) {
+    how.push('The dashboard rolls up open counts from other modules so you can see what needs attention without opening each list.');
+    related.push('Dashboard', 'RFIs', 'Punch List', 'Pay Applications', 'Schedule');
+  } else if (/daily log|weather|crew|manpower|work performed/.test(t)) {
+    how.push('Each daily log is one dated record per project. Simple fields capture the superintendent’s summary; detailed sections add manpower grids and conditions.');
+    related.push('Daily Log', 'Photos', 'Weekly Report', 'Schedule', 'Safety');
+  } else if (/rfi|ball in court|assignee|official|question/.test(t)) {
+    how.push('An RFI is a formal Q&A tied to the contract record. Ball in Court shows who must act next; responses stay on the RFI until the manager marks an official answer.');
+    related.push('RFIs', 'Project Directory', 'Change Orders', 'Drawings', 'Email → Internal');
+  } else if (/change event|pco|cor|sub change|sov/.test(t)) {
+    how.push('Change events are the starting point for scope shifts. PCOs/CPCOs hold SOV line detail; approved change orders update budget and billing.');
+    related.push('Change Orders', 'Budget', 'Commitments', 'Pay Applications', 'RFIs');
+  } else if (/submittal|spec section|approval/.test(t)) {
+    how.push('Submittals track shop drawings and product data through review cycles. Status and spec section tie each item to the contract documents.');
+    related.push('Submittals', 'Drawings', 'Documents', 'RFIs', 'Schedule');
+  } else if (/punch|deficiency|close out/.test(t)) {
+    how.push('Punch items track finish work and deficiencies by location and trade. Status moves from open → in progress → ready for review → closed.');
+    related.push('Punch List', 'Photos', 'Daily Log', 'Inspections', 'Drawings');
+  } else if (/schedule|baseline|critical|lookahead|gantt/.test(t)) {
+    how.push('The schedule is the project timeline with dependencies (CPM). Baselines let you compare planned vs actual; look-ahead views focus on the next few weeks.');
+    related.push('Schedule', 'Daily Log', 'Deliveries', 'Change Orders', 'Dashboard');
+  } else if (/budget|forecast|commitment|sov|cost code/.test(t)) {
+    how.push('Budget lines are the cost plan; commitments are subcontract POs; actuals flow from pay apps and job cost. Forecast projects where you will land.');
+    related.push('Budget', 'Commitments', 'Forecast', 'Pay Applications', 'Change Orders');
+  } else if (/pay app|g702|g703|billing|draw/.test(t)) {
+    how.push('Pay applications bill the owner by period. G702/G703 summarize contract and SOV; subcontractor tabs track sub billing against commitments.');
+    related.push('Pay Applications', 'Budget', 'Commitments', 'Change Orders', 'Documents');
+  } else if (/photo|camera|attach|upload/.test(t)) {
+    how.push('Photos stored in Case PM stay with the project and can be linked to daily logs, punch items, RFIs, and safety observations.');
+    related.push('Photos', 'Daily Log', 'Punch List', 'Safety', 'Documents');
+  } else if (/email|internal|message|inbox/.test(t)) {
+    how.push('Internal messages route approvals and team discussion inside Case PM. Approval-type messages tie to RFIs, COs, pay apps, and other workflow items.');
+    related.push('Email / Internal', 'RFIs', 'Change Orders', 'Notifications', 'Approvals inbox');
+  } else if (/notification|alert|bell/.test(t)) {
+    how.push('Notifications are system-generated alerts when something needs your action. Each item links to the underlying record (RFI, pay app, approval, etc.).');
+    related.push('Notifications', 'Email → Internal', 'Dashboard', 'RFIs', 'Pay Applications');
+  } else if (/operation|quick add|more option|transmittal|wip/.test(t)) {
+    how.push('Operations Center groups extended tools. Quick Add saves essentials first; open a row later for promote, validate, sync, or package actions.');
+    related.push('Operations Center', 'Quick Add (header)', 'Change Orders', 'Documents', 'Budget');
+  } else if (/document|folder|file/.test(t)) {
+    how.push('Documents is the project file cabinet with folders and permissions. Many modules can file PDFs here (contracts, submittals, pay apps).');
+    related.push('Documents', 'Drawings', 'Submittals', 'Pay Applications', 'Projects');
+  } else if (/drawing|sheet|plan/.test(t)) {
+    how.push('Drawings manages plan sets, revisions, and markups. RFIs and punch items can reference sheet numbers from here.');
+    related.push('Drawings', 'RFIs', 'Punch List', 'Submittals', 'Documents');
+  } else if (/project directory|contact|company/.test(t)) {
+    how.push('Project Directory lists people and companies on the job. RFIs, submittals, and commitments pull assignees and vendors from these records.');
+    related.push('Project Directory', 'Companies', 'RFIs', 'Commitments', 'Email');
+  } else if (/filter|search|sort|export|print/.test(t)) {
+    how.push('List tools help you find records quickly. Filters combine with search; exports feed owner reports or offline review.');
+    related.push('Current module list', 'Dashboard counts', 'Documents (for filed exports)');
+  } else {
+    how.push(`"${subTitle}" is part of ${stepTitle.toLowerCase()} — use the fields on screen, then save or submit to update the project record.`);
+    related.push('Dashboard', 'Documents', 'Notifications');
   }
-  if (/photo|attach|camera|upload|visual/.test(t)) {
-    return 'Photos linked to the daily record are stronger evidence than loose camera-roll images sent weeks later.';
-  }
-  if (/submit|open|send|notify/.test(t)) {
-    return 'Submitting creates a dated audit trail — drafts can change, but submitted records show when information was shared.';
-  }
-  if (/due date|ball in court|assignee|manager/.test(t)) {
-    return 'Clear ownership prevents RFIs and approvals from sitting idle — everyone should know who acts next.';
-  }
-  if (/draft|save/.test(t)) {
-    return 'Saving frequently protects against lost work and keeps the office and field aligned on the same facts.';
-  }
-  if (/budget|cost|sov|amount|billing|pay app/.test(t)) {
-    return 'Financial fields flow to pay applications and owner reports — errors here compound through billing.';
-  }
-  if (/schedule|lookahead|baseline|critical/.test(t)) {
-    return 'Schedule data drives owner meetings and delay analysis — one current timeline prevents conflicting stories.';
-  }
-  if (/approve|official|close|promote/.test(t)) {
-    return 'Approved records become contract truth — field crews and accounting should follow what was formally accepted.';
-  }
-  if (/filter|search|sort|find/.test(t)) {
-    return 'Finding the right record quickly prevents duplicate entries and duplicate work for the same issue.';
-  }
-  if (/export|pdf|print/.test(t)) {
-    return 'Exported records become owner deliverables — match your contract format and date-range requirements.';
-  }
-  if (/quick add|three field|simple|essential/.test(t)) {
-    return 'Top tools like Buildertrend start with the minimum needed to log work — you can add detail later without blocking the field.';
-  }
-  if (/more option|advanced|expand|detail/.test(t)) {
-    return 'Progressive detail keeps daily entry fast while still supporting audits, claims, and owner reporting when needed.';
-  }
-  return `Accurate "${subTitle}" entries keep ${(stepTitle || 'this step').toLowerCase()} reliable for the whole team — not just whoever typed it today.`;
+
+  const uniq = [...new Set(related)];
+  return `${how.join(' ')} <span class="text-zinc-500">Related in Case PM:</span> ${link(uniq)}.`;
 }
 
 function steps(...items){
@@ -49,8 +75,10 @@ function steps(...items){
       body,
       substeps: substeps
         ? substeps.map((sub) => {
-            const [st, sb, why] = sub;
-            return { title: st, body: sb, why: why || inferWhy(st, title, sb) };
+            const [st, sb, detail] = sub;
+            const bodyText = sb || '';
+            const detailText = detail || inferHelpDetail(st, title, bodyText);
+            return { title: st, body: bodyText, detail: detailText };
           })
         : [],
     };
