@@ -18,6 +18,7 @@
                 </div>
             </div>
             <div class="schedule-titlebar-actions">
+                {% with page_help_key='schedule' %}{% include '_page_help_btn.html' %}{% endwith %}
                 <button type="button" class="schedule-ribbon-btn schedule-ribbon-btn-primary" onclick="ScheduleApp.saveSchedule()" title="Save schedule">
                     <i class="fa-solid fa-floppy-disk"></i><span>Save</span>
                 </button>

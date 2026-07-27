@@ -1,4 +1,46 @@
 (function(global){ 'use strict';
+
+function inferWhy(subTitle, stepTitle, subBody) {
+  const t = `${subTitle} ${subBody || ''}`.toLowerCase();
+  if (/weather|rain|delay|condition|temperature/.test(t)) {
+    return 'Owners and insurers review weather logs when debating schedule extensions — missing entries weaken your position on delay claims.';
+  }
+  if (/photo|attach|camera|upload|visual/.test(t)) {
+    return 'Photos linked to the daily record are stronger evidence than loose camera-roll images sent weeks later.';
+  }
+  if (/submit|open|send|notify/.test(t)) {
+    return 'Submitting creates a dated audit trail — drafts can change, but submitted records show when information was shared.';
+  }
+  if (/due date|ball in court|assignee|manager/.test(t)) {
+    return 'Clear ownership prevents RFIs and approvals from sitting idle — everyone should know who acts next.';
+  }
+  if (/draft|save/.test(t)) {
+    return 'Saving frequently protects against lost work and keeps the office and field aligned on the same facts.';
+  }
+  if (/budget|cost|sov|amount|billing|pay app/.test(t)) {
+    return 'Financial fields flow to pay applications and owner reports — errors here compound through billing.';
+  }
+  if (/schedule|lookahead|baseline|critical/.test(t)) {
+    return 'Schedule data drives owner meetings and delay analysis — one current timeline prevents conflicting stories.';
+  }
+  if (/approve|official|close|promote/.test(t)) {
+    return 'Approved records become contract truth — field crews and accounting should follow what was formally accepted.';
+  }
+  if (/filter|search|sort|find/.test(t)) {
+    return 'Finding the right record quickly prevents duplicate entries and duplicate work for the same issue.';
+  }
+  if (/export|pdf|print/.test(t)) {
+    return 'Exported records become owner deliverables — match your contract format and date-range requirements.';
+  }
+  if (/quick add|three field|simple|essential/.test(t)) {
+    return 'Top tools like Buildertrend start with the minimum needed to log work — you can add detail later without blocking the field.';
+  }
+  if (/more option|advanced|expand|detail/.test(t)) {
+    return 'Progressive detail keeps daily entry fast while still supporting audits, claims, and owner reporting when needed.';
+  }
+  return `Accurate "${subTitle}" entries keep ${(stepTitle || 'this step').toLowerCase()} reliable for the whole team — not just whoever typed it today.`;
+}
+
 function steps(...items){
   return items.map((item) => {
     const [title, body, substeps] = item;
@@ -7,8 +49,8 @@ function steps(...items){
       body,
       substeps: substeps
         ? substeps.map((sub) => {
-            const [st, sb] = sub;
-            return { title: st, body: sb };
+            const [st, sb, why] = sub;
+            return { title: st, body: sb, why: why || inferWhy(st, title, sb) };
           })
         : [],
     };
@@ -453,7 +495,7 @@ const CHANGE_ORDERS_SECTIONS = [
 global.CasePMPageHelpGuides = {
   dashboard: singleGuide(
     'Dashboard',
-    'Your project command center — tiles, charts, and quick links.',
+    'Your morning command center — scan what needs attention, then drill in (like Buildertrend’s home screen).',
     [
       ['Pick a project', 'Use the project selector in the header. Most dashboard tiles show data for the <strong>active project</strong> only.', [
         ['Project selector', 'Click the project name in the top header bar to open the project dropdown.'],
@@ -610,19 +652,19 @@ global.CasePMPageHelpGuides = {
 
   daily_log: singleGuide(
     'Daily Log',
-    'Record weather, crew, work performed, and photos by day.',
+    'Record weather, crew, work, and photos by day — simple by default, detail when the job requires it (Buildertrend-style).',
     [
-      ['Pick the date', 'Use the date picker or calendar strip. One log per project per day is typical.', [
+      ['Pick the date', 'Use the date picker or calendar strip. One log per project per day is typical — it becomes the official record for that day.', [
         ['Date picker', 'Click the date field or calendar icon to choose the log date.'],
         ['Calendar strip', 'Use the horizontal date strip to jump to recent days quickly.'],
         ['One per day', 'Most projects keep one official log per day — open existing or create new.'],
         ['Past dates', 'Supervisors may restrict editing past dates per program policy.'],
       ]],
-      ['Create today\'s log', 'Click <strong>New Log</strong> or open an empty day. Status starts as draft until submitted.', [
-        ['New Log', 'Click <strong>New Log</strong> if no log exists for the selected date.'],
-        ['Empty day', 'Click an empty day on the calendar to start a new entry.'],
-        ['Draft status', 'New logs start as <strong>Draft</strong> — you can save and return before submitting.'],
-        ['Save often', 'Save periodically so weather and crew entries are not lost.'],
+      ['Create today\'s log', 'Click <strong>New Daily Log</strong>. The form opens in <strong>Simple</strong> mode — weather, work performed, and photos only. Use <strong>More detail</strong> when you need manpower grids, deliveries, or inspections.', [
+        ['New Daily Log', 'Click the green <strong>New Daily Log</strong> button on the toolbar.'],
+        ['Simple mode', 'By default you see only what most supers need in under two minutes — like Buildertrend’s daily log.'],
+        ['More detail', 'Toggle <strong>More detail</strong> in the modal for site conditions, manpower tables, equipment, and extra sections.'],
+        ['Draft status', 'New logs can stay <strong>Draft</strong> until you are ready to submit.'],
       ]],
       ['Weather & conditions', 'Enter temperature, conditions, and any delays (rain, inspection hold). Owners often require this for claims support.', [
         ['Temperature', 'Record high/low or current temperature as your template requires.'],
@@ -722,7 +764,7 @@ global.CasePMPageHelpGuides = {
 
   rfis: singleGuide(
     'RFIs',
-    'Request for Information — formal questions that need a written answer (Procore-style Ball in Court).',
+    'Formal questions that need written answers — Ball in Court shows who must act next (Procore-style clarity without the learning curve).',
     [
       ['Required to open', 'Subject, question, assignees, due date, and <strong>RFI Manager</strong> are required before an RFI can be opened.', [
         ['Subject', 'Write a short, specific title that names the drawing detail or conflict (e.g. "Clash at Grid C-4 — duct vs beam").'],
@@ -1631,20 +1673,35 @@ global.CasePMPageHelpGuides = {
 
   operations_center: singleGuide(
     'Operations Center',
-    'All extended tools in one place — start with Quick Add, expand when you need more.',
+    'Extended tools in one hub — like Buildertrend’s “simple daily entry, expand when needed” approach.',
     [
-      ['Pick a tool', 'Use the left sidebar: Field, Communications, Financial Plus, Precon, Insights, or Client.', [
-        ['Categories', 'Tools are grouped so you are not overwhelmed — open one category at a time.'],
-        ['WIP Report', 'Financial Plus includes a live Work in Progress snapshot — no records to create.'],
+      ['Start simple', 'Most tools need only <strong>three fields</strong> to save (title, date, amount, etc.). That matches how the easiest PM apps keep field crews moving — you are not forced into every column on day one.', [
+        ['Three fields', 'Quick Add and new rows show the minimum: who, what, when (or amount). Save immediately — you can enrich later.'],
+        ['Why not everything?', 'Requiring 15 fields upfront is why heavy enterprise tools feel slow; Case PM defaults to essentials like Buildertrend daily logs.'],
+        ['Track now, detail later', 'A saved draft with basics is better than a perfect form that never gets submitted from the jobsite.'],
       ]],
-      ['Quick Add', 'Click <strong>Quick Add</strong> and fill only three fields. That is enough to save and track the item.', [
-        ['Three fields', 'Each tool shows the minimum needed to get started (subject, date, amount, etc.).'],
-        ['More options', 'Click <strong>More options</strong> in the dialog for numbers, notes, links, and custom data.'],
+      ['Expand when needed', 'Click <strong>More options</strong> in any Operations dialog for numbers, notes, links, attachments, and custom data — same progressive pattern Procore uses for “advanced” panels without blocking simple users.', [
+        ['More options', 'Opens advanced fields without leaving the page — SOV lines, vendor refs, attachment IDs, etc.'],
+        ['When to expand', 'Use advanced fields when accounting, the owner, or a claim needs proof — not for every T&M ticket.'],
+        ['Fewer options', 'Click again to collapse — the simple view stays your default.'],
       ]],
-      ['Workflow actions', 'Open any saved row to run actions like Promote to RFI, Validate vs SOV, or Generate AI insight.', [
-        ['T&M → Change Event', 'Approved field tickets can promote to a change event.'],
-        ['Correspondence → RFI', 'Formal letters can become RFIs with one click.'],
-        ['Vendor invoices', 'Validate invoice amount against commitment SOV before approval.'],
+      ['Pick a category', 'Use the left sidebar groups (Field, Communications, Financial Plus, Precon, Insights, Client) so you see ~5 tools at a time instead of 20+ at once.', [
+        ['Field', 'Daily-adjacent capture: T&M, timesheets, action plans, look-ahead, materials — use <strong>Daily Log</strong> on the main menu for standard superintendent logs.'],
+        ['Financial Plus', 'WIP snapshot, vendor invoices, payment batches — expand only when accounting is in the module.'],
+        ['Client', 'Owner-facing items that may also appear in the Client Portal.'],
+      ]],
+      ['Quick Add', 'Header <strong>Quick Add</strong> jumps straight to the most common record types (daily log, RFI, CO, submittal, punch, safety, budget line, pay app) without hunting the sidebar.', [
+        ['From anywhere', 'Quick Add works from the top bar on every page — same idea as mobile shortcuts in Fieldwire/Buildertrend.'],
+        ['Project required', 'Select a <strong>Current Project</strong> first; project-scoped items attach to that job.'],
+      ]],
+      ['Workflow actions', 'Open a saved row for one-click promotions: T&M → Change Event, correspondence → RFI, invoice validate vs SOV, transmittal send, AI insight.', [
+        ['Promote, don’t re-type', 'Converting an approved field ticket to a change event preserves the original record — less error than re-keying.'],
+        ['Validate before pay', 'Vendor invoice OCR + SOV match catches overbilling before it hits the pay app.'],
+      ]],
+      ['Integrations', 'Use <strong>Sage</strong>, <strong>Procore</strong>, or <strong>Autodesk</strong> sync when your accounting or design tools are the system of record — Case PM stays the daily operations hub.', [
+        ['Sage', 'Pull job cost / push events when Sage is authoritative for GL.'],
+        ['Procore', 'Bidirectional RFI/submittal sync when subs live in Procore but your team works here.'],
+        ['Autodesk', 'Model/docs sync when ACC is the drawing source.'],
       ]],
     ],
     'fa-layer-group'
@@ -1932,9 +1989,9 @@ global.CasePMPageHelpGuides = {
 
   app: singleGuide(
     'Case PM',
-    'General tips for any page in the application.',
+    'General tips — simple daily entry first, expand when the job or contract requires more detail.',
     [
-      ['Active project', 'Most tools use the project selected in the header. Switch projects before creating records.', [
+      ['Active project', 'Most tools use the project selected in the header. Switch projects before creating records — otherwise RFIs, logs, and photos attach to the wrong job.', [
         ['Header picker', 'Click project name in header to switch active project.'],
         ['Before create', 'Always confirm project before clicking <strong>New</strong> — records attach to active project.'],
         ['Wrong project', 'If you created on wrong job, contact admin — moving records may not be supported.'],

@@ -2,7 +2,7 @@
 import io
 import json
 
-from flask import Response, send_file
+from flask import Response, redirect, send_file, url_for
 
 
 def register_platform_tier2_routes(app, deps):
@@ -62,15 +62,8 @@ def register_platform_tier2_routes(app, deps):
     @app.route('/field')
     @login_required
     def field_mobile_page():
-        return render_template('field_mobile.html', active_project=get_active_project() if get_active_project else None)
-
-    @app.route('/api/field/offline-sync', methods=['POST'])
-    @login_required
-    def api_field_offline_sync():
-        from platform_tier2_services import process_field_offline_queue
-        body = request.get_json(silent=True) or {}
-        result = process_field_offline_queue(db, models_dict(), current_user.id, body.get('items') or [])
-        return jsonify(result)
+        """Legacy URL — daily logs live on the main Daily Log module."""
+        return redirect(url_for('daily_log'))
 
     @app.route('/api/payments/charge', methods=['POST'])
     @login_required

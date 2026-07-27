@@ -60,9 +60,10 @@ window.CASEPM_DAILY_LOG_CTX = {
   <div class="flex items-center gap-3 min-w-0">
     <div class="text-2xl font-semibold text-white whitespace-nowrap">Daily Log</div>
     <div id="dlogProjectBadge" class="text-xs px-3 py-1 bg-zinc-800 border border-zinc-700 text-zinc-400 rounded-md font-mono truncate max-w-[220px] dlog-hide-mobile">—</div>
-    <div class="text-xs text-zinc-500 hidden lg:block">Manpower · Weather · Photos · Delays · Safety</div>
+    <div class="text-xs text-zinc-500 hidden lg:block">Simple by default — expand for manpower, equipment &amp; inspections</div>
   </div>
   <div class="flex items-center gap-2 flex-wrap justify-end">
+    {% with page_help_key='daily_log' %}{% include '_page_help_btn.html' %}{% endwith %}
     <button type="button" id="dlogBtnPrint" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px] dlog-hide-mobile">
       <i class="fa-solid fa-print"></i><span class="hidden md:inline">Print</span>
     </button>
@@ -134,8 +135,8 @@ window.CASEPM_DAILY_LOG_CTX = {
   <div class="px-5 py-4 border-b border-zinc-700 flex items-center justify-between flex-shrink-0">
     <h3 id="dlogModalTitle" class="font-semibold text-lg">New Daily Log</h3>
     <div class="flex items-center gap-2">
-      <button type="button" id="dlogModeToggle" class="text-xs px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md">
-        <i class="fa-solid fa-sliders mr-1"></i><span id="dlogModeLabel">Detailed</span>
+      <button type="button" id="dlogModeToggle" class="text-xs px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md" title="Show manpower, equipment, and extra sections">
+        <i class="fa-solid fa-sliders mr-1"></i><span id="dlogModeLabel">More detail</span>
       </button>
       <button type="button" id="dlogModalClose" class="text-zinc-400 hover:text-white text-xl leading-none px-1">&times;</button>
     </div>

@@ -142,6 +142,7 @@
         <div class="text-xs text-zinc-500 hidden sm:block">Ball in court · CO/PCO links · Plan pins · Distribution</div>
     </div>
     <div class="flex items-center gap-2 flex-wrap justify-end">
+        {% with page_help_key='rfis' %}{% include '_page_help_btn.html' %}{% endwith %}
         <button type="button" onclick="CasePMRfis.exportExcel()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm h-[38px]">
             <i class="fa-solid fa-file-excel"></i><span class="hidden md:inline">Export…</span>
         </button>

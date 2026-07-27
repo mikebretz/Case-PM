@@ -83,7 +83,8 @@
           <span>${esc(sub.title)}</span>
         </button>
         <div id="casepm-help-sub-${stepIndex}-${j}" class="casepm-help-substep-detail hidden casepm-help-prose" hidden>
-          ${sub.body}
+          <p class="text-sm text-zinc-300 mb-2">${sub.body}</p>
+          ${sub.why ? `<p class="casepm-help-why text-xs text-violet-200/95 bg-violet-950/50 border border-violet-800/50 rounded-lg px-3 py-2 mt-1"><strong class="text-violet-300">Why this matters:</strong> ${sub.why}</p>` : ''}
         </div>
       </div>`).join('');
     return `<div class="casepm-help-substeps hidden" data-help-substeps hidden>${items}</div>`;
@@ -121,7 +122,7 @@
     body.innerHTML = `
       ${guide.sections.length > 1 ? `<h2 class="text-base font-semibold text-white mb-1 flex items-center gap-2"><i class="fa-solid ${esc(section.icon || 'fa-book')} text-violet-400"></i>${esc(section.title)}</h2>` : ''}
       <p class="text-xs text-zinc-500 mb-1">${guide.sections.length > 1 ? 'Follow the steps below. Pick another topic from the list on the left anytime.' : 'Follow the steps below.'}</p>
-      ${hasSubsteps ? '<p class="casepm-help-expand-hint"><i class="fa-solid fa-hand-pointer mr-1 opacity-70"></i>Click a step number for detailed sub-steps. Click each sub-step name to read why and how.</p>' : ''}
+      ${hasSubsteps ? '<p class="casepm-help-expand-hint"><i class="fa-solid fa-hand-pointer mr-1 opacity-70"></i>Click a <strong>step number</strong> to expand sub-steps. Click each <strong>sub-step name</strong> for what to do and <strong>why it matters</strong> — modeled after the clearest PM tools (simple first, detail when you need it).</p>' : ''}
       ${steps || '<p class="text-sm text-zinc-500">No help content for this section yet.</p>'}`;
     body.scrollTop = 0;
   }
