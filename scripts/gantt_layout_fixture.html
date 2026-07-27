@@ -115,6 +115,8 @@ function fixtureApplyOverlayLayout() {
   const total = fixtureApplyColumnLayout();
   const overlayW = 660;
   host.style.setProperty('--sched-grid-overlay-w', overlayW + 'px');
+  host.style.setProperty('--sched-chart-left', overlayW + 'px');
+  host.style.setProperty('--sched-chart-width', Math.max(280, (host?.clientWidth || 1400) - overlayW - 16) + 'px');
   host.style.setProperty('--sched-grid-min-width', total + 'px');
   const gridCell = root.querySelector(':scope > .gantt_layout_cell:nth-child(1)');
   const gridInner = gridCell?.querySelector('.gantt_grid');

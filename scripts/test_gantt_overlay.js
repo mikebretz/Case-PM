@@ -52,11 +52,11 @@ async function main() {
         after,
         timelineStable: Math.abs(after.timelineW - before.timelineW) < 8,
         gridGrew: after.gridW > before.gridW + 50,
-        timelineFullWidth: before.timelineW >= before.hostW - 24,
+        chartPaneWidth: before.timelineW >= before.hostW - before.gridW - 24,
         barsStillVisible: after.barsInChart >= 1
     };
     console.log(JSON.stringify(result, null, 2));
-    if (!result.timelineStable || !result.gridGrew || !result.timelineFullWidth || !result.barsStillVisible) process.exit(1);
+    if (!result.timelineStable || !result.gridGrew || !result.chartPaneWidth || !result.barsStillVisible) process.exit(1);
     await browser.close();
 }
 
