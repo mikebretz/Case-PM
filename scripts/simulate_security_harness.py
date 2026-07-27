@@ -1042,6 +1042,80 @@ def phase_field_security(result: SecResult, client, app, models, p_a, p_b, iso) 
         result.fail('field_project_get_blocked', 'field_security', f'HTTP {rv_proj.status_code}')
 
 
+def phase_privilege_escalation(result: SecResult, client, app, models, iso) -> None:
+    """Delegated user admins cannot escalate role or permissions beyond their ceiling."""
+    from developer_tools import is_recovery_login
+    from user_permissions_persistence import save_user_permissions
+    from permissions_catalog import permissions_from_role
+
+    if is_recovery_login('recovery@casepm.local', 'CasePM-Recovery-2026'):
+        result.fail('priv_recovery_defaults_disabled', 'privilege', 'default recovery still works')
+    else:
+        result.ok('priv_recovery_defaults_disabled', 'privilege')
+
+    db = models['db']
+    User = models['User']
+    uid = uuid.uuid4().hex[:8]
+    email = f'priv.admin.{uid}@casepm.test'
+    delegate = User.query.filter_by(email=email).first()
+    if not delegate:
+        delegate = User(
+            first_name='Delegate', last_name='Admin',
+            email=email, role='Viewer', status='Active',
+        )
+        delegate.set_password('Delegate!12345')
+        db.session.add(delegate)
+    perms = permissions_from_role('Viewer')
+    perms['modules']['users'] = {'access': 'admin', 'approve': 'none'}
+    save_user_permissions(delegate, perms, db)
+    db.session.commit()
+
+    token = _login_client(client, delegate, app)
+    headers = _csrf_headers(token)
+
+    rv_role = client.put(
+        f'/api/users/{delegate.id}',
+        json={'role': 'Admin'},
+        headers=headers,
+    )
+    if rv_role.status_code == 400:
+        result.ok('priv_delegate_cannot_self_admin', 'privilege')
+    else:
+        result.fail('priv_delegate_cannot_self_admin', 'privilege', f'HTTP {rv_role.status_code}')
+
+    attack = permissions_from_role('Viewer')
+    attack['global']['hide_financials'] = False
+    attack['modules']['budget'] = {'access': 'admin', 'approve': 'approve_reject'}
+    rv_perm = client.put(
+        f'/api/users/{delegate.id}/permissions',
+        json={'permissions': attack},
+        headers=headers,
+    )
+    if rv_perm.status_code == 200:
+        saved = json.loads(delegate.permissions_json or '{}')
+        budget_access = (saved.get('modules') or {}).get('budget', {}).get('access', 'none')
+        if budget_access != 'admin':
+            result.ok('priv_delegate_permissions_capped', 'privilege', f'budget={budget_access}')
+        else:
+            result.fail('priv_delegate_permissions_capped', 'privilege', 'budget still admin')
+    else:
+        result.fail('priv_delegate_permissions_capped', 'privilege', f'HTTP {rv_perm.status_code}')
+
+    sub = models['users']['sub']
+    sub_token = _login_client(client, sub, app)
+    rv_users = client.get('/api/users/list', headers=_csrf_headers(sub_token))
+    if rv_users.status_code == 403:
+        result.ok('priv_sub_user_list_blocked', 'privilege')
+    else:
+        result.fail('priv_sub_user_list_blocked', 'privilege', f'HTTP {rv_users.status_code}')
+
+    rv_sig = client.get(f'/api/users/{models["users"]["pm"].id}/signature/image', headers=headers)
+    if rv_sig.status_code == 403:
+        result.ok('priv_delegate_signature_blocked', 'privilege')
+    else:
+        result.fail('priv_delegate_signature_blocked', 'privilege', f'HTTP {rv_sig.status_code}')
+
+
 def _print_results(result: SecResult) -> int:
     by_cat: dict[str, list[SecCase]] = {}
     for c in result.cases:
@@ -1070,7 +1144,7 @@ def main() -> int:
     parser.add_argument(
         '--phase',
         default='all',
-        help='Comma-separated: persistence,auth,csrf,csrf_sweep,idor,read_idor,respond_idor,pay_app_idor,permissions,workflow_event,role_matrix,legacy,workflow,financial,recovery,field_security,portal,all',
+        help='Comma-separated: persistence,auth,csrf,csrf_sweep,idor,read_idor,respond_idor,pay_app_idor,permissions,workflow_event,role_matrix,legacy,workflow,financial,recovery,field_security,privilege,portal,all',
     )
     args = parser.parse_args()
     phases = {p.strip() for p in args.phase.split(',')}
@@ -1078,7 +1152,7 @@ def main() -> int:
         phases = {
             'persistence', 'auth', 'csrf', 'csrf_sweep', 'idor', 'read_idor',
             'respond_idor', 'pay_app_idor', 'permissions', 'workflow_event',
-            'role_matrix', 'legacy', 'workflow', 'financial', 'recovery', 'field_security', 'portal',
+            'role_matrix', 'legacy', 'workflow', 'financial', 'recovery', 'field_security', 'privilege', 'portal',
         }
 
     import app as app_module
@@ -1115,7 +1189,7 @@ def main() -> int:
             p_a = p_b = iso = None
             if phases & {
                 'csrf', 'csrf_sweep', 'idor', 'read_idor', 'respond_idor', 'pay_app_idor',
-                'permissions', 'workflow_event', 'role_matrix', 'legacy', 'recovery', 'portal', 'field_security',
+                'permissions', 'workflow_event', 'role_matrix', 'legacy', 'recovery', 'portal', 'field_security', 'privilege',
             }:
                 p_a, p_b, iso = _setup_projects_and_users(models)
 
@@ -1153,6 +1227,8 @@ def main() -> int:
                 phase_recovery_login(result, client, app_module.app, models)
             if 'field_security' in phases:
                 phase_field_security(result, client, app_module.app, models, p_a, p_b, iso)
+            if 'privilege' in phases:
+                phase_privilege_escalation(result, client, app_module.app, models, iso)
             models['db'].session.rollback()
     finally:
         sig_patch.stop()

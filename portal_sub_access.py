@@ -1119,6 +1119,30 @@ def _portal_user_has_external_email(user) -> bool:
         return False
 
 
+def _portal_permissions_for_client(perms: dict) -> dict:
+    """Expose only client-safe permission hints — not the full editable matrix."""
+    if not isinstance(perms, dict):
+        return {'global': {}, 'modules': {}}
+    modules = perms.get('modules') or {}
+    safe_modules = {}
+    for key, val in modules.items():
+        if not isinstance(val, dict):
+            continue
+        safe_modules[key] = {'access': val.get('access') or 'none'}
+    global_flags = perms.get('global') if isinstance(perms.get('global'), dict) else {}
+    safe_global = {
+        flag: bool(global_flags.get(flag))
+        for flag in (
+            'hide_financials',
+            'client_portal_only',
+            'sub_vendor_portal_only',
+            'email_internal_only',
+        )
+        if global_flags.get(flag)
+    }
+    return {'global': safe_global, 'modules': safe_modules}
+
+
 def build_portal_context_payload(user, Company, db, helpers: dict) -> dict:
     """Assemble JSON-safe payload for GET /api/portal/context."""
     import json
@@ -1205,7 +1229,7 @@ def build_portal_context_payload(user, Company, db, helpers: dict) -> dict:
         'companyType': (getattr(company, 'type', None) or '') if company else '',
         'vendorCompanyLinked': linked,
         'canApprove': can_approve,
-        'permissions': perms,
+        'permissions': _portal_permissions_for_client(perms),
         'isSub': is_sub,
         'isArchitect': is_arch,
         'isConsultant': is_consultant_portal_user(user),

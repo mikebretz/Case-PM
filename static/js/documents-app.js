@@ -1107,7 +1107,7 @@
 
   async function openPermissions(folderId) {
     state.permissionsFolderId = folderId;
-    const usersJson = await api('/api/users/list');
+    const usersJson = await api(`/api/users/list?project_id=${projectId() || ''}`);
     const sel = document.getElementById('docsPermUser');
     if (sel) {
       sel.innerHTML = (usersJson.users || []).map(u =>

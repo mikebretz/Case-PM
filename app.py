@@ -211,6 +211,8 @@ def admin_required(f):
     def decorated_function(*args, **kwargs):
         from developer_tools import is_admin_or_developer
         if not current_user.is_authenticated or not is_admin_or_developer(current_user):
+            if (request.path or '').startswith('/api/'):
+                return jsonify({'error': 'Admin access required.'}), 403
             flash("You do not have permission to access this page.", "error")
             return redirect(url_for('dashboard'))
         return f(*args, **kwargs)
@@ -7063,7 +7065,7 @@ def api_save_user_permissions(user_id):
     body = request.get_json(silent=True) or {}
     perms = body.get('permissions') or body
     try:
-        save_user_permissions(user, perms, db)
+        save_user_permissions(user, perms, db, actor=current_user)
         db.session.commit()
         write_audit(
             'Updated user permissions',
@@ -7092,7 +7094,10 @@ def api_my_signature():
 @login_required
 def api_user_signature(user_id):
     from user_signature_persistence import ensure_user_signature_schema, signature_public_view
+    from access_control import users_module_admin
     ensure_user_signature_schema(db)
+    if int(user_id) != int(current_user.id) and not users_module_admin(current_user):
+        return jsonify({'error': 'Permission denied.'}), 403
     user = User.query.get_or_404(user_id)
     return jsonify({'ok': True, 'signature': signature_public_view(user)})
 
@@ -7101,7 +7106,10 @@ def api_user_signature(user_id):
 @login_required
 def api_user_signature_image(user_id):
     from user_signature_persistence import ensure_user_signature_schema
+    from access_control import users_module_admin
     ensure_user_signature_schema(db)
+    if int(user_id) != int(current_user.id) and not users_module_admin(current_user):
+        return jsonify({'error': 'Permission denied.'}), 403
     user = User.query.get_or_404(user_id)
     path = getattr(user, 'signature_path', None)
     if not path or not os.path.isfile(path):
@@ -9921,11 +9929,42 @@ def api_folder_permissions_delete(perm_id):
 @app.route('/api/users/list', methods=['GET'])
 @login_required
 def api_users_list_short():
-    users = User.query.filter_by(status='Active').order_by(User.first_name, User.last_name).limit(500).all()
-    return jsonify({
-        'ok': True,
-        'users': [{'id': u.id, 'name': _user_display_name(u.id), 'email': u.email} for u in users],
-    })
+    from case_workflow import user_has_module_access
+    from project_access import user_can_access_project
+
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    can_list_all = user_has_module_access(current_user, 'users', 'view')
+    can_pick_for_docs = user_has_module_access(current_user, 'documents', 'edit')
+
+    if not can_list_all and not can_pick_for_docs:
+        return jsonify({'error': 'Permission denied.'}), 403
+
+    if can_list_all:
+        users = User.query.filter_by(status='Active').order_by(User.first_name, User.last_name).limit(500).all()
+        return jsonify({
+            'ok': True,
+            'users': [{'id': u.id, 'name': _user_display_name(u.id), 'email': u.email} for u in users],
+        })
+
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    if not user_can_access_project(current_user, project_id, Project):
+        return jsonify({'error': 'You do not have access to this project.'}), 403
+
+    from project_workflow_users import build_project_directory_payload
+    project = Project.query.get_or_404(int(project_id))
+    directory = build_project_directory_payload(project, User, Company=Company)
+    rows = []
+    for entry in directory.get('users') or []:
+        uid = entry.get('user_id') or entry.get('id')
+        if not uid:
+            continue
+        rows.append({
+            'id': uid,
+            'name': entry.get('name') or entry.get('full_name') or '',
+            'email': entry.get('email') or '',
+        })
+    return jsonify({'ok': True, 'users': rows, 'scoped': True, 'project_id': int(project_id)})
 
 
 @app.route('/api/document-folders/<int:folder_id>/download-zip')

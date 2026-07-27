@@ -12,6 +12,20 @@ from permissions_catalog import permissions_from_role
 from user_permissions_persistence import save_user_permissions
 
 DEVELOPER_ROLE = 'Developer'
+ADMIN_ROLE = 'Admin'
+
+
+def _actor_is_platform_admin(actor) -> bool:
+    if not actor:
+        return False
+    role = (getattr(actor, 'role', None) or '').strip()
+    if role == ADMIN_ROLE:
+        return True
+    try:
+        from developer_tools import is_admin_or_developer
+        return is_admin_or_developer(actor)
+    except Exception:
+        return False
 
 
 def _actor_can_see_developer_users(actor) -> bool:
@@ -24,6 +38,9 @@ def _actor_can_see_developer_users(actor) -> bool:
 
 def _validate_role_change(actor, role: str | None, existing_role: str | None = None):
     role = (role or '').strip()
+    if role == ADMIN_ROLE or (existing_role or '').strip() == ADMIN_ROLE:
+        if not _actor_is_platform_admin(actor):
+            raise ValueError('Only an Admin or Developer can assign or change the Admin role.')
     if role == DEVELOPER_ROLE:
         try:
             from developer_tools import can_assign_developer_role
@@ -352,9 +369,9 @@ def create_user(db, User, Company, body: dict, *, actor_id: int | None = None, a
 
     perms = body.get('permissions') or body.get('permissions_v2')
     if perms and perms.get('version') == 2:
-        save_user_permissions(user, perms, db)
+        save_user_permissions(user, perms, db, actor=actor)
     else:
-        save_user_permissions(user, permissions_from_role(role), db)
+        save_user_permissions(user, permissions_from_role(role), db, actor=actor)
 
     db.session.add(user)
     return user, generated
@@ -415,9 +432,9 @@ def update_user(db, User, Company, user, body: dict, *, actor=None) -> object:
 
     perms = body.get('permissions') or body.get('permissions_v2')
     if perms and perms.get('version') == 2:
-        save_user_permissions(user, perms, db)
+        save_user_permissions(user, perms, db, actor=actor)
     elif 'role' in body and body['role'] and not user.permissions_json:
-        save_user_permissions(user, permissions_from_role(body['role']), db)
+        save_user_permissions(user, permissions_from_role(body['role']), db, actor=actor)
 
     db.session.add(user)
     return user
