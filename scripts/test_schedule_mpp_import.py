@@ -52,6 +52,8 @@ class ScheduleMppImportTests(unittest.TestCase):
         self.assertEqual(len(payload['links']), 1)
         self.assertIn('import_meta', payload)
         self.assertEqual(payload['import_meta']['task_count'], 3)
+        self.assertTrue(payload['import_meta'].get('preserve_dates'))
+        self.assertTrue(payload.get('settings', {}).get('preserve_msp_dates'))
 
         by_name = {row['text']: row for row in payload['data']}
         self.assertEqual(by_name['Phase 1']['type'], 'project')

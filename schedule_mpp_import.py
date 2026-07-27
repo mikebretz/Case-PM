@@ -244,12 +244,9 @@ def _project_to_gantt(project) -> dict[str, Any]:
         milestone = bool(task.getMilestone())
         gid_is_summary[gid] = summary
         outline = int(task.getOutlineLevel() or 1)
+        # Scheduled Start/Finish only — Early dates from MSP CPM can differ from bar dates.
         start = _format_date(task.getStart())
         finish = _format_date(task.getFinish())
-        if not start:
-            start = _format_date(task.getEarlyStart())
-        if not finish:
-            finish = _format_date(task.getEarlyFinish())
         duration = _duration_days(task.getDuration(), defaults)
         pct = task.getPercentageComplete()
         try:
@@ -273,7 +270,9 @@ def _project_to_gantt(project) -> dict[str, Any]:
         if finish:
             row['end_date'] = finish
             date_values.append(finish)
-        if duration is not None:
+        if start and finish and not milestone:
+            row['duration'] = _work_days_between(start, finish)
+        elif duration is not None:
             row['duration'] = 0 if milestone else max(1, duration)
         elif start and finish:
             row['duration'] = 0 if milestone else _work_days_between(start, finish)
@@ -336,6 +335,8 @@ def _project_to_gantt(project) -> dict[str, Any]:
         'skipped_inactive': skipped_inactive,
         'skipped_null': skipped_null,
         'skipped_summary_links': skipped_summary_links,
+        'preserve_dates': True,
+        'source': 'MS Project MPP',
     }
     if date_values:
         import_meta['date_start'] = min(date_values)
@@ -354,6 +355,7 @@ def _project_to_gantt(project) -> dict[str, Any]:
         'links': links,
         'source': 'MS Project MPP',
         'import_meta': import_meta,
+        'settings': {'preserve_msp_dates': True},
     }
 
 
