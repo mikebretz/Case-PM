@@ -117,6 +117,10 @@
     let printBuildInProgress = false;
     let scheduleRunTimer = null;
     let statusBarTimer = null;
+    let wbsGutterScrollTimer = null;
+    let wbsGutterRefreshTimer = null;
+    let taskOrderList = [];
+    const taskOrderIndex = new Map();
 
     function countScheduleTasks() {
         if (!ganttReady) return 0;
@@ -141,9 +145,26 @@
             scheduleSettings.timescale = 'week';
             applyTimescaleScales('week');
         }
+        if (scheduleTaskCount >= 40) {
+            scheduleSettings.show_bar_labels = false;
+            gantt.config.highlight_critical_path = false;
+        }
+        if (scheduleTaskCount >= 80) {
+            gantt.config.show_links = false;
+        }
         if (gantt.plugins && scheduleTaskCount > 40) {
             gantt.plugins({ tooltip: false, marker: true });
         }
+    }
+
+    function rebuildTaskOrderCache() {
+        if (!ganttReady) return;
+        taskOrderList = [];
+        taskOrderIndex.clear();
+        gantt.eachTask(t => {
+            taskOrderIndex.set(String(t.id), taskOrderList.length);
+            taskOrderList.push(t);
+        });
     }
 
     function queueStatusBarUpdate() {
@@ -1236,7 +1257,7 @@
                 gantt.setSizes();
                 queueEnforceGridColumnExtents();
             } else {
-                if (isOverlay) enforceGridColumnExtents();
+                if (isOverlay) queueEnforceGridColumnExtents();
                 else syncGridContentLayout();
             }
 
@@ -3277,17 +3298,13 @@
 
     function getNextTaskInTree(taskId) {
         if (!ganttReady) return null;
-        let found = false;
-        let next = null;
-        gantt.eachTask(t => {
-            if (found && next == null) next = t;
-            if (String(t.id) === String(taskId)) found = true;
-        });
-        return next || null;
+        const idx = taskOrderIndex.get(String(taskId));
+        if (idx == null || idx >= taskOrderList.length - 1) return null;
+        return taskOrderList[idx + 1];
     }
 
     function hierarchyIndentTemplate(task) {
-        const nextTask = getNextTaskInTree(task.id);
+        const nextTask = scheduleTaskCount <= 40 ? getNextTaskInTree(task.id) : null;
         let html = '<div class="sched-wbs-indents">';
         for (let i = 0; i < WBS_GUTTER_COLORS.length; i++) {
             const active = taskShowsGutterLevel(task, i);
@@ -3324,17 +3341,25 @@
         document.querySelectorAll('#gantt_here .sched-wbs-gutter-layer .sched-wbs-band').forEach(el => el.remove());
     }
 
+    function queueSyncWbsGutterSpans() {
+        clearTimeout(wbsGutterScrollTimer);
+        wbsGutterScrollTimer = setTimeout(syncWbsGutterSpans, 80);
+    }
+
     function refreshWbsGutterDisplay() {
         if (!ganttReady) return;
-        syncWbsGutterSpans();
-        gantt.eachTask(id => gantt.refreshTask(id));
+        clearTimeout(wbsGutterRefreshTimer);
+        wbsGutterRefreshTimer = setTimeout(() => {
+            syncWbsGutterSpans();
+            gantt.render();
+        }, 50);
     }
 
     function bindWbsGutterScrollSync() {
         const gridData = document.querySelector('#gantt_here .gantt_grid_data');
         if (!gridData || gridData.dataset.wbsScrollBound) return;
         gridData.dataset.wbsScrollBound = '1';
-        gridData.addEventListener('scroll', () => syncWbsGutterSpans(), { passive: true });
+        gridData.addEventListener('scroll', () => queueSyncWbsGutterSpans(), { passive: true });
     }
 
     function activityNameTemplate(task) {
@@ -3913,10 +3938,10 @@
         };
 
         gantt.templates.link_class = function (link) {
+            if (!gantt.config.highlight_critical_path) return 'cpm_schedule_link';
             const src = gantt.isTaskExists(link.source) ? gantt.getTask(link.source) : null;
             const tgt = gantt.isTaskExists(link.target) ? gantt.getTask(link.target) : null;
-            const crit = gantt.config.highlight_critical_path && src && tgt
-                && (isTaskCritical(src) || isTaskCritical(tgt));
+            const crit = src && tgt && (isTaskCritical(src) || isTaskCritical(tgt));
             return crit ? 'cpm_schedule_link cpm_link_critical' : 'cpm_schedule_link';
         };
 
@@ -3938,6 +3963,7 @@
         };
 
         gantt.attachEvent('onAfterTaskMove', () => {
+            rebuildTaskOrderCache();
             refreshWbsCodes();
             refreshWbsGutterDisplay();
             pushUndoState();
@@ -4085,11 +4111,10 @@
             if (!bindColumnResizeEnhancements.done) bindColumnResizeEnhancements();
             if (!bindGridSelectionHandlers.done) bindGridSelectionHandlers();
             updateAlignToolbarButtons();
-            if (isOverlayMode()) applyOverlayDomLayout();
             syncWbsGutterSpans();
             ensureAddColumnHeader();
             bindWbsGutterScrollSync();
-            enforceGridColumnExtents();
+            queueEnforceGridColumnExtents();
         }
 
         gantt.attachEvent('onGanttRender', () => {
@@ -4264,6 +4289,7 @@
         };
         if (typeof gantt.batchUpdate === 'function') gantt.batchUpdate(parseSchedule);
         else parseSchedule();
+        rebuildTaskOrderCache();
         if ((payload.data?.length || 0) > 200) gantt.config.smart_rendering = true;
         sanitizeAllTaskDates();
         runSchedule({ skipScroll: true, skipSave: true, skipLog: importing, batch: true, light: importing });
@@ -5553,7 +5579,15 @@
             loadSchedulePayload(payload, { importing: true });
             const count = body.task_count || payload.data.length;
             const linkCount = body.link_count || (payload.links || []).length;
-            showScheduleAlert(`Imported ${count} activities and ${linkCount} links from ${payload.source || file.name}`, 'success');
+            const meta = payload.import_meta || body.import_meta;
+            let detail = `Imported ${count} activities and ${linkCount} links from ${payload.source || file.name}`;
+            if (meta?.span_days != null) {
+                detail += ` (${meta.span_days} calendar days`;
+                if (meta.skipped_inactive) detail += `, ${meta.skipped_inactive} inactive skipped`;
+                if (meta.skipped_null) detail += `, ${meta.skipped_null} blank skipped`;
+                detail += ')';
+            }
+            showScheduleAlert(detail, 'success');
         } catch (err) {
             setSaveStatus('Import failed');
             showScheduleAlert('Import failed: ' + (err.message || err), 'error');

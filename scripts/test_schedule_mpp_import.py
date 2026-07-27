@@ -50,12 +50,15 @@ class ScheduleMppImportTests(unittest.TestCase):
         self.assertEqual(payload['source'], 'MS Project MPP')
         self.assertEqual(len(payload['data']), 3)
         self.assertEqual(len(payload['links']), 1)
+        self.assertIn('import_meta', payload)
+        self.assertEqual(payload['import_meta']['task_count'], 3)
 
         by_name = {row['text']: row for row in payload['data']}
         self.assertEqual(by_name['Phase 1']['type'], 'project')
         self.assertEqual(by_name['Task A']['parent'], by_name['Phase 1']['id'])
         self.assertEqual(by_name['Task B']['parent'], by_name['Phase 1']['id'])
         self.assertAlmostEqual(by_name['Task A']['progress'], 0.5)
+        self.assertEqual(by_name['Task B']['end_date'], '2026-01-10')
         self.assertEqual(payload['links'][0]['source'], by_name['Task A']['id'])
         self.assertEqual(payload['links'][0]['target'], by_name['Task B']['id'])
 

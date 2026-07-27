@@ -204,6 +204,9 @@ def _project_to_gantt(project) -> dict[str, Any]:
     links: list[dict[str, Any]] = []
     link_id = 1
     gantt_id = 1
+    skipped_inactive = 0
+    skipped_null = 0
+    date_values: list[str] = []
 
     for idx in range(tasks.size()):
         task = tasks.get(idx)
@@ -212,6 +215,22 @@ def _project_to_gantt(project) -> dict[str, Any]:
         uid = task.getUniqueID()
         if uid is None or int(uid) == 0:
             continue
+
+        try:
+            if task.getNull():
+                skipped_null += 1
+                continue
+        except Exception:
+            pass
+
+        try:
+            active = task.getActive()
+            if active is not None and not bool(active):
+                skipped_inactive += 1
+                continue
+        except Exception:
+            pass
+
         name = (task.getName() or '').strip()
         if not name:
             name = f'Activity {uid}'
@@ -240,13 +259,21 @@ def _project_to_gantt(project) -> dict[str, Any]:
             'progress': progress,
             'open': True,
             '_outline': outline,
+            'activity_id': str(uid),
         }
         if start:
             row['start_date'] = start
+            date_values.append(start)
+        if finish:
+            row['end_date'] = finish
+            date_values.append(finish)
         if duration is not None:
             row['duration'] = 0 if milestone else max(1, duration)
         elif start and finish:
             row['duration'] = 0 if milestone else _work_days_between(start, finish)
+        elif milestone and start:
+            row['end_date'] = start
+            row['duration'] = 0
 
         data.append(row)
 
@@ -293,7 +320,30 @@ def _project_to_gantt(project) -> dict[str, Any]:
         if task.get('type') == 'project':
             stack.append({'id': task['id'], 'level': level})
 
-    return {'data': data, 'links': links, 'source': 'MS Project MPP'}
+    import_meta: dict[str, Any] = {
+        'task_count': len(data),
+        'link_count': len(links),
+        'skipped_inactive': skipped_inactive,
+        'skipped_null': skipped_null,
+    }
+    if date_values:
+        import_meta['date_start'] = min(date_values)
+        import_meta['date_end'] = max(date_values)
+        try:
+            span_days = (
+                datetime.strptime(import_meta['date_end'], '%Y-%m-%d')
+                - datetime.strptime(import_meta['date_start'], '%Y-%m-%d')
+            ).days
+            import_meta['span_days'] = span_days
+        except ValueError:
+            pass
+
+    return {
+        'data': data,
+        'links': links,
+        'source': 'MS Project MPP',
+        'import_meta': import_meta,
+    }
 
 
 def parse_mpp_bytes(content: bytes, *, filename: str = 'schedule.mpp') -> dict[str, Any]:
