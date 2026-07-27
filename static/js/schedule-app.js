@@ -196,6 +196,7 @@
         gantt.render();
         syncGanttLayout();
         enforceGridColumnExtents();
+        positionChartResizerVisual();
         try {
             if (typeof gantt.scrollTo === 'function') gantt.scrollTo(0, 0);
         } catch (e) { /* ok */ }
@@ -1271,7 +1272,7 @@
             syncLayoutTimelineWidth();
 
             const sizeChanged = sizeKey !== lastOverlayKey || gridKey !== lastGridWidthKey;
-            if (!options.skipSetSizes && typeof gantt.setSizes === 'function' && sizeChanged) {
+            if (!options.skipSetSizes && typeof gantt.setSizes === 'function' && (sizeChanged || isOverlay)) {
                 lastOverlayKey = sizeKey;
                 lastGridWidthKey = gridKey;
                 gantt.setSizes();
@@ -1380,8 +1381,8 @@
             scheduleSettings.timeline_width_px = null;
         }
         const host = document.getElementById('scheduleGanttHost');
-        host?.classList.remove('schedule-overlay-mode');
-        host?.classList.add('schedule-split-mode');
+        host?.classList.remove('schedule-split-mode');
+        host?.classList.add('schedule-overlay-mode');
         bindChartResizer();
         bindColumnResizeDrag();
         bindLayoutResizePersistence();
@@ -1599,6 +1600,42 @@
         if (window.ScheduleExtras?.updateTimelinePanBar) ScheduleExtras.updateTimelinePanBar();
     }
 
+    function syncVerticalScrollViews(y) {
+        if (y == null || Number.isNaN(y)) return;
+        const gridData = document.querySelector('#gantt_here .gantt_grid_data');
+        const taskArea = document.querySelector('#gantt_here .gantt_layout_cell:nth-child(3) .gantt_data_area');
+        const taskBg = document.querySelector('#gantt_here .gantt_layout_cell:nth-child(3) .gantt_task_bg');
+        [gridData, taskArea, taskBg].forEach(el => {
+            if (el && Math.abs(el.scrollTop - y) > 1) el.scrollTop = y;
+        });
+    }
+
+    function bindVerticalScrollSync() {
+        const scrollVerEl = document.querySelector('#gantt_here [data-cell-id="scrollVer"] .gantt_layout_outer_scroll, #gantt_here [data-cell-id="scrollVer"]');
+        if (scrollVerEl && !scrollVerEl.dataset.verScrollBound) {
+            scrollVerEl.dataset.verScrollBound = '1';
+            scrollVerEl.addEventListener('scroll', () => {
+                if (timelineScrollProgrammatic) return;
+                syncVerticalScrollViews(scrollVerEl.scrollTop);
+            }, { passive: true });
+        }
+        const gridData = document.querySelector('#gantt_here .gantt_grid_data');
+        if (gridData && !gridData.dataset.verScrollBound) {
+            gridData.dataset.verScrollBound = '1';
+            gridData.addEventListener('scroll', () => {
+                if (timelineScrollProgrammatic) return;
+                const y = gridData.scrollTop;
+                timelineScrollProgrammatic = true;
+                syncVerticalScrollViews(y);
+                try {
+                    const x = gantt.getScrollState?.()?.x || 0;
+                    if (gantt.scrollTo) gantt.scrollTo(x, y);
+                } catch (e) { /* ok */ }
+                requestAnimationFrame(() => { timelineScrollProgrammatic = false; });
+            }, { passive: true });
+        }
+    }
+
     function bindTimelineScrollbarSync() {
         const bindEl = el => {
             if (!el || el.dataset.schedScrollBound) return;
@@ -1786,7 +1823,7 @@
         if (initTimelineEngine.bound) return;
         initTimelineEngine.bound = true;
 
-        gantt.attachEvent('onGanttScroll', function (left) {
+        gantt.attachEvent('onGanttScroll', function (left, top) {
             if (timelineScrollProgrammatic) return;
             if (left != null) {
                 lastTimelineScrollX = left;
@@ -1795,6 +1832,7 @@
                 });
                 refreshTimelinePanBar();
             }
+            if (top != null) syncVerticalScrollViews(top);
         });
 
         const host = document.getElementById('gantt_here');
@@ -1811,6 +1849,7 @@
             }, { passive: false, capture: true });
         }
         bindTimelineScrollbarSync();
+        bindVerticalScrollSync();
 
         const gridData = document.querySelector('#gantt_here .gantt_grid_data');
         if (gridData && !gridData.dataset.resizeSyncBound) {
@@ -1821,6 +1860,7 @@
 
     function ensureTimelineScrollbar() {
         bindTimelineScrollbarSync();
+        bindVerticalScrollSync();
         const scrollHor = document.querySelector('#gantt_here [data-cell-id="scrollHor"]');
         if (scrollHor) {
             scrollHor.style.pointerEvents = 'auto';
