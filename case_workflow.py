@@ -389,6 +389,12 @@ def ensure_workflow_schema(engine):
             _workflow_session().execute(text('ALTER TABLE internal_message ADD COLUMN thread_key VARCHAR(120)'))
         if 'in_reply_to_id' not in cols:
             _workflow_session().execute(text('ALTER TABLE internal_message ADD COLUMN in_reply_to_id INTEGER'))
+    if 'notification' in inspector.get_table_names():
+        cols = {c['name'] for c in inspector.get_columns('notification')}
+        if 'link' not in cols:
+            _workflow_session().execute(text('ALTER TABLE notification ADD COLUMN link VARCHAR(300)'))
+        if 'is_read' not in cols:
+            _workflow_session().execute(text('ALTER TABLE notification ADD COLUMN is_read BOOLEAN DEFAULT 0'))
     from message_deletion_archive import ensure_deleted_message_archive_schema_sqlalchemy
     ensure_deleted_message_archive_schema_sqlalchemy()
     _workflow_session().commit()
@@ -1191,23 +1197,59 @@ def register_workflow(app, _db, models):
     @app.route('/api/notifications')
     @login_required
     def api_notifications_list():
-        items = Notification.query.filter_by(user_id=current_user.id).order_by(
-            Notification.created_at.desc()
-        ).limit(50).all()
-        return jsonify([{
-            'id': n.id,
-            'title': n.title,
-            'message': n.message,
-            'link': n.link,
-            'is_read': n.is_read,
-            'created_at': n.created_at.isoformat() if n.created_at else '',
-        } for n in items])
+        try:
+            from app import Notification as _Notification, db as _db
+            uid = getattr(current_user, 'id', None)
+            if not uid:
+                return jsonify([])
+            rows = (
+                _db.session.query(_Notification)
+                .filter_by(user_id=uid)
+                .order_by(_Notification.created_at.desc())
+                .limit(50)
+                .all()
+            )
+            return jsonify([
+                {
+                    'id': n.id,
+                    'title': n.title or '',
+                    'message': n.message or '',
+                    'link': getattr(n, 'link', None) or '',
+                    'is_read': bool(n.is_read),
+                    'created_at': n.created_at.isoformat() if n.created_at else '',
+                }
+                for n in rows
+            ])
+        except Exception:
+            try:
+                from flask import current_app
+                current_app.logger.exception('api_notifications_list failed')
+            except Exception:
+                pass
+            return jsonify([])
 
     @app.route('/api/notifications/mark-all-read', methods=['POST'])
     @login_required
     def api_notifications_mark_all():
-        Notification.query.filter_by(user_id=current_user.id, is_read=False).update({'is_read': True})
-        _workflow_session().commit()
+        try:
+            from app import Notification as _Notification, db as _db
+            uid = getattr(current_user, 'id', None)
+            if uid:
+                _db.session.query(_Notification).filter_by(user_id=uid, is_read=False).update(
+                    {'is_read': True}, synchronize_session=False
+                )
+                _db.session.commit()
+        except Exception:
+            try:
+                from flask import current_app
+                current_app.logger.exception('api_notifications_mark_all failed')
+            except Exception:
+                pass
+            try:
+                from app import db as _db
+                _db.session.rollback()
+            except Exception:
+                pass
         return jsonify({'ok': True})
 
     @app.route('/api/module-state/<module>/<state_key>', methods=['GET', 'PUT'])
