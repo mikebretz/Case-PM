@@ -372,8 +372,8 @@ def _project_to_gantt(project) -> dict[str, Any]:
         'skipped_inactive': skipped_inactive,
         'skipped_null': skipped_null,
         'skipped_summary_links': skipped_summary_links,
-        'preserve_dates': True,
-        'source': 'MS Project MPP',
+        'native_format': True,
+        'imported_from': 'MS Project MPP',
     }
     if date_values:
         import_meta['date_start'] = min(date_values)
@@ -390,9 +390,9 @@ def _project_to_gantt(project) -> dict[str, Any]:
     return {
         'data': data,
         'links': links,
-        'source': 'MS Project MPP',
+        'source': 'Case PM schedule',
         'import_meta': import_meta,
-        'settings': {'preserve_msp_dates': True},
+        'settings': {'native_schedule': True},
     }
 
 

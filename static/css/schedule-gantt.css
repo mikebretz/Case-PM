@@ -473,6 +473,12 @@ body.schedule-chart-resizing {
     flex: 1 1 auto !important;
     min-width: 240px !important;
 }
+.schedule-split-mode #gantt_here .gantt_layout_cell:nth-child(3) .gantt_data_area,
+.schedule-split-mode #gantt_here .gantt_layout_cell:nth-child(3) .gantt_bars_area,
+.schedule-split-mode #gantt_here .gantt_layout_cell:nth-child(3) .gantt_task_bg {
+    height: 100% !important;
+    min-height: 0 !important;
+}
 .schedule-split-mode #gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(4) {
     flex: 0 0 16px !important;
     width: 16px !important;
@@ -693,8 +699,8 @@ body.schedule-chart-resizing {
 .gantt_task_line.cpm_summary,
 .gantt_task_line.sched-summary-bar {
     border-radius: 0 !important;
-    background: #1a1a1a !important;
-    border: none !important;
+    background: #4a5568 !important;
+    border: 1px solid #718096 !important;
     box-shadow: none !important;
     clip-path: polygon(8px 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 8px 100%, 0 50%);
 }
@@ -1482,8 +1488,8 @@ body.sched-col-resizing {
 }
 /* Only style links via CSS; bar fill/border come from gantt.templates.task_style */
 .gantt_task_line.cpm_summary, .gantt_task_line.gantt_project {
-    background-color: #1a1a1a !important;
-    border: none !important;
+    background-color: #4a5568 !important;
+    border: 1px solid #718096 !important;
 }
 /* Per-activity bar colors — task.color + task_style */
 .gantt_task_line.cpm_custom_color,

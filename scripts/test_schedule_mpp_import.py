@@ -47,13 +47,15 @@ class ScheduleMppImportTests(unittest.TestCase):
         from schedule_mpp_import import parse_mpp_bytes
 
         payload = parse_mpp_bytes(SAMPLE_MSPDI, filename='sample.xml')
-        self.assertEqual(payload['source'], 'MS Project MPP')
+        self.assertEqual(payload['source'], 'Case PM schedule')
         self.assertEqual(len(payload['data']), 3)
         self.assertEqual(len(payload['links']), 1)
         self.assertIn('import_meta', payload)
         self.assertEqual(payload['import_meta']['task_count'], 3)
-        self.assertTrue(payload['import_meta'].get('preserve_dates'))
-        self.assertTrue(payload.get('settings', {}).get('preserve_msp_dates'))
+        self.assertTrue(payload['import_meta'].get('native_format'))
+        self.assertEqual(payload['import_meta'].get('imported_from'), 'MS Project MPP')
+        self.assertTrue(payload.get('settings', {}).get('native_schedule'))
+        self.assertFalse(payload.get('settings', {}).get('preserve_msp_dates'))
 
         by_name = {row['text']: row for row in payload['data']}
         self.assertEqual(by_name['Phase 1']['type'], 'project')
