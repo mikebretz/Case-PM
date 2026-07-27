@@ -861,14 +861,14 @@ body.schedule-chart-resizing {
 #gantt_here .gantt_grid_scale:has(.sched-grid-header-chrome)::before {
     display: none;
 }
-/* Header columns use absolute layout for resize grips; data rows use native dhtmlx flow */
+/* Header columns use absolute layout for resize grips; data rows use relative flow when virtualization is off */
 #gantt_here .gantt_grid_scale .gantt_grid_head_cell {
     position: absolute !important;
 }
-#gantt_here .gantt_grid_data .gantt_row {
+#gantt_here:not(.schedule-virtual-rows) .gantt_grid_data .gantt_row {
     position: relative !important;
 }
-#gantt_here .gantt_grid_data .gantt_row > .gantt_cell {
+#gantt_here:not(.schedule-virtual-rows) .gantt_grid_data .gantt_row > .gantt_cell {
     position: relative !important;
     top: auto !important;
     height: auto !important;
@@ -1907,7 +1907,7 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         height: 16px;
         background: transparent;
         border: none;
-        overflow: visible;
+        overflow: hidden;
     }
     .print-row-links {
         position: absolute;
@@ -1915,15 +1915,19 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         width: 100%;
         height: 100%;
         pointer-events: none;
-        overflow: visible;
+        overflow: hidden;
         z-index: 1;
     }
     .print-row-links path,
     .print-row-links polygon {
         vector-effect: non-scaling-stroke;
     }
+    .print-row-links path {
+        stroke: #d0d0d0 !important;
+    }
     .print-row-links polygon {
         stroke: none;
+        fill: #d0d0d0 !important;
     }
     .print-bar {
         position: absolute;

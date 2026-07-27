@@ -121,6 +121,8 @@
     let wbsGutterRefreshTimer = null;
     let taskOrderList = [];
     const taskOrderIndex = new Map();
+    let schedulePayloadSource = '';
+    let scheduleImportMeta = null;
 
     function countScheduleTasks() {
         if (!ganttReady) return 0;
@@ -134,8 +136,11 @@
         scheduleTaskCount = countScheduleTasks();
         schedulePerformanceMode = true;
 
-        gantt.config.smart_rendering = false;
-        gantt.config.static_background = false;
+        const useVirtual = scheduleTaskCount >= 25;
+        gantt.config.smart_rendering = useVirtual;
+        gantt.config.static_background = useVirtual;
+        const ganttHost = document.getElementById('gantt_here');
+        if (ganttHost) ganttHost.classList.toggle('schedule-virtual-rows', useVirtual);
         applyRollingCalendarRange();
 
         const spanDays = rollingCalendarBounds
@@ -147,6 +152,7 @@
         }
         if (scheduleTaskCount >= 40) {
             scheduleSettings.show_bar_labels = false;
+            scheduleSettings.show_baseline_bars = false;
             gantt.config.highlight_critical_path = false;
         }
         if (scheduleTaskCount >= 80) {
@@ -177,29 +183,39 @@
     function isImportedSchedulePayload(payload) {
         if (!payload) return false;
         if (payload.import_meta) return true;
+        if (payload.settings?.preserve_msp_dates) return true;
         const src = String(payload.source || '');
         return src.includes('MS Project') || src.includes('MPP');
     }
 
-    function ensureGridVisible() {
+    function shouldPreserveMspDates(payload) {
+        if (scheduleSettings.preserve_msp_dates) return true;
+        if (!payload) return false;
+        if (payload.settings?.preserve_msp_dates) return true;
+        if (payload.import_meta?.preserve_dates) return true;
+        return isImportedSchedulePayload(payload);
+    }
+
+    function ensureGridVisible(options) {
         if (!ganttReady) return;
+        const opts = options || {};
         filterCriticalOnly = false;
         taskFilterQuery = '';
         document.getElementById('criticalFilterBtn')?.classList.remove('active-tool');
         const filterInput = document.getElementById('scheduleFilterInput');
         if (filterInput) filterInput.value = '';
-        gantt.config.smart_rendering = false;
-        gantt.config.static_background = false;
-        expandAllTasks();
+        if (opts.expandAll !== false) expandAllTasks();
         applySchedulePerformanceProfile();
         if (typeof gantt.setSizes === 'function') gantt.setSizes();
-        gantt.render();
-        syncGanttLayout();
-        enforceGridColumnExtents();
+        if (!opts.skipRender) gantt.render();
+        syncGanttLayout({ light: true });
+        if (!opts.skipExtents) enforceGridColumnExtents();
         positionChartResizerVisual();
-        try {
-            if (typeof gantt.scrollTo === 'function') gantt.scrollTo(0, 0);
-        } catch (e) { /* ok */ }
+        if (opts.scrollTop !== false) {
+            try {
+                if (typeof gantt.scrollTo === 'function') gantt.scrollTo(0, 0);
+            } catch (e) { /* ok */ }
+        }
     }
 
     function queueStatusBarUpdate() {
@@ -1277,7 +1293,7 @@
                 lastGridWidthKey = gridKey;
                 gantt.setSizes();
             }
-            queueEnforceGridColumnExtents();
+            if (!options.light || sizeChanged) queueEnforceGridColumnExtents();
 
             if (isOverlay) applyOverlayDomLayout();
             else positionChartResizerVisual();
@@ -3040,7 +3056,7 @@
         if (barLabelLayerBound || typeof gantt.addTaskLayer !== 'function') return;
         barLabelLayerBound = true;
         gantt.addTaskLayer(function renderBarSublabel(task) {
-            if (scheduleSettings.show_bar_labels === false) return null;
+            if (scheduleSettings.show_bar_labels === false || scheduleTaskCount >= 40) return null;
             if (task.type === 'project') return null;
             const start = toGanttDate(task.start_date);
             if (!start || typeof gantt.posFromDate !== 'function' || typeof gantt.getTaskTop !== 'function') return null;
@@ -3063,7 +3079,7 @@
         if (baselineLayerBound || typeof gantt.addTaskLayer !== 'function') return;
         baselineLayerBound = true;
         gantt.addTaskLayer(function renderBaselineBar(task) {
-            if (task.type === 'project' || scheduleSettings.show_baseline_bars === false) return null;
+            if (task.type === 'project' || scheduleSettings.show_baseline_bars === false || scheduleTaskCount >= 40) return null;
             if (!task.baseline_start || !task.baseline_finish) return null;
             const bStart = toGanttDate(task.baseline_start);
             const bEnd = toGanttDate(task.baseline_finish);
@@ -3191,11 +3207,12 @@
         });
     }
 
-    function sanitizeTaskDates(task) {
+    function sanitizeTaskDates(task, options) {
         if (!task) return;
+        const preserve = !!(options?.preserveDates || scheduleSettings.preserve_msp_dates);
         const start = toGanttDate(task.start_date);
         if (start) task.start_date = start;
-        else if (task.type !== 'project') task.start_date = new Date();
+        else if (!preserve && task.type !== 'project') task.start_date = new Date();
 
         const dur = Math.max(0, Number(task.duration) || 0);
         if (task.type === 'milestone') {
@@ -3209,6 +3226,11 @@
             return;
         }
         let end = toGanttDate(task.end_date);
+        if (preserve) {
+            if (!end && start) end = CasePMSchedule.addCalendarDays(task.start_date, dur || 1);
+            if (end) task.end_date = end;
+            return;
+        }
         if (!end) end = CasePMSchedule.addCalendarDays(task.start_date, dur || 1);
         task.end_date = end;
         if (!dur) {
@@ -3216,9 +3238,9 @@
         }
     }
 
-    function sanitizeAllTaskDates() {
+    function sanitizeAllTaskDates(options) {
         if (!ganttReady) return;
-        gantt.eachTask(t => sanitizeTaskDates(t));
+        gantt.eachTask(t => sanitizeTaskDates(t, options));
     }
 
     function predTemplate(task) {
@@ -4313,7 +4335,7 @@
         const links = gantt.getLinks().map(l => ({
             id: l.id, source: l.source, target: l.target, type: String(l.type), lag: l.lag || 0
         }));
-        return { data, links, baselines, customColumns, hiddenColumns, columnWidths, columnOrder: scheduleSettings.column_order || columnOrder, settings: scheduleSettings };
+        return { data, links, baselines, customColumns, hiddenColumns, columnWidths, columnOrder: scheduleSettings.column_order || columnOrder, settings: scheduleSettings, source: schedulePayloadSource || undefined, import_meta: scheduleImportMeta || undefined };
     }
 
     function loadSchedulePayload(payload, options) {
@@ -4332,7 +4354,9 @@
         repairSqueezedColumnWidths();
         ensureDefaultColumnAlignments();
         updateGridWidth();
-        const preserveDates = importing || isImportedSchedulePayload(payload);
+        const preserveDates = importing || shouldPreserveMspDates(payload);
+        if (payload.source) schedulePayloadSource = payload.source;
+        if (payload.import_meta) scheduleImportMeta = payload.import_meta;
         const parseSchedule = () => {
             gantt.clearAll();
             gantt.parse({ data: payload.data, links: payload.links || [] });
@@ -4341,17 +4365,19 @@
         if (typeof gantt.batchUpdate === 'function') gantt.batchUpdate(parseSchedule);
         else parseSchedule();
         rebuildTaskOrderCache();
-        sanitizeAllTaskDates();
+        if (payload.settings) scheduleSettings = Object.assign(scheduleSettings, payload.settings);
+        if (preserveDates) scheduleSettings.preserve_msp_dates = true;
+        sanitizeAllTaskDates({ preserveDates });
         runSchedule({
             skipScroll: true,
             skipSave: true,
             skipLog: importing,
             batch: true,
             light: true,
-            preserveDates
+            preserveDates,
+            deferRender: true
         });
         baselines = payload.baselines || [];
-        if (payload.settings) scheduleSettings = Object.assign(scheduleSettings, payload.settings);
         applyP6RowMetrics();
         applyGanttDisplayStyles();
         if (!scheduleSettings.theme) scheduleSettings.theme = 'dark';
@@ -4404,7 +4430,7 @@
         if (importing && scheduleTaskCount >= 60) {
             showScheduleAlert(`Schedule imported (${scheduleTaskCount} activities). Performance mode enabled — week timescale and tight calendar for smoother scrolling.`, 'info');
         }
-        requestAnimationFrame(() => ensureGridVisible());
+        requestAnimationFrame(() => ensureGridVisible({ skipRender: true, skipExtents: bulkLoadDepth > 0 }));
         return true;
         } finally {
             bulkLoadDepth = Math.max(0, bulkLoadDepth - 1);
@@ -4416,7 +4442,6 @@
         requestAnimationFrame(() => {
             gantt.eachTask(t => applyTaskBarColor(t));
             updateDeadlineMarkers();
-            ensureGridVisible();
             pushUndoState();
             queueSave();
             const count = payload?.data?.length || 0;
@@ -5258,7 +5283,7 @@
             evmFields.forEach(f => { if (patch[f] != null) task[f] = patch[f]; });
             task.$slack = patch.$slack;
             task.$critical = patch.$critical;
-            sanitizeTaskDates(task);
+            sanitizeTaskDates(task, { preserveDates: !!opts.preserveDates });
             if (!opts.batch) gantt.refreshTask(id);
         };
         if (opts.batch && typeof gantt.batchUpdate === 'function') {
@@ -5267,13 +5292,13 @@
             updates.forEach(applyUpdate);
         }
         if (!opts.light) {
-            sanitizeAllTaskDates();
+            sanitizeAllTaskDates(opts.preserveDates ? { preserveDates: true } : undefined);
             applyBaselineVariance();
             rollupSummaryProgress({ batch: opts.batch });
         }
         applyRollingCalendarRange();
         wbsCodeMap = wbsMap || CasePMSchedule.buildWbsMap(tasks);
-        gantt.render();
+        if (!opts.deferRender) gantt.render();
         if (!opts.skipScroll) scrollToScheduleRange();
         if (!opts.light) {
             updateDataDateMarker();
@@ -6080,9 +6105,13 @@
         return {
             arrowPct: (arrowPx / estBarPx) * 100,
             wrapperPct: (wrapperPx / estBarPx) * 100,
-            stroke: scheduleSettings.link_color || '#b0b0b0',
+            stroke: '#d0d0d0',
             strokeWidth: scheduleSettings.link_width || gantt.config.link_line_width || 1,
         };
+    }
+
+    function clampPrintLinkX(x) {
+        return Math.max(0, x);
     }
 
     function buildPrintLinkPolyline(lineType, x1, y1, x2, y2, metrics) {
@@ -6168,14 +6197,40 @@
         return `<polygon points="${x2},${localY} ${x2 - size * 0.6},${localY + size} ${x2 + size * 0.6},${localY + size}" fill="${stroke}"/>`;
     }
 
-    function addPrintPolylineSegments(byRow, add, linkPath, linkArrow, stroke, points) {
-        for (let i = 0; i < points.length - 1; i++) {
-            const a = points[i];
-            const b = points[i + 1];
+    function buildPrintLinkStartArrow(x1, y1, next, stroke) {
+        const size = 3.5;
+        const row = Math.round(y1 - 0.5);
+        const localY = (y1 - row) * 100;
+        const nx = next?.x ?? x1 + size;
+        const ny = next?.y ?? y1;
+        const dx = nx - x1;
+        const dy = ny - y1;
+        if (Math.abs(dx) >= Math.abs(dy)) {
+            if (dx >= 0) {
+                return `<polygon points="${x1},${localY} ${x1 + size},${localY - size * 0.6} ${x1 + size},${localY + size * 0.6}" fill="${stroke}"/>`;
+            }
+            return `<polygon points="${x1},${localY} ${x1 - size},${localY - size * 0.6} ${x1 - size},${localY + size * 0.6}" fill="${stroke}"/>`;
+        }
+        if (dy >= 0) {
+            return `<polygon points="${x1},${localY} ${x1 - size * 0.6},${localY + size} ${x1 + size * 0.6},${localY + size}" fill="${stroke}"/>`;
+        }
+        return `<polygon points="${x1},${localY} ${x1 - size * 0.6},${localY - size} ${x1 + size * 0.6},${localY - size}" fill="${stroke}"/>`;
+    }
+
+    function addPrintPolylineSegments(byRow, add, linkPath, linkArrow, linkStartArrow, stroke, points) {
+        const clamped = points.map(p => ({ x: clampPrintLinkX(p.x), y: p.y }));
+        for (let i = 0; i < clamped.length - 1; i++) {
+            const a = clamped[i];
+            const b = clamped[i + 1];
             if (Math.abs(a.y - b.y) < 0.001) {
                 const row = Math.round(a.y - 0.5);
                 const localY = (a.y - row) * 100;
-                add(row, linkPath(`M ${a.x} ${localY} L ${b.x} ${localY}`, stroke));
+                const xLo = Math.min(a.x, b.x);
+                const xHi = Math.max(a.x, b.x);
+                const segStart = Math.max(0, xLo);
+                if (xHi > segStart) {
+                    add(row, linkPath(`M ${segStart} ${localY} L ${xHi} ${localY}`, stroke));
+                }
             } else if (Math.abs(a.x - b.x) < 0.001) {
                 const yLo = Math.min(a.y, b.y);
                 const yHi = Math.max(a.y, b.y);
@@ -6183,7 +6238,7 @@
                 while (row <= Math.floor(yHi - 0.0001)) {
                     const segTop = Math.max(yLo, row);
                     const segBot = Math.min(yHi, row + 1);
-                    if (segBot > segTop) {
+                    if (segBot > segTop && a.x >= 0) {
                         add(row, linkPath(
                             `M ${a.x} ${(segTop - row) * 100} L ${b.x} ${(segBot - row) * 100}`,
                             stroke
@@ -6193,9 +6248,14 @@
                 }
             }
         }
-        const end = points[points.length - 1];
-        const prev = points.length > 1 ? points[points.length - 2] : null;
+        const start = clamped[0];
+        const end = clamped[clamped.length - 1];
+        const startRow = Math.round(start.y - 0.5);
         const endRow = Math.round(end.y - 0.5);
+        if (clamped.length > 1) {
+            add(startRow, linkStartArrow(start.x, start.y, clamped[1], stroke));
+        }
+        const prev = clamped.length > 1 ? clamped[clamped.length - 2] : null;
         add(endRow, linkArrow(end.x, end.y, prev, stroke));
     }
 
@@ -6209,6 +6269,7 @@
         const linkPath = (d, stroke) =>
             `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${metrics.strokeWidth}" stroke-linejoin="miter" stroke-linecap="square" vector-effect="non-scaling-stroke"/>`;
         const linkArrow = (x2, y2, prev, stroke) => buildPrintLinkArrow(x2, y2, prev, stroke);
+        const linkStartArrow = (x1, y1, next, stroke) => buildPrintLinkStartArrow(x1, y1, next, stroke);
 
         gantt.getLinks().forEach(link => {
             if (!gantt.isTaskExists(link.source) || !gantt.isTaskExists(link.target)) return;
@@ -6223,7 +6284,7 @@
             const y1 = si + 0.5;
             const y2 = ti + 0.5;
             const points = buildPrintLinkPolyline(lineType, x1, y1, x2, y2, metrics);
-            addPrintPolylineSegments(byRow, add, linkPath, linkArrow, metrics.stroke, points);
+            addPrintPolylineSegments(byRow, add, linkPath, linkArrow, linkStartArrow, metrics.stroke, points);
         });
         return byRow;
     }
