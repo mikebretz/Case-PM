@@ -442,9 +442,19 @@ body.schedule-chart-resizing {
     background: var(--sched-scroll-bg) !important;
     border-top: 1px solid var(--sched-border) !important;
 }
-.schedule-overlay-mode #gantt_here .gantt_grid_column_resize_wrap {
-    z-index: 40 !important;
-    pointer-events: auto !important;
+.schedule-overlay-mode #gantt_here .gantt_grid_scale .gantt_grid_column_resize_wrap:not(.sched-col-resize-grip) {
+    display: none !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+}
+.sched-col-grip-layer .sched-col-resize-grip .gantt_grid_column_resize {
+    opacity: 0.55 !important;
+    visibility: visible !important;
+    display: block !important;
+}
+.sched-col-grip-layer .sched-col-resize-grip:hover .gantt_grid_column_resize,
+.sched-col-grip-layer .sched-col-resize-grip:active .gantt_grid_column_resize {
+    opacity: 1 !important;
 }
 .schedule-overlay-mode #gantt_here [data-cell-id="scrollVer"],
 .schedule-overlay-mode #gantt_here [data-cell-id="scrollVer"] .gantt_layout_outer_scroll {
@@ -3112,13 +3122,14 @@ textarea.lookahead-input {
     width: 100%;
     border-collapse: collapse;
     font-size: 8.5pt;
-    table-layout: auto;
+    table-layout: fixed;
 }
 .lookahead-print-table th,
 .lookahead-print-table td {
     border: 1px solid #d1d5db;
     padding: 5px 7px;
     vertical-align: top;
+    white-space: nowrap;
 }
 .lookahead-print-table th {
     background: #f3f4f6;
@@ -3131,7 +3142,6 @@ textarea.lookahead-input {
 .la-print-col-fit,
 .lookahead-print-combo .la-print-col-fit,
 .lookahead-print-table .la-print-col-fit {
-    width: 1%;
     white-space: nowrap;
 }
 .lookahead-print-combo {
@@ -3139,9 +3149,6 @@ textarea.lookahead-input {
     border-collapse: collapse;
     table-layout: fixed;
     font-size: 8pt;
-}
-.lookahead-print-combo col.la-print-col-fit {
-    width: 1%;
 }
 .lookahead-print-combo col.la-print-col-chart {
     width: auto;
@@ -3152,6 +3159,19 @@ textarea.lookahead-input {
     padding: 4px 6px;
     vertical-align: middle;
     color: #111827;
+}
+.lookahead-print-combo th.la-print-col-fit,
+.lookahead-print-combo td.la-print-col-fit,
+.lookahead-print-combo .la-print-pri-col,
+.lookahead-print-combo .la-print-act-col,
+.lookahead-print-combo .la-print-date-col,
+.lookahead-print-combo .la-print-res-col,
+.lookahead-print-combo .la-print-wbs-col,
+.lookahead-print-combo .la-print-why-col,
+.lookahead-print-combo .la-print-notes-col {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .lookahead-print-combo thead th {
     background: #f3f4f6;

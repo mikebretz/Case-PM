@@ -1455,6 +1455,25 @@
 
     let enforceGridTimer = null;
     let enforceGridPass = 0;
+    let lastEnforcedGridKey = '';
+
+    function gridHeaderCellsAligned(metrics) {
+        const heads = document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell');
+        if (!heads.length || !metrics?.length || heads.length < metrics.length) return false;
+        for (let i = 0; i < metrics.length; i++) {
+            const cell = heads[i];
+            if (!cell) return false;
+            const w = Math.round(parseFloat(cell.style.width) || cell.getBoundingClientRect().width);
+            const left = Math.round(parseFloat(cell.style.left) || 0);
+            if (Math.abs(w - metrics[i].width) > 1) return false;
+            if (Math.abs(left - metrics[i].left) > 1) return false;
+        }
+        return true;
+    }
+
+    function gridLayoutMetricsKey(metrics, total) {
+        return `${total}|${(metrics || []).map(m => `${m.left}:${m.width}`).join(',')}`;
+    }
 
     function queueEnforceGridColumnExtents(options) {
         clearTimeout(enforceGridTimer);
@@ -1489,12 +1508,6 @@
         const gridHead = getGridHeadContainer();
         if (!gridHead) return;
 
-        document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_column_resize_wrap').forEach(wrap => {
-            if (wrap.closest('.sched-col-grip-layer')) return;
-            wrap.style.display = 'none';
-            wrap.style.pointerEvents = 'none';
-        });
-
         const list = metrics || getColumnLayoutMetrics().columns;
         const cols = gantt.config.columns || [];
         const headCells = gridHead.querySelectorAll('.gantt_grid_head_cell');
@@ -1515,18 +1528,24 @@
         layer.style.left = '0';
         layer.style.pointerEvents = 'none';
         layer.style.zIndex = '250';
-        layer.innerHTML = '';
+
+        const existing = Array.from(layer.querySelectorAll('.sched-col-resize-grip'));
+        let gripIdx = 0;
 
         headCells.forEach((cell, i) => {
             const col = cols[i];
             const m = list[i];
             if (!col || !m || col.resize === false || isAddColumnCol(col)) return;
             const borderX = m.left + m.width;
-            const grip = document.createElement('div');
-            grip.className = 'sched-col-resize-grip gantt_grid_column_resize_wrap';
+            let grip = existing[gripIdx];
+            if (!grip) {
+                grip = document.createElement('div');
+                grip.className = 'sched-col-resize-grip gantt_grid_column_resize_wrap';
+                grip.innerHTML = '<div class="gantt_grid_column_resize"></div>';
+                layer.appendChild(grip);
+            }
             grip.dataset.colIndex = String(i);
             grip.title = 'Drag to resize column';
-            grip.innerHTML = '<div class="gantt_grid_column_resize"></div>';
             grip.style.position = 'absolute';
             grip.style.left = borderX + 'px';
             grip.style.top = 'var(--sched-grid-header-top, 26px)';
@@ -1534,8 +1553,14 @@
             grip.style.width = '10px';
             grip.style.marginLeft = '-5px';
             grip.style.pointerEvents = 'auto';
-            layer.appendChild(grip);
+            grip.style.display = '';
+            grip.style.visibility = 'visible';
+            gripIdx += 1;
         });
+
+        while (layer.children.length > gripIdx) {
+            layer.lastChild.remove();
+        }
     }
 
     let headerLayoutTimer = null;
@@ -1544,14 +1569,12 @@
         if (!ganttReady || !isOverlayMode()) return;
         clearTimeout(headerLayoutTimer);
         headerLayoutTimer = setTimeout(() => {
-            const heads = document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell');
-            if (!heads.length) return;
             const { columns: metrics } = getColumnLayoutMetrics();
-            if (!force && metrics[0] && heads[0]) {
-                const w = heads[0].getBoundingClientRect().width;
-                if (w >= metrics[0].width - 6) return;
+            if (!force && gridHeaderCellsAligned(metrics)) {
+                layoutColumnResizeGrips(metrics);
+                return;
             }
-            enforceGridColumnExtents();
+            enforceGridColumnExtents({ force: !!force });
         }, force ? 0 : 32);
     }
 
@@ -1579,14 +1602,59 @@
     function refreshGanttGridOnViewShow() {
         if (!ganttReady) return;
         resizeGanttHost();
-        const run = () => refreshGanttGridLayout({ focusTimeline: false, refreshScroll: true });
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
-                run();
-                setTimeout(run, 100);
-                setTimeout(run, 250);
-                setTimeout(run, 500);
+                refreshGanttGridLayout({ focusTimeline: false, refreshScroll: true });
+                setTimeout(() => twitchGanttGridLayout(), 180);
             });
+        });
+    }
+
+    function twitchGanttGridLayout() {
+        if (!ganttReady) return;
+        const { columns: metrics, total } = getColumnLayoutMetrics();
+        if (gridHeaderCellsAligned(metrics)) {
+            layoutColumnResizeGrips(metrics);
+            return;
+        }
+        const cols = gantt.config.columns || [];
+        let idx = cols.findIndex(c => c && c.name && c.name !== '_sched_add_col' && c.resize !== false);
+        if (idx < 0) idx = cols.findIndex(c => c && c.name && c.name !== '_sched_add_col');
+        const applyLayout = (finalize) => {
+            restoreColumnWidthsFromConfig();
+            updateGridWidth();
+            if (typeof gantt.setSizes === 'function') gantt.setSizes();
+            syncGanttLayout({ forceLayout: true, refreshScroll: false });
+            if (isOverlayMode()) {
+                applyOverlayDomLayout();
+                positionChartResizerVisual();
+            }
+            enforceGridColumnExtents({ syncRows: true, force: true });
+            if (finalize) {
+                bindVerticalScrollSync();
+            }
+        };
+        if (idx < 0) {
+            applyLayout(true);
+            return;
+        }
+        const col = cols[idx];
+        const baseW = Math.max(col.min_width || 40, Number(columnWidths[col.name] ?? col.width ?? 80));
+        const nudgeW = Math.max(col.min_width || 40, baseW - 1);
+        col.width = nudgeW;
+        columnWidths[col.name] = nudgeW;
+        gantt.config.grid_width = getColumnsTotalWidth();
+        gantt.config.keep_grid_width = true;
+        lastGridWidthKey = '';
+        lastEnforcedGridKey = '';
+        applyLayout(false);
+        requestAnimationFrame(() => {
+            col.width = baseW;
+            columnWidths[col.name] = baseW;
+            gantt.config.grid_width = getColumnsTotalWidth();
+            lastGridWidthKey = '';
+            lastEnforcedGridKey = '';
+            applyLayout(true);
         });
     }
 
@@ -1600,6 +1668,29 @@
         restoreColumnWidthsFromConfig();
         const cols = gantt.config.columns || [];
         const { columns: metrics, total } = getColumnLayoutMetrics();
+        const metricsKey = gridLayoutMetricsKey(metrics, total);
+
+        if (opts.syncRowsOnly) {
+            if (!isOverlayMode()) return;
+            document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
+                row.style.width = total + 'px';
+                row.style.minWidth = total + 'px';
+                row.style.maxWidth = 'none';
+                const cells = row.querySelectorAll(':scope > .gantt_cell');
+                const cellCount = Math.min(cells.length, metrics.length);
+                for (let i = 0; i < cellCount; i++) {
+                    applyMetricToCell(cells[i], metrics[i], cols[i]);
+                }
+            });
+            layoutColumnResizeGrips(metrics);
+            return;
+        }
+
+        if (!opts.force && !opts.syncRows && metricsKey === lastEnforcedGridKey && gridHeaderCellsAligned(metrics)) {
+            layoutColumnResizeGrips(metrics);
+            return;
+        }
+
         gantt.config.grid_width = total;
         gantt.config.keep_grid_width = true;
         const host = document.getElementById('gantt_here');
@@ -1607,6 +1698,7 @@
 
         if (!isOverlayMode()) {
             applyColumnHighlight();
+            lastEnforcedGridKey = metricsKey;
             return;
         }
 
@@ -1666,6 +1758,7 @@
         syncGridScrollContentWidth(total);
         layoutColumnResizeGrips(metrics);
         applyColumnHighlight();
+        lastEnforcedGridKey = metricsKey;
     }
 
     function syncGridContentLayout(options) {
@@ -2001,7 +2094,8 @@
         clearTimeout(headerSyncTimer);
         headerSyncTimer = setTimeout(() => {
             syncGridColumnsFromConfig();
-            ensureColumnResizeGrips();
+            const { columns: metrics } = getColumnLayoutMetrics();
+            layoutColumnResizeGrips(metrics);
         }, 32);
     }
 
@@ -4050,6 +4144,7 @@
         gantt.config.grid_width = getColumnsTotalWidth();
         if (reflow) {
             lastGridWidthKey = '';
+            lastEnforcedGridKey = '';
             if (isOverlayMode()) {
                 applyColumnWidthsToDom({ syncRows: true });
                 applyOverlayDomLayout();
@@ -5226,7 +5321,14 @@
 
         function runGanttRenderHooks() {
             queueStatusBarUpdate();
-            scheduleGridHeaderLayout();
+            if (isOverlayMode()) {
+                const { columns: metrics } = getColumnLayoutMetrics();
+                if (gridHeaderCellsAligned(metrics)) {
+                    enforceGridColumnExtents({ syncRowsOnly: true });
+                } else {
+                    scheduleGridHeaderLayout(true);
+                }
+            }
             if (!bindColumnResizeEnhancements.done) bindColumnResizeEnhancements();
             if (!bindGridSelectionHandlers.done) bindGridSelectionHandlers();
             updateAlignToolbarButtons();
@@ -6741,9 +6843,56 @@
         return cols;
     }
 
-    function buildLookAheadPrintColgroup(dataColCount, chartColCount) {
+    function getLookAheadPrintCellPlainText(row, col) {
+        switch (col.key) {
+            case 'priority': return String(row.priority || 'Normal');
+            case 'activity': return String(row.activity || '');
+            case 'start': return String(row.start || '');
+            case 'finish': return String(row.finish || '');
+            case 'resource': return String(row.resource || '');
+            case 'wbs': return String(row.wbsGroup || '');
+            case 'why': return String(row.why || '');
+            case 'notes': return String(row.notes || '');
+            default: return '';
+        }
+    }
+
+    let lookAheadPrintMeasureCtx = null;
+    function measureLookAheadPrintTextPx(text, font) {
+        const sample = String(text || '');
+        if (!sample) return 0;
+        if (!lookAheadPrintMeasureCtx) {
+            const canvas = document.createElement('canvas');
+            lookAheadPrintMeasureCtx = canvas.getContext('2d');
+        }
+        lookAheadPrintMeasureCtx.font = font;
+        return Math.ceil(lookAheadPrintMeasureCtx.measureText(sample).width);
+    }
+
+    function computeLookAheadPrintColumnWidths(rows, cols) {
+        const bodyFont = '8pt "Segoe UI", Arial, sans-serif';
+        const headFont = '700 7pt "Segoe UI", Arial, sans-serif';
+        const pad = 14;
+        const widths = new Map();
+        cols.forEach(col => {
+            let maxPx = measureLookAheadPrintTextPx(col.label, headFont) + pad;
+            rows.forEach(row => {
+                const text = getLookAheadPrintCellPlainText(row, col);
+                maxPx = Math.max(maxPx, measureLookAheadPrintTextPx(text, bodyFont) + pad);
+            });
+            if (col.key === 'priority') maxPx = Math.max(maxPx, 58);
+            if (col.key === 'start' || col.key === 'finish') maxPx = Math.max(maxPx, 72);
+            widths.set(col.key, Math.max(36, Math.ceil(maxPx)));
+        });
+        return widths;
+    }
+
+    function buildLookAheadPrintColgroup(cols, chartColCount, widths) {
         let html = '<colgroup>';
-        for (let i = 0; i < dataColCount; i++) html += '<col class="la-print-col-fit" />';
+        cols.forEach(col => {
+            const w = widths?.get(col.key);
+            html += w ? `<col style="width:${w}px" />` : '<col class="la-print-col-fit" />';
+        });
         for (let i = 0; i < chartColCount; i++) html += '<col class="la-print-col-chart" />';
         return `${html}</colgroup>`;
     }
@@ -6781,6 +6930,7 @@
 
     function buildLookAheadPrintTableHtml(rows, ctx, ps) {
         const cols = getLookAheadPrintColumns(ps);
+        const widths = computeLookAheadPrintColumnWidths(rows, cols);
         const head = `<tr>${buildLookAheadPrintDataHead(cols)}</tr>`;
         let body = rows.map(row => {
             const meta = getLookAheadPriorityMeta(row.priority);
@@ -6790,7 +6940,7 @@
 
         return wrapLookAheadPrintBody(`<div class="la-print-table-layout">
             <table class="lookahead-print-table">
-                ${buildLookAheadPrintColgroup(cols.length, 0)}
+                ${buildLookAheadPrintColgroup(cols, 0, widths)}
                 <thead>${head}</thead>
                 <tbody>${body}</tbody>
             </table>
@@ -6801,6 +6951,7 @@
         const range = getLookAheadPeriodBounds(ctx);
         const timescale = buildLookAheadTimescaleHtml(range, lookAheadTimescaleTickCount(ctx));
         const cols = getLookAheadPrintColumns(ps);
+        const widths = computeLookAheadPrintColumnWidths(rows, cols);
         const colSpan = cols.length;
         let body = '';
         rows.forEach(row => {
@@ -6821,7 +6972,7 @@
 
         return wrapLookAheadPrintBody(`<div class="la-print-gantt-layout">
             <table class="lookahead-print-combo la-print-gantt-combo">
-                ${buildLookAheadPrintColgroup(cols.length, 1)}
+                ${buildLookAheadPrintColgroup(cols, 1, widths)}
                 <thead>
                     <tr>
                         ${buildLookAheadPrintDataHead(cols)}
@@ -6838,6 +6989,7 @@
     function buildLookAheadPrintCalendarHtml(rows, ctx, ps) {
         const days = getLookAheadCalendarDays(ctx);
         const cols = getLookAheadPrintColumns(ps);
+        const widths = computeLookAheadPrintColumnWidths(rows, cols);
         const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         const dayHead = days.map(d => {
             const wknd = d.getDay() === 0 || d.getDay() === 6;
@@ -6868,7 +7020,7 @@
 
         return wrapLookAheadPrintBody(`<div class="la-print-calendar-layout">
             <table class="lookahead-print-combo la-print-cal-combo">
-                ${buildLookAheadPrintColgroup(cols.length, days.length)}
+                ${buildLookAheadPrintColgroup(cols, days.length, widths)}
                 <thead>
                     <tr>
                         ${buildLookAheadPrintDataHead(cols)}
