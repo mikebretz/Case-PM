@@ -2092,10 +2092,6 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         );
         display: block;
     }
-    body.printing-lookahead .no-print,
-    body.printing-lookahead #scheduleChrome,
-    body.printing-lookahead #ganttViewPanel,
-    body.printing-lookahead #lookaheadViewPanel { display: none !important; }
 }
 
 /* Data date marker on Gantt timeline */
@@ -2732,6 +2728,15 @@ textarea.lookahead-input {
     border-bottom: 1px solid #1f1f23;
     vertical-align: middle;
 }
+.lookahead-table .la-date-col {
+    min-width: 7.75rem;
+    width: 7.75rem;
+}
+.lookahead-table .la-date-col .lookahead-input {
+    min-width: 6.75rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
 .lookahead-view-toggle .lookahead-view-btn.active-tool {
     background: #10b981 !important;
     color: #fff !important;
@@ -2848,58 +2853,58 @@ textarea.lookahead-input {
 }
 
 @media print {
-    body.printing-lookahead #lookaheadViewPanel,
+    body.printing-lookahead {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+    body.printing-lookahead #appShell > #appHeaderBar,
+    body.printing-lookahead #appSidebar,
+    body.printing-lookahead #appFooterBar,
+    body.printing-lookahead #appShell > .flex.flex-1 > div.h-10,
     body.printing-lookahead #scheduleChrome,
+    body.printing-lookahead #scheduleStatusBar,
     body.printing-lookahead #ganttViewPanel,
-    body.printing-lookahead .no-print { display: none !important; }
-    body.printing-lookahead #lookaheadPrintSheet {
+    body.printing-lookahead #calendarViewPanel,
+    body.printing-lookahead #traceViewPanel,
+    body.printing-lookahead #portfolioViewPanel,
+    body.printing-lookahead #lookaheadPrintSheet,
+    body.printing-lookahead .no-print {
+        display: none !important;
+    }
+    body.printing-lookahead #mainContent {
+        padding: 0 !important;
+        overflow: visible !important;
         display: block !important;
-        position: relative !important;
+    }
+    body.printing-lookahead .schedule-page-root {
+        overflow: visible !important;
+        height: auto !important;
+    }
+    body.printing-lookahead #lookaheadViewPanel {
+        display: flex !important;
+        position: static !important;
         visibility: visible !important;
-        padding: 0;
-        background: #fff;
-        color: #111;
-    }
-    body.printing-lookahead .lookahead-print-doc { font-family: Arial, Helvetica, sans-serif; color: #111; }
-    body.printing-lookahead .la-print-title { font-size: 18pt; margin: 0 0 6px; }
-    body.printing-lookahead .la-print-sub { font-size: 10pt; color: #444; margin: 0 0 14px; }
-    body.printing-lookahead .lookahead-print-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 9pt;
-    }
-    body.printing-lookahead .lookahead-print-table th,
-    body.printing-lookahead .lookahead-print-table td {
-        border: 1px solid #999;
-        padding: 5px 6px;
-        vertical-align: top;
-    }
-    body.printing-lookahead .lookahead-print-table th { background: #eee; }
-    body.printing-lookahead .la-print-pri { font-weight: 700; font-size: 8pt; text-transform: uppercase; }
-    body.printing-lookahead .la-print-pri.la-pri-high { color: #b91c1c; }
-    body.printing-lookahead .la-print-pri.la-pri-medium { color: #a16207; }
-    body.printing-lookahead .la-print-pri.la-pri-normal { color: #1d4ed8; }
-    body.printing-lookahead tr.la-pri-high { border-left: 3px solid #ef4444; }
-    body.printing-lookahead tr.la-pri-medium { border-left: 3px solid #eab308; }
-    body.printing-lookahead tr.la-pri-normal { border-left: 3px solid #3b82f6; }
-    body.printing-lookahead .la-gantt-view-print,
-    body.printing-lookahead .la-cal-view-print {
-        border: none;
-        color: #111;
-    }
-    body.printing-lookahead .la-gantt-view-print .la-gantt-meta,
-    body.printing-lookahead .la-cal-view-print .la-cal-meta { color: #333; }
-    body.printing-lookahead .la-gantt-label,
-    body.printing-lookahead .la-cal-row-label { color: #111; }
-    body.printing-lookahead .la-gantt-track {
-        background: repeating-linear-gradient(to right, transparent, transparent 9.9%, #ccc 9.9%, #ccc 10%);
-    }
-    body.printing-lookahead .la-cal-dayhead { color: #333; border-color: #ccc; }
-    body.printing-lookahead .la-cal-cell { border-color: #ddd; }
-    body.printing-lookahead .lookahead-input {
+        width: 100% !important;
+        height: auto !important;
+        overflow: visible !important;
         border: none !important;
         background: transparent !important;
-        color: #111 !important;
-        padding: 0 !important;
+    }
+    body.printing-lookahead #lookaheadViewPanel > .lookahead-panel {
+        height: auto !important;
+        overflow: visible !important;
+        page-break-inside: avoid;
+    }
+    body.printing-lookahead #lookaheadContent {
+        overflow: visible !important;
+        height: auto !important;
+    }
+    body.printing-lookahead .lookahead-table-wrap {
+        overflow: visible !important;
+    }
+    body.printing-lookahead .lookahead-input {
+        border-color: transparent !important;
+        background: transparent !important;
+        box-shadow: none !important;
     }
 }
