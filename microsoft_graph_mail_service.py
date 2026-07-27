@@ -204,9 +204,11 @@ def graph_message_to_casepm(msg: dict, *, user_email: str) -> dict:
     }
 
 
-def sync_inbox_messages(user_id: int, *, db, UserEmailConnection, UserEmailMailbox, limit: int = 40) -> dict:
+def sync_inbox_messages(user_id: int, *, db, UserEmailConnection, UserEmailMailbox, UserEmailSecurity=None, limit: int = 40) -> dict:
     from email_mailbox_persistence import load_user_mailbox, save_user_mailbox
     from user_email_connection_persistence import connection_status, mark_synced
+    from email_security import scan_messages_batch, apply_quarantine_actions
+    from email_security_persistence import load_security_state
 
     tokens = ensure_fresh_tokens(user_id, db=db, UserEmailConnection=UserEmailConnection)
     conn = connection_status(user_id, UserEmailConnection=UserEmailConnection)
@@ -216,6 +218,22 @@ def sync_inbox_messages(user_id: int, *, db, UserEmailConnection, UserEmailMailb
     data = _graph_request(tokens['access_token'], path)
     items = data.get('value') or []
     mapped = [graph_message_to_casepm(m, user_email=user_email) for m in items]
+
+    sec = load_security_state(user_id, db=db, UserEmailSecurity=UserEmailSecurity)
+    prefs = sec.get('preferences') or {}
+    batch = scan_messages_batch(
+        mapped,
+        junk_level=prefs.get('junkLevel') or 'standard',
+        blocked_senders=sec.get('blocked_senders') or [],
+        safe_senders=sec.get('safe_senders') or [],
+        user_email=user_email,
+        false_positive_overrides=sec.get('false_positives') or [],
+    )
+    for msg in mapped:
+        scan = batch['results'].get(str(msg.get('id')), {})
+        msg['security'] = scan
+    if prefs.get('autoQuarantine', True):
+        mapped = apply_quarantine_actions(mapped, batch['results'])
 
     payload = load_user_mailbox(user_id, UserEmailMailbox=UserEmailMailbox)
     existing = payload.get('messages') or []
