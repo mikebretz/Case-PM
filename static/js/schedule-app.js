@@ -1129,7 +1129,8 @@
             || 1200;
         if (isOverlayMode()) {
             const scrollW = gantt.config?.scroll_size || 16;
-            return Math.max(220, hostW - scrollW);
+            const overlayW = getGridOverlayWidth();
+            return Math.max(220, hostW - overlayW - scrollW);
         }
         return Math.max(240, hostW - getGridOverlayWidth() - 24);
     }
@@ -1559,8 +1560,9 @@
             scheduleSettings.timeline_width_px = null;
         }
         const host = document.getElementById('scheduleGanttHost');
-        host?.classList.remove('schedule-overlay-mode');
-        host?.classList.add('schedule-split-mode');
+        host?.classList.remove('schedule-split-mode');
+        host?.classList.add('schedule-overlay-mode');
+        bindChartResizer();
         bindColumnResizeDrag();
         bindLayoutResizePersistence();
         bindVerticalScrollSync();
@@ -4403,7 +4405,7 @@
                 columnWidths[column.name] = new_width;
                 gantt.config.keep_grid_width = true;
                 gantt.config.grid_width = getColumnsTotalWidth();
-                applyColumnWidthsToDom();
+                if (isOverlayMode()) applyColumnWidthsToDom();
             }
         });
         gantt.attachEvent('onColumnResizeEnd', function (index, column, new_width) {
@@ -4443,8 +4445,9 @@
         ganttReady = true;
         schedulePerformanceMode = true;
         repairSqueezedColumnWidths();
-        setInitialSplitLayoutWidths();
-        enforceGridColumnExtents();
+        enforceGridColumnExtents({ syncRows: true });
+        syncGanttLayout({ forceLayout: true });
+        positionChartResizerVisual();
         bindColumnResizeEnhancements();
         bindGridSelectionHandlers();
         syncScheduleProjectContext();
@@ -4680,9 +4683,10 @@
         updateDeadlineMarkers();
         setTimeout(() => {
             applyRollingCalendarRange();
-            if (!isOverlayMode()) setInitialSplitLayoutWidths();
             if (typeof gantt.setSizes === 'function') gantt.setSizes();
-            syncGanttLayout({ forceLayout: !isOverlayMode() });
+            syncGanttLayout({ forceLayout: true });
+            enforceGridColumnExtents({ syncRows: true });
+            positionChartResizerVisual();
             focusInitialTimelineView();
             gantt.render();
             bindVerticalScrollSync();
