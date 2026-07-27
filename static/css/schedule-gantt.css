@@ -1732,6 +1732,18 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         width: 100% !important;
         max-width: 100% !important;
     }
+    body.printing-gantt-fit-timescale .print-schedule-wrap.print-fit-timescale,
+    body.printing-gantt-fit-timescale .print-schedule-wrap.print-fit-timescale .schedule-print-table {
+        width: 100% !important;
+        max-width: 100% !important;
+        table-layout: fixed !important;
+    }
+    body.printing-gantt-fit-timescale .print-schedule-wrap.print-fit-timescale col.print-bar-col {
+        width: auto !important;
+    }
+    body.printing-gantt-fit-timescale .print-schedule-wrap.print-fit-timescale .print-bar-cell {
+        width: auto !important;
+    }
     body.printing-gantt-fit-page .schedule-print-table {
         table-layout: fixed;
     }
@@ -1868,6 +1880,19 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         table-layout: fixed !important;
     }
     .schedule-print-table-fill-page col.print-bar-col {
+        width: auto !important;
+    }
+    .print-fit-timescale.schedule-print-table-fill-page,
+    .print-fit-timescale .schedule-print-table-fill-page,
+    .print-fit-timescale .schedule-print-table {
+        width: 100% !important;
+        max-width: 100% !important;
+        table-layout: fixed !important;
+    }
+    .print-fit-timescale col.print-bar-col {
+        width: auto !important;
+    }
+    .print-fit-timescale .print-bar-cell {
         width: auto !important;
     }
     .schedule-print-table-screen-cols th,
