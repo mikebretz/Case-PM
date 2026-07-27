@@ -2733,9 +2733,45 @@ textarea.lookahead-input {
     width: 7.75rem;
 }
 .lookahead-table .la-date-col .lookahead-input {
-    min-width: 6.75rem;
+    min-width: 0;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+}
+.la-date-field {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    width: 100%;
+}
+.la-date-field .la-date-text {
+    flex: 1 1 auto;
+    min-width: 5.5rem;
+}
+.la-date-field .la-date-native {
+    position: absolute;
+    width: 0;
+    height: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+.la-date-picker-btn {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.65rem;
+    height: 1.65rem;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    background: rgba(255,255,255,0.04);
+    color: #a1a1aa;
+    cursor: pointer;
+    font-size: 12px;
+}
+.la-date-picker-btn:hover {
+    color: #e4e4e7;
+    border-color: #3f3f46;
+    background: rgba(255,255,255,0.08);
 }
 .lookahead-view-toggle .lookahead-view-btn.active-tool {
     background: #10b981 !important;
@@ -2788,6 +2824,42 @@ textarea.lookahead-input {
 .la-gantt-bar.la-pri-high { background: #ef4444; }
 .la-gantt-bar.la-pri-medium { background: #eab308; }
 .la-gantt-bar.la-pri-normal { background: #3b82f6; }
+.sched-look-ahead-gantt .sched-look-ahead-ts {
+    background: #0c0c0e;
+    border-bottom: 1px solid #3f3f46;
+}
+.sched-look-ahead-gantt .la-ts-label {
+    color: #a1a1aa;
+    font-size: 10px;
+    font-weight: 600;
+}
+.sched-look-ahead-gantt .la-gantt-label {
+    white-space: normal;
+    line-height: 1.35;
+    display: flex;
+    align-items: center;
+}
+.sched-look-ahead-gantt .sched-look-ahead-row {
+    align-items: stretch;
+}
+.sched-look-ahead-gantt .sched-look-ahead-row:nth-child(even) {
+    background: rgba(255,255,255,0.02);
+}
+.sched-look-ahead-gantt .sched-look-ahead-track {
+    height: 18px;
+    margin: 4px 12px 4px 0;
+    background: repeating-linear-gradient(to right, transparent, transparent 9.9%, rgba(120,120,120,0.28) 9.9%, rgba(120,120,120,0.28) 10%);
+    border-top: 1px solid rgba(120,120,120,0.15);
+    border-bottom: 1px solid rgba(120,120,120,0.15);
+}
+.sched-look-ahead-bar {
+    top: 50% !important;
+    transform: translateY(-50%);
+    border-radius: 2px;
+    border: 1px solid rgba(0,0,0,0.35);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
+    min-width: 4px;
+}
 .la-gantt-empty, .la-cal-empty { padding: 2rem; text-align: center; color: #71717a; }
 
 /* Calendar view */
@@ -2848,6 +2920,53 @@ textarea.lookahead-input {
 .la-cal-row.la-pri-medium .la-cal-row-label { border-left: 3px solid #eab308; }
 .la-cal-row.la-pri-normal .la-cal-row-label { border-left: 3px solid #3b82f6; }
 
+.la-cal-chart {
+    position: relative;
+    flex: 1;
+    min-height: 24px;
+    display: flex;
+    flex-direction: column;
+}
+.la-cal-day-grid {
+    display: flex;
+    flex: 1;
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+}
+.la-cal-daycell {
+    flex: 1;
+    min-width: 36px;
+    border-right: 1px solid #1a1a1e;
+}
+.la-cal-daycell.la-cal-weekend { background: rgba(255,255,255,0.03); }
+.la-cal-bar-track {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    margin: 6px 0;
+    min-height: 16px;
+    background: transparent;
+}
+.la-cal-bar {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    border-radius: 2px;
+    border: 1px solid rgba(0,0,0,0.35);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
+    min-width: 4px;
+}
+.sched-look-ahead-cal .la-cal-row {
+    align-items: stretch;
+}
+.sched-look-ahead-cal .la-cal-row-label {
+    white-space: normal;
+    line-height: 1.35;
+    display: flex;
+    align-items: center;
+}
+
 .lookahead-print-sheet {
     display: none;
 }
@@ -2859,46 +2978,26 @@ textarea.lookahead-input {
     background: #fff;
     line-height: 1.35;
 }
-.la-print-header {
+.lookahead-print-doc .sched-print-hf {
+    margin-bottom: 8px;
+}
+.la-print-period-banner {
+    margin: 0 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #d1d5db;
+}
+.la-print-doc-title {
+    margin: 0 0 6px;
+    font-size: 14pt;
+    font-weight: 700;
+    color: #111827;
+}
+.la-print-period-meta {
     display: flex;
     flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 12px 24px;
-    padding-bottom: 10px;
-    margin-bottom: 12px;
-    border-bottom: 2px solid #1f2937;
-}
-.la-print-title {
-    margin: 0;
-    font-size: 18pt;
-    font-weight: 700;
-    color: #111827;
-    letter-spacing: -0.02em;
-}
-.la-print-project {
-    margin: 4px 0 0;
-    font-size: 11pt;
-    color: #374151;
-    font-weight: 600;
-}
-.la-print-header-meta {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(9rem, auto));
-    gap: 4px 16px;
+    gap: 8px 18px;
     font-size: 9pt;
-}
-.la-print-k {
-    display: block;
-    font-size: 7pt;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #6b7280;
-    font-weight: 700;
-}
-.la-print-v {
-    display: block;
-    color: #111827;
-    font-weight: 600;
+    color: #374151;
 }
 .lookahead-print-table {
     width: 100%;
@@ -3077,6 +3176,58 @@ textarea.lookahead-input {
 .la-print-cal-row.la-pri-high .la-print-cal-label { border-left: 3px solid #ef4444; }
 .la-print-cal-row.la-pri-medium .la-print-cal-label { border-left: 3px solid #eab308; }
 .la-print-cal-row.la-pri-normal .la-print-cal-label { border-left: 3px solid #3b82f6; }
+.la-print-cal-chart {
+    position: relative;
+    flex: 1;
+    min-height: 1.25rem;
+    display: flex;
+}
+.la-print-cal-bg {
+    display: flex;
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+}
+.la-print-cal-bgcell {
+    flex: 1;
+    border-right: 1px solid #e5e7eb;
+}
+.la-print-cal-bgcell:last-child { border-right: none; }
+.la-print-cal-bgcell.la-print-cal-weekend { background: #e5e7eb; }
+.la-print-cal-bar-track {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    min-height: 14px;
+    margin: 2px 0;
+}
+.la-print-cal-bar {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 10px;
+    border-radius: 2px;
+    border: 1px solid rgba(0,0,0,0.2);
+    min-width: 3px;
+}
+.lookahead-print-doc .sched-print-hf {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    align-items: center;
+    padding: 4px 0 8px;
+    border-bottom: 1px solid #d1d5db;
+}
+.lookahead-print-doc .sched-print-hf-left { text-align: left; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lookahead-print-doc .sched-print-hf-center { text-align: center; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.lookahead-print-doc .sched-print-hf-right { text-align: right; display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.lookahead-print-doc .sched-print-hf-footer {
+    margin-top: 10px;
+    padding-top: 6px;
+    border-top: 1px solid #d1d5db;
+    font-size: 8pt;
+    color: #4b5563;
+}
 
 .lookahead-print-doc.la-print-compact .lookahead-print-table { font-size: 7.5pt; }
 .lookahead-print-doc.la-print-compact .lookahead-print-table th,
@@ -3123,6 +3274,9 @@ textarea.lookahead-input {
         padding: 0 !important;
         background: #fff !important;
         color: #111827 !important;
+    }
+    body.printing-lookahead #lookaheadPrintSheet.no-screen {
+        display: block !important;
     }
     body.printing-lookahead.la-print-fit-one-page #lookaheadPrintSheet .lookahead-print-doc {
         max-height: 100vh;
