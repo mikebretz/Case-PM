@@ -447,7 +447,8 @@ body.schedule-chart-resizing {
     pointer-events: auto !important;
 }
 .schedule-split-mode #scheduleOverlayControls,
-.schedule-split-mode #scheduleChartResizer {
+.schedule-split-mode #scheduleChartResizer,
+.schedule-split-mode .schedule-timeline-pan {
     display: none !important;
 }
 /* Split layout: native dhtmlx grid + resizer + timeline (reliable scroll & column sync) */
@@ -486,8 +487,27 @@ body.schedule-chart-resizing {
 }
 .schedule-split-mode #gantt_here .gantt_grid_scale,
 .schedule-split-mode #gantt_here .gantt_grid_data {
-    width: 100% !important;
-    min-width: 100% !important;
+    width: var(--sched-grid-min-width, 640px) !important;
+    min-width: var(--sched-grid-min-width, 640px) !important;
+    max-width: none !important;
+}
+.schedule-split-mode #gantt_here .gantt_grid {
+    min-width: var(--sched-grid-min-width, 640px) !important;
+    width: var(--sched-grid-min-width, 640px) !important;
+    max-width: none !important;
+}
+.schedule-split-mode #gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(3) .gantt_layout_content {
+    overflow: hidden !important;
+    height: 100% !important;
+}
+.schedule-split-mode #gantt_here [data-cell-id="scrollVer"] {
+    height: 100% !important;
+    min-height: 0 !important;
+}
+.schedule-split-mode #gantt_here [data-cell-id="scrollVer"] .gantt_layout_outer_scroll {
+    height: 100% !important;
+    overflow-y: scroll !important;
+    overflow-x: hidden !important;
 }
 .schedule-split-mode #gantt_here .gantt_grid_scale .gantt_grid_head,
 .schedule-split-mode #gantt_here .gantt_grid_data .gantt_row {
