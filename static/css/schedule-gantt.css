@@ -400,7 +400,7 @@ body.schedule-chart-resizing {
     top: 0 !important;
     bottom: 0 !important;
     right: 16px !important;
-    width: var(--sched-chart-width, auto) !important;
+    width: calc(100% - var(--sched-chart-left, 520px) - 16px) !important;
     min-width: 280px !important;
     max-width: none !important;
     z-index: 1 !important;
@@ -2024,7 +2024,13 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
     .print-bar-summary.sched-wbs-l1 { background: #00b050 !important; }
     .print-bar-summary.sched-wbs-l2 { background: #ffff00 !important; }
     .print-bar-summary.sched-wbs-l3 { background: #ffc000 !important; }
-    .print-bar-task { border-radius: 0; }
+    .print-row-links path {
+        stroke: var(--gantt-link-color, #b0b0b0) !important;
+    }
+    .print-row-links marker path {
+        fill: var(--gantt-link-color, #b0b0b0) !important;
+    }
+    .print-bar-task { border-radius: 0; height: 12px; top: 50%; transform: translateY(-50%); }
     .print-bar-critical { background: #c00000 !important; }
     .print-milestone {
         position: absolute;

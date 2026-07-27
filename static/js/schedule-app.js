@@ -96,6 +96,7 @@
 
     const REQUIRED_COLUMNS = ['text', 'collapse'];
     const ROLLING_PAD_DAYS = 28;
+    const SCHEDULE_PERF_TASK_THRESHOLD = 80;
     const ROLLING_MIN_SPAN_DAYS = 56;
 
     let editingContext = null;
@@ -136,12 +137,12 @@
     function applySchedulePerformanceProfile() {
         if (!ganttReady) return;
         scheduleTaskCount = countScheduleTasks();
-        schedulePerformanceMode = scheduleTaskCount >= 250;
+        schedulePerformanceMode = scheduleTaskCount >= SCHEDULE_PERF_TASK_THRESHOLD;
 
-        gantt.config.smart_rendering = false;
-        gantt.config.static_background = false;
         const ganttHost = document.getElementById('gantt_here');
-        if (ganttHost) ganttHost.classList.remove('schedule-virtual-rows');
+        gantt.config.smart_rendering = schedulePerformanceMode;
+        gantt.config.static_background = schedulePerformanceMode;
+        if (ganttHost) ganttHost.classList.toggle('schedule-virtual-rows', schedulePerformanceMode);
 
         if (schedulePerformanceMode && (scheduleSettings.timescale || 'day') === 'day') {
             scheduleSettings.timescale = 'week';
@@ -151,6 +152,8 @@
             scheduleSettings.show_bar_labels = false;
             scheduleSettings.show_baseline_bars = false;
             gantt.config.show_links = false;
+        } else {
+            gantt.config.show_links = scheduleSettings.show_links !== false;
         }
         applyRollingCalendarRange();
     }
@@ -214,24 +217,6 @@
             payload.import_meta.native_format = true;
             delete payload.import_meta.preserve_dates;
         }
-        payload.data.forEach(task => {
-            if (task.start_date && typeof task.start_date === 'string') {
-                task.start_date = task.start_date.slice(0, 10);
-            }
-            if (task.end_date && typeof task.end_date === 'string') {
-                task.end_date = task.end_date.slice(0, 10);
-            }
-            if (task.type === 'milestone') {
-                task.duration = 0;
-                if (task.start_date) task.end_date = task.start_date;
-            } else if (task.start_date && task.end_date && task.type !== 'project') {
-                const start = CasePMSchedule.parseDate(task.start_date);
-                const end = CasePMSchedule.parseDate(task.end_date);
-                if (start && end) {
-                    task.duration = Math.max(1, CasePMSchedule.calendarDaysBetween(start, end));
-                }
-            }
-        });
         return payload;
     }
 
@@ -976,7 +961,7 @@
             if (cols[i]?.name === '_sched_add_col') headCells[i].classList.add('sched-add-col-header');
         }
 
-        if (opts.syncRows !== false) {
+        if (opts.syncRows === true) {
             document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
                 row.style.width = total + 'px';
                 row.style.minWidth = total + 'px';
@@ -1214,7 +1199,7 @@
             top: '0',
             bottom: '0',
             right: scrollW + 'px',
-            width: chartW + 'px',
+            width: 'auto',
             'min-width': chartW + 'px',
             'max-width': 'none',
             height: '100%',
@@ -1316,7 +1301,6 @@
         clearTimeout(headerSyncTimer);
         headerSyncTimer = setTimeout(() => {
             syncGridColumnsFromConfig();
-            applyCellAlignToDom();
             ensureColumnResizeGrips();
         }, 32);
     }
@@ -1476,11 +1460,11 @@
             if (sizeChanged) queueEnforceGridColumnExtents();
 
             applyOverlayDomLayout();
-            refreshVerticalScrollRange();
             if (!options.light) {
                 ensureTimelineScrollbar();
                 refreshTimelinePanBar();
             }
+            if (options.refreshScroll) refreshVerticalScrollRange();
         } finally {
             layoutSyncInProgress = false;
             if (layoutSyncPending) {
@@ -1834,7 +1818,7 @@
         const scrollEl = getVerticalScrollElement();
         const rowH = gantt.config?.row_height || 24;
         const scaleH = gantt.config?.scale_height || 65;
-        const taskCount = countScheduleTasks();
+        const taskCount = scheduleTaskCount || countScheduleTasks();
         const contentH = scaleH + Math.max(taskCount, 1) * rowH;
         const viewH = scrollEl?.clientHeight || 0;
         const domMax = scrollEl ? Math.max(0, scrollEl.scrollHeight - viewH) : 0;
@@ -1847,52 +1831,28 @@
     }
 
     function refreshVerticalScrollRange() {
-        if (!ganttReady) return;
+        if (!ganttReady || schedulePerformanceMode) return;
         const scrollEl = getVerticalScrollElement();
         if (!scrollEl) return;
         const rowH = gantt.config?.row_height || 24;
         const scaleH = gantt.config?.scale_height || 65;
-        const taskCount = countScheduleTasks();
+        const taskCount = scheduleTaskCount || countScheduleTasks();
         const needH = scaleH + Math.max(taskCount, 1) * rowH;
         const inner = scrollEl.querySelector('.gantt_layout_content') || scrollEl.firstElementChild;
         if (inner && inner.scrollHeight < needH - 4) {
             inner.style.minHeight = needH + 'px';
         }
-        const gridData = document.querySelector('#gantt_here .gantt_grid_data');
-        const taskBg = document.querySelector('#gantt_here .gantt_layout_cell:nth-child(3) .gantt_task_bg');
-        const rowsH = Math.max(taskCount, 1) * rowH;
-        [gridData, taskBg].forEach(el => {
-            if (!el) return;
-            if (el.scrollHeight < rowsH - 4) el.style.minHeight = rowsH + 'px';
-        });
     }
 
     function scrollGanttVertically(deltaY) {
         if (!ganttReady || !deltaY) return false;
-        let x = 0;
-        let y = 0;
-        try {
-            const state = gantt.getScrollState?.() || {};
-            x = state.x || 0;
-            y = state.y || 0;
-        } catch (e) { return false; }
         const scrollEl = getVerticalScrollElement();
-        if (scrollEl && (!y || y < 2)) y = scrollEl.scrollTop || 0;
+        if (!scrollEl) return false;
+        const y = scrollEl.scrollTop || 0;
         const maxY = getVerticalScrollMax();
         const nextY = Math.max(0, Math.min(maxY, y + deltaY));
-        if (nextY === y && deltaY > 0 && maxY <= 0) return false;
         if (nextY === y) return false;
-        timelineScrollProgrammatic = true;
-        try {
-            if (typeof gantt.scrollTo === 'function') gantt.scrollTo(x, nextY);
-            const scrollVerEl = getVerticalScrollElement();
-            if (scrollVerEl) scrollVerEl.scrollTop = nextY;
-            syncVerticalScrollViews(nextY);
-        } catch (e) {
-            timelineScrollProgrammatic = false;
-            return false;
-        }
-        requestAnimationFrame(() => { timelineScrollProgrammatic = false; });
+        scrollEl.scrollTop = nextY;
         return true;
     }
 
@@ -1922,17 +1882,6 @@
             e.preventDefault();
             e.stopPropagation();
             panTimelineByDays(raw > 0 ? 7 : -7);
-            return;
-        }
-        if (absY > absX && absY > 0 && !e.shiftKey) {
-            const before = gantt.getScrollState?.()?.y || getVerticalScrollElement()?.scrollTop || 0;
-            if (scrollGanttVertically(e.deltaY)) {
-                const after = gantt.getScrollState?.()?.y || getVerticalScrollElement()?.scrollTop || 0;
-                if (after !== before) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                }
-            }
         }
     }
 
@@ -2141,38 +2090,40 @@
         setTimelineScrollX(cur + direction * step);
     }
 
+    let lastGanttScrollLeft = null;
+    let lastGanttScrollTop = null;
+    let panBarRefreshTimer = null;
+
     function initTimelineEngine() {
         if (initTimelineEngine.bound) return;
         initTimelineEngine.bound = true;
 
         gantt.attachEvent('onGanttScroll', function (left, top) {
             if (timelineScrollProgrammatic) return;
-            if (left != null) {
+            if (left != null && left !== lastGanttScrollLeft) {
+                lastGanttScrollLeft = left;
                 lastTimelineScrollX = left;
                 getTimelineScrollElements().forEach(el => {
                     if (Math.abs(el.scrollLeft - left) > 1) el.scrollLeft = left;
                 });
-                refreshTimelinePanBar();
+                clearTimeout(panBarRefreshTimer);
+                panBarRefreshTimer = setTimeout(refreshTimelinePanBar, 150);
             }
-            if (top != null) syncVerticalScrollViews(top);
+            if (top != null && top !== lastGanttScrollTop) {
+                lastGanttScrollTop = top;
+                syncVerticalScrollViews(top);
+            }
         });
 
         const host = document.getElementById('gantt_here');
         bindGanttWheelNavigation();
         bindTimelineScrollbarSync();
         bindVerticalScrollSync();
-
-        const gridData = document.querySelector('#gantt_here .gantt_grid_data');
-        if (gridData && !gridData.dataset.resizeSyncBound) {
-            gridData.dataset.resizeSyncBound = '1';
-            gridData.addEventListener('scroll', () => queueGridHeaderSync(), { passive: true });
-        }
     }
 
     function ensureTimelineScrollbar() {
         bindTimelineScrollbarSync();
         bindVerticalScrollSync();
-        refreshVerticalScrollRange();
         const scrollHor = document.querySelector('#gantt_here [data-cell-id="scrollHor"]');
         if (scrollHor) {
             scrollHor.style.pointerEvents = 'auto';
@@ -2790,7 +2741,6 @@
             if (horScroll && horScroll !== scrollHost && Math.abs(horScroll.scrollLeft - left) > 0.5) horScroll.scrollLeft = left;
             if (scrollHost && Math.abs(scrollHost.scrollLeft - left) > 0.5) scrollHost.scrollLeft = left;
             syncing = false;
-            applyColumnHighlight();
         };
 
         if (!gridData.dataset.hscrollBound) {
@@ -4179,8 +4129,8 @@
         gantt.config.link_line_width = scheduleSettings.link_width || 2;
         gantt.config.link_arrow_size = 10;
         gantt.config.link_wrapper_width = 20;
-        gantt.config.smart_rendering = false;
-        gantt.config.static_background = false;
+        gantt.config.smart_rendering = true;
+        gantt.config.static_background = true;
         gantt.config.link_attribute = 'data-link-id';
 
         gantt.config.min_column_width = 50;
@@ -4508,10 +4458,10 @@
         sanitizeAllTaskDates();
         initGanttLayout();
         ganttReady = true;
-        schedulePerformanceMode = true;
         repairSqueezedColumnWidths();
+        applySchedulePerformanceProfile();
         enforceGridColumnExtents({ syncRows: true });
-        syncGanttLayout({ forceLayout: true });
+        syncGanttLayout({ forceLayout: true, refreshScroll: true });
         positionChartResizerVisual();
         bindColumnResizeEnhancements();
         bindGridSelectionHandlers();
@@ -4607,7 +4557,7 @@
         resizeTimer = setTimeout(() => {
             if (!isOverlayMode()) setInitialSplitLayoutWidths();
             if (typeof gantt.setSizes === 'function') gantt.setSizes();
-            syncGanttLayout({ forceLayout: !isOverlayMode() });
+            syncGanttLayout({ forceLayout: true, refreshScroll: !schedulePerformanceMode });
             bindVerticalScrollSync();
             refreshTimelinePanBar();
         }, 80);
@@ -4737,7 +4687,6 @@
         syncScheduleProjectContext();
         queueGanttLayoutSync();
         gantt.render();
-        queueGridHeaderSync();
         if (!importing) applyCellAlignToDom();
         if (importing) {
             finalizeScheduleImport(payload);
@@ -4748,22 +4697,20 @@
         updateDeadlineMarkers();
         setTimeout(() => {
             applyRollingCalendarRange();
+            applySchedulePerformanceProfile();
             if (typeof gantt.setSizes === 'function') gantt.setSizes();
-            syncGanttLayout({ forceLayout: true });
-            enforceGridColumnExtents({ syncRows: true });
+            syncGanttLayout({ forceLayout: true, refreshScroll: true });
+            enforceGridColumnExtents();
             positionChartResizerVisual();
-            refreshVerticalScrollRange();
             focusInitialTimelineView();
-            gantt.render();
             bindVerticalScrollSync();
-        }, importing ? 200 : 80);
-        applySchedulePerformanceProfile();
-        if (importing && scheduleTaskCount >= 120) {
-            showScheduleAlert(`Schedule imported (${scheduleTaskCount} activities). Performance mode enabled for smoother scrolling.`, 'info');
+        }, importing ? 120 : 40);
+        if (importing && scheduleTaskCount >= SCHEDULE_PERF_TASK_THRESHOLD) {
+            showScheduleAlert(`Schedule imported (${scheduleTaskCount} activities). Virtual scrolling enabled for smoother navigation.`, 'info');
         } else if (!importing) {
             migrateLegacyScheduleToNative();
         }
-        requestAnimationFrame(() => ensureGridVisible({ skipRender: true, skipExtents: bulkLoadDepth > 0, scrollTop: false }));
+        requestAnimationFrame(() => ensureGridVisible({ skipRender: true, skipExtents: true, scrollTop: false }));
         return true;
         } finally {
             bulkLoadDepth = Math.max(0, bulkLoadDepth - 1);
@@ -6439,14 +6386,17 @@
         return getPrintTimelinePct(date, startMs, span);
     }
 
-    function getPrintLinkMetrics(textTablePx) {
-        const estBarPx = Math.max(320, (window.innerWidth || 1200) - (textTablePx || 0) - 120);
-        const arrowPx = gantt.config.link_arrow_size || 12;
+    function getPrintLinkMetrics(textTablePx, barColPct) {
+        const chartPct = barColPct || parseInt(scheduleSettings.print_settings?.chart_width_pct, 10) || 58;
+        const pageW = window.innerWidth || 1200;
+        const estBarPx = Math.max(320, Math.round(pageW * (chartPct / 100)));
+        const arrowPx = gantt.config.link_arrow_size || 10;
         const wrapperPx = gantt.config.link_wrapper_width || 20;
+        const stroke = scheduleSettings.link_color || '#b0b0b0';
         return {
             arrowPct: (arrowPx / estBarPx) * 100,
             wrapperPct: (wrapperPx / estBarPx) * 100,
-            stroke: '#888888',
+            stroke,
             strokeWidth: scheduleSettings.link_width || gantt.config.link_line_width || 1,
         };
     }
@@ -6594,13 +6544,13 @@
         }
     }
 
-    function buildPrintLinkSegmentsByRow(rowMap, startMs, span, textTablePx) {
+    function buildPrintLinkSegmentsByRow(rowMap, startMs, span, textTablePx, barColPct) {
         const byRow = new Map();
         const add = (rowIndex, fragment) => {
             if (!byRow.has(rowIndex)) byRow.set(rowIndex, []);
             byRow.get(rowIndex).push(fragment);
         };
-        const metrics = getPrintLinkMetrics(textTablePx);
+        const metrics = getPrintLinkMetrics(textTablePx, barColPct);
         const linkPath = (d, stroke, withArrow) =>
             `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${metrics.strokeWidth}" stroke-linejoin="miter" stroke-linecap="square" vector-effect="non-scaling-stroke"${withArrow ? ' marker-end="url(#print-link-arrow)"' : ''}/>`;
 
@@ -6622,10 +6572,12 @@
         return byRow;
     }
 
-    function buildPrintRowLinkSvg(rowIndex, linkSegmentsByRow) {
+    function buildPrintRowLinkSvg(rowIndex, linkSegmentsByRow, stroke) {
         const segments = linkSegmentsByRow?.get(rowIndex);
         if (!segments?.length) return '';
-        return `<svg class="print-row-links" viewBox="0 0 100 100" preserveAspectRatio="none"><defs><marker id="print-link-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="4" markerHeight="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#888888"/></marker></defs>${segments.join('')}</svg>`;
+        const color = stroke || scheduleSettings.link_color || '#b0b0b0';
+        const markerId = `print-link-arrow-${rowIndex}`;
+        return `<svg class="print-row-links" viewBox="0 0 100 100" preserveAspectRatio="none"><defs><marker id="${markerId}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="4" markerHeight="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="${color}"/></marker></defs>${segments.join('').replace(/url\(#print-link-arrow\)/g, `url(#${markerId})`)}</svg>`;
     }
 
     function buildPrintTimescale(startMs, span, mode) {
@@ -6653,7 +6605,8 @@
             return `<div class="print-bar print-bar-summary ${getWbsLevelClass(task) || 'sched-wbs-l0'}" style="left:${left}%;width:${width}%"></div>`;
         }
         const crit = gantt.config.highlight_critical_path && isTaskCritical(task);
-        return `<div class="print-bar print-bar-task${crit ? ' print-bar-critical' : ''}" style="left:${left}%;width:${width}%;background:${color}"></div>`;
+        const critColor = scheduleSettings.critical_bar_color || '#c00000';
+        return `<div class="print-bar print-bar-task${crit ? ' print-bar-critical' : ''}" style="left:${left}%;width:${width}%;background:${crit ? critColor : color}"></div>`;
     }
 
     function getPrintColumnAlignClass(col) {
@@ -6670,13 +6623,15 @@
         const dataDate = document.getElementById('dataDateInput')?.value || scheduleSettings.data_date || CasePMSchedule.formatDate(new Date());
         const printed = new Date().toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
         const DAY_MS = 86400000;
-        const PRINT_CHART_PAD_DAYS = 7;
-        const scheduleStartMs = range?.start_date ? toGanttDate(range.start_date)?.getTime() : Date.now();
-        const scheduleEndMs = range?.end_date ? toGanttDate(range.end_date)?.getTime() : scheduleStartMs + DAY_MS * 30;
-        const startMs = scheduleStartMs - PRINT_CHART_PAD_DAYS * DAY_MS;
-        const endMs = scheduleEndMs + PRINT_CHART_PAD_DAYS * DAY_MS;
+        const onScreenStart = toGanttDate(gantt.config.start_date)?.getTime();
+        const onScreenEnd = toGanttDate(gantt.config.end_date)?.getTime();
+        const scheduleStartMs = onScreenStart || (range?.start_date ? toGanttDate(range.start_date)?.getTime() : Date.now());
+        const scheduleEndMs = onScreenEnd || (range?.end_date ? toGanttDate(range.end_date)?.getTime() : scheduleStartMs + DAY_MS * 30);
+        const startMs = scheduleStartMs;
+        const endMs = scheduleEndMs;
         const span = Math.max(endMs - startMs, DAY_MS);
-        const timescale = buildPrintTimescale(startMs, span, ps.print_timescale || 'week');
+        const printTimescaleMode = scheduleSettings.timescale || ps.print_timescale || 'week';
+        const timescale = buildPrintTimescale(startMs, span, printTimescaleMode);
         const showInlineBars = ps.include_inline_bars !== false;
         const showTable = ps.include_activity_table !== false;
         const showChart = ps.include_schedule_chart === true;
@@ -6685,6 +6640,7 @@
         const visibleCols = showTable ? getPrintVisibleGridColumns(ps) : [];
         const printFontPt = parseInt(ps.font_size_pt, 10) || 8;
         const printRowH = gantt.config.row_height || parseInt(ps.row_height_px, 10) || 24;
+        const barColPct = Math.max(35, Math.min(80, parseInt(ps.chart_width_pct, 10) || 58));
         const evmExtraCols = showEvm && !visibleCols.some(v => v.col.name === 'cpi');
         const EVM_COL_PX = 40;
         const textTablePx = visibleCols.reduce((s, v) => s + v.width, 0)
@@ -6714,8 +6670,9 @@
             gantt.eachTask(t => { rowMap.set(t.id, rowIdx++); });
         }
         const linkSegmentsByRow = (showLinks && rowIdx)
-            ? buildPrintLinkSegmentsByRow(rowMap, startMs, span, textTablePx)
+            ? buildPrintLinkSegmentsByRow(rowMap, startMs, span, textTablePx, barColPct)
             : null;
+        const linkStroke = scheduleSettings.link_color || '#b0b0b0';
         rowIdx = 0;
         if (showTable && visibleCols.length) {
             gantt.eachTask(t => {
@@ -6736,7 +6693,7 @@
                     : '';
                 const summary = isSummaryTask(t);
                 const wbsCls = getWbsLevelClass(t);
-                const rowLinkSvg = buildPrintRowLinkSvg(currentRow, linkSegmentsByRow);
+                const rowLinkSvg = buildPrintRowLinkSvg(currentRow, linkSegmentsByRow, linkStroke);
                 const barCell = showInlineBars
                     ? `<td class="print-bar-cell"><div class="print-bar-track">${rowLinkSvg}${buildPrintBarMarkup(t, startMs, span)}</div></td>`
                     : '';
@@ -6860,7 +6817,7 @@
             const evmColGroup = evmExtraCols
                 ? `<col class="print-data-col" style="width:${EVM_COL_PX}px"><col class="print-data-col" style="width:${EVM_COL_PX}px">`
                 : '';
-            const colGroup = `<colgroup>${visibleCols.map(({ width }) => `<col class="print-data-col" style="width:${width}px">`).join('')}${evmColGroup}${showInlineBars ? '<col class="print-bar-col">' : ''}</colgroup>`;
+            const colGroup = `<colgroup>${visibleCols.map(({ width }) => `<col class="print-data-col" style="width:${width}px">`).join('')}${evmColGroup}${showInlineBars ? `<col class="print-bar-col" style="width:${barColPct}%">` : ''}</colgroup>`;
             return `<div class="print-schedule-wrap${wbsCls}${gridCls}${repeatCls}${fitCls}${colorBarsCls}" style="--print-font-size:${printFontPt}pt;--print-row-height:${printRowH}px;--print-cols-width:${textTablePx}px" data-print-orientation="${ps.orientation || 'landscape'}">
                 <table class="schedule-print-table schedule-print-table-compact schedule-print-table-visible-cols schedule-print-table-screen-cols schedule-print-table-fill-page">
                 ${colGroup}
