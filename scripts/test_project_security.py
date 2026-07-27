@@ -19,6 +19,13 @@ class ProjectSecurityTests(unittest.TestCase):
             pid = resolve_upload_project_id('/uploads/documents/999999991/spec.pdf')
             self.assertIsNone(pid)
 
+    def test_resolve_upload_access_for_project_logo(self):
+        from project_security import resolve_upload_access
+
+        pid, kind = resolve_upload_access('/uploads/projects/42/logo')
+        self.assertEqual(pid, 42)
+        self.assertEqual(kind, 'logo')
+
     def test_guard_api_project_scope_blocks_cross_project_query(self):
         import time
         import app as app_module
