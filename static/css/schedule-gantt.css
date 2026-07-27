@@ -1206,6 +1206,14 @@ body.sched-col-dragging .gantt_grid_head_cell,
 body.sched-col-dragging .gantt_grid_scale {
     cursor: grabbing !important;
 }
+#gantt_here [data-cell-id="scrollVer"] {
+    pointer-events: auto !important;
+    z-index: 40 !important;
+}
+#gantt_here [data-cell-id="scrollVer"] .gantt_layout_outer_scroll {
+    overflow-y: auto !important;
+    pointer-events: auto !important;
+}
 #gantt_here [data-cell-id="gridScroll"] {
     overflow-x: auto !important;
     overflow-y: hidden !important;

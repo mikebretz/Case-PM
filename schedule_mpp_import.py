@@ -180,6 +180,41 @@ def _lag_days(lag, defaults) -> int:
         return 0
 
 
+def _rollup_summary_dates(data: list[dict[str, Any]]) -> None:
+    """Set summary WBS start/finish from child activities (MSP summary rows can be stale)."""
+    by_id = {int(row['id']): row for row in data}
+    children: dict[int, list[int]] = {}
+    for row in data:
+        parent = int(row.get('parent') or 0)
+        if parent:
+            children.setdefault(parent, []).append(int(row['id']))
+
+    def walk(parent_id: int) -> None:
+        for child_id in children.get(parent_id, []):
+            walk(child_id)
+        row = by_id.get(parent_id)
+        if not row or row.get('type') != 'project':
+            return
+        kid_rows = [by_id[cid] for cid in children.get(parent_id, []) if cid in by_id]
+        if not kid_rows:
+            return
+        starts = [k['start_date'] for k in kid_rows if k.get('start_date')]
+        ends = [k['end_date'] for k in kid_rows if k.get('end_date')]
+        if starts:
+            row['start_date'] = min(starts)
+        if ends:
+            row['end_date'] = max(ends)
+        if row.get('start_date') and row.get('end_date') and row.get('type') == 'project':
+            try:
+                row['duration'] = _work_days_between(row['start_date'], row['end_date'])
+            except ValueError:
+                pass
+
+    roots = [int(row['id']) for row in data if int(row.get('parent') or 0) == 0]
+    for root_id in roots:
+        walk(root_id)
+
+
 def _work_days_between(start_str: str, end_str: str) -> int:
     start = datetime.strptime(start_str, '%Y-%m-%d').date()
     end = datetime.strptime(end_str, '%Y-%m-%d').date()
@@ -328,6 +363,8 @@ def _project_to_gantt(project) -> dict[str, Any]:
         task['parent'] = stack[-1]['id']
         if task.get('type') == 'project':
             stack.append({'id': task['id'], 'level': level})
+
+    _rollup_summary_dates(data)
 
     import_meta: dict[str, Any] = {
         'task_count': len(data),
