@@ -547,10 +547,24 @@
         return rows;
     }
 
-    function bindLookAheadTableEvents() {
+    function deleteLookAheadRow(rowId) {
+        if (rowId == null || rowId === '') return;
+        syncLookAheadDraftFromDom();
+        const id = String(rowId);
+        if (lookaheadDraft?.rows) {
+            lookaheadDraft.rows = lookaheadDraft.rows.filter(r => String(r.id) !== id);
+        }
+        renderLookAhead({ skipReload: true });
+    }
+
+    function buildLookAheadDeleteBtn(rowId) {
+        return `<button type="button" class="la-delete-row text-zinc-500 hover:text-red-400" data-row-id="${escHtml(String(rowId))}" title="Delete row"><i class="fa-solid fa-trash-can"></i></button>`;
+    }
+
+    function bindLookAheadViewEvents() {
         const wrap = document.getElementById('lookaheadContent');
-        if (!wrap || wrap.dataset.laBound) return;
-        wrap.dataset.laBound = '1';
+        if (!wrap || wrap.dataset.laEventsBound) return;
+        wrap.dataset.laEventsBound = '1';
         wrap.addEventListener('input', () => syncLookAheadDraftFromDom());
         wrap.addEventListener('change', e => {
             if (e.target.matches('.la-start, .la-finish')) {
@@ -586,14 +600,17 @@
             }
             const del = e.target.closest('.la-delete-row');
             if (del) {
-                del.closest('tr')?.remove();
-                syncLookAheadDraftFromDom();
-                renderLookAhead({ skipReload: true });
+                e.preventDefault();
+                deleteLookAheadRow(del.dataset.rowId);
                 return;
             }
             const focus = e.target.closest('.la-focus-task');
             if (focus && focus.dataset.taskId) focusActivity(focus.dataset.taskId);
         });
+    }
+
+    function bindLookAheadTableEvents() {
+        bindLookAheadViewEvents();
     }
 
     function initLookAheadRowDrag() {
@@ -1547,11 +1564,30 @@
         if (typeof gantt.setSizes === 'function') gantt.setSizes();
         gantt.render();
         syncGanttLayout({ forceLayout: true, refreshScroll: options.refreshScroll !== false });
+        if (isOverlayMode()) {
+            applyOverlayDomLayout();
+            positionChartResizerVisual();
+        }
         enforceGridColumnExtents({ syncRows: true });
-        positionChartResizerVisual();
         scheduleGridHeaderLayout(true);
         bindVerticalScrollSync();
+        ensureColumnResizeGrips();
+        syncWbsGutterSpans();
         if (options.focusTimeline) focusInitialTimelineView();
+    }
+
+    function refreshGanttGridOnViewShow() {
+        if (!ganttReady) return;
+        resizeGanttHost();
+        const run = () => refreshGanttGridLayout({ focusTimeline: false, refreshScroll: true });
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                run();
+                setTimeout(run, 100);
+                setTimeout(run, 250);
+                setTimeout(run, 500);
+            });
+        });
     }
 
     function layoutColumnResizeGrips(metrics) {
@@ -5758,7 +5794,11 @@
         const dd = document.getElementById('dataDateInput');
         const la = document.getElementById('lookaheadDaysInput');
         if (dd) dd.value = scheduleSettings.data_date || CasePMSchedule.formatDate(new Date());
-        if (la) la.value = scheduleSettings.lookahead_days || 14;
+        if (la) {
+            let days = scheduleSettings.lookahead_days || 14;
+            if (days === 30) days = 42;
+            la.value = String(days);
+        }
         applyGanttDisplayStyles();
         if (!scheduleSettings.default_cell_align) {
             scheduleSettings.default_cell_align = { h: 'left', v: 'middle' };
@@ -6462,13 +6502,7 @@
             if (view === 'gantt') {
                 document.getElementById('ganttViewPanel')?.classList.remove('hidden');
                 document.getElementById('tabGantt')?.classList.add('active-view');
-                if (ganttReady) {
-                    resizeGanttHost();
-                    requestAnimationFrame(() => {
-                        refreshGanttGridLayout({ focusTimeline: false });
-                        setTimeout(() => refreshGanttGridLayout({ focusTimeline: false }), 120);
-                    });
-                }
+                if (ganttReady) refreshGanttGridOnViewShow();
             } else if (view === 'calendar') {
                 document.getElementById('calendarViewPanel')?.classList.remove('hidden');
                 document.getElementById('tabCalendar')?.classList.add('active-view');
@@ -6556,8 +6590,11 @@
             const bar = seg
                 ? `<div class="la-gantt-bar ${meta.cls} sched-look-ahead-bar" style="left:${seg.left}%;width:${seg.width}%;height:${barH}px;background:${barColor}"></div>`
                 : '';
-            body += `<div class="la-gantt-row ${meta.cls} sched-look-ahead-row" style="height:${rowH}px">
-                <div class="la-gantt-label" title="${escHtml(row.activity || '')}">${escHtml(row.activity || '—')}</div>
+            body += `<div class="la-gantt-row ${meta.cls} sched-look-ahead-row" data-row-id="${row.id}" style="height:${rowH}px">
+                <div class="la-gantt-label" title="${escHtml(row.activity || '')}">
+                    <span class="la-gantt-label-text">${escHtml(row.activity || '—')}</span>
+                    ${buildLookAheadDeleteBtn(row.id)}
+                </div>
                 <div class="la-gantt-track sched-look-ahead-track">${bar}</div>
             </div>`;
         });
@@ -6601,8 +6638,11 @@
         let body = '';
         rows.forEach(row => {
             const meta = getLookAheadPriorityMeta(row.priority);
-            body += `<div class="la-cal-row ${meta.cls} sched-look-ahead-row">
-                <div class="la-cal-row-label" title="${escHtml(row.activity || '')}">${escHtml(row.activity || '—')}</div>
+            body += `<div class="la-cal-row ${meta.cls} sched-look-ahead-row" data-row-id="${row.id}">
+                <div class="la-cal-row-label" title="${escHtml(row.activity || '')}">
+                    <span class="la-cal-label-text">${escHtml(row.activity || '—')}</span>
+                    ${buildLookAheadDeleteBtn(row.id)}
+                </div>
                 <div class="la-cal-cells la-cal-day-cells">${buildLookAheadCalendarDayCells(row, days, meta)}</div>
             </div>`;
         });
@@ -6687,17 +6727,25 @@
     }
 
     function getLookAheadPrintColumns(ps) {
+        const fit = 'la-print-col-fit';
         const cols = [
-            { key: 'priority', label: 'Priority', class: 'la-print-pri-col' },
-            { key: 'activity', label: 'Activity', class: 'la-print-act-col la-print-act-fit' },
-            { key: 'start', label: 'Start', class: 'la-print-date-col' },
-            { key: 'finish', label: 'Finish', class: 'la-print-date-col' }
+            { key: 'priority', label: 'Priority', class: `la-print-pri-col ${fit}` },
+            { key: 'activity', label: 'Activity', class: `la-print-act-col ${fit}` },
+            { key: 'start', label: 'Start', class: `la-print-date-col ${fit}` },
+            { key: 'finish', label: 'Finish', class: `la-print-date-col ${fit}` }
         ];
-        if (ps.include_resource !== false) cols.push({ key: 'resource', label: 'Resource', class: 'la-print-res-col' });
-        cols.push({ key: 'wbs', label: 'WBS', class: 'la-print-wbs-col' });
-        if (ps.include_why !== false) cols.push({ key: 'why', label: 'Why', class: 'la-print-why-col' });
-        if (ps.include_notes !== false) cols.push({ key: 'notes', label: 'Notes', class: 'la-print-notes-col' });
+        if (ps.include_resource !== false) cols.push({ key: 'resource', label: 'Resource', class: `la-print-res-col ${fit}` });
+        cols.push({ key: 'wbs', label: 'WBS', class: `la-print-wbs-col ${fit}` });
+        if (ps.include_why !== false) cols.push({ key: 'why', label: 'Why', class: `la-print-why-col ${fit}` });
+        if (ps.include_notes !== false) cols.push({ key: 'notes', label: 'Notes', class: `la-print-notes-col ${fit}` });
         return cols;
+    }
+
+    function buildLookAheadPrintColgroup(dataColCount, chartColCount) {
+        let html = '<colgroup>';
+        for (let i = 0; i < dataColCount; i++) html += '<col class="la-print-col-fit" />';
+        for (let i = 0; i < chartColCount; i++) html += '<col class="la-print-col-chart" />';
+        return `${html}</colgroup>`;
     }
 
     function buildLookAheadPrintDataCell(row, col, meta) {
@@ -6742,6 +6790,7 @@
 
         return wrapLookAheadPrintBody(`<div class="la-print-table-layout">
             <table class="lookahead-print-table">
+                ${buildLookAheadPrintColgroup(cols.length, 0)}
                 <thead>${head}</thead>
                 <tbody>${body}</tbody>
             </table>
@@ -6772,10 +6821,11 @@
 
         return wrapLookAheadPrintBody(`<div class="la-print-gantt-layout">
             <table class="lookahead-print-combo la-print-gantt-combo">
+                ${buildLookAheadPrintColgroup(cols.length, 1)}
                 <thead>
                     <tr>
                         ${buildLookAheadPrintDataHead(cols)}
-                        <th class="la-print-chart-col">
+                        <th class="la-print-chart-col la-print-col-chart-head">
                             <div class="la-print-gantt-ts-track">${timescale}</div>
                         </th>
                     </tr>
@@ -6792,7 +6842,7 @@
         const dayHead = days.map(d => {
             const wknd = d.getDay() === 0 || d.getDay() === 6;
             const scaleDate = formatLookAheadScaleDate(d);
-            return `<th class="la-print-cal-dayhead${wknd ? ' la-print-cal-weekend' : ''}">
+            return `<th class="la-print-cal-dayhead la-print-col-chart${wknd ? ' la-print-cal-weekend' : ''}">
                 <span class="la-print-cal-dow">${dow[d.getDay()]}</span>
                 <span class="la-print-cal-num">${escHtml(scaleDate)}</span>
             </th>`;
@@ -6818,6 +6868,7 @@
 
         return wrapLookAheadPrintBody(`<div class="la-print-calendar-layout">
             <table class="lookahead-print-combo la-print-cal-combo">
+                ${buildLookAheadPrintColgroup(cols.length, days.length)}
                 <thead>
                     <tr>
                         ${buildLookAheadPrintDataHead(cols)}
@@ -6996,8 +7047,8 @@
 
         container.innerHTML = viewHtml;
         document.getElementById('lookaheadCount').textContent = String(rows.length);
+        bindLookAheadViewEvents();
         if (viewMode === 'table') {
-            bindLookAheadTableEvents();
             initLookAheadRowDrag();
         }
     }
