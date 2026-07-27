@@ -396,12 +396,12 @@ body.schedule-chart-resizing {
 }
 .schedule-overlay-mode #gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(3) {
     position: absolute !important;
-    left: var(--sched-chart-left, 520px) !important;
+    left: 0 !important;
     top: 0 !important;
     bottom: 0 !important;
     right: 16px !important;
-    width: calc(100% - var(--sched-chart-left, 520px) - 16px) !important;
-    min-width: 280px !important;
+    width: auto !important;
+    min-width: 0 !important;
     max-width: none !important;
     z-index: 1 !important;
     flex: none !important;
@@ -2000,11 +2000,11 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         vector-effect: non-scaling-stroke;
     }
     .print-row-links path {
-        stroke: #888888 !important;
+        stroke: var(--gantt-link-color, #b0b0b0) !important;
     }
     .print-row-links polygon {
         stroke: none;
-        fill: #d0d0d0 !important;
+        fill: var(--gantt-link-color, #b0b0b0) !important;
     }
     .print-bar {
         position: absolute;
@@ -2024,13 +2024,7 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
     .print-bar-summary.sched-wbs-l1 { background: #00b050 !important; }
     .print-bar-summary.sched-wbs-l2 { background: #ffff00 !important; }
     .print-bar-summary.sched-wbs-l3 { background: #ffc000 !important; }
-    .print-row-links path {
-        stroke: var(--gantt-link-color, #b0b0b0) !important;
-    }
-    .print-row-links marker path {
-        fill: var(--gantt-link-color, #b0b0b0) !important;
-    }
-    .print-bar-task { border-radius: 0; height: 12px; top: 50%; transform: translateY(-50%); }
+    .print-bar-task { border-radius: 0; }
     .print-bar-critical { background: #c00000 !important; }
     .print-milestone {
         position: absolute;
