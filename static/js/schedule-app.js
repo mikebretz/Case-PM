@@ -373,6 +373,21 @@
         return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
     }
 
+    /** Short schedule-style date for Gantt/calendar scales (e.g. 27-Jul-2026). */
+    function formatLookAheadScaleDate(value) {
+        const d = value instanceof Date ? value : parseLookAheadDateInput(value);
+        if (d && !Number.isNaN(d.getTime())) return formatDateShort(d);
+        const g = toGanttDate(value);
+        return g ? formatDateShort(g) : '';
+    }
+
+    function lookAheadTimescaleTickCount(ctx) {
+        const dayCount = getLookAheadCalendarDays(ctx).length;
+        if (dayCount <= 10) return Math.max(dayCount - 1, 4);
+        if (dayCount <= 21) return 6;
+        return 8;
+    }
+
     function repairLookAheadDateField(str, taskId, field) {
         const normalized = str ? formatLookAheadDate(str) : '';
         if (!normalized || parseLookAheadDateInput(normalized)) return normalized;
@@ -6480,15 +6495,15 @@
         for (let i = 0; i <= n; i++) {
             const pct = (i / n) * 100;
             const d = new Date(range.startMs + (range.span * i / n));
-            cells += `<span class="la-ts-label" style="left:${pct}%">${formatLookAheadDate(d)}</span>`;
+            const label = formatLookAheadScaleDate(d);
+            cells += `<span class="la-ts-label" style="left:${pct}%" title="${escHtml(label)}">${escHtml(label)}</span>`;
         }
         return `<div class="la-timescale">${cells}</div>`;
     }
 
     function buildLookAheadGanttHtml(rows, ctx) {
         const range = getLookAheadDateRange(rows, ctx);
-        const dayCount = getLookAheadCalendarDays(ctx).length;
-        const timescale = buildLookAheadTimescaleHtml(range, Math.min(Math.max(dayCount - 1, 6), 14));
+        const timescale = buildLookAheadTimescaleHtml(range, lookAheadTimescaleTickCount(ctx));
         const rowH = scheduleSettings.default_row_height || 24;
         const barH = scheduleSettings.default_bar_height || 16;
         let body = '';
@@ -6535,7 +6550,8 @@
         const barH = scheduleSettings.default_bar_height || 16;
         let header = days.map(d => {
             const wknd = d.getDay() === 0 || d.getDay() === 6;
-            return `<div class="la-cal-dayhead${wknd ? ' la-cal-weekend' : ''}"><span class="la-cal-dow">${dow[d.getDay()]}</span><span class="la-cal-num">${d.getMonth() + 1}/${d.getDate()}</span></div>`;
+            const scaleDate = formatLookAheadScaleDate(d);
+            return `<div class="la-cal-dayhead${wknd ? ' la-cal-weekend' : ''}"><span class="la-cal-dow">${dow[d.getDay()]}</span><span class="la-cal-num" title="${escHtml(scaleDate)}">${escHtml(scaleDate)}</span></div>`;
         }).join('');
         let body = '';
         rows.forEach(row => {
@@ -6669,9 +6685,7 @@
 
     function buildLookAheadPrintGanttHtml(rows, ctx, ps) {
         const range = getLookAheadPeriodBounds(ctx);
-        const days = getLookAheadCalendarDays(ctx);
-        const tickCount = Math.min(Math.max(days.length - 1, 6), 14);
-        const timescale = buildLookAheadTimescaleHtml(range, tickCount);
+        const timescale = buildLookAheadTimescaleHtml(range, lookAheadTimescaleTickCount(ctx));
         let body = '';
         rows.forEach(row => {
             const meta = getLookAheadPriorityMeta(row.priority);
@@ -6701,9 +6715,10 @@
         const dow = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
         let header = days.map(d => {
             const wknd = d.getDay() === 0 || d.getDay() === 6;
+            const scaleDate = formatLookAheadScaleDate(d);
             return `<div class="la-print-cal-day${wknd ? ' la-print-cal-weekend' : ''}">
                 <span class="la-print-cal-dow">${dow[d.getDay()]}</span>
-                <span class="la-print-cal-num">${d.getMonth() + 1}/${d.getDate()}</span>
+                <span class="la-print-cal-num">${escHtml(scaleDate)}</span>
             </div>`;
         }).join('');
 

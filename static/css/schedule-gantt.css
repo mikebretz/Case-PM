@@ -2785,6 +2785,27 @@ textarea.lookahead-input {
     overflow: hidden;
     background: rgba(9, 9, 11, 0.7);
 }
+.sched-look-ahead-gantt {
+    overflow: visible;
+}
+.sched-look-ahead-gantt .la-gantt-chart {
+    overflow-x: auto;
+    overflow-y: visible;
+}
+.sched-look-ahead-gantt .sched-look-ahead-ts {
+    overflow: visible;
+}
+.sched-look-ahead-gantt .la-gantt-ts-cell {
+    overflow: visible;
+    min-width: 320px;
+}
+.sched-look-ahead-gantt .la-timescale {
+    overflow: visible;
+    height: auto;
+    min-height: 24px;
+    padding: 2px 44px 6px;
+    margin: 0 -44px;
+}
 .la-gantt-meta { padding: 12px 14px; border-bottom: 1px solid #27272a; display: flex; flex-wrap: wrap; gap: 1rem; font-size: 13px; }
 .la-gantt-chart { padding: 8px 0 12px; }
 .la-gantt-ts-row { display: flex; margin-bottom: 4px; }
@@ -2830,8 +2851,12 @@ textarea.lookahead-input {
 }
 .sched-look-ahead-gantt .la-ts-label {
     color: #a1a1aa;
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 600;
+    white-space: nowrap;
+    overflow: visible;
+    max-width: none;
+    font-variant-numeric: tabular-nums;
 }
 .sched-look-ahead-gantt .la-gantt-label {
     white-space: normal;
@@ -2887,7 +2912,7 @@ textarea.lookahead-input {
 .la-cal-cells { display: flex; flex: 1; }
 .la-cal-dayhead {
     flex: 1;
-    min-width: 36px;
+    min-width: 52px;
     text-align: center;
     padding: 6px 2px;
     border-right: 1px solid #1f1f23;
@@ -2895,8 +2920,16 @@ textarea.lookahead-input {
     color: #a1a1aa;
 }
 .la-cal-dayhead.la-cal-weekend { background: rgba(255,255,255,0.02); color: #71717a; }
-.la-cal-dow { display: block; font-weight: 600; }
-.la-cal-num { display: block; color: #d4d4d8; }
+.la-cal-dow { display: block; font-weight: 600; font-size: 9px; }
+.la-cal-num {
+    display: block;
+    color: #d4d4d8;
+    font-size: 8px;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: visible;
+    font-variant-numeric: tabular-nums;
+}
 .la-cal-cell {
     flex: 1;
     min-width: 36px;
@@ -3066,7 +3099,7 @@ textarea.lookahead-input {
     padding-bottom: 4px;
 }
 .la-print-gantt-label-spacer { width: 38%; flex-shrink: 0; }
-.la-print-gantt-ts-track { flex: 1; position: relative; height: 18px; }
+.la-print-gantt-ts-track { flex: 1; position: relative; height: auto; min-height: 18px; padding: 0 28px; }
 .la-print-gantt-ts-track .la-ts-label {
     position: absolute;
     top: 0;
@@ -3074,6 +3107,9 @@ textarea.lookahead-input {
     font-size: 7pt;
     color: #4b5563;
     white-space: nowrap;
+    overflow: visible;
+    max-width: none;
+    font-variant-numeric: tabular-nums;
 }
 .la-print-gantt-row {
     display: flex;
@@ -3145,9 +3181,10 @@ textarea.lookahead-input {
     min-width: 0;
     text-align: center;
     padding: 3px 1px;
-    font-size: 7pt;
+    font-size: 6.5pt;
     border-right: 1px solid #e5e7eb;
     background: #f9fafb;
+    line-height: 1.2;
 }
 .la-print-cal-day:last-child { border-right: none; }
 .la-print-cal-day.la-print-cal-weekend { background: #e5e7eb; color: #4b5563; }
