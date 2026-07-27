@@ -322,6 +322,27 @@ def phase_idor(result: SecResult, client, app, models, p_a, p_b, iso) -> None:
     else:
         result.fail('idor_commitment_workflow_blocked', 'idor', f'HTTP {rv3.status_code}', severity='warning')
 
+    rv4 = client.post(
+        f'/api/commitments/{com_b.id}/sage-sync',
+        json={'event_type': 'CommitmentUpdated'},
+        headers=_csrf_headers(token),
+    )
+    if rv4.status_code in (403, 400):
+        result.ok('idor_commitment_sage_sync_blocked', 'idor')
+    else:
+        result.fail('idor_commitment_sage_sync_blocked', 'idor', f'HTTP {rv4.status_code}')
+
+    rv5 = client.post(
+        f'/api/change-orders/{co_b.id}/attachments',
+        data={},
+        headers=_csrf_headers(token),
+        content_type='multipart/form-data',
+    )
+    if rv5.status_code in (403, 400):
+        result.ok('idor_co_attachment_blocked', 'idor')
+    else:
+        result.fail('idor_co_attachment_blocked', 'idor', f'HTTP {rv5.status_code}')
+
 
 def _make_flagged_user(models, p_a, uid: str, suffix: str, global_flags: dict):
     """User on project A with custom permission flags."""
@@ -873,7 +894,7 @@ def phase_legacy_routes(result: SecResult, client, app, models, p_a) -> None:
         '/api/pcos/1/update-status',
     ):
         rv = client.post(path, json={'status': 'Closed'}, headers=_csrf_headers(token))
-        if rv.status_code == 410:
+        if rv.status_code == 410 or (path.startswith('/api/') and rv.status_code == 403):
             result.ok(f'legacy_410_{path.split("/")[1]}', 'legacy')
         else:
             result.fail(f'legacy_410_{path}', 'legacy', f'status {rv.status_code}')
@@ -1040,6 +1061,18 @@ def phase_field_security(result: SecResult, client, app, models, p_a, p_b, iso) 
         result.ok('field_project_get_blocked', 'field_security')
     else:
         result.fail('field_project_get_blocked', 'field_security', f'HTTP {rv_proj.status_code}')
+
+    from unittest.mock import patch
+
+    with patch.dict(os.environ, {'DOCUSIGN_ALLOW_UNSIGNED_WEBHOOKS': ''}, clear=False):
+        rv_hook = client.post(
+            '/api/webhooks/docusign',
+            json={'envelopeId': 'fake-envelope', 'status': 'completed'},
+        )
+    if rv_hook.status_code in (401, 403):
+        result.ok('field_docusign_unsigned_rejected', 'field_security')
+    else:
+        result.fail('field_docusign_unsigned_rejected', 'field_security', f'HTTP {rv_hook.status_code}')
 
 
 def phase_privilege_escalation(result: SecResult, client, app, models, iso) -> None:

@@ -2296,7 +2296,7 @@ ALLOWED_EXTENSIONS = {
     'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tif', 'tiff',
     'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt', 'rtf',
     'zip', 'rar', '7z', 'dwg', 'dxf',
-    'json', 'html', 'htm',
+    'json',
 }
 
 # File extensions that can be opened in the built-in editors.
@@ -2434,7 +2434,7 @@ def login():
         password = request.form.get('password')
         remember = True if request.form.get('remember') else False
 
-        from access_control import check_login_allowed, record_login_failure, record_login_success, reset_session_activity
+        from access_control import check_login_allowed, record_login_failure, record_login_success, reset_session_activity, regenerate_session_on_login
         allowed, retry_seconds = check_login_allowed(email)
         if not allowed:
             flash(f'Too many failed login attempts. Try again in {retry_seconds // 60 + 1} minute(s).', 'error')
@@ -2459,6 +2459,7 @@ def login():
             flash('Your account has been deactivated. Please contact an administrator.', 'error')
             return _login_page()
 
+        regenerate_session_on_login()
         login_user(user, remember=remember)
         user.last_login = datetime.utcnow()
         db.session.commit()
@@ -2507,8 +2508,9 @@ def download_casepm_connector_vbs():
 
 
 def _complete_recovery_login(user, *, via='recovery'):
-    from access_control import reset_session_activity
+    from access_control import reset_session_activity, regenerate_session_on_login
     remember = True
+    regenerate_session_on_login()
     login_user(user, remember=remember)
     user.last_login = datetime.utcnow()
     db.session.commit()
@@ -2565,6 +2567,8 @@ def recovery_login():
             )
         record_login_success(email or 'recovery')
         user = ensure_recovery_user(db, User)
+        from access_control import regenerate_session_on_login
+        regenerate_session_on_login()
         login_user(user, remember=remember)
         user.last_login = datetime.utcnow()
         db.session.commit()
@@ -12418,9 +12422,14 @@ def api_update_commitment(commitment_id):
 @login_required
 def api_delete_commitment(commitment_id):
     from developer_tools import is_admin_or_developer
+    from financial_security import require_financial_project_access
     if not is_admin_or_developer(current_user):
         return jsonify({'error': 'Only administrators or developers can delete commitments'}), 403
     c = Commitment.query.get_or_404(commitment_id)
+    try:
+        require_financial_project_access(current_user, c.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     force = request.args.get('force') == '1'
     body = request.get_json(silent=True) or {}
     if body.get('force'):
@@ -12667,7 +12676,12 @@ def api_integrations_status():
 @login_required
 def api_commitment_sage_sync(commitment_id):
     from commitment_persistence import commitment_to_dict
+    from financial_security import require_financial_project_access
     c = Commitment.query.get_or_404(commitment_id)
+    try:
+        require_financial_project_access(current_user, c.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     body = request.get_json(silent=True) or {}
     event_type = body.get('event_type') or 'CommitmentUpdated'
     if c.status == 'Approved' and event_type == 'CommitmentUpdated':
@@ -12756,8 +12770,10 @@ def api_commitment_register_aia_document(commitment_id):
 
 @app.route('/api/webhooks/docusign', methods=['POST'])
 def api_docusign_webhook():
-    from docusign_service import parse_webhook_payload
+    from docusign_service import parse_webhook_payload, verify_webhook_signature
     raw = request.get_data()
+    if not verify_webhook_signature(raw, request.headers):
+        return jsonify({'error': 'invalid signature'}), 401
     data = parse_webhook_payload(raw)
     if not data:
         return jsonify({'error': 'invalid payload'}), 400
@@ -12782,7 +12798,12 @@ def api_docusign_webhook():
 @login_required
 def api_upload_commitment_attachment(commitment_id):
     from commitment_persistence import commitment_to_dict, _parse_json
+    from financial_security import require_financial_project_access
     c = Commitment.query.get_or_404(commitment_id)
+    try:
+        require_financial_project_access(current_user, c.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     file = request.files.get('file')
     if not file or not file.filename:
         return jsonify({'error': 'file required'}), 400
@@ -15162,9 +15183,9 @@ def api_audit_log_list():
 @login_required
 @admin_required
 def api_audit_log_create():
-    from audit_log_persistence import ensure_audit_log_schema, record_audit, serialize_log
+    from audit_log_persistence import ensure_audit_log_schema, record_audit, serialize_log, sanitize_client_audit_fields
     ensure_audit_log_schema(db)
-    body = request.get_json(silent=True) or {}
+    body = sanitize_client_audit_fields(request.get_json(silent=True) or {})
     row = record_audit(db, AuditLog, current_user, **body)
     db.session.commit()
     return jsonify({'ok': True, 'event': serialize_log(row, current_user)})
@@ -15174,10 +15195,10 @@ def api_audit_log_create():
 @login_required
 @admin_required
 def api_audit_log_batch():
-    from audit_log_persistence import ensure_audit_log_schema, record_audit_batch
+    from audit_log_persistence import ensure_audit_log_schema, record_audit_batch, sanitize_client_audit_fields
     ensure_audit_log_schema(db)
     body = request.get_json(silent=True) or {}
-    events = body.get('events') or []
+    events = [sanitize_client_audit_fields(ev) for ev in (body.get('events') or []) if isinstance(ev, dict)]
     try:
         record_audit_batch(db, AuditLog, current_user, events)
         db.session.commit()
@@ -16949,7 +16970,12 @@ def api_change_order_workflow(co_id):
 @login_required
 def api_upload_co_attachment(co_id):
     from co_persistence import append_attachment, attachment_record, co_to_dict
+    from financial_security import require_financial_project_access
     co = ChangeOrder.query.get_or_404(co_id)
+    try:
+        require_financial_project_access(current_user, co.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     file = request.files.get('file')
     if not file or not file.filename:
         return jsonify({'error': 'file required'}), 400
@@ -16986,7 +17012,12 @@ def api_upload_co_attachment(co_id):
 @login_required
 def api_upload_pco_attachment(pco_id):
     from co_persistence import pco_to_dict, append_pco_attachment, attachment_record
+    from financial_security import require_financial_project_access
     pco = PotentialChangeOrder.query.get_or_404(pco_id)
+    try:
+        require_financial_project_access(current_user, pco.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     file = request.files.get('file')
     if not file or not file.filename:
         return jsonify({'error': 'file required'}), 400
@@ -17023,6 +17054,11 @@ def api_upload_pco_attachment(pco_id):
 @app.route('/uploads/change_orders/<path:subpath>')
 @login_required
 def serve_co_attachment(subpath):
+    from project_security import guard_upload_request
+    path = f'/uploads/change_orders/{subpath}'
+    blocked = guard_upload_request(current_user, path)
+    if blocked is not None:
+        return blocked
     directory = os.path.join(app.config['UPLOAD_FOLDER'], 'change_orders')
     return send_from_directory(directory, subpath)
 
@@ -17182,7 +17218,13 @@ def api_update_pco_status(pco_id):
 @login_required
 def api_promote_pco(pco_id):
     from co_persistence import promote_pco_to_co, co_to_dict, pco_to_dict
+    from financial_security import require_financial_project_access
     from sage_service import create_and_process_sage_event
+    pco = PotentialChangeOrder.query.get_or_404(pco_id)
+    try:
+        require_financial_project_access(current_user, pco.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
     try:
         co = promote_pco_to_co(
             PotentialChangeOrder, PCOAllocation, ChangeOrder, ChangeOrderAllocation,

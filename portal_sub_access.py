@@ -329,7 +329,7 @@ def resolve_sub_vendor_sov_keys(user, data: dict | None) -> set[str]:
         st_name_lower = st_name.lower()
         if st_name and (
             st_name in allowed or st_name_lower in allowed_variants
-            or (name_lower and (st_name_lower == name_lower or name_lower in st_name_lower or st_name_lower in name_lower))
+            or (name_lower and st_name_lower == name_lower)
         ):
             return True
         for field in ('companyId', 'company_id', 'localCompanyId', 'commitmentCompanyId'):
@@ -421,7 +421,7 @@ def resolve_sub_vendor_sov_keys(user, data: dict | None) -> set[str]:
                 cid_s = str(cid)
                 if only_key == cid_s or st_cid == cid_s:
                     matched = True
-            if not matched and name_lower and (st_name == name_lower or name_lower in st_name or st_name in name_lower):
+            if not matched and name_lower and st_name == name_lower:
                 matched = True
             if matched:
                 keys.add(only_key)

@@ -26,12 +26,13 @@ CSRF_EXEMPT_PREFIXES = (
     '/force-change-password',
     '/download/',
     '/api/presence/heartbeat',
+    '/api/webhooks/docusign',
 )
 
 CSRF_EXEMPT_ENDPOINTS = frozenset({
     'login', 'logout', 'recovery_login', 'recovery_enter', 'force_change_password',
     'verify_2fa', 'static', 'favicon', 'download_casepm_connector',
-    'download_casepm_connector_vbs',
+    'download_casepm_connector_vbs', 'api_docusign_webhook',
 })
 
 
