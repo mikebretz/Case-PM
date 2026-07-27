@@ -195,7 +195,6 @@
 
     <div id="ganttViewPanel" class="schedule-view-panel schedule-panel flex-1 min-h-0 overflow-hidden flex flex-col">
         <div id="schedulePrintSheet" class="schedule-print-sheet no-screen" aria-hidden="true"></div>
-        <div id="lookaheadPrintSheet" class="lookahead-print-sheet no-screen" aria-hidden="true"></div>
         <div id="scheduleGanttHost" class="schedule-gantt-host flex-1 min-h-0 relative">
             <div id="gantt_here"></div>
             <div id="scheduleOverlayControls" class="schedule-overlay-controls">
@@ -275,6 +274,8 @@
     <div id="scheduleStatusBar" class="schedule-statusbar flex-shrink-0 no-print">
         <span>Loading…</span>
     </div>
+
+    <div id="lookaheadPrintSheet" class="lookahead-print-sheet" aria-hidden="true"></div>
 </div>
 
 <!-- Display settings (bar & link colors) -->
@@ -546,6 +547,13 @@
             <label class="flex items-center gap-2"><input id="laPrintIncludeResource" type="checkbox" class="rounded border-zinc-600" checked> Resource</label>
             <label class="flex items-center gap-2"><input id="laPrintIncludeWhy" type="checkbox" class="rounded border-zinc-600" checked> Why included</label>
             <label class="flex items-center gap-2"><input id="laPrintIncludeNotes" type="checkbox" class="rounded border-zinc-600" checked> Notes</label>
+        </div>
+        <div class="border border-zinc-700 rounded-md p-3 space-y-2">
+            <p class="text-xs font-semibold text-emerald-400 uppercase tracking-wide">Header &amp; footer</p>
+            <label class="flex items-center gap-2"><input id="laPrintIncludeHeader" type="checkbox" class="rounded border-zinc-600" checked> Print header (company / project logos &amp; names)</label>
+            <label class="flex items-center gap-2"><input id="laPrintIncludeFooter" type="checkbox" class="rounded border-zinc-600" checked> Print footer</label>
+            <button type="button" class="text-xs text-sky-400 hover:text-sky-300" onclick="ScheduleApp.showHeaderFooterSetup()">Edit header &amp; footer layout…</button>
+            <p class="text-[11px] text-zinc-500 leading-snug">Use the left header cell for company logo/name and the right cell for project logo/name — same as the main schedule print.</p>
         </div>
     </div>
     <div class="px-4 py-3 border-t border-zinc-700 flex justify-end gap-2">
