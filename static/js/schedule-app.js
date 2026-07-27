@@ -1302,6 +1302,10 @@
     }
 
     function ensureTimelineOverlayWidgets(timelineCell) {
+        if (!isOverlayMode()) {
+            timelineCell?.querySelector(':scope > .schedule-timeline-pan')?.classList.add('hidden');
+            return;
+        }
         let pan = timelineCell.querySelector(':scope > .schedule-timeline-pan');
         if (!pan) {
             pan = document.createElement('div');
@@ -1361,7 +1365,9 @@
         const hostW = host?.clientWidth || root.clientWidth || 1200;
         const isOverlay = isOverlayMode();
         const gridPaneW = getGridOverlayWidth();
-        const timelineW = isOverlay ? hostW : Math.max(240, hostW - gridPaneW - 24);
+        const scrollW = gantt.config?.scroll_size || 16;
+        const resizerW = isOverlay ? 0 : 5;
+        const timelineW = isOverlay ? hostW : Math.max(240, hostW - gridPaneW - scrollW - resizerW);
         const sizeKey = `${hostW}|${gridW}|${gridPaneW}|${isOverlay}`;
         const gridKey = String(gridW);
 
@@ -1397,8 +1403,8 @@
                     gridInner.style.width = gridW + 'px';
                     gridInner.style.maxWidth = 'none';
                 } else {
-                    gridInner.style.minWidth = '0';
-                    gridInner.style.width = '100%';
+                    gridInner.style.minWidth = gridW + 'px';
+                    gridInner.style.width = gridW + 'px';
                     gridInner.style.maxWidth = 'none';
                 }
             }
@@ -1514,14 +1520,12 @@
             scheduleSettings.timeline_width_px = null;
         }
         const host = document.getElementById('scheduleGanttHost');
-        host?.classList.remove('schedule-split-mode');
-        host?.classList.add('schedule-overlay-mode');
-        bindChartResizer();
+        host?.classList.remove('schedule-overlay-mode');
+        host?.classList.add('schedule-split-mode');
         bindColumnResizeDrag();
         bindLayoutResizePersistence();
         bindVerticalScrollSync();
         bindGanttWheelNavigation();
-        bindWbsGutterScrollSync();
 
         if (!initGanttLayout.resizeBound) {
             initGanttLayout.resizeBound = true;
@@ -1608,6 +1612,7 @@
     }
 
     function bindEditorClampObserver() {
+        if (scheduleTaskCount > 120) return;
         const grid = document.querySelector('#gantt_here .gantt_grid_data');
         if (!grid || grid.dataset.editorClampBound) return;
         grid.dataset.editorClampBound = '1';
@@ -1811,6 +1816,17 @@
                 e.preventDefault();
                 e.stopPropagation();
                 panTimelineByDays(raw > 0 ? 7 : -7);
+                return;
+            }
+            if (absY > absX && absY > 0 && !e.shiftKey) {
+                const before = gantt.getScrollState?.()?.y || 0;
+                if (scrollGanttVertically(e.deltaY)) {
+                    const after = gantt.getScrollState?.()?.y || 0;
+                    if (after !== before) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }
+                }
             }
         }, { passive: false, capture: true });
     }
@@ -1823,6 +1839,7 @@
                 if (timelineScrollProgrammatic) return;
                 const y = scrollVerEl.scrollTop;
                 timelineScrollProgrammatic = true;
+                syncVerticalScrollViews(y);
                 try {
                     const x = gantt.getScrollState?.()?.x || 0;
                     if (gantt.scrollTo) gantt.scrollTo(x, y);
@@ -3597,12 +3614,13 @@
     }
 
     function refreshWbsGutterDisplay() {
-        if (!ganttReady) return;
+        if (!ganttReady || scheduleTaskCount > 80) return;
         clearTimeout(wbsGutterRefreshTimer);
         wbsGutterRefreshTimer = setTimeout(() => syncWbsGutterSpans(), 50);
     }
 
     function bindWbsGutterScrollSync() {
+        if (scheduleTaskCount > 80) return;
         const gridData = document.querySelector('#gantt_here .gantt_grid_data');
         if (!gridData || gridData.dataset.wbsScrollBound) return;
         gridData.dataset.wbsScrollBound = '1';
@@ -4218,8 +4236,8 @@
             pushUndoState();
             queueSave();
         });
-        gantt.attachEvent('onTaskOpened', () => { rebuildWbsGutterCache(); refreshWbsGutterDisplay(); });
-        gantt.attachEvent('onTaskClosed', () => { rebuildWbsGutterCache(); refreshWbsGutterDisplay(); });
+        gantt.attachEvent('onTaskOpened', () => { if (scheduleTaskCount <= 80) { rebuildWbsGutterCache(); refreshWbsGutterDisplay(); } });
+        gantt.attachEvent('onTaskClosed', () => { if (scheduleTaskCount <= 80) { rebuildWbsGutterCache(); refreshWbsGutterDisplay(); } });
         gantt.attachEvent('onTaskClick', function (id, e) {
             const target = e.target || e.srcElement;
             if (!target.closest?.('.sched-floating-cell-editor')) {
@@ -4556,7 +4574,7 @@
             gantt.eachTask(t => tasks.push(Object.assign({}, t)));
             wbsCodeMap = CasePMSchedule.buildWbsMap(tasks);
             applyRollingCalendarRange();
-        } else {
+        } else if (!opts.skipSchedule && (payload.data?.length || 0) > 1) {
             runSchedule({
                 skipScroll: true,
                 skipSave: true,
@@ -4566,6 +4584,11 @@
                 preserveDates,
                 deferRender: true
             });
+        } else {
+            const tasks = [];
+            gantt.eachTask(t => tasks.push(Object.assign({}, t)));
+            wbsCodeMap = CasePMSchedule.buildWbsMap(tasks);
+            applyRollingCalendarRange();
         }
         baselines = payload.baselines || [];
         applyP6RowMetrics();
@@ -4604,18 +4627,18 @@
         if (!importing) applyCellAlignToDom();
         if (importing) {
             finalizeScheduleImport(payload);
-        } else {
+        } else if (!opts.skipSave) {
             pushUndoState();
         }
         updateDataDateMarker();
         updateDeadlineMarkers();
-        if (!initialTimelineFocused) {
-            initialTimelineFocused = true;
-            setTimeout(() => {
-                focusInitialTimelineView();
-                syncGanttLayout();
-            }, importing ? 300 : 150);
-        }
+        setTimeout(() => {
+            applyRollingCalendarRange();
+            if (typeof gantt.setSizes === 'function') gantt.setSizes();
+            syncGanttLayout();
+            focusInitialTimelineView();
+            gantt.render();
+        }, importing ? 200 : 80);
         applySchedulePerformanceProfile();
         if (importing && scheduleTaskCount >= 120) {
             showScheduleAlert(`Schedule imported (${scheduleTaskCount} activities). Performance mode enabled for smoother scrolling.`, 'info');
@@ -4653,17 +4676,22 @@
             return;
         }
 
+        const emptyDefaults = await fetchProjectScheduleDefaults(projectId);
+
         if (projectId > 0) {
             try {
                 const res = await fetch(`/api/schedule?project_id=${projectId}`);
                 if (res.ok) {
                     const json = await res.json();
                     if (json.payload?.data?.length) {
-                        if (!isBareProjectSchedule(json.payload)) {
-                            if (loadSchedulePayload(json.payload)) {
-                                setSaveStatus('Loaded from server');
-                                return;
-                            }
+                        if (isBareProjectSchedule(json.payload)) {
+                            loadSchedulePayload(buildEmptySchedule(emptyDefaults), { skipSave: true });
+                            setSaveStatus('Empty schedule');
+                            return;
+                        }
+                        if (loadSchedulePayload(json.payload)) {
+                            setSaveStatus('Loaded from server');
+                            return;
                         }
                     }
                 }
@@ -4676,7 +4704,8 @@
                 const parsed = JSON.parse(local);
                 if (parsed.data && parsed.data.length) {
                     if (isBareProjectSchedule(parsed)) {
-                        loadP6DemoSchedule();
+                        loadSchedulePayload(buildEmptySchedule(emptyDefaults), { skipSave: true });
+                        setSaveStatus('Empty schedule');
                         return;
                     }
                     if (loadSchedulePayload(parsed)) {
@@ -4687,7 +4716,8 @@
             } catch (e) { /* ignore */ }
         }
 
-        loadP6DemoSchedule();
+        loadSchedulePayload(buildEmptySchedule(emptyDefaults), { skipSave: true });
+        setSaveStatus('Empty schedule');
     }
 
     function loadP6DemoSchedule() {
@@ -4699,12 +4729,13 @@
         if (!confirm('Clear the entire schedule? This cannot be undone.')) return;
         const projectId = getSelectedProjectId();
         localStorage.removeItem(`${STORAGE_KEY}_${projectId}`);
-        loadSchedulePayload(buildEmptySchedule(await fetchProjectScheduleDefaults(projectId)));
+        const emptyPayload = buildEmptySchedule(await fetchProjectScheduleDefaults(projectId));
+        loadSchedulePayload(emptyPayload, { skipSave: true });
         try {
             await fetch('/api/schedule', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ project_id: projectId, payload: serializeSchedule() })
+                body: JSON.stringify({ project_id: projectId, payload: emptyPayload })
             });
         } catch (e) { /* ok */ }
         setSaveStatus('Schedule cleared');
