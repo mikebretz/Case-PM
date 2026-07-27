@@ -25,10 +25,10 @@
                 <button type="button" class="schedule-ribbon-btn" onclick="ScheduleApp.showPrintSetup()" title="Print or export PDF">
                     <i class="fa-solid fa-print"></i><span>Print</span>
                 </button>
-                <button type="button" class="schedule-ribbon-btn" onclick="document.getElementById('scheduleImportInput').click()" title="MS Project XML, Primavera XER, or JSON">
+                <button type="button" class="schedule-ribbon-btn" onclick="document.getElementById('scheduleImportInput').click()" title="MS Project MPP/XML, Primavera XER, or JSON">
                     <i class="fa-solid fa-file-import"></i><span>Import</span>
                 </button>
-                <input type="file" id="scheduleImportInput" accept=".json,.xml,.xer,text/xml,application/xml" class="hidden"
+                <input type="file" id="scheduleImportInput" accept=".json,.xml,.xer,.mpp,text/xml,application/xml,application/vnd.ms-project" class="hidden"
                        onchange="ScheduleApp.importFile(this.files[0]); this.value=''">
                 <button type="button" class="schedule-ribbon-btn" onclick="ScheduleApp.exportJson()" title="Export JSON backup">
                     <i class="fa-solid fa-download"></i><span>Export</span>
