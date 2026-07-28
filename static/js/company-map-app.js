@@ -2,13 +2,28 @@
   'use strict';
 
   let map = null;
+  let streetLayer = null;
+  let satelliteLayer = null;
+  let activeBaseLayer = 'street';
   let markers = [];
   let locations = [];
   let activeId = null;
   let routeLayer = null;
+  let originMarker = null;
   let userLocation = null;
   let currentDirections = null;
   let directionsDest = null;
+  let lastDirectionsOrigin = null;
+  let pendingDirectionsJobId = null;
+  let selectedOriginAddress = null;
+
+  const HARDHAT_ICON = () => L.divIcon({
+    className: 'company-map-hardhat-marker',
+    html: '<div class="company-map-hardhat-pin"><i class="fa-solid fa-hard-hat"></i></div>',
+    iconSize: [28, 28],
+    iconAnchor: [14, 28],
+    popupAnchor: [0, -28],
+  });
 
   function esc(s) {
     const d = document.createElement('div');
@@ -72,7 +87,7 @@
     el.querySelectorAll('.company-map-directions-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        getDirectionsTo(btn.getAttribute('data-directions-id'));
+        openOriginPicker(btn.getAttribute('data-directions-id'));
       });
     });
   }
@@ -81,12 +96,46 @@
     if (map) return map;
     const canvas = document.getElementById('companyMapCanvas');
     if (!canvas || !global.L) return null;
-    map = L.map(canvas, { zoomControl: true }).setView([28.5383, -81.3792], 7);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+
+    streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors',
-    }).addTo(map);
+    });
+    satelliteLayer = L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      {
+        maxZoom: 19,
+        attribution: 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics',
+      },
+    );
+
+    map = L.map(canvas, {
+      zoomControl: true,
+      layers: [streetLayer],
+    }).setView([28.5383, -81.3792], 7);
+
+    L.control.layers(
+      { 'Street map': streetLayer, 'Satellite': satelliteLayer },
+      null,
+      { position: 'topright', collapsed: true },
+    ).addTo(map);
+
     return map;
+  }
+
+  function setMapLayer(layer) {
+    const m = ensureMap();
+    if (!m || !streetLayer || !satelliteLayer) return;
+    activeBaseLayer = layer === 'satellite' ? 'satellite' : 'street';
+    if (activeBaseLayer === 'satellite') {
+      if (m.hasLayer(streetLayer)) m.removeLayer(streetLayer);
+      if (!m.hasLayer(satelliteLayer)) satelliteLayer.addTo(m);
+    } else {
+      if (m.hasLayer(satelliteLayer)) m.removeLayer(satelliteLayer);
+      if (!m.hasLayer(streetLayer)) streetLayer.addTo(m);
+    }
+    document.getElementById('companyMapLayerStreet')?.classList.toggle('active', activeBaseLayer === 'street');
+    document.getElementById('companyMapLayerSatellite')?.classList.toggle('active', activeBaseLayer === 'satellite');
   }
 
   function clearMarkers() {
@@ -99,6 +148,10 @@
       routeLayer.remove();
       routeLayer = null;
     }
+    if (originMarker) {
+      originMarker.remove();
+      originMarker = null;
+    }
   }
 
   function renderMarkers() {
@@ -110,7 +163,7 @@
     list.forEach(loc => {
       const latlng = [loc.latitude, loc.longitude];
       bounds.push(latlng);
-      const marker = L.marker(latlng).addTo(m);
+      const marker = L.marker(latlng, { icon: HARDHAT_ICON() }).addTo(m);
       marker.bindPopup(`
         <div class="company-map-popup">
           <h4>${esc(loc.name)}</h4>
@@ -135,7 +188,7 @@
     setTimeout(() => m.invalidateSize(), 120);
   }
 
-  global.__casepmMapDirections = (id) => getDirectionsTo(id);
+  global.__casepmMapDirections = (id) => openOriginPicker(id);
 
   function focusJob(id) {
     activeId = id;
@@ -149,8 +202,87 @@
     if (marker) marker.openPopup();
   }
 
-  async function ensureUserLocation() {
-    if (userLocation) return userLocation;
+  function getOriginType() {
+    return document.querySelector('input[name="companyMapOriginType"]:checked')?.value || 'gps';
+  }
+
+  function updateOriginFormVisibility() {
+    const isAddress = getOriginType() === 'address';
+    document.getElementById('companyMapOriginAddressWrap')?.classList.toggle('hidden', !isAddress);
+    document.getElementById('companyMapOriginGpsHint')?.classList.toggle('hidden', isAddress);
+  }
+
+  function openOriginPicker(jobId) {
+    const loc = locations.find(l => String(l.id) === String(jobId));
+    if (!loc || loc.latitude == null || loc.longitude == null) {
+      alert('This job does not have map coordinates yet. Add a street address on the Projects page.');
+      return;
+    }
+    pendingDirectionsJobId = jobId;
+    directionsDest = loc;
+    selectedOriginAddress = null;
+    const modal = document.getElementById('companyMapOriginModal');
+    const destLabel = document.getElementById('companyMapOriginDestLabel');
+    if (destLabel) destLabel.textContent = `To: ${loc.name} — ${loc.label || ''}`;
+    const gpsRadio = document.querySelector('input[name="companyMapOriginType"][value="gps"]');
+    if (gpsRadio) gpsRadio.checked = true;
+    const addrInput = document.getElementById('companyMapOriginAddress');
+    if (addrInput) addrInput.value = '';
+    updateOriginFormVisibility();
+    modal?.classList.remove('hidden');
+    if (addrInput && global.CasePMAddressAutocomplete && !addrInput.dataset.autocompleteBound) {
+      global.CasePMAddressAutocomplete.attach(addrInput, {
+        onSelect(item) {
+          selectedOriginAddress = {
+            lat: item.latitude,
+            lng: item.longitude,
+            label: item.label || item.address || addrInput.value,
+          };
+        },
+      });
+      addrInput.dataset.autocompleteBound = '1';
+    }
+  }
+
+  function closeOriginPicker() {
+    document.getElementById('companyMapOriginModal')?.classList.add('hidden');
+    pendingDirectionsJobId = null;
+  }
+
+  async function resolveOriginFromPicker() {
+    const type = getOriginType();
+    if (type === 'gps') {
+      try {
+        const loc = await ensureUserLocation(true);
+        return { lat: loc.lat, lng: loc.lng, label: loc.label };
+      } catch (e) {
+        throw new Error('Could not get your location. Allow GPS in your browser or enter a starting address.');
+      }
+    }
+
+    const input = document.getElementById('companyMapOriginAddress');
+    const typed = (input?.value || '').trim();
+    if (!typed) throw new Error('Enter a starting address.');
+
+    if (selectedOriginAddress && selectedOriginAddress.label === typed) {
+      return selectedOriginAddress;
+    }
+
+    const res = await fetch(`/api/geocode/search?q=${encodeURIComponent(typed)}&limit=1`);
+    const data = await res.json();
+    const hit = (data.suggestions || [])[0];
+    if (!hit || hit.latitude == null || hit.longitude == null) {
+      throw new Error('Could not find that address. Pick a suggestion from the list or try a city/state.');
+    }
+    return {
+      lat: hit.latitude,
+      lng: hit.longitude,
+      label: hit.label || typed,
+    };
+  }
+
+  async function ensureUserLocation(forceRefresh) {
+    if (userLocation && !forceRefresh) return userLocation;
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
         reject(new Error('Geolocation not supported'));
@@ -158,32 +290,43 @@
       }
       navigator.geolocation.getCurrentPosition(
         pos => {
-          userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude, label: 'My location' };
+          userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude, label: 'My current location' };
           resolve(userLocation);
         },
-        err => reject(err),
+        () => reject(new Error('GPS unavailable')),
         { enableHighAccuracy: true, timeout: 12000 },
       );
     });
   }
 
-  async function getDirectionsTo(jobId) {
+  async function submitOriginAndRoute() {
+    const jobId = pendingDirectionsJobId;
+    if (!jobId) return;
     const loc = locations.find(l => String(l.id) === String(jobId));
-    if (!loc || loc.latitude == null || loc.longitude == null) {
-      alert('This job does not have map coordinates yet. Add a street address on the Projects page.');
-      return;
+    if (!loc) return;
+
+    const goBtn = document.getElementById('companyMapOriginGo');
+    if (goBtn) {
+      goBtn.disabled = true;
+      goBtn.textContent = 'Calculating…';
     }
-    directionsDest = loc;
-    let origin;
     try {
-      origin = await ensureUserLocation();
-    } catch (_) {
-      origin = {
-        lat: 28.5383,
-        lng: -81.3792,
-        label: 'Orlando, FL (default origin — click My location)',
-      };
+      const origin = await resolveOriginFromPicker();
+      lastDirectionsOrigin = origin;
+      closeOriginPicker();
+      await fetchAndShowDirections(origin, loc);
+    } catch (e) {
+      alert(e.message || 'Could not start directions.');
+    } finally {
+      if (goBtn) {
+        goBtn.disabled = false;
+        goBtn.innerHTML = '<i class="fa-solid fa-route"></i> Get directions';
+      }
     }
+  }
+
+  async function fetchAndShowDirections(origin, loc) {
+    directionsDest = loc;
     const res = await fetch('/api/company-map/directions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -203,16 +346,27 @@
     }
     currentDirections = data;
     showDirectionsPanel(data, loc, origin);
-    drawRoute(data.geometry || []);
+    drawRoute(data.geometry || [], origin);
   }
 
-  function drawRoute(coords) {
+  function drawRoute(coords, origin) {
     const m = ensureMap();
     if (!m || !coords.length) return;
     clearRoute();
     const latlngs = coords.map(c => [c[1], c[0]]);
     routeLayer = L.polyline(latlngs, { color: '#10b981', weight: 5, opacity: 0.85 }).addTo(m);
-    m.fitBounds(routeLayer.getBounds(), { padding: [40, 40] });
+    if (origin) {
+      originMarker = L.circleMarker([origin.lat, origin.lng], {
+        radius: 7,
+        color: '#3b82f6',
+        fillColor: '#60a5fa',
+        fillOpacity: 0.9,
+        weight: 2,
+      }).addTo(m).bindTooltip('Start: ' + (origin.label || 'Origin'), { permanent: false });
+    }
+    const bounds = routeLayer.getBounds();
+    if (origin) bounds.extend([origin.lat, origin.lng]);
+    m.fitBounds(bounds, { padding: [40, 40] });
   }
 
   function showDirectionsPanel(data, dest, origin) {
@@ -246,7 +400,7 @@
     if (!currentDirections || !directionsDest) return;
     const to = prompt('Send directions to email:', '') || '';
     if (!to.trim()) return;
-    const origin = userLocation || { lat: 28.5383, lng: -81.3792, label: 'Office' };
+    const origin = lastDirectionsOrigin || userLocation || { lat: 28.5383, lng: -81.3792, label: 'Office' };
     const res = await fetch('/api/company-map/directions/email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -271,12 +425,28 @@
       renderList();
       renderMarkers();
     });
+    document.getElementById('companyMapLayerStreet')?.addEventListener('click', () => setMapLayer('street'));
+    document.getElementById('companyMapLayerSatellite')?.addEventListener('click', () => setMapLayer('satellite'));
+
+    document.querySelectorAll('input[name="companyMapOriginType"]').forEach(radio => {
+      radio.addEventListener('change', updateOriginFormVisibility);
+    });
+    document.getElementById('companyMapOriginAddress')?.addEventListener('input', () => {
+      selectedOriginAddress = null;
+    });
+    document.getElementById('companyMapOriginGo')?.addEventListener('click', submitOriginAndRoute);
+    document.getElementById('companyMapOriginCancel')?.addEventListener('click', closeOriginPicker);
+    document.getElementById('companyMapOriginClose')?.addEventListener('click', closeOriginPicker);
+    document.getElementById('companyMapOriginModal')?.addEventListener('click', (e) => {
+      if (e.target.id === 'companyMapOriginModal') closeOriginPicker();
+    });
+
     document.getElementById('companyMapUseMyLocation')?.addEventListener('click', async () => {
       try {
-        const loc = await ensureUserLocation();
+        const loc = await ensureUserLocation(true);
         const m = ensureMap();
         if (m) m.setView([loc.lat, loc.lng], 11);
-        alert('Your location is set as the directions starting point.');
+        alert('Map centered on your current location.');
       } catch (e) {
         alert('Could not get your location. Check browser permissions.');
       }

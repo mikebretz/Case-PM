@@ -206,3 +206,161 @@
 .company-map-popup a {
   color: #10b981;
 }
+
+/* Hard-hat job site markers (matches Case PM brand icon) */
+.company-map-hardhat-marker {
+  background: transparent;
+  border: none;
+}
+.company-map-hardhat-pin {
+  width: 28px;
+  height: 28px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: linear-gradient(145deg, #10b981, #059669);
+  border: 2px solid #ecfdf5;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.company-map-hardhat-pin i {
+  transform: rotate(45deg);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* Map layer toggle */
+.company-map-layer-toggle {
+  display: inline-flex;
+  border: 1px solid #3f3f46;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+.company-map-layer-btn {
+  background: #18181b;
+  border: none;
+  color: #a1a1aa;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.company-map-layer-btn:hover {
+  background: #27272a;
+  color: #e4e4e7;
+}
+.company-map-layer-btn.active {
+  background: #064e3b;
+  color: #ecfdf5;
+}
+.company-map-layer-btn + .company-map-layer-btn {
+  border-left: 1px solid #3f3f46;
+}
+
+/* Leaflet layer control styling */
+.company-map-canvas .leaflet-control-layers {
+  background: #18181b;
+  color: #e4e4e7;
+  border: 1px solid #3f3f46;
+  border-radius: 0.5rem;
+}
+.company-map-canvas .leaflet-control-layers-expanded {
+  padding: 0.5rem 0.65rem;
+}
+
+/* Origin picker modal */
+.company-map-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 1rem;
+}
+.company-map-modal-backdrop.hidden {
+  display: none;
+}
+.company-map-modal {
+  width: min(440px, 100%);
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  border-radius: 0.75rem;
+  padding: 1rem 1.15rem 1.15rem;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+}
+.company-map-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.35rem;
+}
+.company-map-modal-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fafafa;
+}
+.company-map-modal-sub {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  color: #a1a1aa;
+}
+.company-map-origin-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-bottom: 0.75rem;
+}
+.company-map-origin-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #3f3f46;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  color: #e4e4e7;
+}
+.company-map-origin-option:has(input:checked) {
+  border-color: #059669;
+  background: #052e22;
+}
+.company-map-origin-option input {
+  accent-color: #059669;
+}
+.company-map-origin-address {
+  margin-bottom: 0.5rem;
+}
+.company-map-origin-address.hidden {
+  display: none;
+}
+.company-map-field-label {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #71717a;
+  margin-bottom: 0.25rem;
+}
+.company-map-field-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.68rem;
+  color: #71717a;
+}
+.company-map-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.company-map-search.w-full {
+  width: 100%;
+  box-sizing: border-box;
+}
