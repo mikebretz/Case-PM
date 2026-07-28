@@ -114,12 +114,6 @@
       layers: [streetLayer],
     }).setView([28.5383, -81.3792], 7);
 
-    L.control.layers(
-      { 'Street map': streetLayer, 'Satellite': satelliteLayer },
-      null,
-      { position: 'topright', collapsed: true },
-    ).addTo(map);
-
     return map;
   }
 
