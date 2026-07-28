@@ -4,18 +4,29 @@
 (function (global) {
   'use strict';
 
-  const EVENT_TYPES = [
-    { id: 'meeting', label: 'Meeting' },
-    { id: 'owner_meeting', label: 'Owner meeting' },
-    { id: 'site_visit', label: 'Site visit' },
-    { id: 'coordination', label: 'Coordination' },
-    { id: 'other', label: 'Other' },
+  let EVENT_TYPES = [
+    { id: 'owner_meeting', label: 'Owner meeting', defaultTitle: 'Owner meeting' },
+    { id: 'site_visit', label: 'Site visit', defaultTitle: 'Site visit' },
+    { id: 'precon', label: 'Pre-construction walkthrough', defaultTitle: 'Pre-construction walkthrough' },
+    { id: 'bid', label: 'Bid meeting / walkthrough', defaultTitle: 'Bid meeting' },
+    { id: 'safety', label: 'Safety meeting', defaultTitle: 'Safety meeting' },
+    { id: 'toolbox_talk', label: 'Toolbox / tailgate talk', defaultTitle: 'Toolbox talk' },
+    { id: 'oac', label: 'OAC meeting', defaultTitle: 'OAC meeting' },
+    { id: 'subcontractor', label: 'Subcontractor coordination', defaultTitle: 'Subcontractor coordination' },
+    { id: 'design', label: 'Design coordination / BIM', defaultTitle: 'Design coordination' },
+    { id: 'schedule', label: 'Schedule / CPM review', defaultTitle: 'Schedule review' },
+    { id: 'submittal', label: 'Submittal review', defaultTitle: 'Submittal review' },
+    { id: 'closeout', label: 'Closeout / punch', defaultTitle: 'Closeout meeting' },
+    { id: 'internal', label: 'Internal team', defaultTitle: 'Internal team meeting' },
+    { id: 'stakeholder', label: 'Client / stakeholder', defaultTitle: 'Stakeholder meeting' },
+    { id: 'coordination', label: 'Coordination', defaultTitle: 'Coordination meeting' },
+    { id: 'meeting', label: 'General meeting', defaultTitle: 'Meeting' },
+    { id: 'other', label: 'Other', defaultTitle: 'Meeting' },
   ];
 
   let ctx = { userEmail: '', userName: '', projectId: null, projectName: '' };
   let events = [];
   let viewDate = new Date();
-  let viewMode = 'month';
   let selectedDay = new Date();
   let editingEvent = null;
   let rootEl = null;
@@ -125,9 +136,38 @@
   }
 
   function chipClass(type) {
-    if (type === 'owner_meeting') return 'owner';
-    if (type === 'site_visit') return 'site';
-    return '';
+    const map = {
+      owner_meeting: 'owner',
+      site_visit: 'site',
+      superintendent: 'site',
+      safety: 'safety',
+      toolbox_talk: 'safety',
+      precon: 'precon',
+      bid: 'bid',
+      oac: 'oac',
+      oac_weekly: 'oac',
+    };
+    return map[type] || '';
+  }
+
+  async function loadCatalog() {
+    try {
+      const res = await fetch('/api/email/calendar/catalog');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data.event_types) && data.event_types.length) {
+        EVENT_TYPES = data.event_types;
+      }
+      if (global.CasePMEmail?.setCalendarSidebar && Array.isArray(data.sidebar)) {
+        global.CasePMEmail.setCalendarSidebar(data.sidebar);
+      }
+    } catch (e) {
+      /* keep defaults */
+    }
+  }
+
+  function eventTypeLabel(id) {
+    return EVENT_TYPES.find(t => t.id === id)?.label || id || 'Meeting';
   }
 
   function renderMonth() {
@@ -155,14 +195,15 @@
     return html;
   }
 
-  function renderAgenda() {
+  function renderDaySchedule() {
     const dayEvents = eventsForDay(selectedDay);
     if (!dayEvents.length) {
-      return `<div class="text-sm text-zinc-500 p-3">No meetings scheduled. Click <strong>New meeting</strong> to create an invite.</div>`;
+      return `<div class="text-sm text-zinc-500 p-3">No meetings on this day. Double-click a day on the calendar or pick a meeting type in the sidebar to schedule one.</div>`;
     }
     return dayEvents.map(ev => `
       <div class="email-calendar-agenda-item" data-event-id="${esc(ev.id)}">
         <div class="text-sm font-medium text-zinc-100">${esc(ev.title)}</div>
+        <div class="text-[10px] uppercase tracking-wide text-zinc-500 mt-0.5">${esc(eventTypeLabel(ev.eventType))}${ev.source === 'meeting_minutes' ? ' · from Meeting Minutes' : ''}</div>
         <div class="text-xs text-zinc-400 mt-1">${esc(new Date(ev.start).toLocaleString())}${ev.end ? ` — ${esc(new Date(ev.end).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))}` : ''}</div>
         ${ev.location ? `<div class="text-xs text-zinc-500 mt-1"><i class="fa-solid fa-location-dot"></i> ${esc(ev.location)}</div>` : ''}
         ${ev.attendees?.length ? `<div class="text-[10px] text-zinc-500 mt-1">${ev.attendees.length} attendee${ev.attendees.length === 1 ? '' : 's'}</div>` : ''}
@@ -187,16 +228,13 @@
           </button>
           <span class="email-calendar-outlook-status">${esc(outlookSyncStatus)}</span>
           <a href="/company-map" class="email-calendar-nav-btn" style="text-decoration:none;"><i class="fa-solid fa-map-location-dot"></i> Job map</a>
-          <div class="email-calendar-view-tabs">
-            <button type="button" class="email-calendar-view-tab ${viewMode === 'month' ? 'active' : ''}" data-cal-view="month">Month</button>
-            <button type="button" class="email-calendar-view-tab ${viewMode === 'agenda' ? 'active' : ''}" data-cal-view="agenda">Agenda</button>
-          </div>
         </div>
         <div class="email-calendar-body">
           <div class="email-calendar-month">${renderMonth()}</div>
           <aside class="email-calendar-agenda">
             <div class="email-calendar-agenda-head">${esc(fmtDayTitle(selectedDay))}</div>
-            <div class="email-calendar-agenda-list">${renderAgenda()}</div>
+            <div class="text-[10px] text-zinc-500 px-3 pb-2">Day schedule — click a meeting to open it</div>
+            <div class="email-calendar-agenda-list">${renderDaySchedule()}</div>
           </aside>
         </div>
       </div>`;
@@ -255,12 +293,14 @@
     return { start: start.toISOString(), end: end.toISOString() };
   }
 
-  function openEventModal(existing, forDay) {
+  function openEventModal(existing, forDay, prefill) {
     const baseDay = forDay || selectedDay;
+    const pre = prefill || {};
+    const isReadOnly = !!(existing && (existing.readOnly || existing.source === 'meeting_minutes'));
     editingEvent = existing ? { ...existing } : {
       id: uid(),
-      title: '',
-      eventType: ctx.projectId ? 'owner_meeting' : 'meeting',
+      title: pre.title || '',
+      eventType: pre.eventType || (ctx.projectId ? 'owner_meeting' : 'meeting'),
       ...defaultEventTimes(baseDay),
       location: '',
       locationMeta: {},
@@ -276,51 +316,56 @@
 
     const backdrop = document.createElement('div');
     backdrop.className = 'email-calendar-modal-backdrop';
+    const readOnlyNote = isReadOnly
+      ? `<div class="text-xs text-amber-300/90 bg-amber-950/40 border border-amber-800/50 rounded-md p-2 mb-3">This meeting was created on another page (Meeting Minutes, Safety, etc.) and appears here automatically. <a href="/meeting-minutes" class="text-emerald-400 hover:underline">Open Meeting Minutes</a> to edit the record.</div>`
+      : '';
     backdrop.innerHTML = `
       <div class="email-calendar-modal" role="dialog" aria-modal="true">
         <div class="email-calendar-modal-head">
-          <h3 class="text-white font-semibold">${existing ? 'Edit meeting' : 'New meeting invite'}</h3>
+          <h3 class="text-white font-semibold">${isReadOnly ? 'Meeting details' : (existing ? 'Edit meeting' : 'New meeting invite')}</h3>
           <button type="button" class="email-calendar-nav-btn" data-close-modal><i class="fa-solid fa-times"></i></button>
         </div>
         <div class="email-calendar-modal-body">
+          ${readOnlyNote}
           <div class="email-calendar-field">
             <label>Title</label>
-            <input type="text" id="calTitle" value="${esc(editingEvent.title || '')}" placeholder="Owner meeting, coordination call, etc.">
+            <input type="text" id="calTitle" value="${esc(editingEvent.title || '')}" placeholder="Owner meeting, toolbox talk, bid walkthrough…" ${isReadOnly ? 'readonly' : ''}>
           </div>
           <div class="email-calendar-row">
             <div class="email-calendar-field">
               <label>Start</label>
-              <input type="datetime-local" id="calStart" value="${toLocalInputValue(editingEvent.start)}">
+              <input type="datetime-local" id="calStart" value="${toLocalInputValue(editingEvent.start)}" ${isReadOnly ? 'readonly' : ''}>
             </div>
             <div class="email-calendar-field">
               <label>End</label>
-              <input type="datetime-local" id="calEnd" value="${toLocalInputValue(editingEvent.end)}">
+              <input type="datetime-local" id="calEnd" value="${toLocalInputValue(editingEvent.end)}" ${isReadOnly ? 'readonly' : ''}>
             </div>
           </div>
           <div class="email-calendar-row">
             <div class="email-calendar-field">
               <label>Meeting type</label>
-              <select id="calType">
+              <select id="calType" ${isReadOnly ? 'disabled' : ''}>
                 ${EVENT_TYPES.map(t => `<option value="${t.id}" ${editingEvent.eventType === t.id ? 'selected' : ''}>${t.label}</option>`).join('')}
               </select>
             </div>
             <div class="email-calendar-field">
               <label>Reminder (minutes)</label>
-              <input type="number" id="calReminder" min="0" step="5" value="${editingEvent.reminderMinutes || 15}">
+              <input type="number" id="calReminder" min="0" step="5" value="${editingEvent.reminderMinutes || 15}" ${isReadOnly ? 'readonly' : ''}>
             </div>
           </div>
           <div class="email-calendar-field">
-            <label>Location (job site or address)</label>
-            <input type="text" id="calLocation" value="${esc(editingEvent.location || '')}" placeholder="Start typing a job site or address…">
+            <label>Location (job site, business, or address)</label>
+            <input type="text" id="calLocation" value="${esc(editingEvent.location || '')}" placeholder="Start typing a job site, business name, or US address…" ${isReadOnly ? 'readonly' : ''}>
           </div>
           <div class="email-calendar-field">
             <label>Attendees (comma-separated emails)</label>
-            <input type="text" id="calAttendees" value="${esc((editingEvent.attendees || []).join(', '))}" placeholder="owner@client.com, pm@company.com">
+            <input type="text" id="calAttendees" value="${esc((editingEvent.attendees || []).join(', '))}" placeholder="owner@client.com, pm@company.com" ${isReadOnly ? 'readonly' : ''}>
           </div>
           <div class="email-calendar-field">
-            <label>Agenda / invite message</label>
-            <textarea id="calBody" placeholder="Meeting agenda, dial-in, documents to review…">${esc((editingEvent.body || '').replace(/<[^>]+>/g, ''))}</textarea>
+            <label>Notes for email invite</label>
+            <textarea id="calBody" placeholder="Details included in the invite email — dial-in, documents, talking points…" ${isReadOnly ? 'readonly' : ''}>${esc((editingEvent.body || '').replace(/<[^>]+>/g, ''))}</textarea>
           </div>
+          ${isReadOnly ? '' : `
           <label class="flex items-center gap-2 text-sm text-zinc-300 mb-1">
             <input type="checkbox" id="calSyncOutlook" class="accent-emerald-600" ${outlookConnected ? 'checked' : ''} ${outlookConnected ? '' : 'disabled'}>
             Sync to Outlook calendar
@@ -328,18 +373,18 @@
           <label class="flex items-center gap-2 text-sm text-zinc-300 mb-2">
             <input type="checkbox" id="calSendInvites" class="accent-emerald-600" checked>
             Send email invites to attendees (when SMTP is configured)
-          </label>
+          </label>`}
           <div class="email-calendar-modal-actions">
-            ${existing ? '<button type="button" class="email-calendar-nav-btn" data-delete-event style="margin-right:auto;color:#fca5a5;">Delete</button>' : ''}
-            <button type="button" class="email-calendar-nav-btn" data-close-modal>Cancel</button>
-            <button type="button" class="email-calendar-nav-btn" data-save-event style="background:#059669;border-color:#059669;color:#fff;">Save</button>
+            ${existing && !isReadOnly ? '<button type="button" class="email-calendar-nav-btn" data-delete-event style="margin-right:auto;color:#fca5a5;">Delete</button>' : ''}
+            <button type="button" class="email-calendar-nav-btn" data-close-modal>${isReadOnly ? 'Close' : 'Cancel'}</button>
+            ${isReadOnly ? '' : '<button type="button" class="email-calendar-nav-btn" data-save-event style="background:#059669;border-color:#059669;color:#fff;">Save</button>'}
           </div>
         </div>
       </div>`;
     document.body.appendChild(backdrop);
 
     const locInput = backdrop.querySelector('#calLocation');
-    if (global.CasePMAddressAutocomplete && locInput) {
+    if (!isReadOnly && global.CasePMAddressAutocomplete && locInput) {
       global.CasePMAddressAutocomplete.attach(locInput, {
         onSelect(item) {
           editingEvent.locationMeta = {
@@ -368,6 +413,7 @@
     });
 
     backdrop.querySelector('[data-save-event]')?.addEventListener('click', async () => {
+      if (isReadOnly) return;
       const payload = {
         ...editingEvent,
         title: backdrop.querySelector('#calTitle').value.trim(),
@@ -423,6 +469,7 @@
     ctx = { ...ctx, ...(options || {}) };
     rootEl = options?.container || document.getElementById('emailCalendarRoot');
     if (!rootEl) return;
+    await loadCatalog();
     await loadEvents(true);
     if (options?.prefillProjectId) {
       ctx.projectId = options.prefillProjectId;
@@ -430,9 +477,12 @@
     }
     render();
     if (options?.openNew) {
-      setTimeout(() => openEventModal(), 100);
+      setTimeout(() => openEventModal(null, null, {
+        eventType: options.prefillEventType,
+        title: options.prefillTitle,
+      }), 100);
     }
   }
 
-  global.CasePMEmailCalendar = { init, render, loadEvents, syncOutlook, openEventModal };
+  global.CasePMEmailCalendar = { init, render, loadEvents, syncOutlook, openEventModal, loadCatalog };
 })(window);

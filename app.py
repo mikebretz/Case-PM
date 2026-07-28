@@ -15879,6 +15879,13 @@ def api_email_security_simulate():
     return jsonify({'ok': True, **result})
 
 
+@app.route('/api/email/calendar/catalog', methods=['GET'])
+@login_required
+def api_email_calendar_catalog():
+    from email_calendar_catalog import calendar_catalog_payload
+    return jsonify({'ok': True, **calendar_catalog_payload()})
+
+
 @app.route('/api/email/calendar', methods=['GET', 'PUT'])
 @login_required
 def api_email_calendar():
@@ -15893,6 +15900,20 @@ def api_email_calendar():
     ensure_email_calendar_schema(db)
     if request.method == 'GET':
         payload = load_user_calendar(uid, UserEmailCalendar=UserEmailCalendar)
+        ProjectMembership = None
+        try:
+            from case_workflow import ProjectMembership as PM
+            ProjectMembership = PM
+        except ImportError:
+            pass
+        from email_calendar_sync import enrich_calendar_with_meetings, strip_meeting_minute_events
+        payload = enrich_calendar_with_meetings(
+            payload,
+            current_user,
+            MeetingMinute=MeetingMinute,
+            Project=Project,
+            ProjectMembership=ProjectMembership,
+        )
         sync_outlook = request.args.get('sync_outlook', '0') == '1'
         conn = connection_status(uid, UserEmailConnection=UserEmailConnection, User=User)
         outlook_connected = bool(conn.get('connected'))
@@ -15903,13 +15924,21 @@ def api_email_calendar():
                     uid, payload.get('events') or [],
                     db=db, UserEmailConnection=UserEmailConnection,
                 )
+                save_payload = strip_meeting_minute_events(result['events'])
                 meta = dict(payload.get('meta') or {})
                 meta['lastOutlookSync'] = datetime.utcnow().isoformat() + 'Z'
-                save_user_calendar(uid, result['events'], meta, db=db, UserEmailCalendar=UserEmailCalendar)
+                save_user_calendar(uid, save_payload, meta, db=db, UserEmailCalendar=UserEmailCalendar)
+                display_payload = enrich_calendar_with_meetings(
+                    {'events': save_payload, 'meta': meta},
+                    current_user,
+                    MeetingMinute=MeetingMinute,
+                    Project=Project,
+                    ProjectMembership=ProjectMembership,
+                )
                 return jsonify({
                     'ok': True,
                     'user_id': uid,
-                    'events': result['events'],
+                    'events': display_payload.get('events') or [],
                     'meta': meta,
                     'outlook_sync': {
                         'connected': True,
@@ -15936,7 +15965,9 @@ def api_email_calendar():
     meta = body.get('meta')
     previous = load_user_calendar(uid, UserEmailCalendar=UserEmailCalendar)
     saved = save_user_calendar(
-        uid, events, meta if meta is not None else previous.get('meta'),
+        uid,
+        strip_meeting_minute_events(events),
+        meta if meta is not None else previous.get('meta'),
         db=db, UserEmailCalendar=UserEmailCalendar,
     )
     return jsonify({'ok': True, 'user_id': uid, **saved})
@@ -16027,6 +16058,20 @@ def api_email_calendar_sync_outlook():
     meta = dict(payload.get('meta') or {})
     meta['lastOutlookSync'] = datetime.utcnow().isoformat() + 'Z'
     saved = save_user_calendar(uid, result['events'], meta, db=db, UserEmailCalendar=UserEmailCalendar)
+    ProjectMembership = None
+    try:
+        from case_workflow import ProjectMembership as PM
+        ProjectMembership = PM
+    except ImportError:
+        pass
+    from email_calendar_sync import enrich_calendar_with_meetings, strip_meeting_minute_events
+    saved = enrich_calendar_with_meetings(
+        saved,
+        current_user,
+        MeetingMinute=MeetingMinute,
+        Project=Project,
+        ProjectMembership=ProjectMembership,
+    )
     return jsonify({
         'ok': True,
         'synced_from_outlook': result.get('synced_from_outlook', 0),

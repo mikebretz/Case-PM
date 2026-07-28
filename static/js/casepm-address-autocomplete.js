@@ -49,7 +49,7 @@
     list.innerHTML = items.map((item, idx) => `
       <button type="button" class="casepm-address-option" data-idx="${idx}">
         <span class="casepm-address-option-label">${esc(item.label || item.name || item.address)}</span>
-        <span class="casepm-address-option-sub">${esc(item.subtitle || item.city || '')}</span>
+        <span class="casepm-address-option-sub">${esc(item.subtitle || (item.kind === 'business' ? 'Business / place' : item.kind === 'project' ? 'Job site' : item.city || 'US address'))}</span>
       </button>
     `).join('');
     list.classList.remove('hidden');
