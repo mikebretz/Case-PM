@@ -4,12 +4,14 @@ SYLVORIN — everything lives at C:\Sylvorin
 NOT part of Case PM / KSPM.
 
 FIRST TIME SETUP:
-  1. CLONE-TO-C-SYLVORIN.bat     clones repo to C:\Sylvorin
-     OR: git clone https://github.com/mikebretz/Sylvorin C:\Sylvorin
+  Option A — git clone:
+    git clone https://github.com/mikebretz/Sylvorin C:\Sylvorin
 
-  2. C:\Sylvorin\INSTALL-DESKTOP.bat   npm + Python + build + desktop shortcut
+  Option B — copy files you already have:
+    COPY-TO-C-SYLVORIN.bat   (from this folder)
 
-  3. Desktop shortcut "Sylvorin"  OR  C:\Sylvorin\RUN-DESKTOP.bat
+  Then always:
+    C:\Sylvorin\INSTALL-DESKTOP.bat
 
 FILES AT C:\Sylvorin:
   INSTALL-DESKTOP.bat     setup (run once)
