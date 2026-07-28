@@ -1,0 +1,22 @@
+SYLVORIN — everything lives at C:\Sylvorin
+============================================
+
+NOT part of Case PM / KSPM.
+
+FIRST TIME SETUP:
+  1. CLONE-TO-C-SYLVORIN.bat     clones repo to C:\Sylvorin
+     OR: git clone https://github.com/mikebretz/Sylvorin C:\Sylvorin
+
+  2. C:\Sylvorin\INSTALL-DESKTOP.bat   npm + Python + build + desktop shortcut
+
+  3. Desktop shortcut "Sylvorin"  OR  C:\Sylvorin\RUN-DESKTOP.bat
+
+FILES AT C:\Sylvorin:
+  INSTALL-DESKTOP.bat     setup (run once)
+  RUN-DESKTOP.bat         play game
+  RUN-SYLVORIN.bat        play in browser
+  desktop_launcher.py     desktop window
+  src\game\               all game code
+  index.html              game page
+
+GitHub: https://github.com/mikebretz/Sylvorin
