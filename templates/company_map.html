@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Company Job Map{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/company-map.css') }}">
+
+<div class="company-map-page">
+  <div class="company-map-header">
+    <div>
+      <h1 class="text-xl font-semibold text-white flex items-center gap-2">
+        <i class="fa-solid fa-map-location-dot text-emerald-400"></i> Company Job Map
+      </h1>
+      <p class="text-sm text-zinc-400 mt-1">All job sites across your portfolio. Addresses here power email and calendar location autocomplete.</p>
+    </div>
+    <div class="company-map-controls">
+      <select id="companyMapStatusFilter" class="company-map-select">
+        <option value="Active">Active jobs</option>
+        <option value="all">All projects</option>
+        <option value="Complete">Complete</option>
+        <option value="On Hold">On Hold</option>
+      </select>
+      <input type="text" id="companyMapSearch" class="company-map-search" placeholder="Filter jobs by name, city, store #…" autocomplete="off">
+      <a href="{{ url_for('email_page') }}?tab=calendar" class="company-map-btn"><i class="fa-solid fa-calendar-plus"></i> Schedule meeting</a>
+    </div>
+  </div>
+
+  <div class="company-map-layout">
+    <aside class="company-map-sidebar">
+      <div class="company-map-sidebar-head">
+        <span id="companyMapCount" class="text-xs uppercase tracking-wide text-zinc-500">Loading…</span>
+      </div>
+      <div id="companyMapJobList" class="company-map-job-list"></div>
+    </aside>
+    <div id="companyMapCanvas" class="company-map-canvas" aria-label="Job locations map"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+window.CASEPM_COMPANY_MAP_CTX = {
+  projects: {{ projects|map(attribute='id')|list|tojson }},
+};
+</script>
+<script src="{{ url_for('static', filename='js/company-map-app.js') }}"></script>
+{% endblock %}

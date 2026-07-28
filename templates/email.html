@@ -4,6 +4,7 @@
 
 {% block content %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/email-client.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/email-calendar.css') }}">
 
 <div class="email-page-root">
     <!-- Workspace header: Mail | Internal tabs + toolbar actions -->
@@ -65,6 +66,9 @@
 
         <!-- Reading pane -->
         <div id="emailReadingPane" class="email-reading-pane"></div>
+
+        <!-- Calendar workspace -->
+        <div id="emailCalendarRoot" class="email-calendar-host hidden"></div>
     </div>
 </div>
 
@@ -138,6 +142,8 @@
 <script src="{{ url_for('static', filename='js/casepm-workflow.js') }}"></script>
 <script src="{{ url_for('static', filename='js/documents-app.js') }}"></script>
 <script src="{{ url_for('static', filename='js/email-settings-ui.js') }}"></script>
+<script src="{{ url_for('static', filename='js/casepm-address-autocomplete.js') }}"></script>
+<script src="{{ url_for('static', filename='js/email-calendar.js') }}"></script>
 <script src="{{ url_for('static', filename='js/email-app.js') }}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', async function() {
