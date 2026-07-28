@@ -24,6 +24,10 @@
         <option value="On Hold">On Hold</option>
       </select>
       <input type="text" id="companyMapSearch" class="company-map-search" placeholder="Filter jobs by name, city, store #…" autocomplete="off">
+      <div class="company-map-layer-toggle" role="group" aria-label="Map view">
+        <button type="button" id="companyMapLayerStreet" class="company-map-layer-btn active" data-layer="street"><i class="fa-solid fa-map"></i> Street</button>
+        <button type="button" id="companyMapLayerSatellite" class="company-map-layer-btn" data-layer="satellite"><i class="fa-solid fa-satellite"></i> Satellite</button>
+      </div>
       <button type="button" id="companyMapUseMyLocation" class="company-map-btn-secondary"><i class="fa-solid fa-location-crosshairs"></i> My location</button>
       <a href="{{ url_for('email_page') }}?tab=calendar" class="company-map-btn"><i class="fa-solid fa-calendar-plus"></i> Schedule meeting</a>
     </div>
@@ -54,6 +58,37 @@
   </div>
 </div>
 
+<div id="companyMapOriginModal" class="company-map-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="companyMapOriginTitle">
+  <div class="company-map-modal">
+    <div class="company-map-modal-head">
+      <h3 id="companyMapOriginTitle">Directions from</h3>
+      <button type="button" id="companyMapOriginClose" class="company-map-icon-btn" aria-label="Close">&times;</button>
+    </div>
+    <p id="companyMapOriginDestLabel" class="company-map-modal-sub"></p>
+    <div class="company-map-origin-options">
+      <label class="company-map-origin-option">
+        <input type="radio" name="companyMapOriginType" value="gps" checked>
+        <span><i class="fa-solid fa-location-crosshairs"></i> My current location (GPS)</span>
+      </label>
+      <label class="company-map-origin-option">
+        <input type="radio" name="companyMapOriginType" value="address">
+        <span><i class="fa-solid fa-map-pin"></i> Enter a starting address</span>
+      </label>
+    </div>
+    <div id="companyMapOriginAddressWrap" class="company-map-origin-address hidden">
+      <label class="company-map-field-label" for="companyMapOriginAddress">Starting address</label>
+      <input type="text" id="companyMapOriginAddress" class="company-map-search w-full" placeholder="Office, home, or job site address…" autocomplete="off">
+      <p class="company-map-field-hint">Job sites from your portfolio appear as you type.</p>
+    </div>
+    <p id="companyMapOriginGpsHint" class="company-map-field-hint">Uses your device GPS when permitted. You can switch to a typed address anytime.</p>
+    <div class="company-map-modal-actions">
+      <button type="button" id="companyMapOriginCancel" class="company-map-btn-secondary">Cancel</button>
+      <button type="button" id="companyMapOriginGo" class="company-map-btn"><i class="fa-solid fa-route"></i> Get directions</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="{{ url_for('static', filename='js/casepm-address-autocomplete.js') }}"></script>
 <script src="{{ url_for('static', filename='js/company-map-app.js') }}"></script>
 {% endblock %}
