@@ -1,0 +1,4 @@
+# Case PM Desktop App — native window (install on top of requirements.txt)
+-r requirements.txt
+pywebview>=5.0
+waitress>=3.0.0

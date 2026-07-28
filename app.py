@@ -100,6 +100,7 @@ def inject_asset_version():
         'asset_v': _asset_version(),
         'disk_build': _disk_build(),
         'restart_required': _restart_required(),
+        'desktop_mode': os.environ.get('CASEPM_DESKTOP', '').lower() in ('1', 'true', 'yes'),
     }
 
 
