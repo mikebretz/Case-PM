@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  #mainContent { display: flex !important; flex-direction: column !important; min-height: 0 !important; overflow: hidden !important; padding: 0.5rem !important; }
+  .office-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; height: 100%; box-sizing: border-box; }
+  .office-toolbar { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; flex-shrink: 0; margin-bottom: 0.5rem; }
+  .office-btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.8rem; border-radius: 0.375rem; font-size: 0.85rem; font-weight: 500; background: #27272a; border: 1px solid #3f3f46; color: #fff; text-decoration: none; }
+  .office-btn:hover { background: #3f3f46; color: #fff; }
+  .office-btn.primary { background: #059669; border-color: #059669; }
+  #officeNameInput { background: #18181b; border: 1px solid #3f3f46; border-radius: 0.375rem; padding: 0.4rem 0.7rem; color: #fff; font-size: 0.9rem; min-width: 240px; }
+  #officeStatus { font-size: 0.75rem; color: #71717a; margin-left: auto; }
+  #officeFrameHost { position: relative; flex: 1; min-height: 360px; height: 0; width: 100%; background: #0f172a; border: 1px solid #3f3f46; border-radius: 0.375rem; overflow: hidden; }
+  #officeFrame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; }
+  #officeLoading, #officeSetup { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 1.5rem; text-align: center; }
+  #officeSetup { display: none; flex-direction: column; gap: 0.75rem; background: #18181b; color: #e4e4e7; }
+  #officeSetup p { max-width: 42rem; color: #a1a1aa; font-size: 0.9rem; line-height: 1.5; }
+  .office-badge { font-size: 0.7rem; padding: 0.15rem 0.45rem; border-radius: 999px; background: #14532d; color: #bbf7d0; border: 1px solid #166534; }
+</style>
+
+<div class="office-page" data-editor-kind="{{ editor_kind }}">
+  <div class="office-toolbar">
+    <button type="button" id="officeBackBtn" class="office-btn" title="Back to Documents"><i class="fa-solid fa-arrow-left"></i><span class="hidden md:inline">Documents</span></button>
+    <i class="fa-solid {{ 'fa-table-cells text-emerald-400' if editor_kind == 'sheet' else 'fa-file-word text-sky-400' }}"></i>
+    <input type="text" id="officeNameInput" placeholder="{{ 'Untitled Spreadsheet' if editor_kind == 'sheet' else 'Untitled Document' }}">
+    <span class="office-badge">LibreOffice</span>
+    <a id="officeDownloadBtn" class="office-btn hidden" href="#" target="_blank" rel="noopener"><i class="fa-solid fa-download"></i><span class="hidden md:inline"> Download</span></a>
+    <span id="officeStatus">Loading editor…</span>
+  </div>
+  <div id="officeFrameHost">
+    <iframe id="officeFrame" title="LibreOffice editor" allow="clipboard-read; clipboard-write; fullscreen"></iframe>
+    <div id="officeLoading"><i class="fa-solid fa-spinner fa-spin mr-2"></i> Starting LibreOffice editor…</div>
+    <div id="officeSetup">
+      <h2 class="text-lg font-semibold text-white">LibreOffice Online is not configured yet</h2>
+      <p>Case PM can use <strong>LibreOffice Online</strong> (Collabora) for full Excel/Word editing — currency formats, print layout, formulas, and real .xlsx/.docx files.</p>
+      <p>Set <code>LIBREOFFICE_ONLINE_URL</code> and <code>CASEPM_PUBLIC_URL</code> on the server, then run the Collabora container from <code>docker-compose.office.yml</code>.</p>
+      <div class="flex gap-2 flex-wrap justify-center">
+        <a id="officeLegacyLink" class="office-btn primary" href="#">Open legacy editor</a>
+        <button type="button" id="officeRetryBtn" class="office-btn">Retry</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const root = document.querySelector('.office-page');
+  const editorKind = root?.dataset.editorKind || 'sheet';
+  const params = new URLSearchParams(location.search);
+  let docId = params.get('doc_id') ? parseInt(params.get('doc_id'), 10) : null;
+  const projectId = {{ active_project.id if active_project else 'null' }};
+  const folderId = params.get('folder_id') ? parseInt(params.get('folder_id'), 10) : null;
+  const legacyPage = editorKind === 'sheet' ? '/documents/sheet/legacy' : '/documents/word/legacy';
+  const nameInput = document.getElementById('officeNameInput');
+  const statusEl = document.getElementById('officeStatus');
+  const frame = document.getElementById('officeFrame');
+  const loadingEl = document.getElementById('officeLoading');
+  const setupEl = document.getElementById('officeSetup');
+  const downloadBtn = document.getElementById('officeDownloadBtn');
+  const legacyLink = document.getElementById('officeLegacyLink');
+
+  function setStatus(text) { statusEl.textContent = text; }
+  function hideLoading() { loadingEl.style.display = 'none'; }
+  function showSetup() { hideLoading(); setupEl.style.display = 'flex'; frame.style.display = 'none'; }
+
+  function buildLegacyUrl() {
+    const url = new URL(legacyPage, location.origin);
+    if (docId) url.searchParams.set('doc_id', String(docId));
+    if (projectId) url.searchParams.set('project_id', String(projectId));
+    if (folderId) url.searchParams.set('folder_id', String(folderId));
+    return url.toString();
+  }
+
+  legacyLink.href = buildLegacyUrl();
+
+  async function createDocumentIfNeeded() {
+    if (docId) return docId;
+    const fd = new FormData();
+    fd.append('kind', editorKind);
+    fd.append('name', (nameInput.value || (editorKind === 'sheet' ? 'Untitled Spreadsheet' : 'Untitled Document')).trim());
+    if (projectId) fd.append('project_id', String(projectId));
+    if (folderId) fd.append('folder_id', String(folderId));
+    const res = await fetch('/api/documents/office/create', { method: 'POST', body: fd, credentials: 'same-origin' });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || 'Could not create document.');
+    docId = json.id;
+    const url = new URL(location.href);
+    url.searchParams.set('doc_id', String(docId));
+    history.replaceState(null, '', url);
+    if (json.name) nameInput.value = json.name;
+    return docId;
+  }
+
+  async function renameDocument() {
+    if (!docId) return;
+    const name = (nameInput.value || '').trim();
+    if (!name) return;
+    await fetch(`/api/documents/${docId}`, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    }).catch(() => {});
+  }
+
+  async function startEditor() {
+    setStatus('Loading LibreOffice…');
+    loadingEl.style.display = 'flex';
+    setupEl.style.display = 'none';
+    frame.style.display = 'block';
+    try {
+      await createDocumentIfNeeded();
+      const res = await fetch(`/api/documents/office/editor-session?doc_id=${encodeURIComponent(docId)}`, { credentials: 'same-origin' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Could not start LibreOffice session.');
+      if (!json.enabled || !json.editor_url) {
+        showSetup();
+        setStatus('LibreOffice Online not configured');
+        return;
+      }
+      if (json.name) nameInput.value = json.name;
+      if (json.download_url) {
+        downloadBtn.href = json.download_url;
+        downloadBtn.classList.remove('hidden');
+      }
+      frame.src = json.editor_url;
+      hideLoading();
+      setStatus('Editing in LibreOffice — changes save automatically');
+    } catch (err) {
+      showSetup();
+      setStatus(err.message || 'Editor failed to load');
+    }
+  }
+
+  document.getElementById('officeBackBtn').addEventListener('click', async () => {
+    await renameDocument();
+    window.location.href = '{{ url_for("documents_page") }}';
+  });
+  document.getElementById('officeRetryBtn').addEventListener('click', startEditor);
+  nameInput.addEventListener('change', renameDocument);
+
+  window.addEventListener('message', (event) => {
+    if (!event || !event.data) return;
+    const text = String(event.data);
+    if (text.indexOf('close') >= 0 || text.indexOf('UI_Close') >= 0) {
+      window.location.href = '{{ url_for("documents_page") }}';
+    }
+  });
+
+  startEditor();
+})();
+</script>
+{% endblock %}
