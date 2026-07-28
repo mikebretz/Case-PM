@@ -104,6 +104,13 @@
     lang: 'en',
     showinfobar: false,
     showtoolbar: true,
+    showtoolbarConfig: {
+      currencyFormat: true,
+      percentageFormat: true,
+      numberDecrease: true,
+      numberIncrease: true,
+      moreFormats: true,
+    },
     showsheetbar: true,
     showstatisticBar: true,
     sheetFormulaBar: true,
@@ -294,34 +301,243 @@
     setTimeout(refreshZoomLabel, 800);
   }
 
-  // ---- Print current sheet ----
-  function printSheet() {
+  // ---- Print current sheet (WYSIWYG: match on-screen formatting) ----
+  function escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function getActiveSheet() {
+    const sheets = window.luckysheet.getAllSheets();
+    return sheets.find((s) => s.status === 1) || sheets[0] || null;
+  }
+
+  function cellHasPrintableContent(cell) {
+    if (!cell || typeof cell !== 'object') return false;
+    if (cell.mc && cell.mc.rs == null) return false;
+    if (cell.f) return true;
+    if (cell.m != null && String(cell.m).trim() !== '') return true;
+    if (cell.v != null && String(cell.v).trim() !== '') return true;
+    if (cell.bg || cell.fc || cell.bl || cell.it || cell.fs || cell.ff || cell.bd) return true;
+    if (cell.ct && cell.ct.fa && cell.ct.fa !== 'General') return true;
+    return false;
+  }
+
+  function getPrintRange() {
     let grid = [];
-    try { grid = window.luckysheet.getSheetData(); } catch (_) { grid = []; }
+    try { grid = window.luckysheet.getSheetData() || []; } catch (_) { grid = []; }
+    const sheet = getActiveSheet();
+    const config = (sheet && sheet.config) || {};
+    let maxR = 0;
     let maxC = 0;
-    grid.forEach((row) => { if (row) row.forEach((cell, c) => { if (cell != null && c > maxC) maxC = c; }); });
-    let rows = '';
-    grid.forEach((row) => {
+    let hasContent = false;
+
+    function bump(r, c) {
+      if (r > maxR) maxR = r;
+      if (c > maxC) maxC = c;
+      hasContent = true;
+    }
+
+    grid.forEach((row, r) => {
       if (!row) return;
-      let tds = '';
-      let hasContent = false;
-      for (let c = 0; c <= maxC; c++) {
-        const cell = row[c];
-        const val = cell == null ? '' : (cell.m != null ? cell.m : (cell.v != null ? cell.v : ''));
-        if (val !== '') hasContent = true;
-        tds += `<td>${String(val).replace(/</g, '&lt;')}</td>`;
-      }
-      rows += `<tr>${tds}</tr>`;
+      row.forEach((cell, c) => {
+        if (cellHasPrintableContent(cell)) bump(r, c);
+      });
     });
+
+    const merges = config.merge || {};
+    Object.keys(merges).forEach((key) => {
+      const m = merges[key];
+      if (!m || m.r == null || m.c == null) return;
+      const rs = m.rs || 1;
+      const cs = m.cs || 1;
+      bump(m.r, m.c);
+      bump(m.r + rs - 1, m.c + cs - 1);
+    });
+
+    if (!hasContent) return { row: [0, 0], column: [0, 0] };
+    return { row: [0, maxR], column: [0, maxC] };
+  }
+
+  function borderCss(side) {
+    if (!side || side.style == null || Number(side.style) === 0) return '';
+    const color = side.color || '#000000';
+    const width = Number(side.style) >= 8 ? '2px' : '1px';
+    return `${width} solid ${color}`;
+  }
+
+  function cellInlineStyle(cell, config, r, c) {
+    const rowlen = (config && config.rowlen) || {};
+    const columnlen = (config && config.columnlen) || {};
+    let style = '';
+    const rh = rowlen[String(r)];
+    const cw = columnlen[String(c)];
+    if (rh) style += `height:${rh}px;`;
+    if (cw) style += `width:${cw}px;min-width:${cw}px;`;
+    if (!cell || typeof cell !== 'object') return style;
+
+    if (cell.bg) style += `background-color:${cell.bg};`;
+    if (cell.fc) style += `color:${cell.fc};`;
+    if (cell.fs) style += `font-size:${cell.fs}pt;`;
+    if (cell.ff) style += `font-family:${cell.ff};`;
+    if (cell.bl) style += 'font-weight:bold;';
+    if (cell.it) style += 'font-style:italic;';
+    if (cell.un) style += 'text-decoration:underline;';
+    if (cell.cl) style += 'text-decoration:line-through;';
+
+    const ht = cell.ht;
+    if (ht === 0) style += 'text-align:center;';
+    else if (ht === 2) style += 'text-align:right;';
+    else style += 'text-align:left;';
+
+    const vt = cell.vt;
+    if (vt === 0) style += 'vertical-align:middle;';
+    else if (vt === 2) style += 'vertical-align:bottom;';
+    else style += 'vertical-align:top;';
+
+    if (cell.tb === 2) style += 'white-space:normal;word-wrap:break-word;';
+    else style += 'white-space:pre-wrap;';
+
+    if (cell.bd) {
+      const top = borderCss(cell.bd.t);
+      const right = borderCss(cell.bd.r);
+      const bottom = borderCss(cell.bd.b);
+      const left = borderCss(cell.bd.l);
+      if (top) style += `border-top:${top};`;
+      if (right) style += `border-right:${right};`;
+      if (bottom) style += `border-bottom:${bottom};`;
+      if (left) style += `border-left:${left};`;
+    }
+    return style;
+  }
+
+  function cellDisplayValue(cell) {
+    if (!cell) return '';
+    if (cell.m != null && cell.m !== '') return cell.m;
+    if (cell.v != null && cell.v !== '') return cell.v;
+    return '';
+  }
+
+  function buildFormattedPrintTable(range) {
+    const grid = window.luckysheet.getSheetData() || [];
+    const sheet = getActiveSheet();
+    const config = (sheet && sheet.config) || {};
+    const merges = config.merge || {};
+    const mergeAnchors = {};
+    const mergeSlaves = {};
+
+    Object.keys(merges).forEach((key) => {
+      const m = merges[key];
+      if (!m || m.r == null || m.c == null) return;
+      const rs = m.rs || 1;
+      const cs = m.cs || 1;
+      mergeAnchors[`${m.r}_${m.c}`] = { rs, cs };
+      for (let rr = m.r; rr < m.r + rs; rr++) {
+        for (let cc = m.c; cc < m.c + cs; cc++) {
+          if (rr !== m.r || cc !== m.c) mergeSlaves[`${rr}_${cc}`] = true;
+        }
+      }
+    });
+
+    const minR = range.row[0];
+    const maxR = range.row[1];
+    const minC = range.column[0];
+    const maxC = range.column[1];
+    let colgroup = '';
+    for (let c = minC; c <= maxC; c++) {
+      const w = config.columnlen && config.columnlen[String(c)];
+      colgroup += w ? `<col style="width:${w}px">` : '<col style="width:72px">';
+    }
+
+    let rows = '';
+    for (let r = minR; r <= maxR; r++) {
+      rows += '<tr>';
+      for (let c = minC; c <= maxC; c++) {
+        const key = `${r}_${c}`;
+        if (mergeSlaves[key]) continue;
+        const cell = grid[r] && grid[r][c];
+        const anchor = mergeAnchors[key];
+        const span = anchor
+          ? ` rowspan="${anchor.rs}" colspan="${anchor.cs}"`
+          : '';
+        const style = cellInlineStyle(cell, config, r, c);
+        const value = escapeHtml(cellDisplayValue(cell));
+        rows += `<td${span} style="${style}">${value}</td>`;
+      }
+      rows += '</tr>';
+    }
+    return `<table class="sheet-print-table">${colgroup}${rows}</table>`;
+  }
+
+  function buildPrintDocumentHtml(tableHtml) {
+    const title = escapeHtml(nameInput.value || 'Spreadsheet');
+    return `<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>${title}</title>
+<style>
+  @page { margin: 0.5in; }
+  html, body { margin: 0; padding: 0; background: #fff; color: #000; }
+  body { font-family: Calibri, Arial, sans-serif; padding: 0.25in; }
+  h1 { font-size: 14pt; font-weight: 600; margin: 0 0 12px; }
+  table.sheet-print-table,
+  table[data-type="luckysheet_copy_action_table"] {
+    border-collapse: collapse;
+    table-layout: fixed;
+    width: auto;
+    max-width: 100%;
+  }
+  table.sheet-print-table td,
+  table[data-type="luckysheet_copy_action_table"] td {
+    box-sizing: border-box;
+    padding: 1px 4px;
+    overflow: hidden;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  @media print {
+    body { padding: 0; }
+    h1 { margin-bottom: 8px; }
+  }
+</style>
+</head><body>
+<h1>${title}</h1>
+${tableHtml}
+</body></html>`;
+  }
+
+  function printSheet() {
+    const range = getPrintRange();
+    let tableHtml = '';
+    try {
+      if (window.luckysheet.getRangeHtml) {
+        tableHtml = window.luckysheet.getRangeHtml({ range }) || '';
+      }
+    } catch (_) { tableHtml = ''; }
+
+    if (!tableHtml || !String(tableHtml).includes('<table')) {
+      try { tableHtml = buildFormattedPrintTable(range); }
+      catch (e) {
+        alert('Could not prepare print preview: ' + e.message);
+        return;
+      }
+    }
+
     const w = window.open('', '_blank');
-    if (!w) return;
-    w.document.write(`<html><head><title>${(nameInput.value || 'Spreadsheet')}</title>
-      <style>body{font-family:Arial,sans-serif;padding:0.5in;} h2{margin:0 0 12px;}
-      table{border-collapse:collapse;width:100%;} td{border:1px solid #999;padding:3px 6px;font-size:11px;white-space:nowrap;}</style>
-      </head><body><h2>${(nameInput.value || 'Spreadsheet')}</h2><table>${rows}</table></body></html>`);
+    if (!w) {
+      alert('Pop-up blocked. Allow pop-ups to print this spreadsheet.');
+      return;
+    }
+    w.document.open();
+    w.document.write(buildPrintDocumentHtml(tableHtml));
     w.document.close();
     w.focus();
-    setTimeout(() => w.print(), 300);
+    setTimeout(() => {
+      try { w.print(); } catch (_) {}
+    }, 350);
   }
 
   function showExitDialog() {
