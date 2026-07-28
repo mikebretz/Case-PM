@@ -25,6 +25,7 @@ CSRF_EXEMPT_PREFIXES = (
     '/verify-2fa',
     '/force-change-password',
     '/download/',
+    '/wopi/',
     '/api/presence/heartbeat',
     '/api/webhooks/docusign',
 )
@@ -33,6 +34,7 @@ CSRF_EXEMPT_ENDPOINTS = frozenset({
     'login', 'logout', 'recovery_login', 'recovery_enter', 'force_change_password',
     'verify_2fa', 'static', 'favicon', 'download_casepm_connector',
     'download_casepm_connector_vbs', 'api_docusign_webhook',
+    'wopi_file', 'wopi_file_contents',
 })
 
 
