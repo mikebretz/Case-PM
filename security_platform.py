@@ -33,7 +33,8 @@ CSRF_EXEMPT_ENDPOINTS = frozenset({
     'login', 'logout', 'recovery_login', 'recovery_enter', 'force_change_password',
     'verify_2fa', 'static', 'favicon', 'download_casepm_connector',
     'download_casepm_connector_vbs', 'download_casepm_desktop_app',
-    'download_casepm_desktop_client', 'download_casepm_desktop_requirements',
+    'download_casepm_desktop_setup_ps1', 'download_casepm_desktop_client',
+    'download_casepm_desktop_requirements',
     'api_docusign_webhook',
 })
 

@@ -15,6 +15,7 @@ from werkzeug.utils import secure_filename
 from datetime import datetime, date
 import os
 import sys
+import io
 import json
 import urllib.parse
 from functools import wraps
@@ -199,6 +200,7 @@ PROJECT_AGNOSTIC_ENDPOINTS = frozenset({
     'download_casepm_connector',
     'download_casepm_connector_vbs',
     'download_casepm_desktop_app',
+    'download_casepm_desktop_setup_ps1',
     'download_casepm_desktop_client',
     'download_casepm_desktop_requirements',
     'api_stats',
@@ -2566,6 +2568,25 @@ def download_casepm_desktop_app():
         mimetype='application/octet-stream',
         as_attachment=True,
         download_name='Case PM Desktop App Setup.vbs',
+    )
+
+
+@app.route('/download/casepm-desktop-setup.ps1')
+def download_casepm_desktop_setup_ps1():
+    """PowerShell setup script for the browser-installed desktop app."""
+    from desktop_install import desktop_setup_powershell_bytes
+
+    proto = request.headers.get('X-Forwarded-Proto', request.scheme)
+    host = request.headers.get('Host', request.host)
+    server_url = f'{proto}://{host}'.rstrip('/')
+    payload = desktop_setup_powershell_bytes(server_url=server_url, casepm_home=app.root_path)
+    buf = io.BytesIO(payload)
+    buf.seek(0)
+    return send_file(
+        buf,
+        mimetype='text/plain',
+        as_attachment=False,
+        download_name='setup.ps1',
     )
 
 

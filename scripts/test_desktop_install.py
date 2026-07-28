@@ -10,15 +10,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 class DesktopInstallTests(unittest.TestCase):
-    def test_build_installer_contains_webview2_and_icon(self):
+    def test_build_installer_downloads_setup_script(self):
         from desktop_install import build_desktop_app_installer
 
         buf = build_desktop_app_installer(server_url='http://127.0.0.1:5000', casepm_home='/opt/casepm')
         text = buf.read().decode('utf-8')
-        self.assertIn('Case PM Desktop App Installer', text)
-        self.assertIn('WebView2', text)
+        self.assertIn('DownloadFile', text)
+        self.assertIn('/download/casepm-desktop-setup.ps1', text)
         self.assertIn('hard-hat', text)
-        self.assertIn('setup.ps1', text)
+        self.assertNotIn('ps1B64', text)
 
     def test_powershell_config_local_mode(self):
         from desktop_install import build_desktop_setup_powershell
@@ -29,8 +29,8 @@ class DesktopInstallTests(unittest.TestCase):
             local_mode=True,
         )
         self.assertIn('Ensure-LocalLauncher', ps1)
-        self.assertIn('Case-PM', ps1)
-        self.assertIn('RUN-DESKTOP.bat', ps1)
+        self.assertIn('Create Desktop Shortcut.bat', ps1)
+        self.assertIn('Read-Host', ps1)
 
     def test_powershell_config_remote_mode(self):
         from desktop_install import build_desktop_setup_powershell, _is_local_server
