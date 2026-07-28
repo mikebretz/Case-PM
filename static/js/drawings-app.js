@@ -2572,7 +2572,7 @@
   function closeViewer() {
     if (state.embeddedViewer) {
       try {
-        global.parent.postMessage({ type: 'casepm-close-doc-viewer' }, '*');
+        global.parent.postMessage({ type: 'casepm-close-doc-viewer' }, window.location.origin);
       } catch (_) { /* ignore */ }
       return;
     }

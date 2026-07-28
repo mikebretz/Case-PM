@@ -1,24 +1,22 @@
 """Turn-by-turn directions and mileage via OSRM (OpenStreetMap routing)."""
 from __future__ import annotations
 
-import json
-import urllib.error
 import urllib.parse
-import urllib.request
 from typing import Any
+
+from plugin_security import build_osrm_url, escape_html_text, safe_http_json, validate_coordinates
 
 OSRM_BASE = 'https://router.project-osrm.org/route/v1/driving'
 
 
 def _http_json(url: str, *, headers: dict | None = None, timeout: int = 20) -> dict:
-    req = urllib.request.Request(url, headers=headers or {})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode('utf-8'))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode('utf-8', errors='replace')
-        raise RuntimeError(detail or exc.reason) from exc
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        return safe_http_json(url, headers=headers, timeout=timeout)
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
+    except RuntimeError:
+        raise
+    except Exception as exc:
         raise RuntimeError(str(exc)) from exc
 
 
@@ -40,7 +38,9 @@ def get_directions(
     dest_label: str = '',
 ) -> dict[str, Any]:
     """Return driving route with distance, duration, steps, and mobile map links."""
-    path = f"{OSRM_BASE}/{origin_lng},{origin_lat};{dest_lng},{dest_lat}"
+    o_lat, o_lng = validate_coordinates(origin_lat, origin_lng)
+    d_lat, d_lng = validate_coordinates(dest_lat, dest_lng)
+    path = build_osrm_url(o_lng, o_lat, d_lng, d_lat)
     params = urllib.parse.urlencode({
         'overview': 'full',
         'geometries': 'geojson',
@@ -102,24 +102,30 @@ def build_directions_email_html(directions: dict[str, Any]) -> str:
     steps = directions.get('steps') or []
     links = directions.get('links') or {}
     step_rows = ''.join(
-        f'<li>{s.get("instruction", "Continue")}'
-        f'{(" on " + s["name"]) if s.get("name") else ""}'
-        f' — {s.get("distance_miles", 0)} mi</li>'
+        f'<li>{escape_html_text(s.get("instruction", "Continue"))}'
+        f'{(" on " + escape_html_text(s["name"])) if s.get("name") else ""}'
+        f' — {escape_html_text(s.get("distance_miles", 0))} mi</li>'
         for s in steps[:15]
     )
+    o_label = escape_html_text(origin.get('label') or 'Your location')
+    d_label = escape_html_text(dest.get('label') or 'Job site')
+    dist = escape_html_text(directions.get('distance_miles'))
+    dur = escape_html_text(directions.get('duration_minutes'))
+    gmaps = escape_html_text(links.get('google_maps', '#'))
+    amaps = escape_html_text(links.get('apple_maps', '#'))
     return f"""
     <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111;">
       <h2 style="margin:0 0 12px;">Driving directions</h2>
-      <p><strong>From:</strong> {origin.get('label') or 'Your location'}<br>
-         <strong>To:</strong> {dest.get('label') or 'Job site'}</p>
-      <p style="font-size:18px;"><strong>{directions.get('distance_miles')} miles</strong>
-         · about <strong>{directions.get('duration_minutes')} minutes</strong></p>
+      <p><strong>From:</strong> {o_label}<br>
+         <strong>To:</strong> {d_label}</p>
+      <p style="font-size:18px;"><strong>{dist} miles</strong>
+         · about <strong>{dur} minutes</strong></p>
       <p>
-        <a href="{links.get('google_maps', '#')}" style="display:inline-block;margin-right:12px;padding:10px 16px;background:#059669;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;">Open in Google Maps</a>
-        <a href="{links.get('apple_maps', '#')}" style="display:inline-block;padding:10px 16px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;">Open in Apple Maps</a>
+        <a href="{gmaps}" style="display:inline-block;margin-right:12px;padding:10px 16px;background:#059669;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;">Open in Google Maps</a>
+        <a href="{amaps}" style="display:inline-block;padding:10px 16px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;">Open in Apple Maps</a>
       </p>
       <h3 style="margin:16px 0 8px;">Turn-by-turn</h3>
       <ol style="padding-left:20px;">{step_rows}</ol>
-      <p style="font-size:12px;color:#666;margin-top:16px;">Mileage for reimbursement: <strong>{directions.get('distance_miles')} miles</strong></p>
+      <p style="font-size:12px;color:#666;margin-top:16px;">Mileage for reimbursement: <strong>{dist} miles</strong></p>
     </div>
     """
