@@ -5,6 +5,10 @@
   let markers = [];
   let locations = [];
   let activeId = null;
+  let routeLayer = null;
+  let userLocation = null;
+  let currentDirections = null;
+  let directionsDest = null;
 
   function esc(s) {
     const d = document.createElement('div');
@@ -13,14 +17,17 @@
   }
 
   async function loadLocations() {
-    const status = document.getElementById('companyMapStatusFilter')?.value || 'Active';
-    const res = await fetch(`/api/company-map/locations?status=${encodeURIComponent(status)}`);
+    const status = document.getElementById('companyMapStatusFilter')?.value || 'current';
+    const res = await fetch(`/api/company-map/locations?status=${encodeURIComponent(status)}&include_unmapped=1`);
     const data = await res.json();
     locations = data.locations || [];
     renderList();
     renderMarkers();
     const countEl = document.getElementById('companyMapCount');
-    if (countEl) countEl.textContent = `${locations.length} job site${locations.length === 1 ? '' : 's'} on map`;
+    const mapped = data.mapped_count != null ? data.mapped_count : locations.filter(l => l.mapped).length;
+    if (countEl) {
+      countEl.textContent = `${mapped} on map · ${locations.length} current job${locations.length === 1 ? '' : 's'}`;
+    }
   }
 
   function filteredLocations() {
@@ -40,22 +47,33 @@
     if (!el) return;
     const list = filteredLocations();
     if (!list.length) {
-      el.innerHTML = '<div class="p-4 text-sm text-zinc-500">No mapped job sites match your filter.</div>';
+      el.innerHTML = '<div class="p-4 text-sm text-zinc-500">No current jobs match your filter. Try <strong>All projects</strong> or add addresses on the Projects page.</div>';
       return;
     }
     el.innerHTML = list.map(loc => `
-      <div class="company-map-job-card ${String(activeId) === String(loc.id) ? 'active' : ''}" data-job-id="${loc.id}">
+      <div class="company-map-job-card ${String(activeId) === String(loc.id) ? 'active' : ''} ${loc.mapped ? '' : 'unmapped'}" data-job-id="${loc.id}">
         <h3>${esc(loc.name)}</h3>
         <p>${esc(loc.label)}</p>
         <div class="company-map-job-meta">
           <span>${esc(loc.status || 'Active')}</span>
+          ${loc.mapped ? '<span class="text-emerald-400">On map</span>' : '<span class="text-amber-400">Needs geocode</span>'}
           ${loc.store_number ? `<span>Store ${esc(loc.store_number)}</span>` : ''}
           ${loc.client ? `<span>${esc(loc.client)}</span>` : ''}
         </div>
+        ${loc.mapped ? `<button type="button" class="company-map-directions-btn" data-directions-id="${loc.id}"><i class="fa-solid fa-route"></i> Directions</button>` : ''}
       </div>
     `).join('');
     el.querySelectorAll('.company-map-job-card').forEach(card => {
-      card.addEventListener('click', () => focusJob(card.getAttribute('data-job-id')));
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.company-map-directions-btn')) return;
+        focusJob(card.getAttribute('data-job-id'));
+      });
+    });
+    el.querySelectorAll('.company-map-directions-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        getDirectionsTo(btn.getAttribute('data-directions-id'));
+      });
     });
   }
 
@@ -76,14 +94,20 @@
     markers = [];
   }
 
+  function clearRoute() {
+    if (routeLayer) {
+      routeLayer.remove();
+      routeLayer = null;
+    }
+  }
+
   function renderMarkers() {
     const m = ensureMap();
     if (!m) return;
     clearMarkers();
-    const list = filteredLocations();
+    const list = filteredLocations().filter(loc => loc.mapped && loc.latitude != null && loc.longitude != null);
     const bounds = [];
     list.forEach(loc => {
-      if (loc.latitude == null || loc.longitude == null) return;
       const latlng = [loc.latitude, loc.longitude];
       bounds.push(latlng);
       const marker = L.marker(latlng).addTo(m);
@@ -93,7 +117,10 @@
           <p>${esc(loc.label)}</p>
           <p><strong>Status:</strong> ${esc(loc.status || 'Active')}</p>
           ${loc.client ? `<p><strong>Client:</strong> ${esc(loc.client)}</p>` : ''}
-          <p><a href="/email?tab=calendar&project_id=${encodeURIComponent(loc.id)}">Schedule meeting at this job</a></p>
+          <p>
+            <button type="button" class="company-map-popup-btn" onclick="window.__casepmMapDirections && window.__casepmMapDirections('${loc.id}')">Get directions</button>
+          </p>
+          <p><a href="/email?tab=calendar&project_id=${encodeURIComponent(loc.id)}&new=1">Schedule meeting</a></p>
         </div>
       `);
       marker._jobId = loc.id;
@@ -101,22 +128,141 @@
       markers.push(marker);
     });
     if (bounds.length === 1) {
-      m.setView(bounds[0], 12);
+      m.setView(bounds[0], 13);
     } else if (bounds.length > 1) {
-      m.fitBounds(bounds, { padding: [40, 40] });
+      m.fitBounds(bounds, { padding: [48, 48], maxZoom: 12 });
     }
-    setTimeout(() => m.invalidateSize(), 100);
+    setTimeout(() => m.invalidateSize(), 120);
   }
+
+  global.__casepmMapDirections = (id) => getDirectionsTo(id);
 
   function focusJob(id) {
     activeId = id;
     renderList();
     const loc = locations.find(l => String(l.id) === String(id));
     const m = ensureMap();
-    if (!loc || !m || loc.latitude == null || loc.longitude == null) return;
+    if (!loc || !m) return;
+    if (loc.latitude == null || loc.longitude == null) return;
     m.setView([loc.latitude, loc.longitude], 14);
     const marker = markers.find(x => String(x._jobId) === String(id));
     if (marker) marker.openPopup();
+  }
+
+  async function ensureUserLocation() {
+    if (userLocation) return userLocation;
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error('Geolocation not supported'));
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude, label: 'My location' };
+          resolve(userLocation);
+        },
+        err => reject(err),
+        { enableHighAccuracy: true, timeout: 12000 },
+      );
+    });
+  }
+
+  async function getDirectionsTo(jobId) {
+    const loc = locations.find(l => String(l.id) === String(jobId));
+    if (!loc || loc.latitude == null || loc.longitude == null) {
+      alert('This job does not have map coordinates yet. Add a street address on the Projects page.');
+      return;
+    }
+    directionsDest = loc;
+    let origin;
+    try {
+      origin = await ensureUserLocation();
+    } catch (_) {
+      origin = {
+        lat: 28.5383,
+        lng: -81.3792,
+        label: 'Orlando, FL (default origin — click My location)',
+      };
+    }
+    const res = await fetch('/api/company-map/directions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        origin_lat: origin.lat,
+        origin_lng: origin.lng,
+        dest_lat: loc.latitude,
+        dest_lng: loc.longitude,
+        origin_label: origin.label,
+        dest_label: loc.label || loc.name,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.error || 'Could not get directions');
+      return;
+    }
+    currentDirections = data;
+    showDirectionsPanel(data, loc, origin);
+    drawRoute(data.geometry || []);
+  }
+
+  function drawRoute(coords) {
+    const m = ensureMap();
+    if (!m || !coords.length) return;
+    clearRoute();
+    const latlngs = coords.map(c => [c[1], c[0]]);
+    routeLayer = L.polyline(latlngs, { color: '#10b981', weight: 5, opacity: 0.85 }).addTo(m);
+    m.fitBounds(routeLayer.getBounds(), { padding: [40, 40] });
+  }
+
+  function showDirectionsPanel(data, dest, origin) {
+    const panel = document.getElementById('companyMapDirectionsPanel');
+    const summary = document.getElementById('companyMapDirectionsSummary');
+    const steps = document.getElementById('companyMapDirectionsSteps');
+    const mileage = document.getElementById('companyMapMileageNote');
+    if (!panel || !summary) return;
+    panel.classList.remove('hidden');
+    summary.innerHTML = `
+      <div><strong>To:</strong> ${esc(dest.name)}</div>
+      <div class="text-zinc-400 text-xs mt-1">${esc(dest.label)}</div>
+      <div class="company-map-distance">${data.distance_miles} miles · ~${data.duration_minutes} min</div>
+      <div class="text-xs text-zinc-500 mt-1">From: ${esc(origin.label)}</div>
+    `;
+    if (steps) {
+      steps.innerHTML = (data.steps || []).slice(0, 12).map(s =>
+        `<li>${esc(s.instruction || 'Continue')}${s.name ? ` on ${esc(s.name)}` : ''} <span class="text-zinc-500">(${s.distance_miles} mi)</span></li>`
+      ).join('');
+    }
+    if (mileage) {
+      mileage.textContent = `Mileage for reimbursement: ${data.distance_miles} miles (save or email for superintendent pay apps)`;
+    }
+    const g = document.getElementById('companyMapGoogleLink');
+    const a = document.getElementById('companyMapAppleLink');
+    if (g && data.links) g.href = data.links.google_maps;
+    if (a && data.links) a.href = data.links.apple_maps;
+  }
+
+  async function emailDirections() {
+    if (!currentDirections || !directionsDest) return;
+    const to = prompt('Send directions to email:', '') || '';
+    if (!to.trim()) return;
+    const origin = userLocation || { lat: 28.5383, lng: -81.3792, label: 'Office' };
+    const res = await fetch('/api/company-map/directions/email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: to.trim(),
+        origin_lat: origin.lat,
+        origin_lng: origin.lng,
+        dest_lat: directionsDest.latitude,
+        dest_lng: directionsDest.longitude,
+        origin_label: origin.label,
+        dest_label: directionsDest.label || directionsDest.name,
+        note: `Directions to ${directionsDest.name} — ${currentDirections.distance_miles} miles for field travel / mileage.`,
+      }),
+    });
+    const data = await res.json();
+    alert(data.message || (data.sent ? 'Directions sent.' : 'Could not send email.'));
   }
 
   function bindEvents() {
@@ -125,6 +271,21 @@
       renderList();
       renderMarkers();
     });
+    document.getElementById('companyMapUseMyLocation')?.addEventListener('click', async () => {
+      try {
+        const loc = await ensureUserLocation();
+        const m = ensureMap();
+        if (m) m.setView([loc.lat, loc.lng], 11);
+        alert('Your location is set as the directions starting point.');
+      } catch (e) {
+        alert('Could not get your location. Check browser permissions.');
+      }
+    });
+    document.getElementById('companyMapCloseDirections')?.addEventListener('click', () => {
+      document.getElementById('companyMapDirectionsPanel')?.classList.add('hidden');
+      clearRoute();
+    });
+    document.getElementById('companyMapEmailDirections')?.addEventListener('click', emailDirections);
   }
 
   document.addEventListener('DOMContentLoaded', () => {

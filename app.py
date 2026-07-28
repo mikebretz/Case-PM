@@ -15883,6 +15883,7 @@ def api_email_security_simulate():
 @login_required
 def api_email_calendar():
     from email_calendar_persistence import load_user_calendar, save_user_calendar, ensure_email_calendar_schema
+    from user_email_connection_persistence import connection_status
     try:
         uid = _email_mailbox_user_id()
     except Exception:
@@ -15892,7 +15893,42 @@ def api_email_calendar():
     ensure_email_calendar_schema(db)
     if request.method == 'GET':
         payload = load_user_calendar(uid, UserEmailCalendar=UserEmailCalendar)
-        return jsonify({'ok': True, 'user_id': uid, **payload})
+        sync_outlook = request.args.get('sync_outlook', '0') == '1'
+        conn = connection_status(uid, UserEmailConnection=UserEmailConnection, User=User)
+        outlook_connected = bool(conn.get('connected'))
+        if sync_outlook and outlook_connected:
+            from microsoft_graph_calendar_service import sync_outlook_calendar
+            try:
+                result = sync_outlook_calendar(
+                    uid, payload.get('events') or [],
+                    db=db, UserEmailConnection=UserEmailConnection,
+                )
+                meta = dict(payload.get('meta') or {})
+                meta['lastOutlookSync'] = datetime.utcnow().isoformat() + 'Z'
+                save_user_calendar(uid, result['events'], meta, db=db, UserEmailCalendar=UserEmailCalendar)
+                return jsonify({
+                    'ok': True,
+                    'user_id': uid,
+                    'events': result['events'],
+                    'meta': meta,
+                    'outlook_sync': {
+                        'connected': True,
+                        'synced_from_outlook': result.get('synced_from_outlook', 0),
+                    },
+                })
+            except Exception as exc:
+                return jsonify({
+                    'ok': True,
+                    'user_id': uid,
+                    **payload,
+                    'outlook_sync': {'connected': True, 'error': str(exc)},
+                })
+        return jsonify({
+            'ok': True,
+            'user_id': uid,
+            **payload,
+            'outlook_connected': outlook_connected,
+        })
     body = request.get_json(silent=True) or {}
     events = body.get('events')
     if events is None:
@@ -15911,6 +15947,7 @@ def api_email_calendar():
 def api_email_calendar_create_event():
     from email_calendar_persistence import load_user_calendar, save_user_calendar, normalize_event, ensure_email_calendar_schema
     from email_notifications import send_workflow_email
+    from user_email_connection_persistence import connection_status
     body = request.get_json(silent=True) or {}
     try:
         uid = _email_mailbox_user_id()
@@ -15928,6 +15965,19 @@ def api_email_calendar_create_event():
     events = list(payload.get('events') or [])
     events.append(event)
     save_user_calendar(uid, events, payload.get('meta'), db=db, UserEmailCalendar=UserEmailCalendar)
+
+    graph_event = None
+    conn = connection_status(uid, UserEmailConnection=UserEmailConnection, User=User)
+    if body.get('sync_outlook', True) and conn.get('connected'):
+        from microsoft_graph_calendar_service import create_graph_event
+        try:
+            graph_event = create_graph_event(uid, event, db=db, UserEmailConnection=UserEmailConnection)
+            event['graphEventId'] = graph_event.get('graphEventId')
+            event['source'] = 'microsoft_graph'
+            events = [event if e.get('id') == event['id'] else e for e in events]
+            save_user_calendar(uid, events, payload.get('meta'), db=db, UserEmailCalendar=UserEmailCalendar)
+        except Exception:
+            pass
 
     invite_sent = []
     if body.get('send_invites'):
@@ -15947,13 +15997,48 @@ def api_email_calendar_create_event():
             events = [event if e.get('id') == event['id'] else e for e in events]
             save_user_calendar(uid, events, payload.get('meta'), db=db, UserEmailCalendar=UserEmailCalendar)
 
-    return jsonify({'ok': True, 'event': event, 'invite_sent': invite_sent})
+    return jsonify({'ok': True, 'event': event, 'invite_sent': invite_sent, 'outlook_event': graph_event})
+
+
+@app.route('/api/email/calendar/sync-outlook', methods=['POST'])
+@login_required
+def api_email_calendar_sync_outlook():
+    from email_calendar_persistence import load_user_calendar, save_user_calendar, ensure_email_calendar_schema
+    from user_email_connection_persistence import connection_status
+    from microsoft_graph_calendar_service import sync_outlook_calendar
+    try:
+        uid = _email_mailbox_user_id()
+    except Exception:
+        return jsonify({'error': 'Mailbox access denied'}), 403
+    if uid is None:
+        return jsonify({'error': 'Mailbox access denied'}), 403
+    conn = connection_status(uid, UserEmailConnection=UserEmailConnection, User=User)
+    if not conn.get('connected'):
+        return jsonify({'error': 'Outlook is not connected. Reconnect in Email Settings to enable calendar sync.'}), 400
+    ensure_email_calendar_schema(db)
+    payload = load_user_calendar(uid, UserEmailCalendar=UserEmailCalendar)
+    try:
+        result = sync_outlook_calendar(
+            uid, payload.get('events') or [],
+            db=db, UserEmailConnection=UserEmailConnection,
+        )
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+    meta = dict(payload.get('meta') or {})
+    meta['lastOutlookSync'] = datetime.utcnow().isoformat() + 'Z'
+    saved = save_user_calendar(uid, result['events'], meta, db=db, UserEmailCalendar=UserEmailCalendar)
+    return jsonify({
+        'ok': True,
+        'synced_from_outlook': result.get('synced_from_outlook', 0),
+        **saved,
+    })
 
 
 @app.route('/api/email/calendar/events/<event_id>', methods=['PUT', 'DELETE'])
 @login_required
 def api_email_calendar_event(event_id):
     from email_calendar_persistence import load_user_calendar, save_user_calendar, normalize_event, ensure_email_calendar_schema
+    from user_email_connection_persistence import connection_status
     try:
         uid = _email_mailbox_user_id()
     except Exception:
@@ -15964,6 +16049,14 @@ def api_email_calendar_event(event_id):
     payload = load_user_calendar(uid, UserEmailCalendar=UserEmailCalendar)
     events = list(payload.get('events') or [])
     if request.method == 'DELETE':
+        target = next((e for e in events if str(e.get('id')) == str(event_id)), None)
+        conn = connection_status(uid, UserEmailConnection=UserEmailConnection, User=User)
+        if target and target.get('graphEventId') and conn.get('connected'):
+            from microsoft_graph_calendar_service import delete_graph_event
+            try:
+                delete_graph_event(uid, target['graphEventId'], db=db, UserEmailConnection=UserEmailConnection)
+            except Exception:
+                pass
         events = [e for e in events if str(e.get('id')) != str(event_id)]
         saved = save_user_calendar(uid, events, payload.get('meta'), db=db, UserEmailCalendar=UserEmailCalendar)
         return jsonify({'ok': True, **saved})
@@ -15981,6 +16074,15 @@ def api_email_calendar_event(event_id):
             break
     if not updated:
         return jsonify({'error': 'Event not found'}), 404
+    conn = connection_status(uid, UserEmailConnection=UserEmailConnection, User=User)
+    if updated.get('graphEventId') and conn.get('connected'):
+        from microsoft_graph_calendar_service import update_graph_event
+        try:
+            graph_updated = update_graph_event(uid, updated['graphEventId'], updated, db=db, UserEmailConnection=UserEmailConnection)
+            updated = {**updated, **graph_updated}
+            events[idx] = updated
+        except Exception:
+            pass
     saved = save_user_calendar(uid, events, payload.get('meta'), db=db, UserEmailCalendar=UserEmailCalendar)
     return jsonify({'ok': True, 'event': updated, **saved})
 
@@ -15995,15 +16097,92 @@ def company_map_page():
 @app.route('/api/company-map/locations')
 @login_required
 def api_company_map_locations():
-    from geocode_service import list_company_job_locations
-    status = (request.args.get('status') or 'Active').strip()
+    from geocode_service import list_company_job_locations, is_active_job_status, ACTIVE_JOB_STATUSES
+    status = (request.args.get('status') or 'current').strip()
     query = Project.query
-    if status and status.lower() != 'all':
+    if status.lower() in ('current', 'active', 'going'):
+        query = query.filter(Project.status.in_(list(ACTIVE_JOB_STATUSES)))
+    elif status and status.lower() != 'all':
         query = query.filter(Project.status == status)
     projects = query.order_by(Project.name).all()
     geocode = request.args.get('geocode', '1') != '0'
-    locations = list_company_job_locations(projects, geocode_missing=geocode)
-    return jsonify({'ok': True, 'count': len(locations), 'locations': locations})
+    include_unmapped = request.args.get('include_unmapped', '1') != '0'
+    locations = list_company_job_locations(
+        projects, geocode_missing=geocode, include_unmapped=include_unmapped,
+    )
+    mapped = [loc for loc in locations if loc.get('mapped')]
+    return jsonify({
+        'ok': True,
+        'count': len(locations),
+        'mapped_count': len(mapped),
+        'locations': locations,
+        'active_statuses': sorted(ACTIVE_JOB_STATUSES),
+    })
+
+
+@app.route('/api/company-map/directions', methods=['POST'])
+@login_required
+def api_company_map_directions():
+    from directions_service import get_directions
+    body = request.get_json(silent=True) or {}
+    try:
+        origin_lat = float(body.get('origin_lat'))
+        origin_lng = float(body.get('origin_lng'))
+        dest_lat = float(body.get('dest_lat'))
+        dest_lng = float(body.get('dest_lng'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'origin_lat, origin_lng, dest_lat, dest_lng required'}), 400
+    try:
+        result = get_directions(
+            origin_lat, origin_lng, dest_lat, dest_lng,
+            origin_label=body.get('origin_label') or '',
+            dest_label=body.get('dest_label') or '',
+        )
+    except RuntimeError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'ok': True, **result})
+
+
+@app.route('/api/company-map/directions/email', methods=['POST'])
+@login_required
+def api_company_map_directions_email():
+    from directions_service import get_directions, build_directions_email_html
+    from email_notifications import send_workflow_email
+    body = request.get_json(silent=True) or {}
+    to_email = (body.get('to') or body.get('email') or '').strip()
+    if not to_email or '@' not in to_email:
+        return jsonify({'error': 'Recipient email required'}), 400
+    try:
+        origin_lat = float(body.get('origin_lat'))
+        origin_lng = float(body.get('origin_lng'))
+        dest_lat = float(body.get('dest_lat'))
+        dest_lng = float(body.get('dest_lng'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'origin_lat, origin_lng, dest_lat, dest_lng required'}), 400
+    try:
+        directions = get_directions(
+            origin_lat, origin_lng, dest_lat, dest_lng,
+            origin_label=body.get('origin_label') or 'Office',
+            dest_label=body.get('dest_label') or 'Job site',
+        )
+    except RuntimeError as exc:
+        return jsonify({'error': str(exc)}), 400
+    dest_label = body.get('dest_label') or 'Job site'
+    subject = body.get('subject') or f'Driving directions to {dest_label} — {directions.get("distance_miles")} mi'
+    html = build_directions_email_html(directions)
+    note = body.get('note') or ''
+    if note:
+        html = f'<p>{note}</p>' + html
+    sent = send_workflow_email(to_email, subject, html)
+    return jsonify({
+        'ok': True,
+        'sent': bool(sent),
+        'distance_miles': directions.get('distance_miles'),
+        'duration_minutes': directions.get('duration_minutes'),
+        'links': directions.get('links'),
+        'message': 'Directions emailed.' if sent else 'Directions prepared (SMTP not configured — copy links manually).',
+        'directions': directions,
+    })
 
 
 @app.route('/api/geocode/search')

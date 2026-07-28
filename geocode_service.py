@@ -8,6 +8,11 @@ import urllib.request
 from typing import Any
 
 OPEN_METEO_GEOCODE = 'https://geocoding-api.open-meteo.com/v1/search'
+NOMINATIM_SEARCH = 'https://nominatim.openstreetmap.org/search'
+USER_AGENT = 'CasePM/1.0 (construction project management)'
+
+
+ACTIVE_JOB_STATUSES = frozenset({'Active', 'Pre-Construction', 'In Progress'})
 
 
 def _http_json(url: str, timeout: int = 10) -> dict:
@@ -97,21 +102,77 @@ def geocode_query(query: str, *, count: int = 8) -> list[dict[str, Any]]:
     return results
 
 
+def geocode_address_nominatim(query: str) -> dict[str, Any] | None:
+    q = (query or '').strip()
+    if len(q) < 3:
+        return None
+    params = urllib.parse.urlencode({
+        'q': q,
+        'format': 'json',
+        'limit': 1,
+        'addressdetails': 1,
+        'countrycodes': 'us',
+    })
+    req = urllib.request.Request(
+        f'{NOMINATIM_SEARCH}?{params}',
+        headers={'User-Agent': USER_AGENT},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            rows = json.loads(resp.read().decode('utf-8'))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+        return None
+    if not rows:
+        return None
+    row = rows[0]
+    addr = row.get('address') or {}
+    return {
+        'latitude': float(row.get('lat')),
+        'longitude': float(row.get('lon')),
+        'city': addr.get('city') or addr.get('town') or addr.get('village') or '',
+        'state': addr.get('state') or '',
+        'label': row.get('display_name') or q,
+    }
+
+
 def geocode_project_location(loc: dict[str, Any]) -> dict[str, Any]:
     """Fill missing latitude/longitude for a project location dict."""
     out = dict(loc)
     if out.get('latitude') is not None and out.get('longitude') is not None:
         return out
     query_bits = [out.get('address'), out.get('city'), out.get('state'), out.get('zip_code')]
-    query = ', '.join(x for x in query_bits if x)
-    if not query:
-        query = out.get('name') or ''
-    if not query:
+    full_query = ', '.join(x for x in query_bits if x)
+    if not full_query:
+        full_query = out.get('name') or ''
+    if not full_query:
         return out
+
+    # Prefer Nominatim for full street addresses (better US coverage).
+    if out.get('address') or ',' in full_query:
+        nominatim = geocode_address_nominatim(full_query)
+        if nominatim:
+            out['latitude'] = nominatim['latitude']
+            out['longitude'] = nominatim['longitude']
+            if not out.get('city') and nominatim.get('city'):
+                out['city'] = nominatim['city']
+            if not out.get('state') and nominatim.get('state'):
+                out['state'] = nominatim['state']
+            out['geocoded'] = True
+            out['geocode_source'] = 'nominatim'
+            return out
+
     try:
-        matches = geocode_query(query, count=3)
+        matches = geocode_query(full_query if not out.get('address') else (out.get('city') or full_query), count=3)
     except RuntimeError:
-        return out
+        matches = []
+    if not matches and full_query != (out.get('city') or ''):
+        nominatim = geocode_address_nominatim(full_query)
+        if nominatim:
+            out['latitude'] = nominatim['latitude']
+            out['longitude'] = nominatim['longitude']
+            out['geocoded'] = True
+            out['geocode_source'] = 'nominatim'
+            return out
     if not matches:
         return out
     state = (out.get('state') or '').upper()
@@ -128,20 +189,28 @@ def geocode_project_location(loc: dict[str, Any]) -> dict[str, Any]:
     if not out.get('state') and match.get('state'):
         out['state'] = match['state']
     out['geocoded'] = True
+    out['geocode_source'] = 'open_meteo'
     return out
 
 
-def list_company_job_locations(projects, *, geocode_missing: bool = True) -> list[dict[str, Any]]:
+def list_company_job_locations(projects, *, geocode_missing: bool = True, include_unmapped: bool = False) -> list[dict[str, Any]]:
     locations = []
     for project in projects or []:
         loc = project_location_dict(project)
         if not loc.get('label') and not loc.get('name'):
             continue
-        if geocode_missing and (loc.get('latitude') is None or loc.get('longitude') is None):
+        has_coords = loc.get('latitude') is not None and loc.get('longitude') is not None
+        if not has_coords and geocode_missing:
             loc = geocode_project_location(loc)
-        if loc.get('latitude') is not None and loc.get('longitude') is not None:
+        mapped = loc.get('latitude') is not None and loc.get('longitude') is not None
+        loc['mapped'] = mapped
+        if mapped or include_unmapped:
             locations.append(loc)
     return locations
+
+
+def is_active_job_status(status: str | None) -> bool:
+    return (status or 'Active') in ACTIVE_JOB_STATUSES
 
 
 def search_address_suggestions(query: str, projects=None, *, limit: int = 12) -> list[dict[str, Any]]:

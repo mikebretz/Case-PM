@@ -78,11 +78,22 @@ class EmailCalendarApiTests(unittest.TestCase):
             user = User.query.filter_by(email='admin@casepm.local').first()
             with app.test_client() as client:
                 _login_client(client, user, app)
-                res = client.get('/api/company-map/locations?geocode=0')
+                res = client.get('/api/company-map/locations?geocode=0&status=current')
                 self.assertEqual(res.status_code, 200)
                 data = res.get_json()
                 self.assertTrue(data.get('ok'))
                 self.assertIn('locations', data)
+                self.assertIn('mapped_count', data)
+
+
+class DirectionsServiceTests(unittest.TestCase):
+    def test_directions_orlando_to_lakeland(self):
+        from directions_service import get_directions
+        # Approximate Orlando to Lakeland, FL
+        result = get_directions(28.5383, -81.3792, 28.0395, -81.9498)
+        self.assertGreater(result['distance_miles'], 20)
+        self.assertGreater(result['duration_minutes'], 20)
+        self.assertIn('google_maps', result.get('links', {}))
 
 
 if __name__ == '__main__':

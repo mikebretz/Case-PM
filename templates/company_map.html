@@ -12,16 +12,19 @@
       <h1 class="text-xl font-semibold text-white flex items-center gap-2">
         <i class="fa-solid fa-map-location-dot text-emerald-400"></i> Company Job Map
       </h1>
-      <p class="text-sm text-zinc-400 mt-1">All job sites across your portfolio. Addresses here power email and calendar location autocomplete.</p>
+      <p class="text-sm text-zinc-400 mt-1">Active job sites, driving directions with mileage, and mobile-friendly links you can email to the field.</p>
     </div>
     <div class="company-map-controls">
       <select id="companyMapStatusFilter" class="company-map-select">
-        <option value="Active">Active jobs</option>
+        <option value="current" selected>Current jobs (Active)</option>
         <option value="all">All projects</option>
+        <option value="Active">Active only</option>
+        <option value="Pre-Construction">Pre-Construction</option>
         <option value="Complete">Complete</option>
         <option value="On Hold">On Hold</option>
       </select>
       <input type="text" id="companyMapSearch" class="company-map-search" placeholder="Filter jobs by name, city, store #…" autocomplete="off">
+      <button type="button" id="companyMapUseMyLocation" class="company-map-btn-secondary"><i class="fa-solid fa-location-crosshairs"></i> My location</button>
       <a href="{{ url_for('email_page') }}?tab=calendar" class="company-map-btn"><i class="fa-solid fa-calendar-plus"></i> Schedule meeting</a>
     </div>
   </div>
@@ -32,16 +35,25 @@
         <span id="companyMapCount" class="text-xs uppercase tracking-wide text-zinc-500">Loading…</span>
       </div>
       <div id="companyMapJobList" class="company-map-job-list"></div>
+      <div id="companyMapDirectionsPanel" class="company-map-directions hidden">
+        <div class="company-map-directions-head">
+          <strong>Directions</strong>
+          <button type="button" id="companyMapCloseDirections" class="company-map-icon-btn">&times;</button>
+        </div>
+        <div id="companyMapDirectionsSummary" class="company-map-directions-summary"></div>
+        <ol id="companyMapDirectionsSteps" class="company-map-directions-steps"></ol>
+        <div class="company-map-directions-actions">
+          <a id="companyMapGoogleLink" href="#" target="_blank" rel="noopener" class="company-map-btn-secondary">Google Maps</a>
+          <a id="companyMapAppleLink" href="#" target="_blank" rel="noopener" class="company-map-btn-secondary">Apple Maps</a>
+          <button type="button" id="companyMapEmailDirections" class="company-map-btn"><i class="fa-solid fa-envelope"></i> Email directions</button>
+        </div>
+        <div class="company-map-mileage-note" id="companyMapMileageNote"></div>
+      </div>
     </aside>
     <div id="companyMapCanvas" class="company-map-canvas" aria-label="Job locations map"></div>
   </div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-<script>
-window.CASEPM_COMPANY_MAP_CTX = {
-  projects: {{ projects|map(attribute='id')|list|tojson }},
-};
-</script>
 <script src="{{ url_for('static', filename='js/company-map-app.js') }}"></script>
 {% endblock %}

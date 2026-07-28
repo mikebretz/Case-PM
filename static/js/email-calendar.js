@@ -19,6 +19,8 @@
   let selectedDay = new Date();
   let editingEvent = null;
   let rootEl = null;
+  let outlookConnected = false;
+  let outlookSyncStatus = '';
 
   function esc(s) {
     const d = document.createElement('div');
@@ -67,11 +69,34 @@
     }).sort((a, b) => (a.start || '').localeCompare(b.start || ''));
   }
 
-  async function loadEvents() {
-    const res = await fetch('/api/email/calendar');
+  async function loadEvents(syncOutlook) {
+    const url = syncOutlook ? '/api/email/calendar?sync_outlook=1' : '/api/email/calendar';
+    const res = await fetch(url);
     if (!res.ok) throw new Error('Could not load calendar');
     const data = await res.json();
     events = Array.isArray(data.events) ? data.events : [];
+    outlookConnected = !!(data.outlook_connected || data.outlook_sync?.connected);
+    if (data.outlook_sync?.error) {
+      outlookSyncStatus = `Outlook sync issue: ${data.outlook_sync.error}. Reconnect Outlook in Email Settings to grant calendar access.`;
+    } else if (data.outlook_sync?.synced_from_outlook != null) {
+      outlookSyncStatus = `Synced ${data.outlook_sync.synced_from_outlook} events from Outlook.`;
+    } else {
+      outlookSyncStatus = outlookConnected ? 'Outlook connected — click Sync to refresh.' : 'Connect Outlook in Email Settings to sync your calendar.';
+    }
+  }
+
+  async function syncOutlook() {
+    const res = await fetch('/api/email/calendar/sync-outlook', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) {
+      outlookSyncStatus = data.error || 'Outlook sync failed';
+      render();
+      return;
+    }
+    events = data.events || events;
+    outlookSyncStatus = `Synced ${data.synced_from_outlook || 0} events from Outlook.`;
+    render();
+    if (global.CasePMEmail?.toast) global.CasePMEmail.toast(outlookSyncStatus, 'success');
   }
 
   async function saveEvents() {
@@ -157,6 +182,10 @@
           <button type="button" class="email-calendar-nav-btn" data-cal-action="new" style="background:#059669;border-color:#059669;color:#fff;font-weight:600;">
             <i class="fa-solid fa-calendar-plus"></i> New meeting
           </button>
+          <button type="button" class="email-calendar-nav-btn" data-cal-action="sync-outlook" title="Sync with Outlook calendar">
+            <i class="fa-brands fa-microsoft"></i> Sync Outlook
+          </button>
+          <span class="email-calendar-outlook-status">${esc(outlookSyncStatus)}</span>
           <a href="/company-map" class="email-calendar-nav-btn" style="text-decoration:none;"><i class="fa-solid fa-map-location-dot"></i> Job map</a>
           <div class="email-calendar-view-tabs">
             <button type="button" class="email-calendar-view-tab ${viewMode === 'month' ? 'active' : ''}" data-cal-view="month">Month</button>
@@ -189,11 +218,18 @@
       render();
     });
     rootEl.querySelector('[data-cal-action="new"]')?.addEventListener('click', () => openEventModal());
+    rootEl.querySelector('[data-cal-action="sync-outlook"]')?.addEventListener('click', () => syncOutlook());
     rootEl.querySelectorAll('[data-day]').forEach(el => {
       el.addEventListener('click', (e) => {
         if (e.target.closest('[data-event-id]')) return;
         selectedDay = startOfDay(new Date(el.getAttribute('data-day')));
         render();
+      });
+      el.addEventListener('dblclick', (e) => {
+        if (e.target.closest('[data-event-id]')) return;
+        const day = startOfDay(new Date(el.getAttribute('data-day')));
+        selectedDay = day;
+        openEventModal(null, day);
       });
       el.querySelectorAll('[data-event-id]').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -219,12 +255,13 @@
     return { start: start.toISOString(), end: end.toISOString() };
   }
 
-  function openEventModal(existing) {
+  function openEventModal(existing, forDay) {
+    const baseDay = forDay || selectedDay;
     editingEvent = existing ? { ...existing } : {
       id: uid(),
       title: '',
       eventType: ctx.projectId ? 'owner_meeting' : 'meeting',
-      ...defaultEventTimes(selectedDay),
+      ...defaultEventTimes(baseDay),
       location: '',
       locationMeta: {},
       body: '',
@@ -284,6 +321,10 @@
             <label>Agenda / invite message</label>
             <textarea id="calBody" placeholder="Meeting agenda, dial-in, documents to review…">${esc((editingEvent.body || '').replace(/<[^>]+>/g, ''))}</textarea>
           </div>
+          <label class="flex items-center gap-2 text-sm text-zinc-300 mb-1">
+            <input type="checkbox" id="calSyncOutlook" class="accent-emerald-600" ${outlookConnected ? 'checked' : ''} ${outlookConnected ? '' : 'disabled'}>
+            Sync to Outlook calendar
+          </label>
           <label class="flex items-center gap-2 text-sm text-zinc-300 mb-2">
             <input type="checkbox" id="calSendInvites" class="accent-emerald-600" checked>
             Send email invites to attendees (when SMTP is configured)
@@ -343,7 +384,11 @@
         const res = await fetch('/api/email/calendar/events', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ event: payload, send_invites: backdrop.querySelector('#calSendInvites').checked }),
+          body: JSON.stringify({
+            event: payload,
+            send_invites: backdrop.querySelector('#calSendInvites').checked,
+            sync_outlook: backdrop.querySelector('#calSyncOutlook')?.checked !== false,
+          }),
         });
         const data = await res.json();
         if (!res.ok) {
@@ -378,16 +423,16 @@
     ctx = { ...ctx, ...(options || {}) };
     rootEl = options?.container || document.getElementById('emailCalendarRoot');
     if (!rootEl) return;
-    await loadEvents();
+    await loadEvents(true);
     if (options?.prefillProjectId) {
       ctx.projectId = options.prefillProjectId;
       ctx.projectName = options.prefillProjectName || '';
     }
+    render();
     if (options?.openNew) {
       setTimeout(() => openEventModal(), 100);
     }
-    render();
   }
 
-  global.CasePMEmailCalendar = { init, render, loadEvents, openEventModal };
+  global.CasePMEmailCalendar = { init, render, loadEvents, syncOutlook, openEventModal };
 })(window);
