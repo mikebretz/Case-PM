@@ -53,6 +53,26 @@
   .luckysheet-wa-editor .luckysheet-toolbar-menu-button-inner-box i { font-size: 16px !important; }
   .luckysheet-wa-editor .luckysheet-toolbar-button { min-width: 26px; }
   .luckysheet-grid-window, .luckysheet-cell-main { background: #fff !important; }
+
+  .sheet-secondary-bar {
+    display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+    flex-shrink: 0; margin-bottom: 0.45rem; padding: 0.45rem 0.55rem;
+    background: #18181b; border: 1px solid #3f3f46; border-radius: 0.375rem;
+  }
+  .sheet-secondary-bar label { font-size: 0.75rem; color: #a1a1aa; white-space: nowrap; }
+  .sheet-secondary-bar select {
+    background: #27272a; border: 1px solid #3f3f46; border-radius: 0.375rem;
+    color: #fff; font-size: 0.8rem; padding: 0.3rem 0.5rem; min-width: 170px;
+  }
+  .sheet-secondary-bar .sheet-mini-btn {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    padding: 0.32rem 0.55rem; border-radius: 0.375rem; font-size: 0.75rem;
+    background: #27272a; border: 1px solid #3f3f46; color: #e4e4e7;
+  }
+  .sheet-secondary-bar .sheet-mini-btn:hover { background: #3f3f46; }
+  .sheet-secondary-bar .sheet-mini-btn.active { border-color: #10b981; color: #6ee7b7; }
+  #sheetPrintAreaLabel { font-size: 0.75rem; color: #a1a1aa; margin-right: auto; min-width: 180px; }
+  .sheet-format-hint { font-size: 0.7rem; color: #71717a; }
 </style>
 
 <div class="sheet-page">
@@ -71,6 +91,29 @@
       <button type="button" id="sheetZoomIn" class="sheet-zoom-btn"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
     </div>
     <span id="sheetStatus">New spreadsheet</span>
+  </div>
+  <div class="sheet-secondary-bar" aria-label="Cell formatting and print area">
+    <label for="sheetFormatSelect">Cell format</label>
+    <select id="sheetFormatSelect" title="Select cells, then choose a format">
+      <option value="general">General</option>
+      <option value="usd">Currency — US Dollar ($)</option>
+      <option value="usd_accounting">Accounting — US Dollar ($)</option>
+      <option value="yen">Currency — Japanese Yen (¥)</option>
+      <option value="eur">Currency — Euro (€)</option>
+      <option value="gbp">Currency — British Pound (£)</option>
+      <option value="percent">Percent (%)</option>
+      <option value="number2">Number — 1,234.56</option>
+      <option value="number0">Number — 1,234</option>
+      <option value="date_mdy">Date — MM/DD/YYYY</option>
+      <option value="date_ymd">Date — YYYY-MM-DD</option>
+      <option value="date_dmy">Date — DD/MM/YYYY</option>
+    </select>
+    <button type="button" id="sheetApplyFormatBtn" class="sheet-mini-btn" title="Apply format to selected cells"><i class="fa-solid fa-check"></i> Apply</button>
+    <span class="sheet-format-hint hidden sm:inline">Select cells first</span>
+    <span id="sheetPrintAreaLabel">Print area: auto (used cells)</span>
+    <button type="button" id="sheetSetPrintAreaBtn" class="sheet-mini-btn" title="Use current selection as print area"><i class="fa-solid fa-vector-square"></i> Set print area</button>
+    <button type="button" id="sheetClearPrintAreaBtn" class="sheet-mini-btn" title="Print all used cells again"><i class="fa-solid fa-eraser"></i> Clear</button>
+    <button type="button" id="sheetPrintPreviewBtn" class="sheet-mini-btn" title="Preview exactly what will print"><i class="fa-solid fa-eye"></i> Print preview</button>
   </div>
   <div id="luckysheetHost">
     <div id="luckysheet"></div>
@@ -93,6 +136,22 @@
 
   let dirty = false;
   let allowUnload = false;
+  let customPrintRange = null;
+
+  const FORMAT_PRESETS = {
+    general: { fa: 'General', t: 'g' },
+    usd: { fa: '$#,##0.00', t: 'n' },
+    usd_accounting: { fa: '_("$"* #,##0.00_);_("$"* \\(#,##0.00\\);_("$"* "-"??_);_(@_)', t: 'n' },
+    yen: { fa: '¥#,##0', t: 'n' },
+    eur: { fa: '€#,##0.00', t: 'n' },
+    gbp: { fa: '£#,##0.00', t: 'n' },
+    percent: { fa: '0.00%', t: 'n' },
+    number2: { fa: '#,##0.00', t: 'n' },
+    number0: { fa: '#,##0', t: 'n' },
+    date_mdy: { fa: 'm/d/yyyy', t: 'd' },
+    date_ymd: { fa: 'yyyy-mm-dd', t: 'd' },
+    date_dmy: { fa: 'd/m/yyyy', t: 'd' },
+  };
 
   function setDirty(v) {
     dirty = v;
@@ -104,13 +163,6 @@
     lang: 'en',
     showinfobar: false,
     showtoolbar: true,
-    showtoolbarConfig: {
-      currencyFormat: true,
-      percentageFormat: true,
-      numberDecrease: true,
-      numberIncrease: true,
-      moreFormats: true,
-    },
     showsheetbar: true,
     showstatisticBar: true,
     sheetFormulaBar: true,
@@ -125,6 +177,7 @@
       cellUpdated: function () { setDirty(true); },
       cellEditBefore: function () { setDirty(true); },
       rangePasteBefore: function () { setDirty(true); return true; },
+      cellMousedown: function () { setTimeout(syncFormatDropdownFromSelection, 0); },
     },
   };
 
@@ -134,6 +187,7 @@
       data: [{ name: 'Sheet1', color: '', status: 1, order: 0, index: 0, row: 100, column: 26, celldata: [], config: {} }],
     }));
     hideLoading();
+    setTimeout(updatePrintAreaLabel, 250);
   }
 
   function createFromSheets(sheets) {
@@ -142,6 +196,7 @@
       data: (sheets && sheets.length) ? sheets : [{ name: 'Sheet1', status: 1, order: 0, index: 0, row: 100, column: 26, celldata: [], config: {} }],
     }));
     hideLoading();
+    setTimeout(updatePrintAreaLabel, 250);
   }
 
   function importFromExcelFile(file, name) {
@@ -301,6 +356,121 @@
     setTimeout(refreshZoomLabel, 800);
   }
 
+  // ---- Cell number/date formats ----
+  function colToLetter(col) {
+    let n = col + 1;
+    let s = '';
+    while (n > 0) {
+      const rem = (n - 1) % 26;
+      s = String.fromCharCode(65 + rem) + s;
+      n = Math.floor((n - 1) / 26);
+    }
+    return s;
+  }
+
+  function rangeToA1(range) {
+    if (!range) return '';
+    const r0 = range.row[0];
+    const r1 = range.row[1];
+    const c0 = range.column[0];
+    const c1 = range.column[1];
+    if (r0 === r1 && c0 === c1) return `${colToLetter(c0)}${r0 + 1}`;
+    return `${colToLetter(c0)}${r0 + 1}:${colToLetter(c1)}${r1 + 1}`;
+  }
+
+  function getSelectionRanges() {
+    try {
+      const ranges = window.luckysheet.getRange();
+      return Array.isArray(ranges) ? ranges.filter((r) => r && r.row && r.column) : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function applyFormatToSelection(presetKey) {
+    const preset = FORMAT_PRESETS[presetKey];
+    if (!preset || !window.luckysheet.setRangeFormat) return false;
+    const ranges = getSelectionRanges();
+    if (!ranges.length) {
+      alert('Select one or more cells first, then choose a format.');
+      return false;
+    }
+    ranges.forEach((range) => {
+      window.luckysheet.setRangeFormat('ct', preset, { range });
+    });
+    setDirty(true);
+    return true;
+  }
+
+  function detectFormatPresetFromCell(cell) {
+    if (!cell || !cell.ct || !cell.ct.fa) return 'general';
+    const fa = String(cell.ct.fa);
+    const entries = Object.entries(FORMAT_PRESETS);
+    for (let i = 0; i < entries.length; i++) {
+      if (entries[i][1].fa === fa) return entries[i][0];
+    }
+    if (fa.indexOf('¥') >= 0 || fa.indexOf('￥') >= 0) return 'yen';
+    if (fa.indexOf('€') >= 0) return 'eur';
+    if (fa.indexOf('£') >= 0) return 'gbp';
+    if (fa.indexOf('$') >= 0) return fa.indexOf('_(') >= 0 ? 'usd_accounting' : 'usd';
+    if (fa.indexOf('%') >= 0) return 'percent';
+    if (fa === 'm/d/yyyy') return 'date_mdy';
+    if (fa === 'yyyy-mm-dd') return 'date_ymd';
+    if (fa === 'd/m/yyyy') return 'date_dmy';
+    return 'general';
+  }
+
+  function syncFormatDropdownFromSelection() {
+    const sel = document.getElementById('sheetFormatSelect');
+    if (!sel) return;
+    const ranges = getSelectionRanges();
+    if (!ranges.length) return;
+    const grid = window.luckysheet.getSheetData() || [];
+    const r = ranges[0].row[0];
+    const c = ranges[0].column[0];
+    const cell = grid[r] && grid[r][c];
+    sel.value = detectFormatPresetFromCell(cell);
+  }
+
+  function updatePrintAreaLabel() {
+    const el = document.getElementById('sheetPrintAreaLabel');
+    if (!el) return;
+    if (customPrintRange) {
+      el.textContent = `Print area: ${rangeToA1(customPrintRange)}`;
+      el.title = 'Only this range will print. Click Clear to reset.';
+      return;
+    }
+    const auto = getAutoPrintRange();
+    el.textContent = auto.hasContent
+      ? `Print area: auto ${rangeToA1(auto.range)}`
+      : 'Print area: auto (used cells)';
+    el.title = 'Select cells and click Set print area to override.';
+  }
+
+  function setPrintAreaFromSelection() {
+    const ranges = getSelectionRanges();
+    if (!ranges.length) {
+      alert('Select the cells you want to print, then click Set print area.');
+      return;
+    }
+    if (ranges.length > 1) {
+      alert('Select a single rectangular area for the print area.');
+      return;
+    }
+    customPrintRange = {
+      row: ranges[0].row.slice(),
+      column: ranges[0].column.slice(),
+    };
+    updatePrintAreaLabel();
+    setStatus(`Print area set to ${rangeToA1(customPrintRange)}`);
+  }
+
+  function clearPrintArea() {
+    customPrintRange = null;
+    updatePrintAreaLabel();
+    setStatus('Print area reset to auto (used cells)');
+  }
+
   // ---- Print current sheet (WYSIWYG: match on-screen formatting) ----
   function escapeHtml(text) {
     return String(text)
@@ -326,17 +496,21 @@
     return false;
   }
 
-  function getPrintRange() {
+  function getAutoPrintRange() {
     let grid = [];
     try { grid = window.luckysheet.getSheetData() || []; } catch (_) { grid = []; }
     const sheet = getActiveSheet();
     const config = (sheet && sheet.config) || {};
-    let maxR = 0;
-    let maxC = 0;
+    let minR = Infinity;
+    let maxR = -1;
+    let minC = Infinity;
+    let maxC = -1;
     let hasContent = false;
 
     function bump(r, c) {
+      if (r < minR) minR = r;
       if (r > maxR) maxR = r;
+      if (c < minC) minC = c;
       if (c > maxC) maxC = c;
       hasContent = true;
     }
@@ -358,8 +532,18 @@
       bump(m.r + rs - 1, m.c + cs - 1);
     });
 
-    if (!hasContent) return { row: [0, 0], column: [0, 0] };
-    return { row: [0, maxR], column: [0, maxC] };
+    if (!hasContent) {
+      return { hasContent: false, range: { row: [0, 0], column: [0, 0] } };
+    }
+    return {
+      hasContent: true,
+      range: { row: [minR, maxR], column: [minC, maxC] },
+    };
+  }
+
+  function getPrintRange() {
+    if (customPrintRange) return customPrintRange;
+    return getAutoPrintRange().range;
   }
 
   function borderCss(side) {
@@ -472,45 +656,88 @@
     return `<table class="sheet-print-table">${colgroup}${rows}</table>`;
   }
 
-  function buildPrintDocumentHtml(tableHtml) {
-    const title = escapeHtml(nameInput.value || 'Spreadsheet');
+  function buildPrintDocumentHtml(tableHtml, meta) {
+    meta = meta || {};
+    const title = meta.title || escapeHtml(nameInput.value || 'Spreadsheet');
+    const areaLabel = meta.areaLabel || '';
+    const preview = !!meta.preview;
+    const previewBanner = preview
+      ? `<div class="preview-banner">
+           <strong>Print preview</strong> — showing exactly what will print (${areaLabel || 'selected area'}).
+           <button type="button" onclick="window.print()">Print now</button>
+         </div>`
+      : '';
     return `<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
 <title>${title}</title>
 <style>
-  @page { margin: 0.5in; }
+  @page { margin: 0.45in; }
   html, body { margin: 0; padding: 0; background: #fff; color: #000; }
-  body { font-family: Calibri, Arial, sans-serif; padding: 0.25in; }
-  h1 { font-size: 14pt; font-weight: 600; margin: 0 0 12px; }
+  body { font-family: Calibri, Arial, sans-serif; padding: 0.2in; }
+  h1 { font-size: 14pt; font-weight: 600; margin: 0 0 8px; }
+  .print-meta { font-size: 10pt; color: #444; margin: 0 0 10px; }
+  .preview-banner {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    margin: 0 0 12px; padding: 10px 12px; border: 1px solid #86efac;
+    background: #ecfdf5; color: #14532d; font-size: 10pt;
+  }
+  .preview-banner button {
+    margin-left: auto; padding: 6px 12px; border: 0; border-radius: 6px;
+    background: #059669; color: #fff; font-size: 10pt; cursor: pointer;
+  }
+  .print-scale-wrap { overflow: visible; width: 100%; }
   table.sheet-print-table,
   table[data-type="luckysheet_copy_action_table"] {
     border-collapse: collapse;
     table-layout: fixed;
     width: auto;
-    max-width: 100%;
+    max-width: none;
+    transform-origin: top left;
   }
   table.sheet-print-table td,
   table[data-type="luckysheet_copy_action_table"] td {
     box-sizing: border-box;
     padding: 1px 4px;
     overflow: hidden;
+    vertical-align: top;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
   @media print {
     body { padding: 0; }
-    h1 { margin-bottom: 8px; }
+    h1 { margin-bottom: 6px; }
+    .preview-banner { display: none !important; }
   }
 </style>
 </head><body>
+${previewBanner}
 <h1>${title}</h1>
-${tableHtml}
+${areaLabel ? `<div class="print-meta">Print area: ${areaLabel}</div>` : ''}
+<div class="print-scale-wrap" id="printScaleWrap">${tableHtml}</div>
+<script>
+(function () {
+  function fitPrintTable() {
+    var wrap = document.getElementById('printScaleWrap');
+    var table = wrap && wrap.querySelector('table');
+    if (!table) return;
+    var printable = Math.max(640, (window.innerWidth || 800) - 48);
+    var tableWidth = table.scrollWidth || table.offsetWidth;
+    if (tableWidth > printable) {
+      var scale = printable / tableWidth;
+      table.style.transform = 'scale(' + scale + ')';
+      table.style.transformOrigin = 'top left';
+      wrap.style.height = (table.offsetHeight * scale + 8) + 'px';
+    }
+  }
+  window.addEventListener('load', fitPrintTable);
+  window.addEventListener('resize', fitPrintTable);
+})();
+<\/script>
 </body></html>`;
   }
 
-  function printSheet() {
-    const range = getPrintRange();
+  function buildPrintTableHtml(range) {
     let tableHtml = '';
     try {
       if (window.luckysheet.getRangeHtml) {
@@ -519,11 +746,20 @@ ${tableHtml}
     } catch (_) { tableHtml = ''; }
 
     if (!tableHtml || !String(tableHtml).includes('<table')) {
-      try { tableHtml = buildFormattedPrintTable(range); }
-      catch (e) {
-        alert('Could not prepare print preview: ' + e.message);
-        return;
-      }
+      tableHtml = buildFormattedPrintTable(range);
+    }
+    return tableHtml;
+  }
+
+  function openPrintWindow(options) {
+    options = options || {};
+    const range = getPrintRange();
+    const areaLabel = rangeToA1(range);
+    let tableHtml = '';
+    try { tableHtml = buildPrintTableHtml(range); }
+    catch (e) {
+      alert('Could not prepare print preview: ' + e.message);
+      return;
     }
 
     const w = window.open('', '_blank');
@@ -532,12 +768,26 @@ ${tableHtml}
       return;
     }
     w.document.open();
-    w.document.write(buildPrintDocumentHtml(tableHtml));
+    w.document.write(buildPrintDocumentHtml(tableHtml, {
+      title: escapeHtml(nameInput.value || 'Spreadsheet'),
+      areaLabel: escapeHtml(areaLabel),
+      preview: !!options.preview,
+    }));
     w.document.close();
     w.focus();
-    setTimeout(() => {
-      try { w.print(); } catch (_) {}
-    }, 350);
+    if (!options.preview) {
+      setTimeout(() => {
+        try { w.print(); } catch (_) {}
+      }, 400);
+    }
+  }
+
+  function printSheet() {
+    openPrintWindow({ preview: false });
+  }
+
+  function printPreview() {
+    openPrintWindow({ preview: true });
   }
 
   function showExitDialog() {
@@ -614,6 +864,16 @@ ${tableHtml}
 
   document.getElementById('sheetSaveBtn').addEventListener('click', save);
   document.getElementById('sheetPrintBtn').addEventListener('click', printSheet);
+  document.getElementById('sheetPrintPreviewBtn').addEventListener('click', printPreview);
+  document.getElementById('sheetSetPrintAreaBtn').addEventListener('click', setPrintAreaFromSelection);
+  document.getElementById('sheetClearPrintAreaBtn').addEventListener('click', clearPrintArea);
+  document.getElementById('sheetApplyFormatBtn').addEventListener('click', () => {
+    const key = document.getElementById('sheetFormatSelect')?.value || 'general';
+    applyFormatToSelection(key);
+  });
+  document.getElementById('sheetFormatSelect')?.addEventListener('change', (e) => {
+    applyFormatToSelection(e.target.value);
+  });
   document.getElementById('sheetExportBtn').addEventListener('click', exportXlsx);
   document.getElementById('sheetBackBtn').addEventListener('click', confirmExit);
   document.getElementById('sheetNameInput').addEventListener('input', () => setDirty(true));
@@ -643,7 +903,8 @@ ${tableHtml}
     const host = document.getElementById('luckysheetHost');
     if (!host) return;
     const toolbarH = document.querySelector('.sheet-toolbar')?.offsetHeight || 48;
-    const available = Math.max(360, window.innerHeight - toolbarH - 120);
+    const secondaryH = document.querySelector('.sheet-secondary-bar')?.offsetHeight || 44;
+    const available = Math.max(360, window.innerHeight - toolbarH - secondaryH - 120);
     host.style.minHeight = available + 'px';
     if (window.luckysheet && window.luckysheet.resize) {
       try { window.luckysheet.resize(); } catch (_) {}
@@ -654,6 +915,7 @@ ${tableHtml}
     if (docId) loadExisting(); else createEmpty();
     bindZoom();
     resizeSheetHost();
+    updatePrintAreaLabel();
     window.addEventListener('resize', resizeSheetHost);
   });
 })();
