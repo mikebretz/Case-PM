@@ -24,10 +24,6 @@
         <option value="On Hold">On Hold</option>
       </select>
       <input type="text" id="companyMapSearch" class="company-map-search" placeholder="Filter jobs by name, city, store #…" autocomplete="off">
-      <div class="company-map-layer-toggle" role="group" aria-label="Map view">
-        <button type="button" id="companyMapLayerStreet" class="company-map-layer-btn active" data-layer="street"><i class="fa-solid fa-map"></i> Street</button>
-        <button type="button" id="companyMapLayerSatellite" class="company-map-layer-btn" data-layer="satellite"><i class="fa-solid fa-satellite"></i> Satellite</button>
-      </div>
       <button type="button" id="companyMapUseMyLocation" class="company-map-btn-secondary"><i class="fa-solid fa-location-crosshairs"></i> My location</button>
       <a href="{{ url_for('email_page') }}?tab=calendar" class="company-map-btn"><i class="fa-solid fa-calendar-plus"></i> Schedule meeting</a>
     </div>
@@ -54,7 +50,15 @@
         <div class="company-map-mileage-note" id="companyMapMileageNote"></div>
       </div>
     </aside>
-    <div id="companyMapCanvas" class="company-map-canvas" aria-label="Job locations map"></div>
+    <div class="company-map-canvas-wrap">
+      <div id="companyMapCanvas" class="company-map-canvas" aria-label="Job locations map"></div>
+      <div class="company-map-map-controls" role="group" aria-label="Map view">
+        <div class="company-map-layer-toggle">
+          <button type="button" id="companyMapLayerStreet" class="company-map-layer-btn active" data-layer="street"><i class="fa-solid fa-map"></i> Street</button>
+          <button type="button" id="companyMapLayerSatellite" class="company-map-layer-btn" data-layer="satellite"><i class="fa-solid fa-satellite"></i> Satellite</button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
