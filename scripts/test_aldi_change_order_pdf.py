@@ -59,7 +59,7 @@ class AldiChangeOrderPdfTests(unittest.TestCase):
     try:
       self.assertGreaterEqual(doc.page_count, 2)
       text = '\n'.join(doc[i].get_text() for i in range(min(2, doc.page_count)))
-      self.assertIn('CO-101', text)
+      self.assertRegex(text, r'(?:^|\n)101(?:\n|$)')
       self.assertIn('ABC Electric', text)
     finally:
       doc.close()
@@ -102,6 +102,12 @@ class AldiChangeOrderPdfTests(unittest.TestCase):
       self.assertTrue(payload['is_default'])
 
     os.unlink(db_path)
+
+  def test_co_number_formatting(self):
+    from aldi_change_order_pdf import _format_co_number_for_form
+    self.assertEqual(_format_co_number_for_form('CO-001'), '1')
+    self.assertEqual(_format_co_number_for_form('CO-012'), '12')
+    self.assertEqual(_format_co_number_for_form('3'), '3')
 
 
 if __name__ == '__main__':

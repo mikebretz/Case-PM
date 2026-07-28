@@ -1642,7 +1642,10 @@
       <td class="px-4 py-3 text-center">${t.is_default ? '<span class="text-emerald-400 text-xs font-semibold">DEFAULT</span>' : `<button type="button" onclick="CasePMChangeOrders.setDefaultTemplate(${t.id})" class="text-xs text-sky-400 hover:underline">Set default</button>`}</td>
       <td class="px-4 py-3 text-center">${t.is_active ? '<span class="text-emerald-400">Active</span>' : '<span class="text-zinc-500">Inactive</span>'}</td>
       <td class="px-4 py-3 text-center">
-        <button type="button" onclick="CasePMChangeOrders.selectPrintTemplate(${t.id})" class="px-2 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded">Use for print</button>
+        <div class="flex items-center justify-center gap-1 flex-wrap">
+          <button type="button" onclick="CasePMChangeOrders.previewTemplate(${t.id})" class="px-2 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded" title="View template PDF"><i class="fa-solid fa-eye"></i> View</button>
+          <button type="button" onclick="CasePMChangeOrders.selectPrintTemplate(${t.id})" class="px-2 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded">Use for print</button>
+        </div>
       </td>
     </tr>`).join('');
   }
@@ -1651,6 +1654,12 @@
     state.selectedPrintTemplateId = id;
     populateTemplateSelectors();
     toast('Print template selected');
+  }
+
+  function previewTemplate(id) {
+    const pid = projectId();
+    const qs = pid ? `?project_id=${encodeURIComponent(pid)}` : '';
+    window.open(`/api/change-order-templates/${id}/preview${qs}`, '_blank', 'noopener');
   }
 
   async function setDefaultTemplate(id) {
@@ -2202,7 +2211,7 @@
     addAllocRow: () => { state.allocationRows.push({ cost_code: '', cost_type: '', amount: 0, description: '' }); renderAllocationRows(); },
     removeAllocRow: idx => { state.allocationRows.splice(idx, 1); renderAllocationRows(); },
     onCompanyChange, onContactChange, onAllocCostCodeChange, updateAllocationTotal, exportExcel, printLog, printDetail, printDetailStandard, printDetailWithTemplate, openSageLog,
-    loadCoTemplates, openTemplateUpload, saveTemplateUpload, setDefaultTemplate, selectPrintTemplate,
+    loadCoTemplates, openTemplateUpload, saveTemplateUpload, setDefaultTemplate, selectPrintTemplate, previewTemplate,
     newPco: () => openModal('pco', null),
     newCo: () => openModal('co', null),
     newSubCo: () => openModal('sub', { contract_type: 'Subcontract', sub_co_kind: 'Contract Add' }),
