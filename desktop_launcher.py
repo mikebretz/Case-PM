@@ -18,7 +18,6 @@ import traceback
 import urllib.error
 import urllib.request
 import webbrowser
-from typing import TYPE_CHECKING
 
 
 def _repo_root() -> str:

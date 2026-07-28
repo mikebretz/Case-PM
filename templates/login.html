@@ -191,22 +191,50 @@
                 </p>
                 {% else %}
                 <div class="text-center mt-5 space-y-2.5">
-                    <p class="text-[11px] text-zinc-500">Need a desktop shortcut to this server?</p>
-                    <button type="button" id="connectorAddBtn"
-                            class="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-md text-xs font-medium
-                                   bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700 text-zinc-200
-                                   transition-colors">
+                    <p class="text-[11px] text-zinc-500">Use Case PM in its own window — no browser tab</p>
+                    <button type="button" id="desktopAppInstallBtn"
+                            class="inline-flex items-center gap-2.5 px-3.5 py-2.5 rounded-md text-xs font-medium
+                                   bg-emerald-600/90 hover:bg-emerald-500 border border-emerald-500/50 text-white
+                                   transition-colors shadow-lg shadow-emerald-900/20">
                         <img src="{{ url_for('static', filename='img/casepm-desktop-icon-64.png') }}"
                              alt="" class="w-9 h-9 rounded-lg shrink-0" width="36" height="36">
-                        Add Case PM to Desktop
+                        Install Desktop App
                     </button>
                     <p class="text-[10px] text-zinc-600 leading-relaxed max-w-[320px] mx-auto">
-                        Click to run setup. Case PM goes in your Documents folder and adds a desktop icon.
+                        Installs WebView2, adds a hard-hat desktop icon, and opens Case PM automatically in a native window.
                     </p>
+                    <button type="button" id="connectorAddBtn"
+                            class="text-[10px] text-zinc-500 hover:text-zinc-300 underline underline-offset-2 transition-colors">
+                        Browser shortcut only (no install)
+                    </button>
                 </div>
                 {% endif %}
 
                 <p class="text-center text-[11px] text-zinc-600 mt-3">© 2026 Case PM</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="desktopAppModal" class="hidden fixed inset-0 z-50 flex items-center justify-center px-4">
+        <div class="absolute inset-0 bg-black/60" id="desktopAppModalBackdrop"></div>
+        <div class="relative z-10 w-full max-w-[380px] bg-zinc-900 border border-zinc-700 rounded-lg p-5 shadow-2xl text-center">
+            <img src="{{ url_for('static', filename='img/casepm-desktop-icon-64.png') }}"
+                 alt="" class="w-12 h-12 rounded-lg mx-auto mb-3" width="48" height="48">
+            <h2 class="font-display text-lg text-white mb-1">Install Case PM Desktop App?</h2>
+            <p class="text-sm text-zinc-400 mb-2 leading-relaxed text-left">
+                Setup will automatically:
+            </p>
+            <ul class="text-xs text-zinc-400 mb-4 text-left space-y-1.5 pl-1">
+                <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-0.5"></i><span>Install Microsoft Edge WebView2 (if needed)</span></li>
+                <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-0.5"></i><span>Add a desktop icon with the hard-hat logo</span></li>
+                <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-0.5"></i><span>Open Case PM in its own window</span></li>
+            </ul>
+            <p class="text-xs text-zinc-500 mb-4">Downloads <span class="text-zinc-400">Case PM Desktop App Setup.vbs</span> — open it and click OK. Windows only.</p>
+            <div class="flex gap-2 justify-center">
+                <button type="button" id="desktopAppModalNo"
+                        class="px-4 py-2 rounded-md text-sm text-zinc-400 hover:text-zinc-200">Cancel</button>
+                <button type="button" id="desktopAppModalYes"
+                        class="px-4 py-2 rounded-md text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white">OK, install</button>
             </div>
         </div>
     </div>
@@ -234,6 +262,28 @@
         (function () {
             if (new URLSearchParams(window.location.search).get('connector') === '1') {
                 try { localStorage.setItem('casepm_connector', '1'); } catch (e) {}
+            }
+
+            var desktopBtn = document.getElementById('desktopAppInstallBtn');
+            var desktopModal = document.getElementById('desktopAppModal');
+            var desktopDownloadUrl = {{ url_for('download_casepm_desktop_app') | tojson }};
+
+            if (desktopBtn && desktopModal) {
+                function closeDesktopModal() { desktopModal.classList.add('hidden'); }
+                function openDesktopModal() { desktopModal.classList.remove('hidden'); }
+                function launchDesktopInstaller() {
+                    closeDesktopModal();
+                    var a = document.createElement('a');
+                    a.href = desktopDownloadUrl;
+                    a.download = 'Case PM Desktop App Setup.vbs';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                }
+                desktopBtn.addEventListener('click', openDesktopModal);
+                document.getElementById('desktopAppModalBackdrop').addEventListener('click', closeDesktopModal);
+                document.getElementById('desktopAppModalNo').addEventListener('click', closeDesktopModal);
+                document.getElementById('desktopAppModalYes').addEventListener('click', launchDesktopInstaller);
             }
 
             var btn = document.getElementById('connectorAddBtn');
