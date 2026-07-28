@@ -134,6 +134,67 @@ def apply_template_fields(row, data):
     row.updated_at = datetime.utcnow()
 
 
+def _slugify_template_name(name: str) -> str:
+    import re
+    slug_raw = (name or 'template').strip().lower()
+    slug = re.sub(r'[^a-z0-9]+', '_', slug_raw).strip('_')[:72] or 'template'
+    return slug
+
+
+def _unique_template_slug(slug: str, ChangeOrderTemplate) -> str:
+    if not ChangeOrderTemplate.query.filter_by(slug=slug).first():
+        return slug
+    return f'{slug}_{int(datetime.utcnow().timestamp())}'
+
+
+def save_template_pdf_file(slug: str, pdf_bytes: bytes, *, static_folder: str) -> str:
+    from werkzeug.utils import secure_filename
+
+    dest_dir = os.path.join(static_folder, 'templates', 'change_orders')
+    os.makedirs(dest_dir, exist_ok=True)
+    filename = secure_filename(f'{slug}.pdf') or f'{slug}.pdf'
+    dest_path = os.path.join(dest_dir, filename)
+    with open(dest_path, 'wb') as fh:
+        fh.write(pdf_bytes)
+    return os.path.join('static', 'templates', 'change_orders', filename).replace('\\', '/')
+
+
+def register_change_order_template(
+    db,
+    ChangeOrderTemplate,
+    *,
+    name: str,
+    company_key: str | None,
+    description: str | None,
+    template_pdf_path: str,
+    engine: str = 'aldi_v1',
+    is_default: bool = False,
+    created_by_id: int | None = None,
+    slug: str | None = None,
+):
+    slug = _unique_template_slug(_slugify_template_name(slug or name), ChangeOrderTemplate)
+    row = ChangeOrderTemplate(
+        slug=slug,
+        name=(name or slug.replace('_', ' ').title()).strip(),
+        company_key=(company_key or '').strip().upper() or None,
+        description=(description or '').strip() or None,
+        template_pdf_path=template_pdf_path,
+        engine=(engine or 'aldi_v1').strip() or 'aldi_v1',
+        is_active=True,
+        is_default=bool(is_default),
+        created_by_id=created_by_id,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    if row.is_default:
+        ChangeOrderTemplate.query.filter(
+            ChangeOrderTemplate.company_key == row.company_key,
+        ).update({'is_default': False})
+    db.session.add(row)
+    db.session.commit()
+    return row
+
+
 def set_default_template(template_id, ChangeOrderTemplate, db):
     row = ChangeOrderTemplate.query.get_or_404(template_id)
     ChangeOrderTemplate.query.filter(
@@ -144,3 +205,22 @@ def set_default_template(template_id, ChangeOrderTemplate, db):
     row.updated_at = datetime.utcnow()
     db.session.commit()
     return row
+
+
+def delete_change_order_template(template_id, ChangeOrderTemplate, db, *, base_dir=None):
+    row = ChangeOrderTemplate.query.get_or_404(template_id)
+    pdf_path = None
+    try:
+        pdf_path = resolve_template_pdf_path(row, base_dir=base_dir)
+    except FileNotFoundError:
+        pdf_path = None
+    db.session.delete(row)
+    db.session.commit()
+    if pdf_path and os.path.isfile(pdf_path):
+        uploads_root = os.path.join(base_dir or _base_dir(), 'static', 'templates', 'change_orders')
+        try:
+            if os.path.commonpath([os.path.abspath(pdf_path), os.path.abspath(uploads_root)]) == os.path.abspath(uploads_root):
+                os.remove(pdf_path)
+        except (ValueError, OSError):
+            pass
+    return True
