@@ -30,9 +30,16 @@ CALENDAR_EVENT_TYPES = [
 
 CALENDAR_EVENT_TYPE_IDS = {row['id'] for row in CALENDAR_EVENT_TYPES}
 
+COORDINATED_EVENT_TYPES = frozenset({
+    'owner_meeting', 'site_visit', 'precon', 'bid', 'oac', 'oac_weekly',
+    'superintendent', 'subcontractor', 'safety', 'toolbox_talk', 'design',
+    'schedule', 'submittal', 'closeout', 'internal', 'stakeholder',
+})
+
 MEETING_TYPE_TO_EVENT_TYPE = {
     'owner': 'owner_meeting',
     'superintendent': 'site_visit',
+    'site_visit': 'site_visit',
 }
 
 OPEN_CALENDAR_STATUSES = frozenset({
@@ -112,7 +119,8 @@ def meeting_minute_to_calendar_event(meeting, *, project_name: str = '') -> dict
         'timezone': 'local',
         'locationMeta': {},
         'inviteSent': False,
-        'status': status,
+        'estimateId': getattr(meeting, 'estimate_id', None),
+        'calendarEventId': getattr(meeting, 'calendar_event_id', None) or '',
     }
 
 
@@ -151,6 +159,7 @@ def calendar_catalog_payload() -> dict:
     return {
         'event_types': CALENDAR_EVENT_TYPES,
         'meeting_types': MEETING_TYPES,
+        'coordinated_event_types': sorted(COORDINATED_EVENT_TYPES),
         'sidebar': [
             {'id': 'month', 'label': 'Month view', 'icon': 'fa-calendar', 'action': 'view'},
             *[

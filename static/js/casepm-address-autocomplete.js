@@ -13,8 +13,15 @@
     return d.innerHTML;
   }
 
-  async function fetchSuggestions(query) {
-    const res = await fetch(`/api/geocode/search?q=${encodeURIComponent(query)}&limit=12`);
+  async function fetchSuggestions(query, options) {
+    const params = new URLSearchParams({ q: query, limit: String(options?.limit || 12) });
+    const nearLat = options?.getNearLat?.() ?? options?.nearLat;
+    const nearLng = options?.getNearLng?.() ?? options?.nearLng;
+    if (nearLat != null && nearLng != null) {
+      params.set('near_lat', String(nearLat));
+      params.set('near_lng', String(nearLng));
+    }
+    const res = await fetch(`/api/geocode/search?${params}`);
     if (!res.ok) return [];
     const data = await res.json();
     return data.suggestions || [];
@@ -77,7 +84,7 @@
         return;
       }
       debounceTimer = setTimeout(async () => {
-        const items = await fetchSuggestions(q);
+        const items = await fetchSuggestions(q, options);
         showDropdown(list, items, (item) => {
           input.value = item.label || item.address || input.value;
           if (onSelect) onSelect(item);

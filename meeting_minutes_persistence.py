@@ -110,6 +110,8 @@ def serialize_meeting(m, include_actions=True, ActionItem=None):
         'document_id': m.document_id,
         'synced_to_schedule': bool(m.schedule_task_id),
         'schedule_task_id': m.schedule_task_id,
+        'calendar_event_id': getattr(m, 'calendar_event_id', None) or '',
+        'estimate_id': getattr(m, 'estimate_id', None),
         'next_meeting_date': _d(m.next_meeting_date),
         'action_items': actions,
         'open_action_count': sum(1 for a in actions if (a.get('status') or '') in ('Open', 'In Progress')),

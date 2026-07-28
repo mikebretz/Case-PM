@@ -15,6 +15,7 @@
     recordingStartedAt: null, recordTimer: null, recognition: null,
     voiceEngine: null, playbackHighlightIdx: -1,
     runStep: 0, runActive: false, runStartedAt: null, runTimer: null, topicAttachIndex: null,
+    linkableCalendarEvents: [],
   };
 
   function inferBriefingKey(topic) {
@@ -55,6 +56,44 @@
   function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
   function projectId() { return ctx.projectId || (function () { try { return parseInt(localStorage.getItem('casepm_current_project_id'), 10) || null; } catch (_) { return null; } })(); }
   async function api(url, opts) { const r = await fetch(url, opts); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'Request failed'); return j; }
+
+  function isoTimeFromIso(isoStr) {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+
+  async function loadCalendarLinkOptions() {
+    const sel = el('tbCalendarLink');
+    const wrap = el('tbCalendarLinkWrap');
+    if (!sel || !wrap) return;
+    const company = state.isCompanyAgenda || currentScope() === 'company';
+    wrap.classList.toggle('hidden', company);
+    if (company) return;
+    const pid = projectId();
+    try {
+      const j = await api(`/api/email/calendar/linkable-events?project_id=${pid || ''}&meeting_type=toolbox_talk`);
+      state.linkableCalendarEvents = j.events || [];
+      const current = sel.value;
+      sel.innerHTML = '<option value="">— None (enter date manually) —</option>' +
+        state.linkableCalendarEvents.map((ev) => {
+          const when = ev.start ? new Date(ev.start).toLocaleString() : '';
+          return `<option value="${esc(ev.id)}">${esc(when)} — ${esc(ev.title || 'Toolbox')}</option>`;
+        }).join('');
+      if (current) sel.value = current;
+    } catch (_) {
+      state.linkableCalendarEvents = [];
+    }
+  }
+
+  function applyCalendarLinkSelection(eventId) {
+    const ev = (state.linkableCalendarEvents || []).find((e) => String(e.id) === String(eventId));
+    if (!ev) return;
+    if (ev.start) el('tbDate').value = ev.start.slice(0, 10);
+    if (ev.location) el('tbLocation').value = ev.location;
+    if (ev.title && !el('tbSubject').value.trim()) el('tbSubject').value = ev.title;
+  }
   function fmtDate(iso) { if (!iso) return ''; try { return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); } catch (_) { return iso; } }
 
   function voice() {
@@ -539,6 +578,8 @@
     renderTranscript();
     syncCompanyUi();
     updateSignInUi(null);
+    if (el('tbCalendarLink')) el('tbCalendarLink').value = '';
+    loadCalendarLinkOptions();
     setTab('details');
   }
 
@@ -627,6 +668,7 @@
       scope: company ? 'company' : 'project',
       week_ending: el('tbWeekEnding')?.value || fridayOfWeek(el('tbDate')?.value),
       toolbox_meta: { scope: company ? 'company' : 'project', week_ending: el('tbWeekEnding')?.value || fridayOfWeek(el('tbDate')?.value) },
+      calendar_event_id: el('tbCalendarLink')?.value || null,
     };
     if (!company) payload.project_id = projectId();
     else payload.project_id = null;
@@ -955,6 +997,10 @@
     el('tbCompanyWide')?.addEventListener('change', (e) => {
       state.isCompanyAgenda = e.target.checked;
       syncCompanyUi();
+      loadCalendarLinkOptions();
+    });
+    el('tbCalendarLink')?.addEventListener('change', (e) => {
+      if (e.target.value) applyCalendarLinkSelection(e.target.value);
     });
     el('tbAdoptWeekly')?.addEventListener('click', () => {
       const id = parseInt(el('tbAdoptWeekly')?.dataset.adoptId || '0', 10);

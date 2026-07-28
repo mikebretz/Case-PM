@@ -226,6 +226,8 @@
     modal?.classList.remove('hidden');
     if (addrInput && global.CasePMAddressAutocomplete && !addrInput.dataset.autocompleteBound) {
       global.CasePMAddressAutocomplete.attach(addrInput, {
+        getNearLat: () => directionsDest?.latitude,
+        getNearLng: () => directionsDest?.longitude,
         onSelect(item) {
           selectedOriginAddress = {
             lat: item.latitude,
@@ -262,9 +264,9 @@
       return selectedOriginAddress;
     }
 
-    const res = await fetch(`/api/geocode/search?q=${encodeURIComponent(typed)}&limit=1`);
+    const res = await fetch(`/api/geocode/search?q=${encodeURIComponent(typed)}&limit=1&near_lat=${encodeURIComponent(directionsDest?.latitude ?? '')}&near_lng=${encodeURIComponent(directionsDest?.longitude ?? '')}`);
     const data = await res.json();
-    const hit = (data.suggestions || [])[0];
+    const hit = data.closest || (data.suggestions || [])[0];
     if (!hit || hit.latitude == null || hit.longitude == null) {
       throw new Error('Could not find that address. Pick a suggestion from the list or try a city/state.');
     }
