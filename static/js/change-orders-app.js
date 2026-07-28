@@ -1647,7 +1647,7 @@
         <div class="flex items-center justify-center gap-1 flex-wrap">
           <button type="button" onclick="CasePMChangeOrders.previewTemplate(${t.id})" class="px-2 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded" title="View template PDF"><i class="fa-solid fa-eye"></i> View</button>
           <button type="button" onclick="CasePMChangeOrders.selectPrintTemplate(${t.id})" class="px-2 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded">Use for print</button>
-          <button type="button" onclick="CasePMChangeOrders.deleteTemplate(${t.id}, ${JSON.stringify(t.name || '')})" class="px-2 py-1 text-xs bg-red-950 hover:bg-red-900 border border-red-800 text-red-300 rounded" title="Delete template"><i class="fa-solid fa-trash"></i></button>
+          <button type="button" onclick="CasePMChangeOrders.deleteTemplate(${t.id})" class="px-2 py-1 text-xs bg-red-950 hover:bg-red-900 border border-red-800 text-red-300 rounded" title="Delete template"><i class="fa-solid fa-trash"></i></button>
         </div>
       </td>
     </tr>`).join('');
@@ -1675,8 +1675,9 @@
     }
   }
 
-  async function deleteTemplate(id, name) {
-    const label = name || 'this template';
+  async function deleteTemplate(id) {
+    const row = state.coTemplates.find((t) => t.id === id);
+    const label = row?.name || 'this template';
     const ok = await coConfirm(`Delete change order template "${label}"?\n\nThis removes the template record and its uploaded PDF file.`, { title: 'Delete template' });
     if (!ok) return;
     try {
