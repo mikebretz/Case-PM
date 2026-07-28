@@ -6726,9 +6726,10 @@ def api_import_schedule_mpp():
 @app.route('/companies')
 @login_required
 def companies_page():
-    from companies_persistence import ensure_company_schema, serialize_company
+    from companies_persistence import ensure_company_schema, serialize_company, ensure_program_company_from_settings, sort_companies_main_first
     ensure_company_schema(db)
-    companies = Company.query.order_by(Company.name.asc()).all()
+    ensure_program_company_from_settings(db, Company)
+    companies = sort_companies_main_first(Company.query.all())
     companies_for_js = []
     for c in companies:
         row = serialize_company(c)
@@ -6740,9 +6741,10 @@ def companies_page():
 @app.route('/api/companies', methods=['GET'])
 @login_required
 def api_companies_list():
-    from companies_persistence import ensure_company_schema, serialize_company, projects_for_company
+    from companies_persistence import ensure_company_schema, serialize_company, projects_for_company, ensure_program_company_from_settings, sort_companies_main_first
     ensure_company_schema(db)
-    rows = Company.query.order_by(Company.name.asc()).all()
+    ensure_program_company_from_settings(db, Company)
+    rows = sort_companies_main_first(Company.query.all())
     include_projects = request.args.get('include_projects') == '1'
     out = []
     for c in rows:
@@ -14368,11 +14370,16 @@ def api_get_program_settings():
 @admin_required
 def api_program_settings_company():
     from program_settings_persistence import load_company_info, save_company_info
+    from companies_persistence import ensure_program_company_from_settings, serialize_company
     if request.method == 'GET':
         return jsonify({'ok': True, 'company': load_company_info()})
     body = request.get_json(silent=True) or {}
     company = save_company_info(body)
-    return jsonify({'ok': True, 'company': company})
+    synced = ensure_program_company_from_settings(db, Company)
+    payload = {'ok': True, 'company': company}
+    if synced:
+        payload['main_contractor_company'] = serialize_company(synced)
+    return jsonify(payload)
 
 
 @app.route('/api/program-settings/security', methods=['GET', 'PUT'])

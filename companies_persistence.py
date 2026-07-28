@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 
+MAIN_CONTRACTOR_TYPE = 'Main Contractor'
+
 COMPANY_DETAIL_FIELDS = (
     'trade', 'dba_name', 'website', 'payment_terms', 'w9_on_file', 'prequal_status',
     'sage_ap_vendor_code', 'sage_ar_customer_code', 'sage_number', 'union_status', 'minority_owned',
@@ -23,6 +25,93 @@ def _parse_json(raw, default=None):
         return json.loads(raw)
     except (TypeError, json.JSONDecodeError):
         return default
+
+
+def _is_program_company_details(details):
+    return bool((details or {}).get('is_program_company') or (details or {}).get('is_main_contractor'))
+
+
+def find_program_company(Company):
+    """Return the Company row flagged as the program / main contractor, if any."""
+    for company in Company.query.all():
+        if _is_program_company_details(_parse_json(company.details_json, {})):
+            return company
+    return None
+
+
+def _billing_address_from_program_settings(info):
+    lines = []
+    street = (info.get('company_address') or '').strip()
+    if street:
+        lines.append(street)
+    city = (info.get('company_city') or '').strip()
+    state = (info.get('company_state') or '').strip()
+    zip_code = (info.get('company_zip') or '').strip()
+    city_line = ', '.join(part for part in [city, ' '.join(part for part in [state, zip_code] if part)] if part)
+    if city_line:
+        lines.append(city_line)
+    return '\n'.join(lines)
+
+
+def ensure_program_company_from_settings(db, Company):
+    """Create or update the main contractor company from Program Settings."""
+    from program_settings_persistence import load_company_info
+
+    info = load_company_info()
+    name = (info.get('company_name') or '').strip()
+    if not name:
+        return None
+
+    ensure_company_schema(db)
+
+    company = find_program_company(Company)
+    if not company:
+        name_lower = name.lower()
+        for row in Company.query.all():
+            if (row.name or '').lower() == name_lower:
+                company = row
+                break
+    if not company:
+        company = Company(name=name)
+        db.session.add(company)
+
+    company.name = name
+    company.type = MAIN_CONTRACTOR_TYPE
+    if info.get('company_phone'):
+        company.phone = info['company_phone']
+    if info.get('tax_id'):
+        company.tax_id = info['tax_id']
+    if info.get('company_license'):
+        company.license_number = info['company_license']
+
+    details = _parse_json(company.details_json, {})
+    details['is_program_company'] = True
+    details['is_main_contractor'] = True
+    details['status'] = details.get('status') or 'Active'
+    if info.get('dba_name'):
+        details['dba_name'] = info['dba_name']
+    if info.get('company_website'):
+        details['website'] = info['company_website']
+    billing_address = _billing_address_from_program_settings(info)
+    if billing_address:
+        details['billing_address'] = billing_address
+
+    company.details_json = json.dumps(details)
+    db.session.commit()
+    return company
+
+
+def sort_companies_main_first(companies):
+    """Pin the program / main contractor company at the top of a list."""
+    return sorted(
+        companies,
+        key=lambda c: (
+            0 if _is_program_company_details(_parse_json(getattr(c, 'details_json', None), {}))
+            or getattr(c, 'is_program_company', False)
+            else 1,
+            (getattr(c, 'name', None) or '').lower(),
+        ),
+    )
 
 
 def ensure_company_schema(db):
@@ -68,6 +157,7 @@ def apply_company_payload(company, body):
                 pass
 
     details = _parse_json(company.details_json, {})
+    preserve_program_company = _is_program_company_details(details)
     for key in COMPANY_DETAIL_FIELDS:
         if key in body:
             details[key] = body[key]
@@ -81,6 +171,10 @@ def apply_company_payload(company, body):
         details.setdefault('actively_bidding', True)
     details['status'] = body.get('status') or details.get('status') or 'Active'
     details['external_id'] = body.get('external_id') or details.get('external_id') or ''
+    if preserve_program_company:
+        details['is_program_company'] = True
+        details['is_main_contractor'] = True
+        company.type = MAIN_CONTRACTOR_TYPE
     company.details_json = json.dumps(details)
 
 
@@ -140,6 +234,8 @@ def serialize_company(company, projects=None):
         'spec_sections': details.get('spec_sections') or [],
         'trades': details.get('trades') or [],
         'actively_bidding': details.get('actively_bidding', True) if details.get('status', 'Active') == 'Active' else False,
+        'is_program_company': _is_program_company_details(details),
+        'is_main_contractor': _is_program_company_details(details),
         'projects': projects or [],
     }
 
