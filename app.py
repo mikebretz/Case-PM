@@ -198,6 +198,9 @@ PROJECT_AGNOSTIC_ENDPOINTS = frozenset({
     'favicon',
     'download_casepm_connector',
     'download_casepm_connector_vbs',
+    'download_casepm_desktop_app',
+    'download_casepm_desktop_client',
+    'download_casepm_desktop_requirements',
     'api_stats',
     'api_current_project',
     'api_portfolio_schedules',
@@ -2547,6 +2550,37 @@ def download_casepm_connector():
 def download_casepm_connector_vbs():
     """Alias for the desktop connector VBS download."""
     return download_casepm_connector()
+
+
+@app.route('/download/casepm-desktop-app')
+def download_casepm_desktop_app():
+    """Case PM Desktop App installer — WebView2, native window, desktop shortcut."""
+    from desktop_install import build_desktop_app_installer
+
+    proto = request.headers.get('X-Forwarded-Proto', request.scheme)
+    host = request.headers.get('Host', request.host)
+    server_url = f'{proto}://{host}'.rstrip('/')
+    buf = build_desktop_app_installer(server_url=server_url, casepm_home=app.root_path)
+    return send_file(
+        buf,
+        mimetype='application/octet-stream',
+        as_attachment=True,
+        download_name='Case PM Desktop App Setup.vbs',
+    )
+
+
+@app.route('/download/casepm-desktop-client.py')
+def download_casepm_desktop_client():
+    """Python client used by the browser-installed desktop app."""
+    client_path = os.path.join(app.root_path, 'casepm_desktop_client.py')
+    return send_file(client_path, mimetype='text/x-python', as_attachment=False)
+
+
+@app.route('/download/casepm-desktop-requirements.txt')
+def download_casepm_desktop_requirements():
+    """Pip requirements for the browser-installed desktop client."""
+    req_path = os.path.join(app.root_path, 'requirements-desktop-client.txt')
+    return send_file(req_path, mimetype='text/plain', as_attachment=False)
 
 
 def _complete_recovery_login(user, *, via='recovery'):

@@ -1,0 +1,2 @@
+# Minimal packages for the browser-installed Case PM Desktop client (remote server)
+pywebview>=5.0
