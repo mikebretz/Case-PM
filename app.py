@@ -1982,6 +1982,8 @@ class MeetingMinute(db.Model):
     recording_duration_sec = db.Column(db.Integer)
     document_id = db.Column(db.Integer, db.ForeignKey('document.id'))
     schedule_task_id = db.Column(db.String(60))
+    calendar_event_id = db.Column(db.String(80))
+    estimate_id = db.Column(db.Integer, db.ForeignKey('estimate.id'))
     next_meeting_date = db.Column(db.Date)
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -8555,6 +8557,8 @@ def _ensure_module_attachment_columns():
         ('safety_report', 'attachments_json', 'TEXT'),
         ('safety_report', 'details_json', 'TEXT'),
         ('meeting_minute', 'toolbox_meta_json', 'TEXT'),
+        ('meeting_minute', 'calendar_event_id', 'VARCHAR(80)'),
+        ('meeting_minute', 'estimate_id', 'INTEGER'),
         ('photo', 'document_id', 'INTEGER'),
         ('photo', 'location', 'VARCHAR(150)'),
         ('photo', 'taken_date', 'DATE'),
@@ -13551,6 +13555,7 @@ def _apply_meeting_minute(m, body):
     for field in (
         'meeting_number', 'start_time', 'end_time', 'meeting_type', 'status',
         'subject', 'location', 'virtual_link', 'organizer', 'discussion_notes', 'minutes_body',
+        'calendar_event_id', 'estimate_id',
     ):
         if field in body:
             setattr(m, field, body[field])
@@ -13771,6 +13776,17 @@ def api_meeting_minutes_create():
             _sync_meeting_to_schedule(m)
         except Exception:
             pass
+    calendar_event_id = body.get('calendar_event_id') or getattr(m, 'calendar_event_id', None)
+    if calendar_event_id:
+        from meeting_calendar_coordination import apply_calendar_link_to_meeting
+        try:
+            apply_calendar_link_to_meeting(
+                m, calendar_event_id, user_id=current_user.id,
+                db=db, UserEmailCalendar=UserEmailCalendar,
+            )
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
     return jsonify({'ok': True, 'meeting': serialize_meeting(m, ActionItem=MeetingActionItem)})
 
 
@@ -13801,6 +13817,17 @@ def api_meeting_minutes_update(meeting_id):
             _sync_meeting_to_schedule(m)
         except Exception:
             pass
+    calendar_event_id = body.get('calendar_event_id') or getattr(m, 'calendar_event_id', None)
+    if calendar_event_id:
+        from meeting_calendar_coordination import apply_calendar_link_to_meeting
+        try:
+            apply_calendar_link_to_meeting(
+                m, calendar_event_id, user_id=current_user.id,
+                db=db, UserEmailCalendar=UserEmailCalendar,
+            )
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
     return jsonify({'ok': True, 'meeting': serialize_meeting(m, ActionItem=MeetingActionItem)})
 
 
@@ -15879,6 +15906,25 @@ def api_email_security_simulate():
     return jsonify({'ok': True, **result})
 
 
+@app.route('/api/email/calendar/linkable-events', methods=['GET'])
+@login_required
+def api_email_calendar_linkable_events():
+    from meeting_calendar_coordination import list_linkable_calendar_events
+    try:
+        uid = _email_mailbox_user_id()
+    except Exception:
+        return jsonify({'error': 'Mailbox access denied'}), 403
+    if uid is None:
+        return jsonify({'error': 'Mailbox access denied'}), 403
+    project_id = request.args.get('project_id', type=int)
+    meeting_type = (request.args.get('meeting_type') or '').strip() or None
+    events = list_linkable_calendar_events(
+        uid, UserEmailCalendar=UserEmailCalendar,
+        project_id=project_id, meeting_type=meeting_type,
+    )
+    return jsonify({'ok': True, 'events': events})
+
+
 @app.route('/api/email/calendar/catalog', methods=['GET'])
 @login_required
 def api_email_calendar_catalog():
@@ -16028,7 +16074,30 @@ def api_email_calendar_create_event():
             events = [event if e.get('id') == event['id'] else e for e in events]
             save_user_calendar(uid, events, payload.get('meta'), db=db, UserEmailCalendar=UserEmailCalendar)
 
-    return jsonify({'ok': True, 'event': event, 'invite_sent': invite_sent, 'outlook_event': graph_event})
+    meeting_record = None
+    if body.get('link_meeting_minutes') or body.get('create_meeting_minutes'):
+        from meeting_calendar_coordination import create_meeting_minute_from_calendar_event
+        try:
+            estimate_id = body.get('estimate_id') or (body.get('event') or {}).get('estimateId')
+            meeting_record = create_meeting_minute_from_calendar_event(
+                event, user_id=uid, db=db, MeetingMinute=MeetingMinute,
+                MeetingActionItem=MeetingActionItem, estimate_id=estimate_id,
+            )
+            event['meetingMinuteId'] = meeting_record.id
+            events = list(load_user_calendar(uid, UserEmailCalendar=UserEmailCalendar).get('events') or [])
+            events = [event if e.get('id') == event['id'] else e for e in events]
+            save_user_calendar(uid, events, payload.get('meta'), db=db, UserEmailCalendar=UserEmailCalendar)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+    return jsonify({
+        'ok': True,
+        'event': event,
+        'invite_sent': invite_sent,
+        'outlook_event': graph_event,
+        'meeting_minute_id': meeting_record.id if meeting_record else None,
+    })
 
 
 @app.route('/api/email/calendar/sync-outlook', methods=['POST'])
@@ -16233,12 +16302,20 @@ def api_company_map_directions_email():
 @app.route('/api/geocode/search')
 @login_required
 def api_geocode_search():
-    from geocode_service import search_address_suggestions
+    from geocode_service import search_address_suggestions, closest_us_location
     q = (request.args.get('q') or request.args.get('query') or '').strip()
     limit = int(request.args.get('limit') or 12)
+    near_lat = request.args.get('near_lat', type=float)
+    near_lng = request.args.get('near_lng', type=float)
     projects = Project.query.order_by(Project.name).all()
-    suggestions = search_address_suggestions(q, projects, limit=max(1, min(limit, 20)))
-    return jsonify({'ok': True, 'query': q, 'suggestions': suggestions})
+    suggestions = search_address_suggestions(
+        q, projects, limit=max(1, min(limit, 20)),
+        near_lat=near_lat, near_lng=near_lng,
+    )
+    closest = None
+    if near_lat is not None and near_lng is not None and q and limit <= 3:
+        closest = closest_us_location(q, near_lat, near_lng)
+    return jsonify({'ok': True, 'query': q, 'suggestions': suggestions, 'closest': closest})
 
 
 # ==================== NOTIFICATIONS ====================

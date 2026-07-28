@@ -377,6 +377,11 @@ window.CASEPM_SAFETY_CTX = {
         <div><label class="block text-xs text-zinc-400 mb-1">Topic / subject</label><input id="tbSubject" class="saf-input" placeholder="e.g. Fall protection — leading edge work"></div>
         <div><label class="block text-xs text-zinc-400 mb-1">Meeting date</label><input type="date" id="tbDate" class="saf-input"></div>
       </div>
+      <div id="tbCalendarLinkWrap" class="mt-3 hidden">
+        <label class="block text-xs text-zinc-400 mb-1">Link to email calendar toolbox meeting</label>
+        <select id="tbCalendarLink" class="saf-input"><option value="">— None (enter date manually) —</option></select>
+        <p class="text-[10px] text-zinc-500 mt-1">Pull date and location from a toolbox meeting already on the Email calendar.</p>
+      </div>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
         <div id="tbWeekEndingWrap" class="hidden"><label class="block text-xs text-zinc-400 mb-1">Week ending (Fri)</label><input type="date" id="tbWeekEnding" class="saf-input"></div>
         <div><label class="block text-xs text-zinc-400 mb-1">Location</label><input id="tbLocation" class="saf-input" placeholder="Job site / grid area"></div>

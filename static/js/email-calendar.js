@@ -32,6 +32,11 @@
   let rootEl = null;
   let outlookConnected = false;
   let outlookSyncStatus = '';
+  let coordinatedEventTypes = new Set([
+    'owner_meeting', 'site_visit', 'precon', 'bid', 'oac', 'oac_weekly',
+    'superintendent', 'subcontractor', 'safety', 'toolbox_talk', 'design',
+    'schedule', 'submittal', 'closeout', 'internal', 'stakeholder',
+  ]);
 
   function esc(s) {
     const d = document.createElement('div');
@@ -157,6 +162,9 @@
       const data = await res.json();
       if (Array.isArray(data.event_types) && data.event_types.length) {
         EVENT_TYPES = data.event_types;
+      }
+      if (Array.isArray(data.coordinated_event_types)) {
+        coordinatedEventTypes = new Set(data.coordinated_event_types);
       }
       if (global.CasePMEmail?.setCalendarSidebar && Array.isArray(data.sidebar)) {
         global.CasePMEmail.setCalendarSidebar(data.sidebar);
@@ -366,6 +374,10 @@
             <textarea id="calBody" placeholder="Details included in the invite email — dial-in, documents, talking points…" ${isReadOnly ? 'readonly' : ''}>${esc((editingEvent.body || '').replace(/<[^>]+>/g, ''))}</textarea>
           </div>
           ${isReadOnly ? '' : `
+          <label class="flex items-center gap-2 text-sm text-zinc-300 mb-1" id="calLinkMinutesWrap">
+            <input type="checkbox" id="calLinkMinutes" class="accent-emerald-600" checked>
+            Also create a Meeting Minutes record (links calendar ↔ minutes like Procore)
+          </label>
           <label class="flex items-center gap-2 text-sm text-zinc-300 mb-1">
             <input type="checkbox" id="calSyncOutlook" class="accent-emerald-600" ${outlookConnected ? 'checked' : ''} ${outlookConnected ? '' : 'disabled'}>
             Sync to Outlook calendar
@@ -383,9 +395,22 @@
       </div>`;
     document.body.appendChild(backdrop);
 
+    const syncLinkMinutesVisibility = () => {
+      const type = backdrop.querySelector('#calType')?.value || editingEvent.eventType;
+      const wrap = backdrop.querySelector('#calLinkMinutesWrap');
+      const box = backdrop.querySelector('#calLinkMinutes');
+      const coordinated = coordinatedEventTypes.has(type);
+      if (wrap) wrap.classList.toggle('hidden', !coordinated || !!existing);
+      if (box && coordinated && !existing) box.checked = true;
+    };
+    backdrop.querySelector('#calType')?.addEventListener('change', syncLinkMinutesVisibility);
+    syncLinkMinutesVisibility();
+
     const locInput = backdrop.querySelector('#calLocation');
     if (!isReadOnly && global.CasePMAddressAutocomplete && locInput) {
       global.CasePMAddressAutocomplete.attach(locInput, {
+        getNearLat: () => editingEvent.locationMeta?.latitude ?? ctx.projectLat,
+        getNearLng: () => editingEvent.locationMeta?.longitude ?? ctx.projectLng,
         onSelect(item) {
           editingEvent.locationMeta = {
             projectId: item.id,
@@ -426,6 +451,7 @@
         body: `<p>${esc(backdrop.querySelector('#calBody').value).replace(/\n/g, '<br>')}</p>`,
       };
       const isNew = !existing;
+      let savedData = null;
       if (isNew) {
         const res = await fetch('/api/email/calendar/events', {
           method: 'POST',
@@ -434,33 +460,35 @@
             event: payload,
             send_invites: backdrop.querySelector('#calSendInvites').checked,
             sync_outlook: backdrop.querySelector('#calSyncOutlook')?.checked !== false,
+            link_meeting_minutes: backdrop.querySelector('#calLinkMinutes')?.checked === true,
           }),
         });
-        const data = await res.json();
+        savedData = await res.json();
         if (!res.ok) {
-          alert(data.error || 'Could not save meeting');
+          alert(savedData.error || 'Could not save meeting');
           return;
         }
-        events.push(data.event);
+        events.push(savedData.event);
       } else {
         const res = await fetch(`/api/email/calendar/events/${encodeURIComponent(payload.id)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ event: payload }),
         });
-        const data = await res.json();
+        savedData = await res.json();
         if (!res.ok) {
-          alert(data.error || 'Could not update meeting');
+          alert(savedData.error || 'Could not update meeting');
           return;
         }
-        events = events.map(e => String(e.id) === String(payload.id) ? data.event : e);
+        events = events.map(e => String(e.id) === String(payload.id) ? savedData.event : e);
       }
       selectedDay = startOfDay(new Date(payload.start));
       viewDate = new Date(selectedDay);
       close();
       render();
       if (global.CasePMEmail?.toast) {
-        global.CasePMEmail.toast(isNew ? 'Meeting created.' : 'Meeting updated.', 'success');
+        const mmNote = savedData?.meeting_minute_id ? ' Meeting Minutes record created and linked.' : '';
+        global.CasePMEmail.toast((isNew ? 'Meeting created.' : 'Meeting updated.') + mmNote, 'success');
       }
     });
   }

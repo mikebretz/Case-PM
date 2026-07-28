@@ -17,6 +17,7 @@
   const state = {
     meetings: [], stats: {}, catalog: null, editId: null, tab: 'details',
     speakers: [], transcriptSegments: [], agenda: [], actionItems: [], attendees: [],
+    linkableCalendarEvents: [],
     listening: false, recording: false, recognition: null, mediaRecorder: null,
     audioChunks: [], audioStream: null, audioContext: null, analyser: null,
     recordingStartedAt: null, recordingTimer: null,
@@ -37,7 +38,48 @@
   }
   function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
   function el(id) { return document.getElementById(id); }
-  function iso(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+  function isoTimeFromIso(isoStr) {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+
+  async function loadCalendarLinkOptions() {
+    const sel = el('mmCalendarLink');
+    if (!sel) return;
+    const pid = projectId();
+    const mtype = el('mmMeetingType')?.value || '';
+    try {
+      const j = await api(`/api/email/calendar/linkable-events?project_id=${pid || ''}&meeting_type=${encodeURIComponent(mtype)}`);
+      state.linkableCalendarEvents = j.events || [];
+      const current = sel.value;
+      sel.innerHTML = '<option value="">— None (enter date manually) —</option>' +
+        state.linkableCalendarEvents.map((ev) => {
+          const when = ev.start ? new Date(ev.start).toLocaleString() : '';
+          return `<option value="${esc(ev.id)}">${esc(when)} — ${esc(ev.title || 'Meeting')}</option>`;
+        }).join('');
+      if (current) sel.value = current;
+    } catch (_) {
+      state.linkableCalendarEvents = [];
+    }
+  }
+
+  function applyCalendarLinkSelection(eventId) {
+    const ev = state.linkableCalendarEvents.find((e) => String(e.id) === String(eventId));
+    if (!ev) return;
+    if (ev.start) el('mmDate').value = ev.start.slice(0, 10);
+    el('mmStartTime').value = isoTimeFromIso(ev.start);
+    el('mmEndTime').value = isoTimeFromIso(ev.end);
+    if (ev.location) el('mmLocation').value = ev.location;
+    if (ev.title && !el('mmSubject').value.trim()) el('mmSubject').value = ev.title;
+    if (ev.eventType && el('mmMeetingType').querySelector(`option[value="${ev.eventType}"]`)) {
+      el('mmMeetingType').value = ev.eventType;
+      loadAgendaTemplate(ev.eventType);
+    }
+    el('mmStatus').value = 'Scheduled';
+  }
+
   async function api(url, opts) { const r = await fetch(url, opts); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'Request failed'); return j; }
 
   async function loadCatalog() {
@@ -172,8 +214,10 @@
     el('mmDelete').classList.add('hidden');
     el('mmRecordingPlayer').classList.add('hidden');
     el('mmRecordingPlayer').removeAttribute('src');
+    if (el('mmCalendarLink')) el('mmCalendarLink').value = '';
     setTab('details');
     loadAgendaTemplate('oac');
+    loadCalendarLinkOptions();
   }
 
   async function openCreate() {
@@ -214,6 +258,11 @@
     el('mmAttendeesRaw').value = attendeesToText(state.attendees);
     el('mmPush').checked = m.synced_to_schedule;
     el('mmSyncedBadge').classList.toggle('hidden', !m.synced_to_schedule);
+    if (el('mmCalendarLink')) {
+      loadCalendarLinkOptions().then(() => {
+        if (m.calendar_event_id) el('mmCalendarLink').value = m.calendar_event_id;
+      });
+    }
     el('mmDelete').classList.remove('hidden');
     if (m.has_recording) {
       const player = el('mmRecordingPlayer');
@@ -596,6 +645,7 @@
       speakers: voice().getSpeakers(),
       action_items: state.actionItems,
       push_to_schedule: el('mmPush').checked,
+      calendar_event_id: el('mmCalendarLink')?.value || null,
     };
   }
 
@@ -851,6 +901,10 @@
     });
     el('mmMeetingType')?.addEventListener('change', (e) => {
       if (!state.editId) loadAgendaTemplate(e.target.value);
+      loadCalendarLinkOptions();
+    });
+    el('mmCalendarLink')?.addEventListener('change', (e) => {
+      if (e.target.value) applyCalendarLinkSelection(e.target.value);
     });
     el('mmDictateBtn')?.addEventListener('click', () => state.listening ? stopDictation() : startDictation());
     el('mmRecordBtn')?.addEventListener('click', () => state.recording ? stopRecording() : startRecording());

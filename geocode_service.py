@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import urllib.error
 import urllib.parse
@@ -64,6 +65,32 @@ def _is_us_country(country: str | None, country_code: str | None = None) -> bool
 
 def _florida_rank(state: str | None) -> int:
     return 0 if _normalize_state(state) == 'FL' else 1
+
+
+def _haversine_miles(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    rlat1, rlng1, rlat2, rlng2 = map(math.radians, [lat1, lng1, lat2, lng2])
+    dlat = rlat2 - rlat1
+    dlng = rlng2 - rlng1
+    a = math.sin(dlat / 2) ** 2 + math.cos(rlat1) * math.cos(rlat2) * math.sin(dlng / 2) ** 2
+    return 3958.8 * 2 * math.asin(math.sqrt(a))
+
+
+def _distance_rank(loc: dict[str, Any], near_lat: float | None, near_lng: float | None) -> float:
+    if near_lat is None or near_lng is None:
+        return 999999.0
+    lat = loc.get('latitude')
+    lng = loc.get('longitude')
+    if lat is None or lng is None:
+        return 999999.0
+    return _haversine_miles(float(near_lat), float(near_lng), float(lat), float(lng))
+
+
+def _annotate_distance(loc: dict[str, Any], near_lat: float | None, near_lng: float | None) -> dict[str, Any]:
+    out = dict(loc)
+    miles = _distance_rank(out, near_lat, near_lng)
+    if miles < 999999:
+        out['distance_miles'] = round(miles, 1)
+    return out
 
 
 def _florida_project_rank(loc: dict[str, Any]) -> int:
@@ -203,14 +230,14 @@ def _nominatim_row_to_suggestion(row: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def search_nominatim_us(query: str, *, limit: int = 8) -> list[dict[str, Any]]:
+def search_nominatim_us(query: str, *, limit: int = 8, near_lat: float | None = None, near_lng: float | None = None) -> list[dict[str, Any]]:
     q = (query or '').strip()
     if len(q) < 2:
         return []
     params = urllib.parse.urlencode({
         'q': q,
         'format': 'json',
-        'limit': max(1, min(int(limit), 15)),
+        'limit': max(1, min(int(limit), 20 if near_lat is not None else 15)),
         'addressdetails': 1,
         'countrycodes': 'us',
         'viewbox': FLORIDA_VIEWBOX,
@@ -226,9 +253,26 @@ def search_nominatim_us(query: str, *, limit: int = 8) -> list[dict[str, Any]]:
     for row in rows:
         suggestion = _nominatim_row_to_suggestion(row)
         if suggestion:
-            results.append(suggestion)
-    results.sort(key=lambda r: (_florida_rank(r.get('state')), 0 if r.get('kind') == 'business' else 1, r.get('label') or ''))
+            results.append(_annotate_distance(suggestion, near_lat, near_lng))
+    if near_lat is not None and near_lng is not None:
+        results.sort(key=lambda r: (_florida_rank(r.get('state')), r.get('distance_miles', 999999), r.get('label') or ''))
+    else:
+        results.sort(key=lambda r: (_florida_rank(r.get('state')), 0 if r.get('kind') == 'business' else 1, r.get('label') or ''))
     return results[:limit]
+
+
+def closest_us_location(query: str, near_lat: float, near_lng: float) -> dict[str, Any] | None:
+    """Return the closest US match (e.g. nearest Walmart to a job site)."""
+    hits = search_nominatim_us(query, limit=20, near_lat=near_lat, near_lng=near_lng)
+    if hits:
+        return hits[0]
+    try:
+        rows = geocode_query(query, count=10)
+        rows = [_annotate_distance(row, near_lat, near_lng) for row in rows]
+        rows.sort(key=lambda r: r.get('distance_miles', 999999))
+        return rows[0] if rows else None
+    except RuntimeError:
+        return None
 
 
 def geocode_address_nominatim(query: str) -> dict[str, Any] | None:
@@ -314,8 +358,15 @@ def is_active_job_status(status: str | None) -> bool:
     return (status or 'Active') in ACTIVE_JOB_STATUSES
 
 
-def search_address_suggestions(query: str, projects=None, *, limit: int = 12) -> list[dict[str, Any]]:
-    """Autocomplete: FL job sites first, then US businesses/addresses (Florida-biased)."""
+def search_address_suggestions(
+    query: str,
+    projects=None,
+    *,
+    limit: int = 12,
+    near_lat: float | None = None,
+    near_lng: float | None = None,
+) -> list[dict[str, Any]]:
+    """Autocomplete: FL job sites first, then closest US businesses/addresses to near_lat/lng."""
     q = (query or '').strip().lower()
     if len(q) < 2:
         return []
@@ -341,7 +392,11 @@ def search_address_suggestions(query: str, projects=None, *, limit: int = 12) ->
             loc = geocode_project_location(loc)
         project_matches.append(loc)
 
-    project_matches.sort(key=lambda loc: (_florida_project_rank(loc), loc.get('name') or ''))
+    project_matches.sort(key=lambda loc: (
+        _florida_project_rank(loc),
+        _distance_rank(loc, near_lat, near_lng),
+        loc.get('name') or '',
+    ))
     for loc in project_matches:
         key = f"project:{loc.get('id')}"
         if key in seen:
@@ -349,21 +404,29 @@ def search_address_suggestions(query: str, projects=None, *, limit: int = 12) ->
         seen.add(key)
         state = loc.get('state') or ''
         fl_note = ' · Florida' if _normalize_state(state) == 'FL' else ''
+        dist_note = ''
+        annotated = _annotate_distance(loc, near_lat, near_lng)
+        if annotated.get('distance_miles') is not None:
+            dist_note = f" · {annotated['distance_miles']} mi"
         suggestions.append({
-            **loc,
+            **annotated,
             'kind': 'project',
-            'subtitle': f"Job site · {loc.get('status') or 'Active'}{fl_note}",
+            'subtitle': f"Job site · {loc.get('status') or 'Active'}{fl_note}{dist_note}",
         })
         if len(suggestions) >= limit:
             return suggestions
 
     try:
-        for row in search_nominatim_us(query, limit=max(6, limit - len(suggestions))):
+        nom_limit = max(10, limit - len(suggestions)) if near_lat is not None else max(6, limit - len(suggestions))
+        for row in search_nominatim_us(query, limit=nom_limit, near_lat=near_lat, near_lng=near_lng):
             key = f"nom:{row.get('label')}"
             if key in seen:
                 continue
             seen.add(key)
-            suggestions.append(row)
+            subtitle = row.get('subtitle') or 'US address'
+            if row.get('distance_miles') is not None:
+                subtitle = f"{subtitle} · {row['distance_miles']} mi to job"
+            suggestions.append({**row, 'subtitle': subtitle})
             if len(suggestions) >= limit:
                 return suggestions[:limit]
     except RuntimeError:

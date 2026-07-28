@@ -52,9 +52,20 @@ class GeocodeServiceTests(unittest.TestCase):
         self.assertEqual(results[0]['id'], 2)
 
     def test_geocode_query_us_only(self):
-        from geocode_service import geocode_query, _is_us_country
+        from geocode_service import _is_us_country
         self.assertTrue(_is_us_country('United States', 'US'))
         self.assertFalse(_is_us_country('Canada', 'CA'))
+
+    def test_distance_sort_near_job(self):
+        from geocode_service import _haversine_miles, search_address_suggestions
+        projects = [
+            {'id': 10, 'name': 'Job Site', 'city': 'Lakeland', 'state': 'FL', 'status': 'Active', 'latitude': 28.04, 'longitude': -81.95},
+        ]
+        results = search_address_suggestions('job', projects, limit=3, near_lat=28.04, near_lng=-81.95)
+        self.assertTrue(results)
+        self.assertEqual(results[0]['id'], 10)
+        miles = _haversine_miles(28.04, -81.95, 28.04, -81.95)
+        self.assertAlmostEqual(miles, 0.0, places=2)
 
 
 class EmailCalendarCatalogTests(unittest.TestCase):
@@ -89,6 +100,12 @@ class EmailCalendarCatalogTests(unittest.TestCase):
         merged = merge_meeting_minute_events(stored, minute)
         self.assertEqual(len(merged), 2)
         self.assertTrue(any(e.get('id') == 'mm_5' for e in merged))
+
+    def test_event_type_mapping(self):
+        from meeting_calendar_coordination import event_type_to_meeting_type, COORDINATED_EVENT_TYPES
+        self.assertEqual(event_type_to_meeting_type('owner_meeting'), 'owner')
+        self.assertEqual(event_type_to_meeting_type('toolbox_talk'), 'toolbox_talk')
+        self.assertIn('bid', COORDINATED_EVENT_TYPES)
 
 
 class EmailCalendarApiTests(unittest.TestCase):
@@ -150,6 +167,18 @@ class EmailCalendarApiTests(unittest.TestCase):
                 self.assertTrue(data.get('ok'))
                 self.assertTrue(any(t.get('id') == 'toolbox_talk' for t in data.get('event_types', [])))
                 self.assertTrue(any(t.get('id') == 'bid' for t in data.get('event_types', [])))
+
+    def test_linkable_calendar_events_route(self):
+        from app import app, User
+        from scripts.simulate_security_harness import _login_client
+
+        with app.app_context():
+            user = User.query.filter_by(email='admin@casepm.local').first()
+            with app.test_client() as client:
+                _login_client(client, user, app)
+                res = client.get('/api/email/calendar/linkable-events?meeting_type=toolbox_talk')
+                self.assertEqual(res.status_code, 200)
+                self.assertTrue(res.get_json().get('ok'))
 
 
 class DirectionsServiceTests(unittest.TestCase):

@@ -7,6 +7,7 @@ MEETING_TYPES = [
     {'key': 'oac_weekly', 'label': 'OAC Weekly Progress', 'icon': 'fa-calendar-week', 'color': '#8b5cf6'},
     {'key': 'superintendent', 'label': 'Superintendent / Field', 'icon': 'fa-hard-hat', 'color': '#f59e0b'},
     {'key': 'owner', 'label': 'Owner Meeting', 'icon': 'fa-building-user', 'color': '#0ea5e9'},
+    {'key': 'site_visit', 'label': 'Site Visit / Walkthrough', 'icon': 'fa-person-walking', 'color': '#22d3ee'},
     {'key': 'subcontractor', 'label': 'Subcontractor Coordination', 'icon': 'fa-truck-field', 'color': '#14b8a6'},
     {'key': 'precon', 'label': 'Pre-Construction', 'icon': 'fa-clipboard-list', 'color': '#a855f7'},
     {'key': 'bid', 'label': 'Bid Meeting / Walkthrough', 'icon': 'fa-gavel', 'color': '#eab308'},
@@ -71,6 +72,14 @@ AGENDA_TEMPLATES = {
         {'topic': 'Budget & contingency', 'presenter': 'PM', 'minutes': 15},
         {'topic': 'Decisions required from owner', 'presenter': 'Owner', 'minutes': 20},
         {'topic': 'Next steps', 'presenter': 'PM', 'minutes': 10},
+    ],
+    'site_visit': [
+        {'topic': 'Site access & safety orientation', 'presenter': 'Superintendent', 'minutes': 10},
+        {'topic': 'Existing conditions walkthrough', 'presenter': 'Superintendent', 'minutes': 20},
+        {'topic': 'Logistics, staging & laydown areas', 'presenter': 'PM', 'minutes': 15},
+        {'topic': 'Photos / measurements / as-builts needed', 'presenter': 'Superintendent', 'minutes': 10},
+        {'topic': 'RFIs / clarifications from walk', 'presenter': 'PM', 'minutes': 15},
+        {'topic': 'Action items & follow-up', 'presenter': 'PM', 'minutes': 10},
     ],
     'subcontractor': [
         {'topic': 'Attendance & scope review', 'presenter': 'PM', 'minutes': 5},
