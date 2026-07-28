@@ -45,6 +45,7 @@ API_PREFIX_MODULE = [
     ('/api/rfis', 'rfis'),
     ('/api/submittals', 'submittals'),
     ('/api/change-orders', 'change_orders'),
+    ('/api/change-order-templates', 'change_orders'),
     ('/api/co/', 'change_orders'),
     ('/api/pcos', 'change_orders'),
     ('/api/change-events', 'change_orders'),

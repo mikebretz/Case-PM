@@ -799,7 +799,7 @@
   if (global.CasePMPageHelp) global.CasePMPageHelp.registerTabSectionMap('change_orders', TAB_SECTION);
 
   function switchExtTab(tab) {
-    ['events', 'rfqs', 'cors', 'cpcos', 'erp'].forEach(t => {
+    ['events', 'rfqs', 'cors', 'cpcos', 'erp', 'templates'].forEach(t => {
       document.getElementById(`tab${t.charAt(0).toUpperCase() + t.slice(1)}`)?.classList.toggle('hidden', tab !== t);
       const btn = document.getElementById(`btnTab${t.charAt(0).toUpperCase() + t.slice(1)}`);
       if (btn) btn.className = tab === t
@@ -807,12 +807,13 @@
         : 'px-4 py-2 rounded-md text-sm font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700';
     });
     ['cos', 'pcos', 'subs'].forEach(t => document.getElementById(`tab${t.charAt(0).toUpperCase() + t.slice(1)}`)?.classList.add('hidden'));
+    if (tab === 'templates' && CO.loadCoTemplates) CO.loadCoTemplates();
     loadTabData(tab);
   }
 
   const origSwitch = CO.switchTab;
   CO.switchTab = function (tab) {
-    if (['events', 'rfqs', 'cors', 'cpcos', 'erp'].includes(tab)) {
+    if (['events', 'rfqs', 'cors', 'cpcos', 'erp', 'templates'].includes(tab)) {
       switchExtTab(tab);
       if (global.CasePMPageHelp?.setContextFromTab) global.CasePMPageHelp.setContextFromTab(tab);
       return;

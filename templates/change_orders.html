@@ -149,6 +149,7 @@
         <button type="button" id="btnTabCors" onclick="CasePMChangeOrders.switchTab('cors')" class="px-4 py-2 rounded-md text-sm font-medium bg-zinc-800 text-zinc-300">COR Log</button>
         <button type="button" id="btnTabCpcos" onclick="CasePMChangeOrders.switchTab('cpcos')" class="px-4 py-2 rounded-md text-sm font-medium bg-zinc-800 text-zinc-300">CPCO Log</button>
         <button type="button" id="btnTabErp" onclick="CasePMChangeOrders.switchTab('erp')" class="px-4 py-2 rounded-md text-sm font-medium bg-zinc-800 text-zinc-300">ERP Queue</button>
+        <button type="button" id="btnTabTemplates" onclick="CasePMChangeOrders.switchTab('templates')" class="px-4 py-2 rounded-md text-sm font-medium bg-zinc-800 text-zinc-300">CO Templates</button>
     </div>
     <div class="flex flex-col md:flex-row gap-2 w-full lg:w-auto">
         <input type="text" id="coSearch" placeholder="Search…" class="flex-1 bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2 text-sm min-w-[180px]">
@@ -265,6 +266,39 @@
                 </tr>
             </thead>
             <tbody id="subCoTableBody" class="divide-y divide-zinc-800"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- CO TEMPLATES -->
+<div id="tabTemplates" class="hidden flex-1 min-h-0 flex flex-col border border-zinc-700 rounded-md bg-zinc-900 mb-20 overflow-hidden">
+    <div class="px-4 py-3 border-b border-zinc-800 flex flex-wrap gap-3 justify-between items-center">
+        <div>
+            <div class="text-sm text-white font-medium">Change Order Print Templates</div>
+            <div class="text-xs text-zinc-500 mt-0.5">Company-specific PDF forms — filled from change orders and change event line items</div>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+            <select id="coTemplateCompanyFilter" class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
+                <option value="">All companies</option>
+            </select>
+            <button type="button" onclick="CasePMChangeOrders.openTemplateUpload()" class="px-3 py-2 bg-violet-700 hover:bg-violet-600 rounded-md text-sm">
+                <i class="fa-solid fa-upload mr-1"></i> Upload template
+            </button>
+        </div>
+    </div>
+    <div class="flex-1 overflow-auto min-h-0">
+        <table class="w-full text-sm min-w-[900px]">
+            <thead class="bg-zinc-800 sticky top-0 z-20 border-b border-zinc-700">
+                <tr>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">Name</th>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">Company</th>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">Engine</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium">Default</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium">Status</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium w-40">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="coTemplatesTableBody" class="divide-y divide-zinc-800"></tbody>
         </table>
     </div>
 </div>
@@ -515,6 +549,44 @@
             <div class="flex justify-end gap-3 mt-5">
                 <button type="button" onclick="document.getElementById('ceModal').close()" class="px-5 py-2 bg-zinc-800 rounded-md text-sm">Cancel</button>
                 <button type="submit" class="px-6 py-2 bg-violet-600 hover:bg-violet-500 rounded-md text-sm font-semibold">Save</button>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<dialog id="coTemplateModal" class="modal bg-zinc-900 border border-zinc-700 rounded-lg w-full max-w-lg p-0 text-white">
+    <div class="p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-semibold">Upload Change Order Template</h2>
+            <button type="button" onclick="document.getElementById('coTemplateModal').close()" class="text-zinc-400 hover:text-white text-2xl">&times;</button>
+        </div>
+        <form onsubmit="CasePMChangeOrders.saveTemplateUpload(event)">
+            <div class="space-y-4 text-sm">
+                <div>
+                    <label class="block text-zinc-400 mb-1">Template name <span class="text-red-400">*</span></label>
+                    <input type="text" id="coTemplateName" required class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2" placeholder="ALDI Change Order Form">
+                </div>
+                <div>
+                    <label class="block text-zinc-400 mb-1">Company key</label>
+                    <input type="text" id="coTemplateCompanyKey" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2" placeholder="ALDI">
+                    <p class="text-[11px] text-zinc-500 mt-1">Used to match templates to client / owner companies.</p>
+                </div>
+                <div>
+                    <label class="block text-zinc-400 mb-1">Description</label>
+                    <textarea id="coTemplateDescription" rows="2" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2"></textarea>
+                </div>
+                <div>
+                    <label class="block text-zinc-400 mb-1">PDF template <span class="text-red-400">*</span></label>
+                    <input type="file" id="coTemplateFile" accept="application/pdf,.pdf" required class="w-full text-sm text-zinc-300">
+                </div>
+                <label class="flex items-center gap-2 text-zinc-300">
+                    <input type="checkbox" id="coTemplateDefault" class="rounded border-zinc-600">
+                    Set as default for this company
+                </label>
+            </div>
+            <div class="flex justify-end gap-3 mt-5">
+                <button type="button" onclick="document.getElementById('coTemplateModal').close()" class="px-5 py-2 bg-zinc-800 rounded-md text-sm">Cancel</button>
+                <button type="submit" class="px-6 py-2 bg-violet-600 hover:bg-violet-500 rounded-md text-sm font-semibold">Upload</button>
             </div>
         </form>
     </div>
