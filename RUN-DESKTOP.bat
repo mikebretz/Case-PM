@@ -14,6 +14,7 @@ if not errorlevel 1 set "PY=python"
 if not defined PY (
     echo ERROR: Python is not installed or not in PATH.
     echo Install Python 3.12+ from https://www.python.org/downloads/
+    echo IMPORTANT: Check "Add python.exe to PATH" during install.
     pause
     exit /b 1
 )
@@ -31,7 +32,7 @@ if not exist "venv\Scripts\python.exe" (
 set "PY=venv\Scripts\python.exe"
 "%PY%" -m pip install --upgrade pip --quiet
 echo Installing Case PM + desktop window packages...
-"%PY%" -m pip install -r requirements-desktop.txt --quiet
+"%PY%" -m pip install -r requirements-desktop.txt
 if errorlevel 1 (
     echo ERROR: Could not install desktop dependencies.
     pause
@@ -46,8 +47,20 @@ set "CASEPM_DESKTOP=1"
 
 echo.
 echo Launching Case PM in a desktop window...
-echo Close the window to exit. Data stays in instance\case_pm.db on this PC.
+echo If no window appears, check instance\desktop-launch.log
+echo Close the Case PM window (or browser tab) to exit.
 echo.
 
 "%PY%" desktop_launcher.py
-if errorlevel 1 pause
+set "EXITCODE=%ERRORLEVEL%"
+
+echo.
+if not "%EXITCODE%"=="0" (
+    echo Case PM Desktop exited with an error.
+    echo See instance\desktop-launch.log for details.
+) else (
+    echo Case PM Desktop closed.
+)
+echo.
+pause
+exit /b %EXITCODE%
