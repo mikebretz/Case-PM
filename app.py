@@ -17804,6 +17804,35 @@ def api_create_change_order_template():
     return jsonify({'ok': True, 'template': template_to_dict(row)})
 
 
+@app.route('/api/change-order-templates/<int:template_id>/preview', methods=['GET'])
+@login_required
+def api_preview_change_order_template(template_id):
+    from change_order_template_persistence import resolve_template_pdf_path
+    from financial_security import require_financial_project_access
+    import io
+
+    row = ChangeOrderTemplate.query.get_or_404(template_id)
+    project_id = request.args.get('project_id') or get_current_project_id()
+    if project_id:
+        try:
+            require_financial_project_access(current_user, int(project_id), Project)
+        except (ValueError, PermissionError) as exc:
+            return jsonify({'error': str(exc)}), 403
+    try:
+        path = resolve_template_pdf_path(row, base_dir=os.path.dirname(os.path.abspath(__file__)))
+        with open(path, 'rb') as fh:
+            data = fh.read()
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    filename = f'{row.slug or "change_order_template"}.pdf'
+    return send_file(
+        io.BytesIO(data),
+        mimetype='application/pdf',
+        as_attachment=False,
+        download_name=filename,
+    )
+
+
 @app.route('/api/change-order-templates/<int:template_id>', methods=['PUT'])
 @login_required
 def api_update_change_order_template(template_id):
