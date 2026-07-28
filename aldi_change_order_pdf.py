@@ -11,45 +11,6 @@ LABOR_TYPES = frozenset({'labor'})
 MATERIAL_TYPES = frozenset({'material', 'equipment', 'subcontract', 'other', 'general conditions'})
 GC_MATERIAL_TYPES = frozenset({'material', 'equipment'})
 
-# Regions to white-out baked-in sample values before writing (original PDF has "1", "0.00", etc.).
-PAGE1_ERASE = [
-    fitz.Rect(105, 86, 430, 100),   # store #
-    fitz.Rect(468, 86, 545, 100),  # CO #
-    fitz.Rect(105, 100, 430, 113), # contractor
-    fitz.Rect(468, 100, 545, 113), # CCD #
-    fitz.Rect(105, 113, 580, 128), # scope
-    fitz.Rect(118, 132, 580, 188), # description
-    fitz.Rect(448, 568, 545, 586), # signed-by date sample
-    fitz.Rect(145, 568, 400, 590), # signed-by name sample (Timothy Walker Jr.)
-    fitz.Rect(145, 605, 400, 625), # signer name sample
-    fitz.Rect(145, 635, 400, 655), # signer position sample
-    fitz.Rect(448, 692, 545, 710), # recommended by date
-    fitz.Rect(448, 744, 545, 762), # approved by date
-]
-for _y in (218, 234, 250, 266, 282, 298, 314, 330):
-    PAGE1_ERASE.extend([
-        fitz.Rect(50, _y - 12, 205, _y + 2),
-        fitz.Rect(210, _y - 12, 320, _y + 2),
-        fitz.Rect(320, _y - 12, 475, _y + 2),
-        fitz.Rect(475, _y - 12, 538, _y + 2),
-    ])
-PAGE1_ERASE.extend([
-    fitz.Rect(468, 318, 538, 332),   # total sub costs value
-    fitz.Rect(354, 330, 468, 346),   # GC O&P 5% value
-    fitz.Rect(468, 454, 538, 468),   # total GC material value
-    fitz.Rect(354, 478, 468, 494),   # GC O&P 10% value
-    fitz.Rect(468, 504, 538, 518),   # total sub & material value
-    fitz.Rect(468, 518, 538, 532),   # total GC O&P value
-    fitz.Rect(468, 536, 538, 552),   # total adjustment value
-])
-for _y in (374, 388, 403, 418, 432, 446):
-    PAGE1_ERASE.append(fitz.Rect(16, _y - 10, 32, _y + 4))  # sample "0" in GC material desc
-for _y in (383, 397, 411, 425, 439, 453):
-    PAGE1_ERASE.extend([
-        fitz.Rect(18, _y - 12, 340, _y + 2),   # GC material description
-        fitz.Rect(468, _y - 12, 538, _y + 2),  # GC material cost
-    ])
-
 # Page 1 — summary form (letter size, points).
 PAGE1 = {
     'store': (118, 98),
@@ -88,57 +49,6 @@ SUB_PAGE1 = {
     'material_subtotal': (575, 677),
 }
 
-SUB_PAGE_ERASE_COMMON = []
-for _layout, _ys_labor, _ys_mat, _lsub, _msub in (
-    (SUB_PAGE1, (156, 174, 192, 210, 228, 246), range(389, 570, 18), 356, 677),
-):
-    SUB_PAGE_ERASE_COMMON.extend([
-        fitz.Rect(55, 72, 400, 92),   # sub name
-        fitz.Rect(75, 98, 580, 118),  # scope
-    ])
-    for _y in _ys_labor:
-        SUB_PAGE_ERASE_COMMON.extend([
-            fitz.Rect(25, _y - 11, 245, _y + 3),
-            fitz.Rect(478, _y - 11, 582, _y + 3),
-        ])
-    SUB_PAGE_ERASE_COMMON.extend([
-        fitz.Rect(483, _lsub - 11, 582, _lsub + 3),
-        fitz.Rect(348, _lsub - 14, 370, _lsub + 2),  # labor profit % value
-    ])
-    for _y in _ys_mat:
-        SUB_PAGE_ERASE_COMMON.extend([
-            fitz.Rect(25, _y - 11, 245, _y + 3),
-            fitz.Rect(478, _y - 11, 582, _y + 3),
-        ])
-    SUB_PAGE_ERASE_COMMON.extend([
-        fitz.Rect(483, _msub - 11, 582, _msub + 3),
-        fitz.Rect(348, _msub - 14, 370, _msub + 2),
-    ])
-
-SUB_PAGE_OTHER_ERASE = []
-SUB_PAGE_OTHER_ERASE.extend([
-    fitz.Rect(55, 74, 400, 94),
-    fitz.Rect(75, 100, 580, 120),
-])
-for _y in (161, 179, 197, 215, 233, 251):
-    SUB_PAGE_OTHER_ERASE.extend([
-        fitz.Rect(25, _y - 11, 245, _y + 3),
-        fitz.Rect(475, _y - 11, 578, _y + 3),
-    ])
-SUB_PAGE_OTHER_ERASE.extend([
-    fitz.Rect(480, 368, 578, 382),
-    fitz.Rect(348, 365, 370, 378),
-])
-for _y in range(414, 596, 18):
-    SUB_PAGE_OTHER_ERASE.extend([
-        fitz.Rect(25, _y - 11, 245, _y + 3),
-        fitz.Rect(475, _y - 11, 578, _y + 3),
-    ])
-SUB_PAGE_OTHER_ERASE.extend([
-    fitz.Rect(480, 712, 578, 726),
-    fitz.Rect(348, 684, 370, 698),
-])
-
 SUB_PAGE_OTHER = {
     'name': (118, 80),
     'scope': (118, 107),
@@ -153,15 +63,6 @@ SUB_PAGE_OTHER = {
     ],
     'material_subtotal': (572, 714),
 }
-
-GC_MATERIAL_ERASE = [
-    fitz.Rect(475, 598, 578, 612),
-]
-for _y in range(88, 576, 18):
-    GC_MATERIAL_ERASE.extend([
-        fitz.Rect(25, _y - 11, 360, _y + 3),
-        fitz.Rect(475, _y - 11, 578, _y + 3),
-    ])
 
 GC_MATERIAL_PAGE = {
     'rows': [
@@ -184,27 +85,6 @@ def _format_co_number_for_form(number) -> str:
         except ValueError:
             pass
     return raw
-
-
-def _cover_rect(page, rect: fitz.Rect, *, color=(1, 1, 1)) -> None:
-    if rect.is_empty or rect.width <= 0 or rect.height <= 0:
-        return
-    try:
-        page.add_redact_annot(rect, fill=color)
-    except Exception:
-        shape = page.new_shape()
-        shape.draw_rect(rect)
-        shape.finish(color=color, fill=color, width=0)
-        shape.commit()
-
-
-def _cover_rects(page, rects) -> None:
-    for rect in rects:
-        _cover_rect(page, rect)
-    try:
-        page.apply_redactions()
-    except Exception:
-        pass
 
 
 def _fmt_money(value) -> str:
@@ -422,7 +302,6 @@ def _write_multiline(page, rect: fitz.Rect, text, *, fontsize=9, line_height=11)
 
 
 def _fill_summary_page(page, *, co, project, subs, gc_material_lines, company_info=None):
-    _cover_rects(page, PAGE1_ERASE)
     info = company_info or {}
     store = ''
     if project is not None:
@@ -475,8 +354,6 @@ def _fill_summary_page(page, *, co, project, subs, gc_material_lines, company_in
 
 
 def _fill_sub_page(page, sub: dict, *, sub_index: int):
-    erase = SUB_PAGE_ERASE_COMMON if sub_index == 0 else SUB_PAGE_OTHER_ERASE
-    _cover_rects(page, erase)
     layout = SUB_PAGE1 if sub_index == 0 else SUB_PAGE_OTHER
     _write_text(page, *layout['name'], sub.get('company_name') or '')
     scope = ''
@@ -506,7 +383,6 @@ def _fill_sub_page(page, sub: dict, *, sub_index: int):
 
 
 def _fill_gc_material_page(page, lines):
-    _cover_rects(page, GC_MATERIAL_ERASE)
     total = 0.0
     for idx, line in enumerate(lines[: len(GC_MATERIAL_PAGE['rows'])]):
         cfg = GC_MATERIAL_PAGE['rows'][idx]
