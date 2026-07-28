@@ -115,6 +115,10 @@
 }
 .email-calendar-event-chip.owner { background: #1e3a8a; color: #dbeafe; }
 .email-calendar-event-chip.site { background: #713f12; color: #fef3c7; }
+.email-calendar-event-chip.safety { background: #7f1d1d; color: #fee2e2; }
+.email-calendar-event-chip.precon { background: #581c87; color: #f3e8ff; }
+.email-calendar-event-chip.bid { background: #854d0e; color: #fef9c3; }
+.email-calendar-event-chip.oac { background: #312e81; color: #e0e7ff; }
 .email-calendar-agenda {
   width: 320px;
   flex-shrink: 0;

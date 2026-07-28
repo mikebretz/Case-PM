@@ -9,6 +9,7 @@ MEETING_TYPES = [
     {'key': 'owner', 'label': 'Owner Meeting', 'icon': 'fa-building-user', 'color': '#0ea5e9'},
     {'key': 'subcontractor', 'label': 'Subcontractor Coordination', 'icon': 'fa-truck-field', 'color': '#14b8a6'},
     {'key': 'precon', 'label': 'Pre-Construction', 'icon': 'fa-clipboard-list', 'color': '#a855f7'},
+    {'key': 'bid', 'label': 'Bid Meeting / Walkthrough', 'icon': 'fa-gavel', 'color': '#eab308'},
     {'key': 'safety', 'label': 'Safety Meeting', 'icon': 'fa-shield-halved', 'color': '#ef4444'},
     {'key': 'toolbox_talk', 'label': 'Toolbox / Tailgate Talk', 'icon': 'fa-toolbox', 'color': '#f97316'},
     {'key': 'design', 'label': 'Design Coordination / BIM', 'icon': 'fa-compass-drafting', 'color': '#06b6d4'},
@@ -104,6 +105,13 @@ AGENDA_TEMPLATES = {
         {'topic': 'Long-lead items & procurement', 'presenter': 'PM', 'minutes': 15},
         {'topic': 'Permits & AHJ strategy', 'presenter': 'PM', 'minutes': 10},
         {'topic': 'Action items', 'presenter': 'PM', 'minutes': 10},
+    ],
+    'bid': [
+        {'topic': 'Scope walkthrough & site conditions', 'presenter': 'Estimator / PM', 'minutes': 20},
+        {'topic': 'Access, staging & logistics', 'presenter': 'Superintendent', 'minutes': 15},
+        {'topic': 'Schedule assumptions & milestones', 'presenter': 'PM', 'minutes': 15},
+        {'topic': 'RFIs / clarifications needed', 'presenter': 'Estimator', 'minutes': 15},
+        {'topic': 'Action items & follow-up', 'presenter': 'PM', 'minutes': 10},
     ],
     'design': [
         {'topic': 'Design status by discipline', 'presenter': 'Architect', 'minutes': 15},

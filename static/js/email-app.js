@@ -69,10 +69,22 @@
   const INTERNAL_POLL_MS = 60000;
   const EMAIL_IN_TEXT_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
 
-  const CALENDAR_SIDEBAR = [
-    { id: 'month', label: 'Month view', icon: 'fa-calendar' },
-    { id: 'owner', label: 'Owner meetings', icon: 'fa-handshake' },
-    { id: 'site', label: 'Site visits', icon: 'fa-hard-hat' },
+  let CALENDAR_SIDEBAR = [
+    { id: 'month', label: 'Month view', icon: 'fa-calendar', action: 'view' },
+    { id: 'owner_meeting', label: 'Owner meeting', icon: 'fa-building-user', action: 'new', defaultTitle: 'Owner meeting' },
+    { id: 'site_visit', label: 'Site visit', icon: 'fa-hard-hat', action: 'new', defaultTitle: 'Site visit' },
+    { id: 'precon', label: 'Pre-construction walkthrough', icon: 'fa-clipboard-list', action: 'new', defaultTitle: 'Pre-construction walkthrough' },
+    { id: 'bid', label: 'Bid meeting', icon: 'fa-gavel', action: 'new', defaultTitle: 'Bid meeting' },
+    { id: 'safety', label: 'Safety meeting', icon: 'fa-shield-halved', action: 'new', defaultTitle: 'Safety meeting' },
+    { id: 'toolbox_talk', label: 'Toolbox talk', icon: 'fa-toolbox', action: 'new', defaultTitle: 'Toolbox talk' },
+    { id: 'oac', label: 'OAC meeting', icon: 'fa-people-group', action: 'new', defaultTitle: 'OAC meeting' },
+    { id: 'subcontractor', label: 'Subcontractor coordination', icon: 'fa-truck-field', action: 'new', defaultTitle: 'Subcontractor coordination' },
+    { id: 'design', label: 'Design / BIM', icon: 'fa-compass-drafting', action: 'new', defaultTitle: 'Design coordination' },
+    { id: 'schedule', label: 'Schedule review', icon: 'fa-chart-gantt', action: 'new', defaultTitle: 'Schedule review' },
+    { id: 'submittal', label: 'Submittal review', icon: 'fa-file-circle-check', action: 'new', defaultTitle: 'Submittal review' },
+    { id: 'closeout', label: 'Closeout / punch', icon: 'fa-flag-checkered', action: 'new', defaultTitle: 'Closeout meeting' },
+    { id: 'internal', label: 'Internal team', icon: 'fa-users', action: 'new', defaultTitle: 'Internal team meeting' },
+    { id: 'stakeholder', label: 'Client / stakeholder', icon: 'fa-handshake', action: 'new', defaultTitle: 'Stakeholder meeting' },
   ];
 
   const DEFAULT_SETTINGS = {
@@ -2004,10 +2016,12 @@
 
   function renderToolbarHTML() {
     const isMail = state.workspace === 'mail';
+    const isCalendar = state.workspace === 'calendar';
     const hasSel = state.selectedIds.size > 0 || state.selectedId;
     return `
       <div class="flex items-center gap-1 flex-wrap">
         ${isMail || state.workspace === 'internal' ? `<button type="button" class="email-toolbar-btn" onclick="CasePMEmail.compose()"><i class="fa-solid fa-pen"></i> New</button>` : ''}
+        ${isCalendar ? `<button type="button" class="email-toolbar-btn" onclick="CasePMEmailCalendar.openEventModal()"><i class="fa-solid fa-calendar-plus"></i> New meeting</button>` : ''}
         <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.refresh()" title="Refresh"><i class="fa-solid fa-rotate"></i></button>
         ${isMail ? `
         <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.archiveSelected()"><i class="fa-solid fa-box-archive"></i> Archive</button>
@@ -2098,7 +2112,8 @@
           <span><i class="fa-solid ${f.icon} w-4 mr-2 text-zinc-500"></i>${f.label}</span>
         </button>`).join('');
       foldersEl.innerHTML += `<div class="mt-4 px-2 text-xs text-zinc-500 leading-relaxed">
-        Job-site addresses from the <a href="/company-map" class="text-emerald-400 hover:underline">Company Job Map</a> autocomplete when scheduling meetings.
+        Pick a meeting type to schedule, or double-click a day on the calendar. Meetings from Safety, Meeting Minutes, and other pages appear here automatically.<br>
+        US addresses and business names autocomplete from the <a href="/company-map" class="text-emerald-400 hover:underline">Job Map</a> (Florida first).
       </div>`;
       if (accountEl) accountEl.innerHTML = '';
       return;
@@ -2713,28 +2728,23 @@
 
   function setCalendarFilter(id) {
     state.calendarFilter = id;
-    if (id === 'owner' && global.CasePMEmailCalendar) {
-      global.CasePMEmailCalendar.openEventModal({
-        id: uid(),
-        title: 'Owner meeting',
-        eventType: 'owner_meeting',
-        start: new Date().toISOString(),
-        end: new Date(Date.now() + 3600000).toISOString(),
-        projectId: ctx.projectId,
-        projectName: ctx.projectName,
+    const item = CALENDAR_SIDEBAR.find(f => f.id === id);
+    if (item && item.action === 'new' && global.CasePMEmailCalendar) {
+      const start = new Date();
+      start.setMinutes(0, 0, 0);
+      start.setHours(start.getHours() + 1);
+      global.CasePMEmailCalendar.openEventModal(null, start, {
+        eventType: item.id,
+        title: item.defaultTitle || item.label,
       });
-    } else if (id === 'site' && global.CasePMEmailCalendar) {
-      global.CasePMEmailCalendar.openEventModal({
-        id: uid(),
-        title: 'Site visit',
-        eventType: 'site_visit',
-        start: new Date().toISOString(),
-        end: new Date(Date.now() + 3600000).toISOString(),
-        projectId: ctx.projectId,
-        projectName: ctx.projectName,
-      });
-    } else {
-      renderSidebar();
+    }
+    renderSidebar();
+  }
+
+  function setCalendarSidebar(items) {
+    if (Array.isArray(items) && items.length) {
+      CALENDAR_SIDEBAR = items;
+      if (state.workspace === 'calendar') renderSidebar();
     }
   }
 
@@ -3772,7 +3782,7 @@
   }
 
   global.CasePMEmail = {
-    init, setWorkspace, setFolder, setCategory, setCalendarFilter, select, openMessage, openMessagePopout, closeMessagePopout,
+    init, setWorkspace, setFolder, setCategory, setCalendarFilter, setCalendarSidebar, select, openMessage, openMessagePopout, closeMessagePopout,
     setSearch, setSort, setInternalTypeFilter, toggleFilter, toggleStar, setMailboxUser,
     compose, closeCompose, toggleCcBcc, saveDraft, sendMail, undoSend, reply, replyAll, forward,
     removeComposeAttachment,
