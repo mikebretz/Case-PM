@@ -17727,6 +17727,18 @@ def api_upload_co_attachment(co_id):
     return jsonify({'ok': True, 'attachment': record, 'change_order': co_to_dict(co, allocs)})
 
 
+def _require_change_order_template_manage():
+    """Upload, update, and delete CO print templates (privileged or change_orders edit)."""
+    from access_control import user_is_privileged
+    from case_workflow import user_has_module_access
+
+    if user_is_privileged(current_user):
+        return None
+    if user_has_module_access(current_user, 'change_orders', 'edit'):
+        return None
+    return jsonify({'error': 'Permission denied'}), 403
+
+
 @app.route('/api/change-order-templates', methods=['GET'])
 @login_required
 def api_list_change_order_templates():
@@ -17759,8 +17771,9 @@ def api_list_change_order_templates():
 def api_create_change_order_template():
     from change_order_template_persistence import register_change_order_template, template_to_dict, _slugify_template_name, _unique_template_slug, save_template_pdf_file
 
-    if current_user.role not in ('Admin', 'Project Manager', 'Contractor Accounting'):
-        return jsonify({'error': 'Permission denied'}), 403
+    denied = _require_change_order_template_manage()
+    if denied:
+        return denied
     name = (request.form.get('name') or '').strip()
     company_key = (request.form.get('company_key') or '').strip().upper() or None
     description = (request.form.get('description') or '').strip() or None
@@ -17796,8 +17809,9 @@ def api_create_change_order_template_from_document():
     from change_order_template_persistence import register_change_order_template, template_to_dict, _slugify_template_name, _unique_template_slug, save_template_pdf_file
     from financial_security import require_financial_project_access
 
-    if current_user.role not in ('Admin', 'Project Manager', 'Contractor Accounting'):
-        return jsonify({'error': 'Permission denied'}), 403
+    denied = _require_change_order_template_manage()
+    if denied:
+        return denied
     body = request.get_json(silent=True) or {}
     try:
         document_id = int(body.get('document_id'))
@@ -17886,8 +17900,9 @@ def api_preview_change_order_template(template_id):
 def api_update_change_order_template(template_id):
     from change_order_template_persistence import apply_template_fields, set_default_template, template_to_dict
 
-    if current_user.role not in ('Admin', 'Project Manager', 'Contractor Accounting'):
-        return jsonify({'error': 'Permission denied'}), 403
+    denied = _require_change_order_template_manage()
+    if denied:
+        return denied
     row = ChangeOrderTemplate.query.get_or_404(template_id)
     body = request.get_json(silent=True) or {}
     apply_template_fields(row, body)
@@ -17903,8 +17918,9 @@ def api_update_change_order_template(template_id):
 def api_delete_change_order_template(template_id):
     from change_order_template_persistence import delete_change_order_template
 
-    if current_user.role not in ('Admin', 'Project Manager', 'Contractor Accounting'):
-        return jsonify({'error': 'Permission denied'}), 403
+    denied = _require_change_order_template_manage()
+    if denied:
+        return denied
     row = ChangeOrderTemplate.query.get_or_404(template_id)
     name = row.name
     delete_change_order_template(
