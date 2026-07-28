@@ -633,6 +633,11 @@
                     <span>Projects</span>
                 </a>
 
+                <a href="{{ url_for('company_map_page') }}" data-nav-module="projects" class="nav-link nav-staff-only nav-hide-sub-vendor flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'company_map_page' %}active{% endif %}">
+                    <i class="fa-solid fa-map-location-dot w-5"></i>
+                    <span>Job Map</span>
+                </a>
+
                 <a href="{{ url_for('project_directory_page', project_id=active_project.id) if active_project else url_for('project_directory_page') }}" data-nav-module="project_directory" class="nav-link nav-hide-sub flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'project_directory_page' %}active{% endif %}">
                     <i class="fa-solid fa-address-book w-5"></i>
                     <span>Project Directory</span>

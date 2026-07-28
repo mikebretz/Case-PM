@@ -168,6 +168,7 @@ login_manager.login_message_category = "warning"
 PROJECT_AGNOSTIC_ENDPOINTS = frozenset({
     'dashboard',
     'projects_page',
+    'company_map_page',
     'project_detail',
     'create_project',
     'email_page',
@@ -301,6 +302,7 @@ MODULE_ROUTE_GUARD = {
     'meeting_minutes_page': 'meeting_minutes',
     'email_page': 'email',
     'projects_page': 'projects',
+    'company_map_page': 'projects',
     'project_detail': 'projects',
     'project_directory_page': 'project_directory',
     'operations_center_page': 'operations_center',
@@ -693,6 +695,14 @@ class UserEmailSecurity(db.Model):
     false_positives_json = db.Column(db.Text)
     reports_json = db.Column(db.Text)
     preferences_json = db.Column(db.Text)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class UserEmailCalendar(db.Model):
+    __tablename__ = 'user_email_calendar'
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
+    events_json = db.Column(db.Text)
+    meta_json = db.Column(db.Text)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
@@ -15867,6 +15877,144 @@ def api_email_security_simulate():
     junk_level = str(body.get('junk_level') or 'standard')
     result = run_simulation(count=count, junk_level=junk_level)
     return jsonify({'ok': True, **result})
+
+
+@app.route('/api/email/calendar', methods=['GET', 'PUT'])
+@login_required
+def api_email_calendar():
+    from email_calendar_persistence import load_user_calendar, save_user_calendar, ensure_email_calendar_schema
+    try:
+        uid = _email_mailbox_user_id()
+    except Exception:
+        return jsonify({'error': 'Mailbox access denied'}), 403
+    if uid is None:
+        return jsonify({'error': 'Mailbox access denied'}), 403
+    ensure_email_calendar_schema(db)
+    if request.method == 'GET':
+        payload = load_user_calendar(uid, UserEmailCalendar=UserEmailCalendar)
+        return jsonify({'ok': True, 'user_id': uid, **payload})
+    body = request.get_json(silent=True) or {}
+    events = body.get('events')
+    if events is None:
+        return jsonify({'error': 'events required'}), 400
+    meta = body.get('meta')
+    previous = load_user_calendar(uid, UserEmailCalendar=UserEmailCalendar)
+    saved = save_user_calendar(
+        uid, events, meta if meta is not None else previous.get('meta'),
+        db=db, UserEmailCalendar=UserEmailCalendar,
+    )
+    return jsonify({'ok': True, 'user_id': uid, **saved})
+
+
+@app.route('/api/email/calendar/events', methods=['POST'])
+@login_required
+def api_email_calendar_create_event():
+    from email_calendar_persistence import load_user_calendar, save_user_calendar, normalize_event, ensure_email_calendar_schema
+    from email_notifications import send_workflow_email
+    body = request.get_json(silent=True) or {}
+    try:
+        uid = _email_mailbox_user_id()
+    except Exception:
+        return jsonify({'error': 'Mailbox access denied'}), 403
+    if uid is None:
+        return jsonify({'error': 'Mailbox access denied'}), 403
+    ensure_email_calendar_schema(db)
+    event = normalize_event(
+        body.get('event') or body,
+        organizer_email=getattr(current_user, 'email', '') or '',
+        organizer_name=getattr(current_user, 'full_name', '') or '',
+    )
+    payload = load_user_calendar(uid, UserEmailCalendar=UserEmailCalendar)
+    events = list(payload.get('events') or [])
+    events.append(event)
+    save_user_calendar(uid, events, payload.get('meta'), db=db, UserEmailCalendar=UserEmailCalendar)
+
+    invite_sent = []
+    if body.get('send_invites'):
+        when = f"{event.get('start', '')} — {event.get('end', '')}"
+        loc = event.get('location') or 'TBD'
+        subject = f"Meeting invite: {event.get('title')}"
+        html = (
+            f"<p><strong>{event.get('organizerName') or event.get('organizer')}</strong> invited you to a meeting.</p>"
+            f"<p><strong>When:</strong> {when}<br><strong>Where:</strong> {loc}</p>"
+            f"<div>{event.get('body') or ''}</div>"
+        )
+        for addr in event.get('attendees') or []:
+            if send_workflow_email(addr, subject, html):
+                invite_sent.append(addr)
+        if invite_sent:
+            event['inviteSent'] = True
+            events = [event if e.get('id') == event['id'] else e for e in events]
+            save_user_calendar(uid, events, payload.get('meta'), db=db, UserEmailCalendar=UserEmailCalendar)
+
+    return jsonify({'ok': True, 'event': event, 'invite_sent': invite_sent})
+
+
+@app.route('/api/email/calendar/events/<event_id>', methods=['PUT', 'DELETE'])
+@login_required
+def api_email_calendar_event(event_id):
+    from email_calendar_persistence import load_user_calendar, save_user_calendar, normalize_event, ensure_email_calendar_schema
+    try:
+        uid = _email_mailbox_user_id()
+    except Exception:
+        return jsonify({'error': 'Mailbox access denied'}), 403
+    if uid is None:
+        return jsonify({'error': 'Mailbox access denied'}), 403
+    ensure_email_calendar_schema(db)
+    payload = load_user_calendar(uid, UserEmailCalendar=UserEmailCalendar)
+    events = list(payload.get('events') or [])
+    if request.method == 'DELETE':
+        events = [e for e in events if str(e.get('id')) != str(event_id)]
+        saved = save_user_calendar(uid, events, payload.get('meta'), db=db, UserEmailCalendar=UserEmailCalendar)
+        return jsonify({'ok': True, **saved})
+    body = request.get_json(silent=True) or {}
+    updated = None
+    for idx, ev in enumerate(events):
+        if str(ev.get('id')) == str(event_id):
+            merged = {**ev, **(body.get('event') or body)}
+            updated = normalize_event(
+                merged,
+                organizer_email=ev.get('organizer') or getattr(current_user, 'email', ''),
+                organizer_name=ev.get('organizerName') or getattr(current_user, 'full_name', ''),
+            )
+            events[idx] = updated
+            break
+    if not updated:
+        return jsonify({'error': 'Event not found'}), 404
+    saved = save_user_calendar(uid, events, payload.get('meta'), db=db, UserEmailCalendar=UserEmailCalendar)
+    return jsonify({'ok': True, 'event': updated, **saved})
+
+
+@app.route('/company-map')
+@login_required
+def company_map_page():
+    projects = Project.query.order_by(Project.name).all()
+    return render_template('company_map.html', projects=projects)
+
+
+@app.route('/api/company-map/locations')
+@login_required
+def api_company_map_locations():
+    from geocode_service import list_company_job_locations
+    status = (request.args.get('status') or 'Active').strip()
+    query = Project.query
+    if status and status.lower() != 'all':
+        query = query.filter(Project.status == status)
+    projects = query.order_by(Project.name).all()
+    geocode = request.args.get('geocode', '1') != '0'
+    locations = list_company_job_locations(projects, geocode_missing=geocode)
+    return jsonify({'ok': True, 'count': len(locations), 'locations': locations})
+
+
+@app.route('/api/geocode/search')
+@login_required
+def api_geocode_search():
+    from geocode_service import search_address_suggestions
+    q = (request.args.get('q') or request.args.get('query') or '').strip()
+    limit = int(request.args.get('limit') or 12)
+    projects = Project.query.order_by(Project.name).all()
+    suggestions = search_address_suggestions(q, projects, limit=max(1, min(limit, 20)))
+    return jsonify({'ok': True, 'query': q, 'suggestions': suggestions})
 
 
 # ==================== NOTIFICATIONS ====================

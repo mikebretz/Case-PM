@@ -69,6 +69,12 @@
   const INTERNAL_POLL_MS = 60000;
   const EMAIL_IN_TEXT_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
 
+  const CALENDAR_SIDEBAR = [
+    { id: 'month', label: 'Month view', icon: 'fa-calendar' },
+    { id: 'owner', label: 'Owner meetings', icon: 'fa-handshake' },
+    { id: 'site', label: 'Site visits', icon: 'fa-hard-hat' },
+  ];
+
   const DEFAULT_SETTINGS = {
     provider: 'none',
     googleConnected: false,
@@ -144,6 +150,7 @@
     popoutZ: 100,
     composeAttachments: [],
     viewUserId: null,
+    calendarFilter: 'month',
   };
 
   let mailMessages = [];
@@ -1926,10 +1933,43 @@
     renderHeader();
     renderSidebar();
     updateListControls();
-    renderMessageList();
-    renderReadingPane();
+    if (state.workspace === 'calendar') {
+      renderCalendarWorkspace();
+    } else {
+      renderMessageList();
+      renderReadingPane();
+    }
     applyLayoutClasses();
     bindMessageDragDrop();
+  }
+
+  let calendarInitialized = false;
+
+  function renderCalendarWorkspace() {
+    const listPane = document.querySelector('.email-list-pane');
+    const readingPane = document.getElementById('emailReadingPane');
+    const calRoot = document.getElementById('emailCalendarRoot');
+    if (listPane) listPane.classList.add('hidden');
+    if (readingPane) readingPane.classList.add('hidden');
+    if (calRoot) {
+      calRoot.classList.remove('hidden');
+      if (global.CasePMEmailCalendar) {
+        if (!calendarInitialized) {
+          calendarInitialized = true;
+          global.CasePMEmailCalendar.init({
+            container: calRoot,
+            userEmail: ctx.userEmail,
+            userName: ctx.userName,
+            projectId: ctx.projectId,
+            projectName: ctx.projectName,
+          });
+        } else {
+          global.CasePMEmailCalendar.render();
+        }
+      } else {
+        calRoot.innerHTML = '<div class="p-8 text-zinc-500">Calendar module failed to load.</div>';
+      }
+    }
   }
 
   function updateListControls() {
@@ -2028,6 +2068,9 @@
         <button type="button" class="px-5 py-2.5 text-sm font-medium border-b-2 ${state.workspace === 'internal' ? 'border-emerald-500 text-white' : 'border-transparent text-zinc-400'}" onclick="CasePMEmail.setWorkspace('internal')">
           <i class="fa-solid fa-comments mr-2"></i>${internalOnly ? 'Internal Communications' : 'Internal'} ${internalUnread ? `<span class="ml-1 text-xs bg-amber-600 text-white px-1.5 py-0.5 rounded-full">${internalUnread}</span>` : ''}
         </button>
+        ${internalOnly ? '' : `<button type="button" class="px-5 py-2.5 text-sm font-medium border-b-2 ${state.workspace === 'calendar' ? 'border-emerald-500 text-white' : 'border-transparent text-zinc-400'}" onclick="CasePMEmail.setWorkspace('calendar')">
+          <i class="fa-solid fa-calendar-days mr-2"></i>Calendar
+        </button>`}
         ${showMailboxPicker ? `
         <div class="ml-auto flex items-center gap-2 py-1">
           <label class="text-[10px] uppercase tracking-wide text-zinc-500">Mailbox</label>
@@ -2048,6 +2091,18 @@
     const foldersEl = document.getElementById('emailFolderList');
     const accountEl = document.getElementById('emailAccountBlock');
     if (!foldersEl) return;
+
+    if (state.workspace === 'calendar') {
+      foldersEl.innerHTML = CALENDAR_SIDEBAR.map(f => `
+        <button type="button" class="email-folder-btn ${state.calendarFilter === f.id ? 'active' : ''}" onclick="CasePMEmail.setCalendarFilter('${f.id}')">
+          <span><i class="fa-solid ${f.icon} w-4 mr-2 text-zinc-500"></i>${f.label}</span>
+        </button>`).join('');
+      foldersEl.innerHTML += `<div class="mt-4 px-2 text-xs text-zinc-500 leading-relaxed">
+        Job-site addresses from the <a href="/company-map" class="text-emerald-400 hover:underline">Company Job Map</a> autocomplete when scheduling meetings.
+      </div>`;
+      if (accountEl) accountEl.innerHTML = '';
+      return;
+    }
 
     if (state.workspace === 'mail') {
       const folders = MAIL_FOLDERS.filter(f => {
@@ -2619,8 +2674,21 @@
   function applyLayoutClasses() {
     const root = document.querySelector('.email-main');
     if (!root) return;
-    root.classList.remove('email-preview-bottom', 'email-preview-off');
+    root.classList.remove('email-preview-bottom', 'email-preview-off', 'email-workspace-calendar');
     document.body.classList.remove('email-density-compact');
+    const listPane = document.querySelector('.email-list-pane');
+    const readingPane = document.getElementById('emailReadingPane');
+    const calRoot = document.getElementById('emailCalendarRoot');
+    if (state.workspace === 'calendar') {
+      root.classList.add('email-workspace-calendar');
+      if (listPane) listPane.classList.add('hidden');
+      if (readingPane) readingPane.classList.add('hidden');
+      if (calRoot) calRoot.classList.remove('hidden');
+    } else {
+      if (listPane) listPane.classList.remove('hidden');
+      if (readingPane) readingPane.classList.remove('hidden');
+      if (calRoot) calRoot.classList.add('hidden');
+    }
     if (settings.previewPane === 'bottom') root.classList.add('email-preview-bottom');
     if (settings.previewPane === 'off') root.classList.add('email-preview-off');
     if (settings.density === 'compact') document.body.classList.add('email-density-compact');
@@ -2631,8 +2699,9 @@
     if (ws === 'mail' && emailInternalOnly()) {
       ws = 'internal';
     }
+    if (ws !== 'calendar') calendarInitialized = false;
     state.workspace = ws;
-    state.folder = ws === 'internal' ? 'internal-inbox' : 'inbox';
+    state.folder = ws === 'internal' ? 'internal-inbox' : (ws === 'calendar' ? 'calendar' : 'inbox');
     state.category = null;
     state.internalTypeFilter = '';
     state.selectedId = null;
@@ -2640,6 +2709,33 @@
     state.inlineCompose = null;
     resetSearchInput();
     render();
+  }
+
+  function setCalendarFilter(id) {
+    state.calendarFilter = id;
+    if (id === 'owner' && global.CasePMEmailCalendar) {
+      global.CasePMEmailCalendar.openEventModal({
+        id: uid(),
+        title: 'Owner meeting',
+        eventType: 'owner_meeting',
+        start: new Date().toISOString(),
+        end: new Date(Date.now() + 3600000).toISOString(),
+        projectId: ctx.projectId,
+        projectName: ctx.projectName,
+      });
+    } else if (id === 'site' && global.CasePMEmailCalendar) {
+      global.CasePMEmailCalendar.openEventModal({
+        id: uid(),
+        title: 'Site visit',
+        eventType: 'site_visit',
+        start: new Date().toISOString(),
+        end: new Date(Date.now() + 3600000).toISOString(),
+        projectId: ctx.projectId,
+        projectName: ctx.projectName,
+      });
+    } else {
+      renderSidebar();
+    }
   }
 
   function setFolder(id) {
@@ -3656,11 +3752,27 @@
 
     const params = new URLSearchParams(window.location.search);
     if (params.get('tab') === 'internal') setWorkspace('internal');
+    if (params.get('tab') === 'calendar' && !emailInternalOnly()) {
+      setWorkspace('calendar');
+      const projectId = params.get('project_id');
+      if (projectId && global.CasePMEmailCalendar) {
+        setTimeout(() => {
+          global.CasePMEmailCalendar.init({
+            container: document.getElementById('emailCalendarRoot'),
+            userEmail: ctx.userEmail,
+            userName: ctx.userName,
+            projectId: parseInt(projectId, 10),
+            projectName: ctx.projectName,
+            openNew: params.get('new') === '1',
+          });
+        }, 150);
+      }
+    }
     if (params.get('settings') === '1') showSettings();
   }
 
   global.CasePMEmail = {
-    init, setWorkspace, setFolder, setCategory, select, openMessage, openMessagePopout, closeMessagePopout,
+    init, setWorkspace, setFolder, setCategory, setCalendarFilter, select, openMessage, openMessagePopout, closeMessagePopout,
     setSearch, setSort, setInternalTypeFilter, toggleFilter, toggleStar, setMailboxUser,
     compose, closeCompose, toggleCcBcc, saveDraft, sendMail, undoSend, reply, replyAll, forward,
     removeComposeAttachment,
@@ -3677,6 +3789,7 @@
     getSignatures: () => signatures,
     saveSignatures: (sigs) => { signatures = sigs; persistSignatures(); },
     STORAGE, MAIL_FOLDERS, INTERNAL_FOLDERS, INTERNAL_TYPE_FILTERS, DEFAULT_SETTINGS,
+    toast,
   };
 
   global.CasePMEmailSettings = settings;
