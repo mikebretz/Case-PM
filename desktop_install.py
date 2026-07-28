@@ -8,7 +8,7 @@ import json
 import os
 from urllib.parse import urlparse
 
-DESKTOP_APP_VERSION = '1.0'
+DESKTOP_APP_VERSION = '1.1'
 INSTALL_FOLDER = 'Case PM Desktop'
 ICON_FILE = 'Case PM.ico'
 SHORTCUT_NAME = 'Case PM'
@@ -191,19 +191,79 @@ call RUN-DESKTOP.bat
   Write-Log "Local launcher points to $($Config.casepm_home)"
 }}
 
+function Get-DesktopFolders {{
+  $folders = New-Object System.Collections.Generic.List[string]
+  $shell = New-Object -ComObject WScript.Shell
+  try {{
+    $special = $shell.SpecialFolders.Item('Desktop')
+    if ($special) {{ [void]$folders.Add($special) }}
+  }} catch {{}}
+  $envDesktop = [Environment]::GetFolderPath('Desktop')
+  if ($envDesktop) {{ [void]$folders.Add($envDesktop) }}
+  $userDesktop = Join-Path $env:USERPROFILE 'Desktop'
+  if (Test-Path $userDesktop) {{ [void]$folders.Add($userDesktop) }}
+  foreach ($name in @('OneDrive', 'OneDriveCommercial')) {{
+    $root = [Environment]::GetEnvironmentVariable($name)
+    if ($root) {{
+      $candidate = Join-Path $root 'Desktop'
+      if (Test-Path $candidate) {{ [void]$folders.Add($candidate) }}
+    }}
+  }}
+  return $folders | Select-Object -Unique
+}}
+
 function New-DesktopShortcut {{
   param([string]$TargetPath, [string]$Arguments, [string]$IconPath)
-  $desktop = [Environment]::GetFolderPath('Desktop')
-  $shortcutPath = Join-Path $desktop "$($Config.shortcut_name).lnk"
-  $shell = New-Object -ComObject WScript.Shell
-  $shortcut = $shell.CreateShortcut($shortcutPath)
-  $shortcut.TargetPath = $TargetPath
-  if ($Arguments) {{ $shortcut.Arguments = $Arguments }}
-  $shortcut.WorkingDirectory = $AppDir
-  $shortcut.IconLocation = "$IconPath,0"
-  $shortcut.Description = 'Case PM - Construction OS'
-  $shortcut.Save()
-  Write-Log "Desktop shortcut created: $shortcutPath"
+  $created = @()
+  foreach ($desktop in Get-DesktopFolders) {{
+  try {{
+    $shortcutPath = Join-Path $desktop "$($Config.shortcut_name).lnk"
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($shortcutPath)
+    $shortcut.TargetPath = $TargetPath
+    if ($Arguments) {{ $shortcut.Arguments = $Arguments }}
+    $shortcut.WorkingDirectory = $AppDir
+    $shortcut.IconLocation = "$IconPath,0"
+    $shortcut.Description = 'Case PM - Construction OS'
+    $shortcut.Save()
+    if (Test-Path $shortcutPath) {{
+      $created += $shortcutPath
+      Write-Log "Desktop shortcut created: $shortcutPath"
+    }}
+  }} catch {{
+    Write-Log "Could not create shortcut on $desktop : $($_.Exception.Message)"
+  }}
+  }}
+  if ($created.Count -eq 0) {{
+    throw 'Could not create a desktop shortcut. Use Create Desktop Shortcut.vbs in Documents\\Case PM Desktop.'
+  }}
+}}
+
+function Write-RepairShortcutScript {{
+  param([string]$TargetPath, [string]$Arguments, [string]$IconPath)
+  $repairVbs = Join-Path $AppDir 'Create Desktop Shortcut.vbs'
+  $argLine = $Arguments
+  if (-not $argLine) {{ $argLine = '' }}
+  @"
+Option Explicit
+Dim sh, fso, appDir, desktop, oLink, target, args, iconPath
+Set sh = CreateObject("WScript.Shell")
+Set fso = CreateObject("Scripting.FileSystemObject")
+appDir = "$($AppDir -replace '\\', '\\\\')"
+target = "$($TargetPath -replace '\\', '\\\\')"
+args = "$($argLine -replace '"', '""')"
+iconPath = "$($IconPath -replace '\\', '\\\\')"
+desktop = sh.SpecialFolders("Desktop")
+Set oLink = sh.CreateShortcut(desktop & "\\$($Config.shortcut_name).lnk")
+oLink.TargetPath = target
+If Len(args) > 0 Then oLink.Arguments = args
+oLink.WorkingDirectory = appDir
+oLink.IconLocation = iconPath & ",0"
+oLink.Description = "Case PM - Construction OS"
+oLink.Save
+MsgBox "Case PM desktop icon created." & vbCrLf & vbCrLf & desktop & "\\$($Config.shortcut_name).lnk", vbInformation, "Case PM Desktop"
+"@ | Set-Content -Path $repairVbs -Encoding ASCII
+  Write-Log "Wrote repair shortcut script: $repairVbs"
 }}
 
 function Start-CasePM {{
@@ -224,29 +284,36 @@ try {{
     $python = Find-PythonExe
     if (-not $python) {{ $python = Install-Python }}
     Ensure-LocalLauncher -PythonExe $python
+    Write-RepairShortcutScript -TargetPath $launcherBat -Arguments '' -IconPath $iconPath
     New-DesktopShortcut -TargetPath $launcherBat -Arguments '' -IconPath $iconPath
     Write-Log 'Launching Case PM Desktop...'
     Start-CasePM -TargetPath $launcherBat -Arguments ''
   }} else {{
     $python = Find-PythonExe
     if (-not $python) {{ $python = Install-Python }}
-    Ensure-RemoteClient -PythonExe $python
     $clientPath = Join-Path $AppDir 'casepm_desktop_client.py'
     $pythonw = Join-Path $AppDir 'venv\\Scripts\\pythonw.exe'
     $launchVbs = Join-Path $AppDir 'Launch Case PM.vbs'
+    try {{
+      Ensure-RemoteClient -PythonExe $python
+    }} catch {{
+      Write-Log "Package setup warning: $($_.Exception.Message)"
+    }}
     @"
 Set sh = CreateObject("WScript.Shell")
 sh.Run """" & "$pythonw" & """ """ & "$clientPath" & """", 0, False
 "@ | Set-Content -Path $launchVbs -Encoding ASCII
     $wscript = Join-Path $env:WINDIR 'System32\\wscript.exe'
+    Write-RepairShortcutScript -TargetPath $wscript -Arguments ('"' + $launchVbs + '"') -IconPath $iconPath
     New-DesktopShortcut -TargetPath $wscript -Arguments ('"' + $launchVbs + '"') -IconPath $iconPath
     Write-Log 'Launching Case PM Desktop...'
     Start-CasePM -TargetPath $wscript -Arguments ('"' + $launchVbs + '"')
   }}
 
   Write-Log 'Case PM Desktop setup finished successfully.'
+  $desktopList = (Get-DesktopFolders) -join "`n"
   [System.Windows.Forms.MessageBox]::Show(
-    "Case PM Desktop is installed.`n`nA shortcut with the hard-hat icon was added to your desktop.`n`nCase PM should open in its own window shortly.",
+    "Case PM Desktop is installed.`n`nLook for the hard-hat Case PM icon on your desktop.`n`nIf you do not see it, open:`nDocuments\\Case PM Desktop\\Create Desktop Shortcut.vbs`n`nDesktop folders checked:`n$desktopList",
   'Case PM Desktop',
   [System.Windows.Forms.MessageBoxButtons]::OK,
   [System.Windows.Forms.MessageBoxIcon]::Information
