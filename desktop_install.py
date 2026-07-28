@@ -7,7 +7,7 @@ import json
 import os
 from urllib.parse import urlparse
 
-DESKTOP_APP_VERSION = '1.2'
+DESKTOP_APP_VERSION = '1.3'
 INSTALL_FOLDER = 'Case PM Desktop'
 ICON_FILE = 'Case PM.ico'
 SHORTCUT_NAME = 'Case PM'
@@ -29,8 +29,9 @@ Read-Host 'Press Enter to close'
 """
 
 _DOWNLOAD_FILE_VBS = '''
-Sub DownloadFile(url, path)
+Function DownloadFile(url, path)
   On Error Resume Next
+  DownloadFile = False
   Dim xhr, stream
   Set xhr = CreateObject("MSXML2.XMLHTTP")
   xhr.Open "GET", url, False
@@ -43,10 +44,8 @@ Sub DownloadFile(url, path)
     stream.SaveToFile path, 2
     stream.Close
     DownloadFile = True
-  Else
-    DownloadFile = False
   End If
-End Sub
+End Function
 '''.strip()
 
 
@@ -91,10 +90,17 @@ def build_desktop_setup_powershell(
     config_json = json.dumps(config)
     repair_ps1_ps = _REPAIR_PS1_BODY.replace('"', '`"').replace('\n', '`n')
     return f'''# Case PM Desktop App setup v{DESKTOP_APP_VERSION}
+$host.UI.RawUI.WindowTitle = 'Case PM Desktop Setup'
+Write-Host 'Case PM Desktop Setup starting...'
+Write-Host 'Do not close this window.'
+Write-Host ''
 $ErrorActionPreference = 'Stop'
 $Config = @{config_json} | ConvertFrom-Json
 $AppDir = Join-Path $env:USERPROFILE "Documents\\$($Config.install_folder)"
 $LogFile = Join-Path $AppDir 'setup.log'
+if (-not (Test-Path $AppDir)) {{
+  New-Item -ItemType Directory -Path $AppDir -Force | Out-Null
+}}
 
 function Write-Log {{
   param([string]$Message)
@@ -347,6 +353,63 @@ exit $exitCode
 
 
 def build_desktop_app_installer(*, server_url: str, casepm_home: str = '') -> io.BytesIO:
+    """Build a Windows .BAT installer (more reliable than VBS — window stays open)."""
+    server_url = _normalize_server_url(server_url)
+    setup_url = f'{server_url}/download/casepm-desktop-setup.ps1'
+    app_dir = f'%USERPROFILE%\\Documents\\{INSTALL_FOLDER}'
+
+    bat = f'''@echo off
+title Case PM Desktop Setup
+setlocal EnableExtensions
+set "APPDIR={app_dir}"
+set "SERVER={server_url}"
+set "SETUPURL={setup_url}"
+set "LOG=%APPDIR%\\setup.log"
+
+if not exist "%APPDIR%" mkdir "%APPDIR%"
+echo [%DATE% %TIME%] Case PM desktop setup started >> "%LOG%"
+
+echo ================================================
+echo   Case PM Desktop Setup
+echo   KEEP THIS WINDOW OPEN
+echo ================================================
+echo.
+echo Server: %SERVER%
+echo Install folder: %APPDIR%
+echo.
+
+echo [Step 1/2] Downloading setup script...
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "try {{ [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing -Uri '%SETUPURL%' -OutFile '%APPDIR%\\setup.ps1'; if (-not (Test-Path '%APPDIR%\\setup.ps1')) {{ throw 'setup.ps1 was not created' }}; if ((Get-Item '%APPDIR%\\setup.ps1').Length -lt 200) {{ throw 'setup.ps1 download looks incomplete' }}; exit 0 }} catch {{ Write-Host ('ERROR: ' + $_.Exception.Message); exit 1 }}"
+if errorlevel 1 (
+  echo.
+  echo ERROR: Could not download the setup script.
+  echo Make sure Case PM is running at %SERVER%
+  echo Then run this file again.
+  echo.
+  pause
+  exit /b 1
+)
+echo Download OK.
+echo.
+
+echo [Step 2/2] Running setup - this may take a few minutes...
+echo A second window may open. Wait for SUCCESS, then press Enter.
+echo.
+powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File "%APPDIR%\\setup.ps1"
+echo.
+echo Setup finished or was interrupted.
+pause
+endlocal
+'''
+
+    buf = io.BytesIO(bat.encode('utf-8'))
+    buf.seek(0)
+    return buf
+
+
+def build_desktop_app_installer_vbs(*, server_url: str, casepm_home: str = '') -> io.BytesIO:
+    """Legacy VBS installer — prefer the .BAT installer."""
     server_url = _normalize_server_url(server_url)
     setup_url = f'{server_url}/download/casepm-desktop-setup.ps1'
 
@@ -382,7 +445,7 @@ Sub RunSetup()
     Exit Sub
   End If
 
-  cmd = "cmd.exe /c powershell.exe -NoProfile -ExecutionPolicy Bypass -Sta -File """ & psPath & """"
+  cmd = "cmd.exe /k powershell.exe -NoProfile -ExecutionPolicy Bypass -File """ & psPath & """"
   sh.Run cmd, 1, True
 End Sub
 
@@ -404,7 +467,7 @@ def desktop_setup_powershell_bytes(*, server_url: str, casepm_home: str = '') ->
         casepm_home=casepm_home,
         local_mode=local_mode,
     )
-    return text.encode('utf-8')
+    return text.replace('\n', '\r\n').encode('utf-8-sig')
 
 
 def desktop_login_url(server_url: str) -> str:

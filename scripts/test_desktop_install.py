@@ -15,10 +15,10 @@ class DesktopInstallTests(unittest.TestCase):
 
         buf = build_desktop_app_installer(server_url='http://127.0.0.1:5000', casepm_home='/opt/casepm')
         text = buf.read().decode('utf-8')
-        self.assertIn('DownloadFile', text)
+        self.assertIn('@echo off', text)
         self.assertIn('/download/casepm-desktop-setup.ps1', text)
-        self.assertIn('hard-hat', text)
-        self.assertNotIn('ps1B64', text)
+        self.assertIn('pause', text)
+        self.assertIn('KEEP THIS WINDOW OPEN', text)
 
     def test_powershell_config_local_mode(self):
         from desktop_install import build_desktop_setup_powershell

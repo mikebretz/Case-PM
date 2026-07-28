@@ -229,7 +229,7 @@
                 <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-0.5"></i><span>Add a desktop icon with the hard-hat logo</span></li>
                 <li class="flex items-start gap-2"><i class="fa-solid fa-check text-emerald-500 mt-0.5"></i><span>Open Case PM in its own window</span></li>
             </ul>
-            <p class="text-xs text-zinc-500 mb-4">Downloads <span class="text-zinc-400">Case PM Desktop App Setup.vbs</span> — open it and click OK. Windows only.</p>
+            <p class="text-xs text-zinc-500 mb-4">Downloads <span class="text-zinc-400">Install Case PM Desktop.bat</span> — double-click it and keep the black window open until it says SUCCESS. Windows only.</p>
             <div class="flex gap-2 justify-center">
                 <button type="button" id="desktopAppModalNo"
                         class="px-4 py-2 rounded-md text-sm text-zinc-400 hover:text-zinc-200">Cancel</button>
@@ -275,7 +275,7 @@
                     closeDesktopModal();
                     var a = document.createElement('a');
                     a.href = desktopDownloadUrl;
-                    a.download = 'Case PM Desktop App Setup.vbs';
+                    a.download = 'Install Case PM Desktop.bat';
                     document.body.appendChild(a);
                     a.click();
                     a.remove();

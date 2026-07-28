@@ -2567,7 +2567,7 @@ def download_casepm_desktop_app():
         buf,
         mimetype='application/octet-stream',
         as_attachment=True,
-        download_name='Case PM Desktop App Setup.vbs',
+        download_name='Install Case PM Desktop.bat',
     )
 
 
