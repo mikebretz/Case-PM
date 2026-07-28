@@ -18647,15 +18647,17 @@ if __name__ == '__main__':
     remote = os.environ.get('CASEPM_REMOTE', '').lower() in ('1', 'true', 'yes')
     debug = os.environ.get('CASEPM_DEBUG', '0' if remote else '1').lower() not in ('0', 'false', 'no')
 
-    from case_server import print_startup_banner
+    from case_server import print_startup_banner, resolve_ssl_context
     print_startup_banner(host, port, remote)
 
+    ssl_context = resolve_ssl_context()
     app.run(
         debug=debug,
         host=host,
         port=port,
         threaded=True,
         use_reloader=debug,
+        ssl_context=ssl_context,
     )
 
 

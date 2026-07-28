@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import socket
 
 
@@ -33,17 +34,33 @@ def get_lan_ip_addresses() -> list[str]:
     return ips
 
 
-def access_urls(host: str, port: int) -> dict[str, list[str]]:
+def access_urls(host: str, port: int, *, scheme: str = 'http') -> dict[str, list[str]]:
     """Build human-readable URLs others can use to reach Case PM."""
-    local = [f'http://127.0.0.1:{port}', f'http://localhost:{port}']
+    local = [f'{scheme}://127.0.0.1:{port}', f'{scheme}://localhost:{port}']
     lan: list[str] = []
 
     if host in ('0.0.0.0', '::'):
-        lan = [f'http://{ip}:{port}' for ip in get_lan_ip_addresses()]
+        lan = [f'{scheme}://{ip}:{port}' for ip in get_lan_ip_addresses()]
     elif host not in ('127.0.0.1', 'localhost'):
-        lan = [f'http://{host}:{port}']
+        lan = [f'{scheme}://{host}:{port}']
 
     return {'local': local, 'lan': lan}
+
+
+def resolve_url_scheme() -> str:
+    if os.environ.get('CASEPM_SSL_CERT') and os.environ.get('CASEPM_SSL_KEY'):
+        return 'https'
+    if os.environ.get('CASEPM_HTTPS', '').lower() in ('1', 'true', 'yes'):
+        return 'https'
+    return 'http'
+
+
+def resolve_ssl_context() -> tuple[str, str] | None:
+    cert = (os.environ.get('CASEPM_SSL_CERT') or '').strip()
+    key = (os.environ.get('CASEPM_SSL_KEY') or '').strip()
+    if cert and key and os.path.isfile(cert) and os.path.isfile(key):
+        return cert, key
+    return None
 
 
 def _startup_build() -> str:
@@ -55,13 +72,15 @@ def _startup_build() -> str:
 
 
 def print_startup_banner(host: str, port: int, remote: bool) -> None:
-    urls = access_urls(host, port)
+    scheme = resolve_url_scheme()
+    urls = access_urls(host, port, scheme=scheme)
     build = _startup_build()
+    secure = scheme == 'https'
     print('\n' + '=' * 75)
     print('CASE PM SERVER')
     print('=' * 75)
     print(f'  Build: {build}  (footer on every page must match after updates)')
-    print(f'  Listening on: {host}:{port}')
+    print(f'  Listening on: {host}:{port}' + ('  [HTTPS]' if secure else '  [HTTP — browser may show Not Secure]'))
     print()
     print('  On this computer:')
     for url in urls['local']:
@@ -82,6 +101,8 @@ def print_startup_banner(host: str, port: int, remote: bool) -> None:
         print('    3. Share the https://....trycloudflare.com link (not 192.168.x.x)')
         print('    4. If tunnel fails, try START-INTERNET-TUNNEL-HTTP2.bat')
         print(f'    Or forward TCP port {port} on your router to this PC.')
+        if not secure:
+            print('    For office HTTPS: run SETUP-INTERNAL-HTTPS.bat on this server PC.')
     print()
     print('  Default login: admin@casepm.local / admin123')
     if remote:

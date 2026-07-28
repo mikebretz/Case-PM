@@ -108,6 +108,7 @@ echo   2. Double-click SHOW-CONNECTION-INFO.bat for the LAN address to share
 echo   3. Log in and CHANGE the default admin password
 echo   4. Enable 2FA for Admin accounts in User Management
 echo   5. Program Settings - Security: require_2fa_for_admins = true
+echo   6. Office HTTPS: SETUP-INTERNAL-HTTPS.bat ^(removes "Not Secure" warning^)
 echo.
 echo Updates: PULL-AND-RESTART-SERVER.bat on this PC after GitHub pulls.
 echo.

@@ -2,12 +2,20 @@
 title Case PM - Connection Info
 cd /d "%~dp0"
 
+call "%~dp0_load_server_env.bat"
+set "SCHEME=http"
+if defined CASEPM_SSL_CERT set "SCHEME=https"
+if defined CASEPM_HTTPS if /I "%CASEPM_HTTPS%"=="1" set "SCHEME=https"
+if defined CASEPM_PORT set "PORT=%CASEPM_PORT%"
+if not defined PORT set "PORT=5000"
+
 echo ================================================
 echo   Case PM - What Address Should Others Use?
 echo ================================================
 echo.
 
 set "PORT=5000"
+if defined CASEPM_PORT set "PORT=%CASEPM_PORT%"
 set "SERVER_RUNNING=0"
 
 powershell -NoProfile -Command ^
@@ -40,8 +48,8 @@ if errorlevel 1 (
 
 :showip
 echo  Addresses on THIS computer ^(for you only^):
-echo    http://127.0.0.1:%PORT%
-echo    http://localhost:%PORT%
+echo    %SCHEME%://127.0.0.1:%PORT%
+echo    %SCHEME%://localhost:%PORT%
 echo.
 echo  Give OTHER computers one of these ^(same Wi-Fi / office^):
 echo.
@@ -49,7 +57,7 @@ echo.
 set "FOUND=0"
 for /f "usebackq delims=" %%I in (`powershell -NoProfile -Command ^
   "$ip = (Get-NetIPAddress -AddressFamily IPv4 ^| Where-Object { $_.IPAddress -notlike '127.*' -and $_.PrefixOrigin -ne 'WellKnown' } ^| Select-Object -First 1 -ExpandProperty IPAddress); if (-not $ip) { $c = New-Object System.Net.Sockets.UdpClient; $c.Connect('8.8.8.8',80); $ip = $c.Client.LocalEndPoint.Address.ToString(); $c.Close() }; $ip"`) do (
-    echo    http://%%I:%PORT%
+    echo    %SCHEME%://%%I:%PORT%
     set "FOUND=1"
 )
 
@@ -64,7 +72,8 @@ echo    2. Run START-INTERNET-TUNNEL.bat
 echo    3. Share the https://....trycloudflare.com link it prints
 echo.
 echo  Still "connection refused"?
-echo    - Other PC must use http:// NOT https://
+echo    - Other PC must use %SCHEME%:// NOT the wrong scheme
+echo    - Browser shows "Not Secure"? Run SETUP-INTERNAL-HTTPS.bat on the server
 echo    - Both PCs on same Wi-Fi? Some guest networks block device-to-device
 echo    - Try the internet tunnel instead
 echo.
