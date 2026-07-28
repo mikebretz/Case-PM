@@ -105,6 +105,7 @@
             <input type="text" id="searchInput" placeholder="Search companies..." class="flex-1 bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
             <select id="typeFilter" class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
                 <option value="">All Types</option>
+                <option value="Main Contractor">Main Contractor</option>
                 <option value="Subcontractor">Subcontractor</option>
                 <option value="Supplier">Supplier / Vendor</option>
                 <option value="Client">Client / Owner</option>
@@ -203,6 +204,7 @@
                         <div>
                             <label class="text-xs text-zinc-400">Company Type</label>
                             <select id="company_type" onchange="updateSageNumberHint()" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
+                                <option value="Main Contractor">Main Contractor (Your Company)</option>
                                 <option value="Subcontractor">Subcontractor</option>
                                 <option value="Supplier">Supplier / Vendor</option>
                                 <option value="Client">Client / Owner</option>
@@ -487,6 +489,24 @@ let originalCompanyData = null;
 let companyAuditLog = JSON.parse(localStorage.getItem('companyAuditLog') || '[]');
 
 let sageDirectoryCache = [];
+
+function isProgramCompany(company) {
+    return !!(company && (company.is_program_company || company.is_main_contractor));
+}
+
+function sortCompaniesMainFirst(list) {
+    return [...(list || [])].sort((a, b) => {
+        const aMain = isProgramCompany(a) ? 0 : 1;
+        const bMain = isProgramCompany(b) ? 0 : 1;
+        if (aMain !== bMain) return aMain - bMain;
+        return (a.company_name || a.name || '').localeCompare(b.company_name || b.name || '', undefined, { sensitivity: 'base' });
+    });
+}
+
+function mainContractorBadge(company) {
+    if (!isProgramCompany(company)) return '';
+    return '<span class="ml-2 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-emerald-900/60 text-emerald-300 border border-emerald-700/50">Main Contractor</span>';
+}
 
 function getSageNumber(company) {
     if (!company) return '';
@@ -1049,11 +1069,11 @@ function renderCompaniesTable(filteredCompanies = null) {
     if (!tbody) return;
     tbody.innerHTML = '';
 
-    const data = filteredCompanies || companies;
+    const data = sortCompaniesMainFirst(filteredCompanies || companies);
 
     data.forEach(company => {
         const row = document.createElement('tr');
-        row.className = 'hover:bg-zinc-800/60 cursor-pointer';
+        row.className = (isProgramCompany(company) ? 'bg-emerald-950/20 ' : '') + 'hover:bg-zinc-800/60 cursor-pointer';
         row.onclick = (e) => {
             if (!e.target.closest('button')) showViewCompanyModal(company.id);
         };
@@ -1071,7 +1091,7 @@ function renderCompaniesTable(filteredCompanies = null) {
         let financialContactName = getContactUserName(company, 'financial');
 
         row.innerHTML = `
-            <td class="px-4 py-3 font-medium">${company.company_name}</td>
+            <td class="px-4 py-3 font-medium">${company.company_name}${mainContractorBadge(company)}</td>
             <td class="px-3 py-3 text-zinc-400">${company.company_type || ''}</td>
             <td class="px-3 py-3 text-center col-bidding">${getBiddingBadge(company)}</td>
             <td class="px-3 py-3 col-divisions">${formatCompanyDivisions(company)}</td>
@@ -1086,7 +1106,7 @@ function renderCompaniesTable(filteredCompanies = null) {
             <td class="px-4 py-4 text-right">
                 <div class="flex justify-end gap-2 items-center">
                     <button onclick="event.stopImmediatePropagation(); showCompanyHistory(${company.id});" class="text-sky-400 hover:text-sky-300 p-1" title="View Change Log"><i class="fa-solid fa-history"></i></button>
-                    <button onclick="event.stopImmediatePropagation(); confirmDeleteCompany(${company.id}, this);" class="text-red-400 hover:text-red-300 p-1" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                    ${isProgramCompany(company) ? '' : `<button onclick="event.stopImmediatePropagation(); confirmDeleteCompany(${company.id}, this);" class="text-red-400 hover:text-red-300 p-1" title="Delete"><i class="fa-solid fa-trash"></i></button>`}
                 </div>
             </td>
         `;
@@ -1446,6 +1466,11 @@ function saveCompany(e) {
     if (preservedPrimaryId) newCompany.primary_contact_user_id = preservedPrimaryId;
     if (preservedFinancialId) newCompany.financial_contact_user_id = preservedFinancialId;
     if (liveCompanyCheck?.server_id) newCompany.server_id = liveCompanyCheck.server_id;
+    if (liveCompanyCheck && isProgramCompany(liveCompanyCheck)) {
+        newCompany.is_program_company = true;
+        newCompany.is_main_contractor = true;
+        newCompany.company_type = 'Main Contractor';
+    }
 
     const coiRows = document.querySelectorAll('#coiContainer .coi-row');
     coiRows.forEach(row => {
@@ -1483,6 +1508,7 @@ function saveCompany(e) {
     }
 
     localStorage.setItem('casepm_companies', JSON.stringify(companies));
+    companies = sortCompaniesMainFirst(companies);
     syncCompanyToServer(newCompany);
     document.getElementById('companyModal').close();
     renderCompaniesTable(companies);
@@ -1666,6 +1692,14 @@ function editFromViewModal() {
 }
 
 function confirmDeleteCompany(id, btn) {
+    const company = companies.find(c => c.id === id);
+    if (isProgramCompany(company)) {
+        showAlertModal(
+            'Cannot Delete Main Contractor',
+            'This is your company from Program Settings. Update it under Program Settings → Company Information, or manage personnel here without deleting the record.'
+        );
+        return;
+    }
     showConfirmModal("Delete Company", "This cannot be undone. Delete this company?", () => {
         deleteCompanyConfirmed(id, btn);
     });
@@ -2144,7 +2178,7 @@ function importSelectedFromSage() {
         return;
     }
 
-    const validTypes = ["Subcontractor", "Supplier", "Client"];
+    const validTypes = ["Main Contractor", "Subcontractor", "Supplier", "Client"];
     const invalidImports = [];
 
     checked.forEach(cb => {
@@ -2187,7 +2221,7 @@ function showInvalidSageCompaniesModal(invalidList, checkedCheckboxes) {
     modal.innerHTML = `
         <div class="p-6">
             <h3 class="text-xl font-semibold mb-2">Invalid Company Type(s) Detected</h3>
-            <p class="text-sm text-zinc-400 mb-4">The following companies have a company_type that is not recognized (Subcontractor / Supplier / Client). Please fix the type in Sage 300 or map it manually after import.</p>
+            <p class="text-sm text-zinc-400 mb-4">The following companies have a company_type that is not recognized (Main Contractor / Subcontractor / Supplier / Client). Please fix the type in Sage 300 or map it manually after import.</p>
 
             <input type="text" placeholder="Search invalid companies..." class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm mb-3" oninput="filterInvalidSageTable(this)">
 
@@ -2236,7 +2270,7 @@ function closeAndFilterInvalidSage(btn, invalidExternalIds) {
         modal.remove();
     }
     // Filter main companies table to show only companies with bad types (or the ones being imported that are bad)
-    const filtered = companies.filter(c => !["Subcontractor","Supplier","Client"].includes(c.company_type));
+    const filtered = companies.filter(c => !["Main Contractor","Subcontractor","Supplier","Client"].includes(c.company_type));
     renderCompaniesTable(filtered);
     showAlertModal("Filtered View", `Showing companies with invalid types. Fix the Company Type field, then try Sync Sage 300 import again.`);
 }
@@ -2556,7 +2590,7 @@ function mergeServerCompaniesIntoLocal() {
         const nameKey = (sc.name || sc.company_name || '').toLowerCase();
         let local = companies.find(c => (c.server_id && sc.server_id && c.server_id === sc.server_id) || (c.company_name || '').toLowerCase() === nameKey);
         if (local) {
-            ['spec_sections', 'actively_bidding', 'trade', 'status', 'primary_email', 'primary_phone'].forEach(k => {
+            ['spec_sections', 'actively_bidding', 'trade', 'status', 'primary_email', 'primary_phone', 'company_type', 'tax_id', 'billing_address', 'dba_name', 'website', 'is_program_company', 'is_main_contractor'].forEach(k => {
                 if (sc[k] !== undefined && sc[k] !== null) {
                     if (JSON.stringify(local[k]) !== JSON.stringify(sc[k])) {
                         local[k] = sc[k];
@@ -2581,11 +2615,20 @@ function mergeServerCompaniesIntoLocal() {
                 cois: [],
                 primary_contact_user_id: sc.primary_contact_user_id || null,
                 financial_contact_user_id: sc.financial_contact_user_id || null,
+                tax_id: sc.tax_id || '',
+                billing_address: sc.billing_address || '',
+                dba_name: sc.dba_name || '',
+                website: sc.website || '',
+                is_program_company: !!sc.is_program_company,
+                is_main_contractor: !!sc.is_main_contractor,
             });
             changed = true;
         }
     });
-    if (changed) localStorage.setItem('casepm_companies', JSON.stringify(companies));
+    if (changed) {
+        companies = sortCompaniesMainFirst(companies);
+        localStorage.setItem('casepm_companies', JSON.stringify(companies));
+    }
 }
 
 async function syncCompanyToServer(company) {
@@ -2618,6 +2661,7 @@ function initializeCompaniesPage() {
     if (saved) companies = JSON.parse(saved);
 
     mergeServerCompaniesIntoLocal();
+    companies = sortCompaniesMainFirst(companies);
     companies.forEach(c => syncCompanyToServer(c));
 
     renderCompaniesTable(companies);
