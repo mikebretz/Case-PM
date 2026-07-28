@@ -1449,6 +1449,24 @@ class ChangeOrderRequest(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class ChangeOrderTemplate(db.Model):
+    __tablename__ = 'change_order_template'
+    id = db.Column(db.Integer, primary_key=True)
+    slug = db.Column(db.String(80), nullable=False, unique=True)
+    name = db.Column(db.String(200), nullable=False)
+    company_key = db.Column(db.String(120))
+    description = db.Column(db.Text)
+    template_pdf_path = db.Column(db.String(500), nullable=False)
+    engine = db.Column(db.String(80), nullable=False, default='aldi_v1')
+    field_map_json = db.Column(db.Text)
+    page_layout_json = db.Column(db.Text)
+    is_active = db.Column(db.Boolean, default=True)
+    is_default = db.Column(db.Boolean, default=False)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class CORAllocation(db.Model):
     __tablename__ = 'cor_allocation'
     id = db.Column(db.Integer, primary_key=True)
@@ -17709,6 +17727,158 @@ def api_upload_co_attachment(co_id):
     return jsonify({'ok': True, 'attachment': record, 'change_order': co_to_dict(co, allocs)})
 
 
+@app.route('/api/change-order-templates', methods=['GET'])
+@login_required
+def api_list_change_order_templates():
+    from change_order_template_persistence import template_to_dict
+    from financial_security import require_financial_project_access
+    project_id = request.args.get('project_id') or get_current_project_id()
+    if project_id:
+        try:
+            require_financial_project_access(current_user, int(project_id), Project)
+        except (ValueError, PermissionError) as exc:
+            return jsonify({'error': str(exc)}), 403
+    rows = ChangeOrderTemplate.query.filter_by(is_active=True).order_by(
+        ChangeOrderTemplate.is_default.desc(),
+        ChangeOrderTemplate.name.asc(),
+    ).all()
+    company_key = (request.args.get('company_key') or '').strip().upper()
+    if company_key:
+        filtered = [r for r in rows if (r.company_key or '').upper() == company_key]
+        if filtered:
+            rows = filtered
+    return jsonify({
+        'ok': True,
+        'templates': [template_to_dict(r) for r in rows],
+        'default_template_id': next((r.id for r in rows if r.is_default), rows[0].id if rows else None),
+    })
+
+
+@app.route('/api/change-order-templates', methods=['POST'])
+@login_required
+def api_create_change_order_template():
+    from change_order_template_persistence import apply_template_fields, template_to_dict
+    from werkzeug.utils import secure_filename
+    import re
+
+    if current_user.role not in ('Admin', 'Project Manager', 'Contractor Accounting'):
+        return jsonify({'error': 'Permission denied'}), 403
+    name = (request.form.get('name') or '').strip()
+    company_key = (request.form.get('company_key') or '').strip().upper() or None
+    description = (request.form.get('description') or '').strip() or None
+    engine = (request.form.get('engine') or 'aldi_v1').strip() or 'aldi_v1'
+    slug_raw = (request.form.get('slug') or name or 'template').strip().lower()
+    slug = re.sub(r'[^a-z0-9]+', '_', slug_raw).strip('_')[:72] or 'template'
+    if ChangeOrderTemplate.query.filter_by(slug=slug).first():
+        slug = f'{slug}_{int(datetime.utcnow().timestamp())}'
+    upload = request.files.get('file')
+    if not upload or not upload.filename:
+        return jsonify({'error': 'PDF template file is required'}), 400
+    if not (upload.filename or '').lower().endswith('.pdf'):
+        return jsonify({'error': 'Template must be a PDF file'}), 400
+    dest_dir = os.path.join(app.static_folder, 'templates', 'change_orders')
+    os.makedirs(dest_dir, exist_ok=True)
+    filename = secure_filename(f'{slug}.pdf') or f'{slug}.pdf'
+    dest_path = os.path.join(dest_dir, filename)
+    upload.save(dest_path)
+    rel_path = os.path.join('static', 'templates', 'change_orders', filename).replace('\\', '/')
+    row = ChangeOrderTemplate(
+        slug=slug,
+        name=name or slug.replace('_', ' ').title(),
+        company_key=company_key,
+        description=description,
+        template_pdf_path=rel_path,
+        engine=engine,
+        is_active=True,
+        is_default=bool(request.form.get('is_default')),
+        created_by_id=current_user.id,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    if row.is_default:
+        ChangeOrderTemplate.query.filter(
+            ChangeOrderTemplate.company_key == row.company_key,
+        ).update({'is_default': False})
+    db.session.add(row)
+    db.session.commit()
+    return jsonify({'ok': True, 'template': template_to_dict(row)})
+
+
+@app.route('/api/change-order-templates/<int:template_id>', methods=['PUT'])
+@login_required
+def api_update_change_order_template(template_id):
+    from change_order_template_persistence import apply_template_fields, set_default_template, template_to_dict
+
+    if current_user.role not in ('Admin', 'Project Manager', 'Contractor Accounting'):
+        return jsonify({'error': 'Permission denied'}), 403
+    row = ChangeOrderTemplate.query.get_or_404(template_id)
+    body = request.get_json(silent=True) or {}
+    apply_template_fields(row, body)
+    if body.get('is_default'):
+        set_default_template(row.id, ChangeOrderTemplate, db)
+    else:
+        db.session.commit()
+    return jsonify({'ok': True, 'template': template_to_dict(row)})
+
+
+@app.route('/api/change-orders/<int:co_id>/print-template', methods=['GET'])
+@login_required
+def api_change_order_print_template(co_id):
+    from co_persistence import co_to_dict, enrich_co_dict_links
+    from aldi_change_order_pdf import build_change_order_template_pdf
+    from financial_security import require_financial_project_access
+    from program_settings_persistence import load_company_info
+    import io
+
+    co = ChangeOrder.query.get_or_404(co_id)
+    try:
+        require_financial_project_access(current_user, co.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+
+    template_id = request.args.get('template_id', type=int)
+    template_row = ChangeOrderTemplate.query.get(template_id) if template_id else None
+    if not template_row:
+        template_row = ChangeOrderTemplate.query.filter_by(is_active=True, is_default=True).first()
+    if not template_row:
+        template_row = ChangeOrderTemplate.query.filter_by(is_active=True).order_by(ChangeOrderTemplate.id.asc()).first()
+    if not template_row:
+        return jsonify({'error': 'No change order print template is configured.'}), 404
+
+    allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
+    co_dict = co_to_dict(co, allocs)
+    co_dict = enrich_co_dict_links(co_dict, ChangeOrder)
+    allocations = co_dict.get('allocations') or []
+    linked_sub_cos = co_dict.get('linked_sub_change_orders') or []
+    project = Project.query.get(co.project_id)
+
+    try:
+        pdf_bytes = build_change_order_template_pdf(
+            co,
+            template_row,
+            base_dir=os.path.dirname(os.path.abspath(__file__)),
+            project=project,
+            company_info=load_company_info(),
+            allocations=allocations,
+            linked_sub_cos=linked_sub_cos,
+            ChangeEvent=ChangeEvent,
+            ChangeEventLineItem=ChangeEventLineItem,
+            ChangeOrder=ChangeOrder,
+        )
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 500
+    except Exception as exc:
+        return jsonify({'error': f'Could not generate change order form: {exc}'}), 500
+
+    filename = f'CO_{co.number or co_id}_{template_row.slug}.pdf'
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype='application/pdf',
+        as_attachment=False,
+        download_name=filename,
+    )
+
+
 @app.route('/api/pcos/<int:pco_id>/attachments', methods=['POST'])
 @login_required
 def api_upload_pco_attachment(pco_id):
@@ -18188,6 +18358,11 @@ with app.app_context():
             ensure_change_event_schema(db.engine, db)
         except Exception as _cee:
             print('Change event schema:', _cee)
+        try:
+            from change_order_template_persistence import ensure_change_order_template_schema
+            ensure_change_order_template_schema(db.engine, db, ChangeOrderTemplate)
+        except Exception as _cot:
+            print('Change order template schema:', _cot)
         try:
             from rfi_persistence import ensure_rfi_schema
             ensure_rfi_schema(db.engine, db)

@@ -68,6 +68,9 @@
     ownerChangeOrders: [],
     drawerRecord: null,
     drawerType: null,
+    coTemplates: [],
+    selectedPrintTemplateId: null,
+    templateCompanyFilter: '',
   };
 
   const ROLE_MAP = {
@@ -1273,11 +1276,17 @@
       </div>`;
     document.getElementById('drawerBody').innerHTML = reviewBanner + bodyHtml;
     document.getElementById('drawerActions').innerHTML = `
-      <button type="button" onclick="CasePMChangeOrders.printDetail(${co.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm"><i class="fa-solid fa-print mr-1"></i> Print / Save…</button>
+      <div class="flex flex-col gap-2 w-full sm:flex-row sm:items-center sm:flex-wrap">
+        <select id="coPrintTemplateSelect" onchange="CasePMChangeOrders.selectPrintTemplate(parseInt(this.value,10))" class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm min-w-[180px]"></select>
+        <button type="button" onclick="CasePMChangeOrders.printDetailWithTemplate(${co.id})" class="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-md text-sm"><i class="fa-solid fa-file-pdf mr-1"></i> Print CO Form</button>
+        <button type="button" onclick="CasePMChangeOrders.printDetailStandard(${co.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm"><i class="fa-solid fa-print mr-1"></i> Standard Print</button>
+      </div>
+      <div class="flex flex-wrap gap-2 w-full mt-2">
       ${showSubmit ? `<button type="button" onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit for Approval</button>` : ''}
       ${canApprove() ? `<button type="button" onclick="CasePMChangeOrders.${isSubCo(co) ? 'editSubCo' : 'editCo'}(${co.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
       <button type="button" onclick="CasePMChangeOrders.deleteCo(${co.id})" class="px-4 py-2 bg-red-950 hover:bg-red-900 border border-red-800 rounded-md text-sm text-red-300">Delete</button>` : ''}
-      <button type="button" onclick="CasePMChangeOrders.closeDrawer()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm text-zinc-400">Close</button>`;
+      <button type="button" onclick="CasePMChangeOrders.closeDrawer()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm text-zinc-400">Close</button></div>`;
+    populateTemplateSelectors();
     if (showApprove) {
       openApprovalModal(co.id, 'approve');
       return;
@@ -1579,6 +1588,137 @@
     return coDocField(label, value);
   }
 
+  async function loadCoTemplates() {
+    const pid = projectId();
+    if (!pid) return;
+    try {
+      const json = await api(`/api/change-order-templates?project_id=${pid}`);
+      state.coTemplates = json.templates || [];
+      if (!state.selectedPrintTemplateId && json.default_template_id) {
+        state.selectedPrintTemplateId = json.default_template_id;
+      }
+      renderCoTemplatesTable();
+      populateTemplateSelectors();
+    } catch (err) {
+      console.warn('CO templates:', err.message);
+    }
+  }
+
+  function populateTemplateSelectors() {
+    const filter = document.getElementById('coTemplateCompanyFilter');
+    if (filter) {
+      const companies = [...new Set(state.coTemplates.map(t => t.company_key).filter(Boolean))].sort();
+      const current = state.templateCompanyFilter || filter.value || '';
+      filter.innerHTML = '<option value="">All companies</option>' + companies.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+      filter.value = current;
+    }
+    const drawerSel = document.getElementById('coPrintTemplateSelect');
+    if (drawerSel) {
+      drawerSel.innerHTML = state.coTemplates.map(t => `<option value="${t.id}" ${t.id === state.selectedPrintTemplateId ? 'selected' : ''}>${esc(t.name)}${t.is_default ? ' (default)' : ''}</option>`).join('');
+    }
+  }
+
+  function filteredCoTemplates() {
+    const key = (state.templateCompanyFilter || '').trim().toUpperCase();
+    if (!key) return state.coTemplates;
+    return state.coTemplates.filter(t => (t.company_key || '').toUpperCase() === key);
+  }
+
+  function renderCoTemplatesTable() {
+    const tbody = document.getElementById('coTemplatesTableBody');
+    if (!tbody) return;
+    const rows = filteredCoTemplates();
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-12 text-center text-zinc-500">No templates yet. Upload a company PDF form to get started.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(t => `<tr class="hover:bg-zinc-800/40">
+      <td class="px-4 py-3">
+        <div class="font-medium text-white">${esc(t.name)}</div>
+        <div class="text-xs text-zinc-500 mt-0.5">${esc(t.description || '')}</div>
+      </td>
+      <td class="px-4 py-3">${esc(t.company_key || '—')}</td>
+      <td class="px-4 py-3 text-xs font-mono text-zinc-400">${esc(t.engine || 'aldi_v1')}</td>
+      <td class="px-4 py-3 text-center">${t.is_default ? '<span class="text-emerald-400 text-xs font-semibold">DEFAULT</span>' : `<button type="button" onclick="CasePMChangeOrders.setDefaultTemplate(${t.id})" class="text-xs text-sky-400 hover:underline">Set default</button>`}</td>
+      <td class="px-4 py-3 text-center">${t.is_active ? '<span class="text-emerald-400">Active</span>' : '<span class="text-zinc-500">Inactive</span>'}</td>
+      <td class="px-4 py-3 text-center">
+        <button type="button" onclick="CasePMChangeOrders.selectPrintTemplate(${t.id})" class="px-2 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded">Use for print</button>
+      </td>
+    </tr>`).join('');
+  }
+
+  function selectPrintTemplate(id) {
+    state.selectedPrintTemplateId = id;
+    populateTemplateSelectors();
+    toast('Print template selected');
+  }
+
+  async function setDefaultTemplate(id) {
+    try {
+      await api(`/api/change-order-templates/${id}`, { method: 'PUT', body: JSON.stringify({ is_default: true }) });
+      await loadCoTemplates();
+      toast('Default template updated');
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  function openTemplateUpload() {
+    const dlg = document.getElementById('coTemplateModal');
+    if (!dlg) return;
+    document.getElementById('coTemplateName').value = '';
+    document.getElementById('coTemplateCompanyKey').value = '';
+    document.getElementById('coTemplateDescription').value = '';
+    document.getElementById('coTemplateFile').value = '';
+    document.getElementById('coTemplateDefault').checked = false;
+    openDialog(dlg);
+  }
+
+  async function saveTemplateUpload(ev) {
+    ev.preventDefault();
+    const file = document.getElementById('coTemplateFile')?.files?.[0];
+    if (!file) {
+      alert('Choose a PDF template file.');
+      return;
+    }
+    const fd = new FormData();
+    fd.append('name', document.getElementById('coTemplateName').value.trim());
+    fd.append('company_key', document.getElementById('coTemplateCompanyKey').value.trim());
+    fd.append('description', document.getElementById('coTemplateDescription').value.trim());
+    fd.append('engine', 'aldi_v1');
+    if (document.getElementById('coTemplateDefault').checked) fd.append('is_default', '1');
+    fd.append('file', file);
+    try {
+      const res = await fetch('/api/change-order-templates', { method: 'POST', body: fd, credentials: 'same-origin' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Upload failed');
+      document.getElementById('coTemplateModal')?.close();
+      if (json.template?.id) state.selectedPrintTemplateId = json.template.id;
+      await loadCoTemplates();
+      toast('Template uploaded');
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  function printTemplateUrl(coId, templateId) {
+    const tid = templateId || state.selectedPrintTemplateId;
+    const qs = tid ? `?template_id=${encodeURIComponent(tid)}` : '';
+    return `/api/change-orders/${coId}/print-template${qs}`;
+  }
+
+  async function printDetailWithTemplate(id, templateId) {
+    const targetId = id || state.drawerRecord?.id || approvalContext?.coId;
+    if (!targetId) return;
+    if (!state.coTemplates.length) await loadCoTemplates();
+    const tid = templateId || state.selectedPrintTemplateId || state.coTemplates.find(t => t.is_default)?.id || state.coTemplates[0]?.id;
+    if (!tid) {
+      alert('No change order print template is configured. Upload one on the CO Templates tab.');
+      return;
+    }
+    window.open(printTemplateUrl(targetId, tid), '_blank', 'noopener');
+  }
+
   function buildCoDetailPrintHtml(co, printOpts) {
     const opts = printOpts || {};
     const meta = getCoPrintMeta();
@@ -1725,7 +1865,7 @@
     });
   }
 
-  async function printDetail(id) {
+  async function printDetailStandard(id) {
     if (typeof global.CasePMPrint === 'undefined') { alert('Print module not loaded'); return; }
     let co = state.drawerRecord;
     const targetId = id || co?.id || approvalContext?.coId;
@@ -1756,6 +1896,10 @@
       docTitle: `${co.number} — Change Order`,
       bodyClass: 'printing-co-detail',
     });
+  }
+
+  async function printDetail(id) {
+    return printDetailWithTemplate(id);
   }
 
   const CO_BASE_PRINT_COLUMNS = [
@@ -2004,9 +2148,13 @@
     }
     loadCompaniesFromStorage();
     await loadCostCodes();
-    await Promise.all([loadLinkOptions(), loadDashboard(), loadChangeOrders(), loadPcos(), loadSageLog()]);
+    await Promise.all([loadLinkOptions(), loadDashboard(), loadChangeOrders(), loadPcos(), loadSageLog(), loadCoTemplates()]);
     bindFilters();
     bindAttachmentBrowse();
+    document.getElementById('coTemplateCompanyFilter')?.addEventListener('change', (e) => {
+      state.templateCompanyFilter = e.target.value || '';
+      renderCoTemplatesTable();
+    });
     applyCoTabPermissions();
     switchTab('cos');
     global.addEventListener('casepm:approval-responded', async (e) => {
@@ -2053,7 +2201,8 @@
     uploadPcoAttachment, uploadPcoDrawerAttachment,
     addAllocRow: () => { state.allocationRows.push({ cost_code: '', cost_type: '', amount: 0, description: '' }); renderAllocationRows(); },
     removeAllocRow: idx => { state.allocationRows.splice(idx, 1); renderAllocationRows(); },
-    onCompanyChange, onContactChange, onAllocCostCodeChange, updateAllocationTotal, exportExcel, printLog, printDetail, openSageLog,
+    onCompanyChange, onContactChange, onAllocCostCodeChange, updateAllocationTotal, exportExcel, printLog, printDetail, printDetailStandard, printDetailWithTemplate, openSageLog,
+    loadCoTemplates, openTemplateUpload, saveTemplateUpload, setDefaultTemplate, selectPrintTemplate,
     newPco: () => openModal('pco', null),
     newCo: () => openModal('co', null),
     newSubCo: () => openModal('sub', { contract_type: 'Subcontract', sub_co_kind: 'Contract Add' }),
