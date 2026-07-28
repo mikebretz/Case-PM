@@ -1,32 +1,23 @@
 # Sylvorin
 
-WoW-inspired 3D MMORPG — **installed at `C:\Sylvorin`**. Not part of Case PM / KSPM.
+WoW-inspired MMORPG — **Unreal Engine 5** (primary) + web prototype (reference).
 
-## Setup (Windows)
+## Develop in UE5
 
-```bat
-git clone https://github.com/mikebretz/Sylvorin C:\Sylvorin
-C:\Sylvorin\INSTALL-DESKTOP.bat
+```
+C:\Sylvorin\Unreal\Sylvorin.uproject
 ```
 
-Or double-click **`CLONE-TO-C-SYLVORIN.bat`** then **`C:\Sylvorin\INSTALL-DESKTOP.bat`**.
+1. Install **Unreal Engine 5.4+** and **Visual Studio 2022** (C++ workload)
+2. Double-click **`OPEN-UE5.bat`** or **`Unreal\OPEN-IN-UE5.bat`**
+3. Read **`Unreal\Docs\GETTING-STARTED.md`**
 
-## Play
+Design numbers (classes, enemies, quests): **`Unreal\Docs\DESIGN-SPEC.md`**
 
-- Desktop shortcut **Sylvorin**, or
-- **`C:\Sylvorin\RUN-DESKTOP.bat`**
-- Browser: **`C:\Sylvorin\RUN-SYLVORIN.bat`** → http://localhost:5173
+## Web prototype (optional)
 
-## Files at C:\Sylvorin
+The Three.js browser build in `src/` is a playable reference — not the main target anymore.
 
-| File | Purpose |
-|------|---------|
-| `INSTALL-DESKTOP.bat` | Setup (once) |
-| `RUN-DESKTOP.bat` | Play in desktop window |
-| `RUN-SYLVORIN.bat` | Play in browser |
-| `CLONE-TO-C-SYLVORIN.bat` | Clone repo to C:\Sylvorin |
-| `START-HERE.txt` | Quick reference |
-| `src/game/` | Game code |
-| `desktop_launcher.py` | Native window |
-
-See **START-HERE.txt** and **PROJECT-MAP.md**.
+```bat
+C:\Sylvorin\RUN-DESKTOP.bat
+```
