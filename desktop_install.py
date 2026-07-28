@@ -264,10 +264,6 @@ sh.Run """" & "$pythonw" & """ """ & "$clientPath" & """", 0, False
 '''
 
 
-def _vbs_escape(value: str) -> str:
-    return value.replace('"', '""')
-
-
 def build_desktop_app_installer(*, server_url: str, casepm_home: str = '') -> io.BytesIO:
     server_url = _normalize_server_url(server_url)
     local_mode = _is_local_server(server_url)
