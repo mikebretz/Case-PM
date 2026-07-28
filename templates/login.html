@@ -182,7 +182,12 @@
                 {% if via_connector %}
                 <p class="text-center text-[11px] text-emerald-500/90 mt-5 flex items-center justify-center gap-1.5">
                     <i class="fa-solid fa-shield-halved"></i>
-                    <span>Connected via Case PM Desktop</span>
+                    <span>Connected via Case PM Desktop shortcut</span>
+                </p>
+                {% elif desktop_mode %}
+                <p class="text-center text-[11px] text-emerald-500/90 mt-5 flex items-center justify-center gap-1.5">
+                    <i class="fa-solid fa-window-maximize"></i>
+                    <span>Case PM Desktop App — data stays on this computer</span>
                 </p>
                 {% else %}
                 <div class="text-center mt-5 space-y-2.5">

@@ -9,6 +9,11 @@ Click **Add Case PM to Desktop** on the login page.
    Documents\Case PM Desktop\
 4. Desktop shortcut **Case PM** is created
 
+This connector opens Case PM in your web browser and points at a server URL.
+
+For a full local app in its own window (no browser tab), use **RUN-DESKTOP.bat**
+(Windows) or **RUN-DESKTOP.sh** (macOS/Linux) in the project root instead.
+
 Icon: static/img/casepm-desktop-icon.ico
 
 Regenerate: python scripts/generate_casepm_icon.py

@@ -431,7 +431,7 @@
     <script src="{{ static_v('js/developer-actions.js') }}"></script>
     {% endif %}
 </head>
-<body class="bg-zinc-950 text-zinc-200 h-screen overflow-hidden {% if is_sub_portal %}portal-sub{% elif is_architect_portal %}portal-architect{% else %}portal-staff{% endif %}{% if is_sub_vendor_portal %} portal-sub-vendor{% endif %}"
+<body class="bg-zinc-950 text-zinc-200 h-screen overflow-hidden {% if is_sub_portal %}portal-sub{% elif is_architect_portal %}portal-architect{% else %}portal-staff{% endif %}{% if is_sub_vendor_portal %} portal-sub-vendor{% endif %}{% if desktop_mode %} casepm-desktop-app{% endif %}"
       data-is-staff-portal="{{ '1' if show_page_help else '0' }}"
       data-page-module="{{ page_module|default('app') }}"
       data-current-user="{{ current_user.full_name if current_user.is_authenticated else '' }}"
