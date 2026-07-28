@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sylvorin</title>
+    <link rel="stylesheet" href="/src/styles/main.css" />
+  </head>
+  <body>
+    <div id="game-container">
+      <canvas id="game-canvas"></canvas>
+
+      <!-- Loading screen -->
+      <div id="loading-screen">
+        <h1>Sylvorin</h1>
+        <p class="subtitle">Enter the realm of adventure</p>
+        <div class="loading-bar"><div class="loading-progress"></div></div>
+        <p class="loading-text">Entering the realm...</p>
+      </div>
+
+      <!-- Character select / start -->
+      <div id="start-screen" class="hidden">
+        <div class="start-panel">
+          <h1>Sylvorin</h1>
+          <p class="subtitle">Choose your champion</p>
+          <div class="class-select">
+            <button class="class-btn selected" data-class="warrior">
+              <span class="class-icon warrior-icon"></span>
+              <span class="class-name">Warrior</span>
+              <span class="class-desc">Melee fighter with heavy strikes</span>
+            </button>
+            <button class="class-btn" data-class="mage">
+              <span class="class-icon mage-icon"></span>
+              <span class="class-name">Mage</span>
+              <span class="class-desc">Arcane caster with powerful spells</span>
+            </button>
+            <button class="class-btn" data-class="hunter">
+              <span class="class-icon hunter-icon"></span>
+              <span class="class-name">Hunter</span>
+              <span class="class-desc">Ranged attacker with swift shots</span>
+            </button>
+          </div>
+          <button id="enter-world-btn" class="enter-btn">Enter World</button>
+          <div class="controls-hint">
+            <p><strong>Controls:</strong> WASD move · Right-click drag to turn · Left-click select target · 1-4 abilities · Tab cycle targets · E interact</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- HUD -->
+      <div id="hud" class="hidden">
+        <!-- Player frame -->
+        <div id="player-frame">
+          <div class="frame-portrait warrior-portrait"></div>
+          <div class="frame-info">
+            <div class="frame-name" id="player-name">Hero</div>
+            <div class="bar health-bar">
+              <div class="bar-fill" id="player-health-fill"></div>
+              <span class="bar-text" id="player-health-text">100 / 100</span>
+            </div>
+            <div class="bar resource-bar">
+              <div class="bar-fill" id="player-resource-fill"></div>
+              <span class="bar-text" id="player-resource-text">100 / 100</span>
+            </div>
+            <div class="level-badge" id="player-level">1</div>
+          </div>
+        </div>
+
+        <!-- Target frame -->
+        <div id="target-frame" class="hidden">
+          <div class="frame-portrait enemy-portrait"></div>
+          <div class="frame-info">
+            <div class="frame-name" id="target-name">Enemy</div>
+            <div class="bar health-bar">
+              <div class="bar-fill enemy-health" id="target-health-fill"></div>
+              <span class="bar-text" id="target-health-text">50 / 50</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quest tracker -->
+        <div id="quest-tracker">
+          <div class="quest-header">Quest Log</div>
+          <div id="quest-list"></div>
+        </div>
+
+        <!-- Action bar -->
+        <div id="action-bar">
+          <div class="action-slot" data-slot="0">
+            <div class="slot-icon ability-1"></div>
+            <span class="slot-key">1</span>
+            <div class="cooldown-overlay"></div>
+          </div>
+          <div class="action-slot" data-slot="1">
+            <div class="slot-icon ability-2"></div>
+            <span class="slot-key">2</span>
+            <div class="cooldown-overlay"></div>
+          </div>
+          <div class="action-slot" data-slot="2">
+            <div class="slot-icon ability-3"></div>
+            <span class="slot-key">3</span>
+            <div class="cooldown-overlay"></div>
+          </div>
+          <div class="action-slot" data-slot="3">
+            <div class="slot-icon ability-4"></div>
+            <span class="slot-key">4</span>
+            <div class="cooldown-overlay"></div>
+          </div>
+        </div>
+
+        <!-- Combat text -->
+        <div id="combat-log"></div>
+
+        <!-- Minimap -->
+        <div id="minimap">
+          <canvas id="minimap-canvas" width="150" height="150"></canvas>
+          <div class="minimap-label">Eldergrove</div>
+        </div>
+
+        <!-- XP bar -->
+        <div id="xp-bar">
+          <div class="xp-fill" id="xp-fill"></div>
+          <span class="xp-text" id="xp-text">0 / 100 XP</span>
+        </div>
+      </div>
+
+      <!-- Interaction prompt -->
+      <div id="interact-prompt" class="hidden">
+        <span>[E] Talk to <span id="interact-name">NPC</span></span>
+      </div>
+
+      <!-- Quest dialog -->
+      <div id="quest-dialog" class="hidden">
+        <div class="dialog-panel">
+          <div class="dialog-header">
+            <span id="dialog-npc-name">Quest Giver</span>
+            <button id="dialog-close" class="dialog-close">×</button>
+          </div>
+          <div class="dialog-body" id="dialog-body"></div>
+          <div class="dialog-actions" id="dialog-actions"></div>
+        </div>
+      </div>
+
+      <!-- Death screen -->
+      <div id="death-screen" class="hidden">
+        <h2>You have died</h2>
+        <p>Your spirit lingers in the realm...</p>
+        <button id="respawn-btn" class="enter-btn">Release Spirit</button>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

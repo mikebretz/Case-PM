@@ -1,0 +1,24 @@
+SYLVORIN — START HERE
+=====================
+
+Your GitHub repo may be empty until you push these files.
+Run PUSH-TO-GITHUB.bat once (or use GitHub Desktop) to upload everything.
+
+WINDOWS BATCH FILES (double-click these):
+-----------------------------------------
+  INSTALL-DESKTOP.bat          Install to C:\Sylvorin + desktop shortcut  (RUN ONCE)
+  INSTALL-SYLVORIN-DESKTOP.bat   Same as INSTALL-DESKTOP.bat
+
+  RUN-DESKTOP.bat                Play in native window (like Case PM)
+  RUN-SYLVORIN-DESKTOP.bat       Play from C:\Sylvorin only
+
+  RUN-SYLVORIN.bat               Play in browser (http://localhost:5173)
+
+  INSTALL-PACKAGES.bat           npm install only
+
+  PUSH-TO-GITHUB.bat             Upload files to github.com/mikebretz/Sylvorin
+
+AFTER INSTALL:
+  Desktop shortcut "Sylvorin"  OR  C:\Sylvorin\RUN-DESKTOP.bat
+
+See PROJECT-MAP.md for all file locations.
