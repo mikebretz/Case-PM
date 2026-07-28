@@ -29,12 +29,8 @@ BUSINESS_OSM_CLASSES = frozenset({'shop', 'amenity', 'office', 'craft', 'tourism
 
 
 def _http_json(url: str, timeout: int = 10, headers: dict | None = None) -> dict | list:
-    req = urllib.request.Request(url, headers=headers or {})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode('utf-8'))
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-        raise RuntimeError(str(exc)) from exc
+    from plugin_security import safe_http_json
+    return safe_http_json(url, timeout=timeout, headers=headers)
 
 
 def _parse_float(val) -> float | None:

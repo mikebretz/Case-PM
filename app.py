@@ -2984,6 +2984,17 @@ def api_audit_security_summary():
     return jsonify({'ok': True, 'summary': security_audit_summary(AuditLog)})
 
 
+@app.route('/api/security/plugin-inventory', methods=['GET'])
+@login_required
+def api_security_plugin_inventory():
+    """Approved third-party plugins/CDNs and external API allowlist (admin)."""
+    from developer_tools import is_admin_or_developer
+    from plugin_security import plugin_inventory_payload
+    if not is_admin_or_developer(current_user):
+        return jsonify({'error': 'Admin access required'}), 403
+    return jsonify({'ok': True, **plugin_inventory_payload()})
+
+
 # ==================== DASHBOARD ====================
 
 @app.route('/dashboard')
@@ -6335,9 +6346,19 @@ def api_safety_osha_save_to_documents():
                     data = fh.read()
         if data is None and item.get('pdf_url'):
             try:
-                req = urllib.request.Request(item['pdf_url'], headers={'User-Agent': 'CasePM/1.0'})
+                from plugin_security import safe_http_json
+                # OSHA PDFs are allowlisted; prefer bundled copy when available.
+                pdf_url = item['pdf_url']
+                if not pdf_url.startswith('https://www.osha.gov/'):
+                    failed.append(item['title'])
+                    continue
+                data = None  # still stream bytes below
+                import urllib.request
+                from plugin_security import validate_external_url
+                safe_url = validate_external_url(pdf_url)
+                req = urllib.request.Request(safe_url, headers={'User-Agent': 'CasePM/1.0'})
                 with urllib.request.urlopen(req, timeout=30) as resp:
-                    data = resp.read()
+                    data = resp.read(25_000_000)
             except Exception:
                 data = None
         if not data:

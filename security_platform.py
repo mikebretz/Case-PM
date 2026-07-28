@@ -211,11 +211,14 @@ def guard_https_redirect(deploy=None):
 
 
 def apply_security_headers(response, deploy=None):
+    from plugin_security import build_content_security_policy
     deploy = deploy or load_deployment_settings()
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-    response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
+    # Map (geolocation), voice meetings (microphone), safety camera need self access.
+    response.headers['Permissions-Policy'] = 'geolocation=(self), microphone=(self), camera=(self)'
+    response.headers['Content-Security-Policy'] = build_content_security_policy()
     if deploy.get('hsts_max_age') and request_is_secure(deploy):
         response.headers['Strict-Transport-Security'] = f"max-age={deploy['hsts_max_age']}; includeSubDomains"
     return response

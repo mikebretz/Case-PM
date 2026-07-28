@@ -2576,6 +2576,7 @@ function closeSubmittalAttachmentViewer() {
 }
 
 window.addEventListener('message', (event) => {
+    if (event.origin !== window.location.origin) return;
     if (event?.data?.type === 'casepm-close-doc-viewer') closeSubmittalAttachmentViewer();
 });
 
