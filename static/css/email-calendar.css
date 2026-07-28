@@ -264,3 +264,12 @@
 .email-calendar-host.hidden {
   display: none !important;
 }
+.email-calendar-outlook-status {
+  font-size: 0.68rem;
+  color: #71717a;
+  max-width: 220px;
+  line-height: 1.3;
+}
+.email-calendar-day {
+  user-select: none;
+}

@@ -12,6 +12,7 @@ GRAPH_BASE = 'https://graph.microsoft.com/v1.0'
 DEFAULT_SCOPES = [
     'openid', 'profile', 'email', 'offline_access',
     'User.Read', 'Mail.ReadWrite', 'Mail.Send',
+    'Calendars.ReadWrite',
 ]
 
 
