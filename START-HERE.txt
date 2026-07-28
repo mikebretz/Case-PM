@@ -4,11 +4,14 @@ SYLVORIN — everything lives at C:\Sylvorin
 NOT part of Case PM / KSPM.
 
 FIRST TIME SETUP:
-  Option A — git clone:
-    git clone https://github.com/mikebretz/Sylvorin C:\Sylvorin
+  Option A — one-click pull (after PR is merged / branch exists):
+    PULL-TO-C-SYLVORIN.bat
 
-  Option B — copy files you already have:
-    COPY-TO-C-SYLVORIN.bat   (from this folder)
+  Option B — git clone:
+    git clone -b cursor/sylvorin-c-drive-c4a4 https://github.com/mikebretz/Case-PM C:\Sylvorin
+
+  Option C — copy files:
+    COPY-TO-C-SYLVORIN.bat
 
   Then always:
     C:\Sylvorin\INSTALL-DESKTOP.bat
