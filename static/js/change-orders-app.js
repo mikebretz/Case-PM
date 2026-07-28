@@ -71,6 +71,8 @@
     coTemplates: [],
     selectedPrintTemplateId: null,
     templateCompanyFilter: '',
+    coTemplateDocumentId: null,
+    coTemplateDocumentLabel: '',
   };
 
   const ROLE_MAP = {
@@ -1645,6 +1647,7 @@
         <div class="flex items-center justify-center gap-1 flex-wrap">
           <button type="button" onclick="CasePMChangeOrders.previewTemplate(${t.id})" class="px-2 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded" title="View template PDF"><i class="fa-solid fa-eye"></i> View</button>
           <button type="button" onclick="CasePMChangeOrders.selectPrintTemplate(${t.id})" class="px-2 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded">Use for print</button>
+          <button type="button" onclick="CasePMChangeOrders.deleteTemplate(${t.id}, ${JSON.stringify(t.name || '')})" class="px-2 py-1 text-xs bg-red-950 hover:bg-red-900 border border-red-800 text-red-300 rounded" title="Delete template"><i class="fa-solid fa-trash"></i></button>
         </div>
       </td>
     </tr>`).join('');
@@ -1672,6 +1675,68 @@
     }
   }
 
+  async function deleteTemplate(id, name) {
+    const label = name || 'this template';
+    const ok = await coConfirm(`Delete change order template "${label}"?\n\nThis removes the template record and its uploaded PDF file.`, { title: 'Delete template' });
+    if (!ok) return;
+    try {
+      await api(`/api/change-order-templates/${id}`, { method: 'DELETE' });
+      if (state.selectedPrintTemplateId === id) state.selectedPrintTemplateId = null;
+      await loadCoTemplates();
+      toast('Template deleted');
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  function clearCoTemplateDocument() {
+    state.coTemplateDocumentId = null;
+    state.coTemplateDocumentLabel = '';
+    const wrap = document.getElementById('coTemplateDocPick');
+    const label = document.getElementById('coTemplateDocPickLabel');
+    if (wrap) wrap.classList.add('hidden');
+    if (label) label.textContent = '';
+  }
+
+  function showCoTemplateDocument(doc) {
+    state.coTemplateDocumentId = doc?.id || null;
+    state.coTemplateDocumentLabel = doc?.name || doc?.original_filename || doc?.filename || 'Selected document';
+    const wrap = document.getElementById('coTemplateDocPick');
+    const label = document.getElementById('coTemplateDocPickLabel');
+    const fileInput = document.getElementById('coTemplateFile');
+    if (label) label.textContent = `From Documents: ${state.coTemplateDocumentLabel}`;
+    if (wrap) wrap.classList.remove('hidden');
+    if (fileInput) fileInput.value = '';
+  }
+
+  function browseCoTemplateDocuments() {
+    const pid = projectId();
+    if (!pid) {
+      alert('Select a project first, then choose a PDF from Documents.');
+      return;
+    }
+    if (!global.CasePMDocPicker?.open) {
+      alert('Document picker is not available on this page.');
+      return;
+    }
+    global.CasePMDocPicker.open({
+      title: 'Select CO template PDF from Documents',
+      multiple: false,
+      accept: 'pdf',
+      projectId: pid,
+      onPick: async (docs) => {
+        const doc = docs?.[0];
+        if (!doc) return;
+        showCoTemplateDocument(doc);
+        const nameEl = document.getElementById('coTemplateName');
+        if (nameEl && !nameEl.value.trim()) {
+          const base = (doc.name || doc.original_filename || doc.filename || '').replace(/\.pdf$/i, '');
+          nameEl.value = base;
+        }
+      },
+    });
+  }
+
   function openTemplateUpload() {
     const dlg = document.getElementById('coTemplateModal');
     if (!dlg) return;
@@ -1680,29 +1745,49 @@
     document.getElementById('coTemplateDescription').value = '';
     document.getElementById('coTemplateFile').value = '';
     document.getElementById('coTemplateDefault').checked = false;
+    clearCoTemplateDocument();
     openDialog(dlg);
   }
 
   async function saveTemplateUpload(ev) {
     ev.preventDefault();
-    const file = document.getElementById('coTemplateFile')?.files?.[0];
-    if (!file) {
-      alert('Choose a PDF template file.');
+    const name = document.getElementById('coTemplateName').value.trim();
+    if (!name) {
+      alert('Template name is required.');
       return;
     }
-    const fd = new FormData();
-    fd.append('name', document.getElementById('coTemplateName').value.trim());
-    fd.append('company_key', document.getElementById('coTemplateCompanyKey').value.trim());
-    fd.append('description', document.getElementById('coTemplateDescription').value.trim());
-    fd.append('engine', 'aldi_v1');
-    if (document.getElementById('coTemplateDefault').checked) fd.append('is_default', '1');
-    fd.append('file', file);
+    const file = document.getElementById('coTemplateFile')?.files?.[0];
+    const documentId = state.coTemplateDocumentId;
+    if (!file && !documentId) {
+      alert('Choose a PDF from your computer or Browse Documents.');
+      return;
+    }
+    const payload = {
+      name,
+      company_key: document.getElementById('coTemplateCompanyKey').value.trim(),
+      description: document.getElementById('coTemplateDescription').value.trim(),
+      engine: 'aldi_v1',
+      is_default: !!document.getElementById('coTemplateDefault').checked,
+    };
     try {
-      const res = await fetch('/api/change-order-templates', { method: 'POST', body: fd, credentials: 'same-origin' });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Upload failed');
+      let json;
+      if (documentId) {
+        json = await api('/api/change-order-templates/from-document', {
+          method: 'POST',
+          body: JSON.stringify({ ...payload, document_id: documentId, project_id: projectId() }),
+        });
+      } else {
+        const fd = new FormData();
+        Object.entries(payload).forEach(([k, v]) => fd.append(k, v));
+        if (payload.is_default) fd.append('is_default', '1');
+        fd.append('file', file);
+        const res = await fetch('/api/change-order-templates', { method: 'POST', body: fd, credentials: 'same-origin' });
+        json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Upload failed');
+      }
       document.getElementById('coTemplateModal')?.close();
       if (json.template?.id) state.selectedPrintTemplateId = json.template.id;
+      clearCoTemplateDocument();
       await loadCoTemplates();
       toast('Template uploaded');
     } catch (err) {
@@ -2160,6 +2245,9 @@
     await Promise.all([loadLinkOptions(), loadDashboard(), loadChangeOrders(), loadPcos(), loadSageLog(), loadCoTemplates()]);
     bindFilters();
     bindAttachmentBrowse();
+    document.getElementById('coTemplateFile')?.addEventListener('change', (e) => {
+      if (e.target?.files?.length) clearCoTemplateDocument();
+    });
     document.getElementById('coTemplateCompanyFilter')?.addEventListener('change', (e) => {
       state.templateCompanyFilter = e.target.value || '';
       renderCoTemplatesTable();
@@ -2211,7 +2299,7 @@
     addAllocRow: () => { state.allocationRows.push({ cost_code: '', cost_type: '', amount: 0, description: '' }); renderAllocationRows(); },
     removeAllocRow: idx => { state.allocationRows.splice(idx, 1); renderAllocationRows(); },
     onCompanyChange, onContactChange, onAllocCostCodeChange, updateAllocationTotal, exportExcel, printLog, printDetail, printDetailStandard, printDetailWithTemplate, openSageLog,
-    loadCoTemplates, openTemplateUpload, saveTemplateUpload, setDefaultTemplate, selectPrintTemplate, previewTemplate,
+    loadCoTemplates, openTemplateUpload, saveTemplateUpload, setDefaultTemplate, selectPrintTemplate, previewTemplate, deleteTemplate, browseCoTemplateDocuments, clearCoTemplateDocument,
     newPco: () => openModal('pco', null),
     newCo: () => openModal('co', null),
     newSubCo: () => openModal('sub', { contract_type: 'Subcontract', sub_co_kind: 'Contract Add' }),

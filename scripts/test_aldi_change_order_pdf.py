@@ -110,5 +110,17 @@ class AldiChangeOrderPdfTests(unittest.TestCase):
     self.assertEqual(_format_co_number_for_form('3'), '3')
 
 
+  def test_register_template_helpers(self):
+    from change_order_template_persistence import _slugify_template_name, save_template_pdf_file
+    import tempfile
+
+    self.assertEqual(_slugify_template_name('ALDI Change Order'), 'aldi_change_order')
+    with tempfile.TemporaryDirectory() as tmp:
+      static_dir = os.path.join(tmp, 'static')
+      rel = save_template_pdf_file('test_tpl', b'%PDF-1.4 test', static_folder=static_dir)
+      self.assertTrue(rel.endswith('test_tpl.pdf'))
+      self.assertTrue(os.path.isfile(os.path.join(static_dir, 'templates', 'change_orders', 'test_tpl.pdf')))
+
+
 if __name__ == '__main__':
   unittest.main()

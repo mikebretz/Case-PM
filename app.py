@@ -17757,9 +17757,7 @@ def api_list_change_order_templates():
 @app.route('/api/change-order-templates', methods=['POST'])
 @login_required
 def api_create_change_order_template():
-    from change_order_template_persistence import apply_template_fields, template_to_dict
-    from werkzeug.utils import secure_filename
-    import re
+    from change_order_template_persistence import register_change_order_template, template_to_dict, _slugify_template_name, _unique_template_slug, save_template_pdf_file
 
     if current_user.role not in ('Admin', 'Project Manager', 'Contractor Accounting'):
         return jsonify({'error': 'Permission denied'}), 403
@@ -17767,41 +17765,91 @@ def api_create_change_order_template():
     company_key = (request.form.get('company_key') or '').strip().upper() or None
     description = (request.form.get('description') or '').strip() or None
     engine = (request.form.get('engine') or 'aldi_v1').strip() or 'aldi_v1'
-    slug_raw = (request.form.get('slug') or name or 'template').strip().lower()
-    slug = re.sub(r'[^a-z0-9]+', '_', slug_raw).strip('_')[:72] or 'template'
-    if ChangeOrderTemplate.query.filter_by(slug=slug).first():
-        slug = f'{slug}_{int(datetime.utcnow().timestamp())}'
+    slug = _unique_template_slug(_slugify_template_name(request.form.get('slug') or name), ChangeOrderTemplate)
     upload = request.files.get('file')
     if not upload or not upload.filename:
         return jsonify({'error': 'PDF template file is required'}), 400
     if not (upload.filename or '').lower().endswith('.pdf'):
         return jsonify({'error': 'Template must be a PDF file'}), 400
-    dest_dir = os.path.join(app.static_folder, 'templates', 'change_orders')
-    os.makedirs(dest_dir, exist_ok=True)
-    filename = secure_filename(f'{slug}.pdf') or f'{slug}.pdf'
-    dest_path = os.path.join(dest_dir, filename)
-    upload.save(dest_path)
-    rel_path = os.path.join('static', 'templates', 'change_orders', filename).replace('\\', '/')
-    row = ChangeOrderTemplate(
-        slug=slug,
+    pdf_bytes = upload.read()
+    if not pdf_bytes or pdf_bytes[:4] != b'%PDF':
+        return jsonify({'error': 'Template must be a valid PDF file'}), 400
+    rel_path = save_template_pdf_file(slug, pdf_bytes, static_folder=app.static_folder)
+    row = register_change_order_template(
+        db,
+        ChangeOrderTemplate,
         name=name or slug.replace('_', ' ').title(),
         company_key=company_key,
         description=description,
         template_pdf_path=rel_path,
         engine=engine,
-        is_active=True,
         is_default=bool(request.form.get('is_default')),
         created_by_id=current_user.id,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        slug=slug,
     )
-    if row.is_default:
-        ChangeOrderTemplate.query.filter(
-            ChangeOrderTemplate.company_key == row.company_key,
-        ).update({'is_default': False})
-    db.session.add(row)
-    db.session.commit()
     return jsonify({'ok': True, 'template': template_to_dict(row)})
+
+
+@app.route('/api/change-order-templates/from-document', methods=['POST'])
+@login_required
+def api_create_change_order_template_from_document():
+    from change_order_template_persistence import register_change_order_template, template_to_dict, _slugify_template_name, _unique_template_slug, save_template_pdf_file
+    from financial_security import require_financial_project_access
+
+    if current_user.role not in ('Admin', 'Project Manager', 'Contractor Accounting'):
+        return jsonify({'error': 'Permission denied'}), 403
+    body = request.get_json(silent=True) or {}
+    try:
+        document_id = int(body.get('document_id'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'document_id required'}), 400
+    project_id = body.get('project_id') or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    try:
+        project_id = require_financial_project_access(current_user, int(project_id), Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+
+    doc = Document.query.get_or_404(document_id)
+    if int(doc.project_id) != int(project_id):
+        return jsonify({'error': 'Document must belong to this project'}), 400
+    if doc.deleted_at:
+        return jsonify({'error': 'Document is deleted'}), 400
+    name = (body.get('name') or doc.name or doc.original_filename or doc.filename or '').strip()
+    if not name:
+        return jsonify({'error': 'Template name is required'}), 400
+    doc_name = (doc.original_filename or doc.name or doc.filename or '').lower()
+    mime = (doc.mime_type or '').lower()
+    if not (doc_name.endswith('.pdf') or mime == 'application/pdf'):
+        return jsonify({'error': 'Template must be a PDF file'}), 400
+
+    src_path = os.path.join(app.config['UPLOAD_FOLDER'], 'documents', str(doc.project_id), doc.filename)
+    if not os.path.isfile(src_path):
+        return jsonify({'error': 'Document file not found on disk'}), 404
+    with open(src_path, 'rb') as fh:
+        pdf_bytes = fh.read()
+    if not pdf_bytes or pdf_bytes[:4] != b'%PDF':
+        return jsonify({'error': 'Document is not a valid PDF file'}), 400
+
+    company_key = (body.get('company_key') or '').strip().upper() or None
+    description = (body.get('description') or '').strip() or None
+    engine = (body.get('engine') or 'aldi_v1').strip() or 'aldi_v1'
+    slug = _unique_template_slug(_slugify_template_name(body.get('slug') or name), ChangeOrderTemplate)
+    rel_path = save_template_pdf_file(slug, pdf_bytes, static_folder=app.static_folder)
+    row = register_change_order_template(
+        db,
+        ChangeOrderTemplate,
+        name=name,
+        company_key=company_key,
+        description=description,
+        template_pdf_path=rel_path,
+        engine=engine,
+        is_default=bool(body.get('is_default')),
+        created_by_id=current_user.id,
+        slug=slug,
+    )
+    return jsonify({'ok': True, 'template': template_to_dict(row), 'source_document_id': doc.id})
 
 
 @app.route('/api/change-order-templates/<int:template_id>/preview', methods=['GET'])
@@ -17848,6 +17896,24 @@ def api_update_change_order_template(template_id):
     else:
         db.session.commit()
     return jsonify({'ok': True, 'template': template_to_dict(row)})
+
+
+@app.route('/api/change-order-templates/<int:template_id>', methods=['DELETE'])
+@login_required
+def api_delete_change_order_template(template_id):
+    from change_order_template_persistence import delete_change_order_template
+
+    if current_user.role not in ('Admin', 'Project Manager', 'Contractor Accounting'):
+        return jsonify({'error': 'Permission denied'}), 403
+    row = ChangeOrderTemplate.query.get_or_404(template_id)
+    name = row.name
+    delete_change_order_template(
+        template_id,
+        ChangeOrderTemplate,
+        db,
+        base_dir=os.path.dirname(os.path.abspath(__file__)),
+    )
+    return jsonify({'ok': True, 'deleted_id': template_id, 'name': name})
 
 
 @app.route('/api/change-orders/<int:co_id>/print-template', methods=['GET'])

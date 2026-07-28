@@ -577,7 +577,17 @@
                 </div>
                 <div>
                     <label class="block text-zinc-400 mb-1">PDF template <span class="text-red-400">*</span></label>
-                    <input type="file" id="coTemplateFile" accept="application/pdf,.pdf" required class="w-full text-sm text-zinc-300">
+                    <div class="flex flex-wrap items-center gap-2 mb-2">
+                        <button type="button" onclick="CasePMChangeOrders.browseCoTemplateDocuments()" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md text-sm">
+                            <i class="fa-solid fa-folder-tree mr-1.5"></i>Browse Documents
+                        </button>
+                        <span class="text-[11px] text-zinc-500">or choose a file from your computer below</span>
+                    </div>
+                    <div id="coTemplateDocPick" class="hidden mb-2 px-3 py-2 rounded-md border border-emerald-800/50 bg-emerald-950/20 text-xs text-emerald-300 flex items-center justify-between gap-2">
+                        <span id="coTemplateDocPickLabel" class="truncate"></span>
+                        <button type="button" onclick="CasePMChangeOrders.clearCoTemplateDocument()" class="text-zinc-400 hover:text-white shrink-0" title="Clear">&times;</button>
+                    </div>
+                    <input type="file" id="coTemplateFile" accept="application/pdf,.pdf" class="w-full text-sm text-zinc-300">
                 </div>
                 <label class="flex items-center gap-2 text-zinc-300">
                     <input type="checkbox" id="coTemplateDefault" class="rounded border-zinc-600">
