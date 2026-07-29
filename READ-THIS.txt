@@ -1,0 +1,25 @@
+SYLVORIN — 3 STEPS ONLY
+========================
+
+IGNORE all other .bat files. Use START.bat only.
+
+STEP 1 — Double-click:  START.bat  → press 2
+        (downloads game files from GitHub into this folder)
+
+STEP 2 — Open Unreal Engine 5.8 (Epic Launcher)
+
+STEP 3 — In Unreal:  File → Open Project
+        Browse to:
+
+        [this folder]\Unreal\Sylvorin.uproject
+
+        Example: C:\Sylvorin\Unreal\Sylvorin.uproject
+
+That's it. You are in the game project.
+
+Optional: START.bat → 3 (find Unreal path) → 1 (auto-open next time)
+
+GitHub files live here (no Pull Request needed):
+https://github.com/mikebretz/Case-PM/tree/cursor/sylvorin-c-drive-c4a4
+
+Do NOT merge anything on GitHub. Just use START.bat option 2.
