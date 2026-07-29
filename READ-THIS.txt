@@ -3,6 +3,9 @@ HOW TO OPEN SYLVORIN IN UNREAL 5.8
 
 You do NOT use "New Project".
 
+GAME IS RUNNING? Next steps (mouse, ground, fantasy world plan):
+  SETUP-GAME-NOW.txt
+
 EASIEST - double-click this file:
   OPEN-SYLVORIN-PROJECT.bat
 

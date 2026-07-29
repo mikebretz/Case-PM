@@ -1,0 +1,23 @@
+RUN THIS ONCE IN UNREAL (adds ground + slow sky)
+================================================
+
+1. Open Sylvorin in Unreal (OPEN-SYLVORIN-PROJECT.bat)
+
+2. Top menu: Tools -> Run Python Script
+
+3. Pick file:
+   C:\Sylvorin\Unreal\Scripts\sylvorin_setup_level.py
+
+4. Check Output Log (bottom) for "DONE"
+
+5. File -> Save All
+
+6. Project Settings -> Maps & Modes
+   Game Default Map = SylvorinWorld
+
+CONTROLS (PC):
+  WASD = move
+  Mouse = look
+  Space = jump
+
+Read: Unreal\Docs\FANTASY-EARTH-WORLD.md for full world plan.

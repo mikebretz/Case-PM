@@ -44,8 +44,8 @@ echo   Files are now in C:\Sylvorin
 echo ================================================
 echo.
 echo Next steps:
-echo   1. C:\Sylvorin\SETUP-SYLVORIN.bat  (option 4 = check install)
-echo   2. C:\Sylvorin\SETUP-SYLVORIN.bat  (option 2 = open Unreal)
+echo   1. OPEN-SYLVORIN-PROJECT.bat
+echo   2. SETUP-GAME-NOW.txt  (mouse/keyboard, ground, slow sky)
 echo.
 echo GitHub branch (not a PR):
 echo   https://github.com/mikebretz/Case-PM/tree/cursor/sylvorin-c-drive-c4a4

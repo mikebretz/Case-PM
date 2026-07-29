@@ -25,6 +25,8 @@ echo   3 = Show path to open manually in Unreal
 echo   4 = Check what is on this PC
 echo   5 = Quit
 echo.
+echo   Game running? Read SETUP-GAME-NOW.txt (mouse, ground, sky)
+echo.
 set "PICK="
 set /p PICK="Type 1-5 then press Enter: "
 

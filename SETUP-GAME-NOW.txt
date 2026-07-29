@@ -1,0 +1,25 @@
+================================================================================
+  SYLVORIN — YOU SAID THE GAME IS RUNNING. DO THESE 3 THINGS NEXT
+================================================================================
+
+1) MOUSE + KEYBOARD (not gamepad / phone joysticks on screen)
+   - Play → Settings → Input → turn OFF "Always Show Touch Interface"
+   - In Content: ThirdPerson → Input → IMC_Default → IA_Look → add Mouse XY
+   - Details: Unreal\Docs\MOUSE-KEYBOARD-SETUP.md
+
+2) GROUND + SLOW SKY (not empty blue + sky jumping)
+   - Tools → Run Python Script → Unreal\Scripts\sylvorin_setup_level.py
+   - File → Save Current Level As → Content\Sylvorin\Maps\SylvorinWorld
+   - Edit → Project Settings → Maps → Game Default Map = SylvorinWorld
+   - Full steps: RUN-LEVEL-SETUP.txt
+
+3) FANTASY COPY OF THE REAL WORLD (long-term plan)
+   - Read: Unreal\Docs\FANTASY-EARTH-WORLD.md
+   - Phase 1: ground + continents (landscape)
+   - Phase 2: real city layouts → fantasy buildings
+   - Full Earth scale = huge project; we build it in phases
+
+After Python script: click Play — you should have brown/green ground and
+sun moving VERY slowly (like real time), not jumping every few seconds.
+
+================================================================================
