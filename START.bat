@@ -1,197 +1,168 @@
 @echo off
+REM Keeps window open when double-clicked
+if "%~1"=="" (
+  cmd /k call "%~f0" keepopen
+  exit /b
+)
+
 setlocal EnableDelayedExpansion
-title SYLVORIN — START HERE
-color 0A
-
-REM ============================================================
-REM  DOUBLE-CLICK THIS FILE ONLY:  START.bat
-REM  Put this folder anywhere (C:\Sylvorin is fine).
-REM ============================================================
-
+title SYLVORIN
+cd /d "%~dp0"
 set "HOME=%~dp0"
-set "HOME=%HOME:~0,-1%"
-cd /d "%HOME%"
+if "%HOME:~-1%"=="\" set "HOME=%HOME:~0,-1%"
 
+:menu
+cls
 echo.
 echo  ============================================
 echo    SYLVORIN
 echo    Folder: %HOME%
 echo  ============================================
 echo.
-echo   1  Open Sylvorin in Unreal (PLAY / EDIT)
-echo   2  Pull latest files from GitHub
-echo   3  Find Unreal on this PC and save path
-echo   4  Show what is installed
-echo   5  Quit
+echo   1 = Download game files from GitHub (no Git needed)
+echo   2 = Open Sylvorin in Unreal
+echo   3 = Show path to open manually in Unreal
+echo   4 = Check what is on this PC
+echo   5 = Quit
 echo.
-set /p PICK="Type 1-5 and press Enter: "
+set "PICK="
+set /p PICK="Type 1-5 then press Enter: "
 
-if "%PICK%"=="1" goto open_unreal
-if "%PICK%"=="2" goto pull_github
-if "%PICK%"=="3" goto find_unreal
-if "%PICK%"=="4" goto show_status
+if "%PICK%"=="1" goto download
+if "%PICK%"=="2" goto open_unreal
+if "%PICK%"=="3" goto show_path
+if "%PICK%"=="4" goto status
 if "%PICK%"=="5" exit /b 0
-echo Bad choice.
-pause
-exit /b 1
 
-REM ---------- OPEN UNREAL ----------
+echo.
+echo  You typed: %PICK%  -- enter 1, 2, 3, 4, or 5
+pause
+goto menu
+
+:download
+echo.
+echo  Downloading from GitHub... (1-3 minutes)
+echo  Log: %HOME%\start-log.txt
+echo.
+
+>>"%HOME%\start-log.txt" echo [%date% %time%] Download started
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$ErrorActionPreference='Stop';" ^
+  "$home='%HOME%';" ^
+  "$zip=Join-Path $env:TEMP 'sylvorin-download.zip';" ^
+  "$ex=Join-Path $env:TEMP 'sylvorin-extract';" ^
+  "$url='https://github.com/mikebretz/Case-PM/archive/refs/heads/cursor/sylvorin-c-drive-c4a4.zip';" ^
+  "Write-Host 'Downloading...';" ^
+  "Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing;" ^
+  "if (Test-Path $ex) { Remove-Item $ex -Recurse -Force };" ^
+  "Expand-Archive -Path $zip -DestinationPath $ex -Force;" ^
+  "$folder = Get-ChildItem $ex -Directory | Select-Object -First 1;" ^
+  "if (-not $folder) { throw 'Zip was empty' };" ^
+  "Write-Host 'Copying to' $home;" ^
+  "Copy-Item -Path (Join-Path $folder.FullName '*') -Destination $home -Recurse -Force;" ^
+  "Write-Host 'SUCCESS'"
+
+if errorlevel 1 (
+  echo.
+  echo  DOWNLOAD FAILED.
+  echo  Open in browser and extract manually:
+  echo  https://github.com/mikebretz/Case-PM/archive/refs/heads/cursor/sylvorin-c-drive-c4a4.zip
+  >>"%HOME%\start-log.txt" echo [%date% %time%] Download FAILED
+) else (
+  echo.
+  echo  SUCCESS - files are in %HOME%
+  echo  Look for folder: %HOME%\Unreal
+  >>"%HOME%\start-log.txt" echo [%date% %time%] Download OK
+)
+
+echo.
+pause
+goto menu
+
 :open_unreal
 set "PROJECT=%HOME%\Unreal\Sylvorin.uproject"
 if not exist "%PROJECT%" (
   echo.
-  echo  MISSING: Unreal\Sylvorin.uproject
-  echo  Run option 2 first (Pull from GitHub).
+  echo  Project not found. Run option 1 first.
+  echo  Expected: %PROJECT%
   pause
-  exit /b 1
+  goto menu
 )
 
-call :locate_unreal
+call :find_unreal
 if not defined UE_EXE (
   echo.
-  echo  ============================================
-  echo   COULD NOT FIND UNREAL AUTOMATICALLY
-  echo  ============================================
-  echo.
-  echo  DO THIS INSTEAD (works every time):
-  echo.
-  echo  1. Open Unreal Engine 5.8 (you already have it)
-  echo  2. File -^> Open Project
-  echo  3. Browse to:
-  echo.
-  echo     %PROJECT%
-  echo.
-  echo  4. Click Open. Done.
-  echo.
-  echo  To fix auto-launch: run option 3 while Unreal is open.
+  echo  Could not auto-find Unreal. Use option 3 instead.
   pause
-  exit /b 0
+  goto menu
 )
 
 echo.
-echo  Opening Sylvorin...
-echo  Unreal: %UE_EXE%
-echo  Project: %PROJECT%
-echo.
+echo  Launching Unreal with Sylvorin...
 start "" "%UE_EXE%" "%PROJECT%"
-echo  If Unreal does not appear, wait 2 minutes (first compile).
+echo  Wait 1-2 minutes if first time.
 pause
-exit /b 0
+goto menu
 
-REM ---------- PULL GITHUB ----------
-:pull_github
-where git >nul 2>&1
-if errorlevel 1 (
-  echo Git not installed. Install from https://git-scm.com/download/win
-  pause
-  exit /b 1
-)
-
-set "REPO=https://github.com/mikebretz/Case-PM.git"
-set "BRANCH=cursor/sylvorin-c-drive-c4a4"
-set "TEMP=%TEMP%\sylvorin-pull"
-
-echo Pulling Sylvorin files from GitHub...
-if exist "%TEMP%" rd /s /q "%TEMP%"
-git clone -b %BRANCH% %REPO% "%TEMP%"
-if errorlevel 1 (
-  echo Git pull failed. Check internet and Git install.
-  pause
-  exit /b 1
-)
-
-REM Copy repo contents into current folder (not Case-PM app junk - branch root IS Sylvorin)
-echo Copying into %HOME% ...
-xcopy /E /Y /Q "%TEMP%\*" "%HOME%\"
-rd /s /q "%TEMP%"
+:show_path
+set "PROJECT=%HOME%\Unreal\Sylvorin.uproject"
 echo.
-echo  Done. Files updated.
-echo  Next: press 3 then 1, or open project manually in Unreal.
+echo  ============================================
+echo   OPEN THIS IN UNREAL (always works)
+echo  ============================================
+echo.
+echo  1. Open Unreal Engine 5.8 from Epic Launcher
+echo  2. File -^> Open Project
+echo  3. Copy/paste this path:
+echo.
+echo  %PROJECT%
+echo.
+if exist "%PROJECT%" (echo  [OK] File exists.) else (echo  [!!] File missing - run option 1)
+echo.
 pause
-exit /b 0
+goto menu
 
-REM ---------- FIND UNREAL ----------
-:find_unreal
-echo Searching for Unreal Engine...
-call :locate_unreal
-if defined UE_EXE (
-  echo FOUND: %UE_EXE%
-  >"%HOME%\unreal.path" echo %UE_EXE%
-  echo Saved to unreal.path in this folder.
-) else (
-  echo Not found by scan.
-  echo.
-  echo Paste full path to UnrealEditor.exe
-  echo Example: C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor.exe
-  echo.
-  set /p UE_EXE="Path: "
-  if exist "!UE_EXE!" (
-    >"%HOME%\unreal.path" echo !UE_EXE!
-    echo Saved.
-  ) else (
-    echo That file does not exist.
-  )
-)
-pause
-exit /b 0
-
-REM ---------- STATUS ----------
-:show_status
+:status
 echo.
 echo Folder: %HOME%
-if exist "%HOME%\Unreal\Sylvorin.uproject" (echo [OK] Sylvorin.uproject) else (echo [!!] No Sylvorin.uproject - run option 2)
-if exist "%HOME%\START.bat" (echo [OK] START.bat) else (echo [!!] START.bat)
+if exist "%HOME%\Unreal\Sylvorin.uproject" (echo [OK] Sylvorin.uproject) else (echo [!!] Run option 1 to download files)
+if exist "%HOME%\START.bat" (echo [OK] START.bat)
 
-call :locate_unreal
-if defined UE_EXE (echo [OK] Unreal: %UE_EXE%) else (echo [!!] Unreal not found - run option 3)
+call :find_unreal
+if defined UE_EXE (echo [OK] Unreal: %UE_EXE%) else (echo [!!] Unreal path not found - use option 3)
 
-tasklist /FI "IMAGENAME eq UnrealEditor.exe" 2>nul | find /I "UnrealEditor.exe" >nul && echo [OK] Unreal is RUNNING right now || echo [--] Unreal not running
+tasklist /FI "IMAGENAME eq UnrealEditor.exe" 2>nul | find /I "UnrealEditor.exe" >nul && echo [OK] Unreal is running now
 
-tasklist /FI "IMAGENAME eq EpicGamesLauncher.exe" 2>nul | find /I "EpicGamesLauncher.exe" >nul && echo [OK] Epic Launcher running || echo [--] Epic Launcher not running
+tasklist /FI "IMAGENAME eq EpicGamesLauncher.exe" 2>nul | find /I "EpicGamesLauncher.exe" >nul && echo [OK] Epic Launcher is running now
 
-where git >nul 2>&1 && echo [OK] Git || echo [!!] Git
 echo.
 pause
-exit /b 0
+goto menu
 
-REM ---------- FIND UNREAL ENGINE EXE ----------
-:locate_unreal
+:find_unreal
 set "UE_EXE="
 if exist "%HOME%\unreal.path" (
   set /p UE_EXE=<"%HOME%\unreal.path"
-  if exist "!UE_EXE!" exit /b 0
+  if exist "!UE_EXE!" goto :eof
   set "UE_EXE="
 )
 
-REM Running Unreal right now
-for /f "usebackq tokens=2 delims==" %%A in (`wmic process where "name='UnrealEditor.exe'" get ExecutablePath /value 2^>nul ^| findstr /i "UnrealEditor"`) do (
-  set "UE_EXE=%%A"
-  goto :found_ue
-)
+for /f "usebackq delims=" %%A in (`powershell -NoProfile -Command "(Get-Process UnrealEditor -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path -First 1)" 2^>nul`) do set "UE_EXE=%%A"
 
-REM Standard Epic folders UE_5.8, UE_5.7, etc.
-for %%V in (5.8 5.7 5.6 5.5 5.4 5.3) do (
+if defined UE_EXE goto :eof
+
+for %%V in (5.8 5.7 5.6 5.5 5.4) do (
   if exist "C:\Program Files\Epic Games\UE_%%V\Engine\Binaries\Win64\UnrealEditor.exe" (
     set "UE_EXE=C:\Program Files\Epic Games\UE_%%V\Engine\Binaries\Win64\UnrealEditor.exe"
-    goto :found_ue
+    goto :eof
   )
 )
 
-REM Any UE_* folder
 for /d %%D in ("C:\Program Files\Epic Games\UE_*") do (
   if exist "%%D\Engine\Binaries\Win64\UnrealEditor.exe" (
     set "UE_EXE=%%D\Engine\Binaries\Win64\UnrealEditor.exe"
-    goto :found_ue
+    goto :eof
   )
 )
-
-REM D drive common
-for /d %%D in ("D:\Epic Games\UE_*" "D:\Program Files\Epic Games\UE_*") do (
-  if exist "%%D\Engine\Binaries\Win64\UnrealEditor.exe" (
-    set "UE_EXE=%%D\Engine\Binaries\Win64\UnrealEditor.exe"
-    goto :found_ue
-  )
-)
-
-:found_ue
-exit /b 0
+goto :eof
