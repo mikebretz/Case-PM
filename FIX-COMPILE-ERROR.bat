@@ -1,24 +1,22 @@
 @echo off
-title Fix Sylvorin compile error
+title Fix Sylvorin - remove C++ build junk
 cd /d "%~dp0"
 
-echo.
-echo  This deletes old failed C++ build files.
-echo  Sylvorin is now Blueprint-only (no compile on open).
+echo Removing old C++ build files so Unreal opens without Visual Studio...
 echo.
 
-if exist "Unreal\Binaries" (
-  echo Removing Unreal\Binaries ...
-  rd /s /q "Unreal\Binaries"
-)
-if exist "Unreal\Intermediate" (
-  echo Removing Unreal\Intermediate ...
-  rd /s /q "Unreal\Intermediate"
-)
+if exist "Unreal\Binaries" rd /s /q "Unreal\Binaries"
+if exist "Unreal\Intermediate" rd /s /q "Unreal\Intermediate"
+if exist "Unreal\.vs" rd /s /q "Unreal\.vs"
+del /q "Unreal\*.sln" 2>nul
+del /q "Unreal\Sylvorin.sln" 2>nul
 
 echo.
-echo  Done. Now double-click OPEN-SYLVORIN-PROJECT.bat
-echo  When Unreal opens, click YES if it asks to rebuild
-echo  (should open without C++ errors now).
+echo  Done.
 echo.
+echo  NOW run: OPEN-SYLVORIN-PROJECT.bat
+echo  (Opens UNREAL — not Visual Studio)
+echo.
+echo  If Visual Studio opens anyway, CLOSE IT.
+echo  Only Unreal Engine is needed.
 pause

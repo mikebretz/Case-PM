@@ -1,0 +1,18 @@
+STOP - READ THIS
+================
+
+Visual Studio is NOT needed to open Sylvorin right now.
+
+DO NOT double-click Sylvorin.uproject in File Explorer
+(that can open Visual Studio by mistake).
+
+USE THIS FILE ONLY:
+  OPEN-SYLVORIN-PROJECT.bat
+
+If Visual Studio opened:
+  1. Close Visual Studio
+  2. Run FIX-COMPILE-ERROR.bat
+  3. Run OPEN-SYLVORIN-PROJECT.bat
+
+C++ code moved to: Optional-C++-Source\
+(ignore until later)

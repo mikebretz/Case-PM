@@ -1,29 +1,46 @@
 @echo off
-title Open Sylvorin
+title Open Sylvorin in UNREAL (not Visual Studio)
 cd /d "%~dp0"
 
 set "PROJECT=%~dp0Unreal\Sylvorin.uproject"
 
 if not exist "%PROJECT%" (
+  echo Project missing: %PROJECT%
+  echo Download ZIP from GitHub first.
+  pause
+  exit /b 1
+)
+
+REM Find Unreal Editor — NOT Visual Studio
+set "UE_EXE="
+
+for /f "usebackq delims=" %%A in (`powershell -NoProfile -Command "(Get-Process UnrealEditor -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path -First 1)" 2^>nul`) do set "UE_EXE=%%A"
+
+if not defined UE_EXE if exist "C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor.exe" set "UE_EXE=C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor.exe"
+
+if not defined UE_EXE (
+  for /d %%D in ("C:\Program Files\Epic Games\UE_*") do (
+    if exist "%%D\Engine\Binaries\Win64\UnrealEditor.exe" set "UE_EXE=%%D\Engine\Binaries\Win64\UnrealEditor.exe"
+  )
+)
+
+if not defined UE_EXE (
   echo.
-  echo  FILE NOT FOUND:
-  echo  %PROJECT%
-  echo.
-  echo  Download the ZIP and copy files into this folder first:
-  echo  https://github.com/mikebretz/Case-PM/archive/refs/heads/cursor/sylvorin-c-drive-c4a4.zip
-  echo.
+  echo  Could not find UnrealEditor.exe
+  echo  Open Epic Launcher -^> Library -^> Launch UE 5.8
+  echo  Then File -^> Open -^> %PROJECT%
   pause
   exit /b 1
 )
 
 echo.
-echo  Opening Sylvorin in Unreal Engine...
+echo  Opening UNREAL ENGINE (not Visual Studio)
+echo  %UE_EXE%
 echo  %PROJECT%
 echo.
-echo  If Unreal asks to rebuild, click YES and wait.
-echo.
 
-start "" "%PROJECT%"
+start "" "%UE_EXE%" "%PROJECT%"
 
-echo  Done. Unreal should open in 1-2 minutes.
+echo  Unreal is starting. Ignore Visual Studio if it pops up.
+echo  Close Visual Studio — you do not need it right now.
 pause
