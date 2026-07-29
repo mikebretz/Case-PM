@@ -3,15 +3,11 @@ SYLVORIN — everything lives at C:\Sylvorin
 
 NOT part of Case PM / KSPM.
 
-FIRST TIME SETUP:
-  Option A — one-click pull (after PR is merged / branch exists):
-    PULL-TO-C-SYLVORIN.bat
+FIRST TIME — get latest files from GitHub (no Pull Request needed):
+  DOWNLOAD-SYLVORIN-FROM-GITHUB.bat
 
-  Option B — git clone:
-    git clone -b cursor/sylvorin-c-drive-c4a4 https://github.com/mikebretz/Case-PM C:\Sylvorin
-
-  Option C — copy files:
-    COPY-TO-C-SYLVORIN.bat
+Then:
+  SETUP-SYLVORIN.bat  (option 4 = check, option 2 = open Unreal)
 
   Then always:
     C:\Sylvorin\INSTALL-DESKTOP.bat
