@@ -1,0 +1,20 @@
+COMPILE ERROR FIX
+=================
+
+Error: "Sylvorin could not be compiled"
+
+FIX (2 steps):
+
+1. Double-click:  FIX-COMPILE-ERROR.bat
+
+2. Double-click:  OPEN-SYLVORIN-PROJECT.bat
+
+Unreal should open WITHOUT compiling C++.
+
+Then in Unreal:
+  Add -^> Feature or Content Pack -^> Third Person
+  (gives you a playable character)
+
+C++ code is in Unreal\Source for later.
+You need Visual Studio 2022 + "Game development with C++"
+only when you want to compile C++ again.

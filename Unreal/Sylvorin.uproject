@@ -3,22 +3,12 @@
   "EngineAssociation": "5.8",
   "Category": "Games",
   "Description": "Sylvorin — WoW-inspired MMORPG (UE5)",
-  "Modules": [
-    {
-      "Name": "Sylvorin",
-      "Type": "Runtime",
-      "LoadingPhase": "Default"
-    }
-  ],
+  "Modules": [],
   "Plugins": [
     {
       "Name": "ModelingToolsEditorMode",
       "Enabled": true,
       "TargetAllowList": ["Editor"]
-    },
-    {
-      "Name": "GameplayAbilities",
-      "Enabled": true
     }
   ]
 }
