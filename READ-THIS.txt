@@ -1,16 +1,18 @@
-IF START.BAT CLOSES IMMEDIATELY
-================================
+HOW TO OPEN SYLVORIN IN UNREAL 5.8
+==================================
 
-Double-click:  CLICK-HERE.bat   (not START.bat)
+You do NOT use "New Project".
 
-OR open Command Prompt manually:
-  cd C:\Sylvorin
-  START.bat
+EASIEST - double-click this file:
+  OPEN-SYLVORIN-PROJECT.bat
 
-STEPS:
-  1 = Download files (no Git needed)
-  3 = Shows path to open in Unreal
+OR in File Explorer go to:
+  [this folder]\Unreal\Sylvorin.uproject
 
-In Unreal 5.8:
-  File -> Open Project
-  Pick:  [this folder]\Unreal\Sylvorin.uproject
+Double-click Sylvorin.uproject
+
+OR on "My Projects" screen:
+  - Look at the BOTTOM LEFT for "Browse" or a folder icon
+  - Or click the ... three dots menu
+
+NEVER click "New Project" for Sylvorin.
