@@ -1,21 +1,34 @@
 @echo off
-REM Opens Sylvorin in Unreal Engine 5 — use SETUP-SYLVORIN.bat if this fails
+title Open Sylvorin in Unreal Engine 5
 cd /d "C:\Sylvorin"
-call "C:\Sylvorin\SETUP-SYLVORIN.bat" 
-REM User picks option 2 from menu — or we auto-run open:
-REM Fallback: direct launch
-set "UE="
-for %%V in (5.5 5.4 5.3) do (
-  if exist "C:\Program Files\Epic Games\UE_%%V\Engine\Binaries\Win64\UnrealEditor.exe" (
-    set "UE=C:\Program Files\Epic Games\UE_%%V\Engine\Binaries\Win64\UnrealEditor.exe"
-    goto launch
-  )
+
+if not exist "C:\Sylvorin\Unreal\Sylvorin.uproject" (
+  echo Missing: C:\Sylvorin\Unreal\Sylvorin.uproject
+  echo Run SETUP-SYLVORIN.bat first.
+  pause
+  exit /b 1
 )
-echo Unreal Engine 5 not installed. Run C:\Sylvorin\SETUP-SYLVORIN.bat and choose 1.
+
+call "C:\Sylvorin\scripts\detect-tools.cmd"
+
+if not defined UE_EDITOR (
+  echo.
+  echo  UNREAL ENGINE NOT FOUND BY SCRIPT
+  echo  =================================
+  echo  If Unreal IS installed (e.g. 5.8), pull latest files from GitHub
+  echo  so C:\Sylvorin\scripts\find-unreal.ps1 is updated.
+  echo.
+  echo  Or open manually in Unreal:
+  echo    File -^> Open Project -^> C:\Sylvorin\Unreal\Sylvorin.uproject
+  echo.
+  pause
+  exit /b 1
+)
+
+echo Opening Unreal Editor with Sylvorin project...
+echo %UE_EDITOR%
+start "" "%UE_EDITOR%" "C:\Sylvorin\Unreal\Sylvorin.uproject"
+echo.
+echo If the editor does not appear, wait 1-2 minutes (first compile is slow).
+echo.
 pause
-exit /b 1
-:launch
-start "" "%UE%" "C:\Sylvorin\Unreal\Sylvorin.uproject"
-echo Unreal Editor starting...
-timeout /t 5
-exit /b 0

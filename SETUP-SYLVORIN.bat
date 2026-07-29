@@ -122,8 +122,9 @@ if not defined UE_EDITOR (
   echo  4. Run this again (option 2)
   echo.
   echo  Opening Epic Games Launcher if installed...
-  if exist "C:\Program Files (x86)\Epic Games\Launcher\Portal\Binaries\Win32\EpicGamesLauncher.exe" (
-    start "" "C:\Program Files (x86)\Epic Games\Launcher\Portal\Binaries\Win32\EpicGamesLauncher.exe"
+  call "C:\Sylvorin\scripts\detect-tools.cmd"
+  if defined EPIC_LAUNCHER (
+    start "" "!EPIC_LAUNCHER!"
   )
   pause
   goto :end
@@ -178,7 +179,10 @@ where winget >nul 2>&1 && echo   [OK] winget || echo   [!!] winget not found
 call :find_ue5_editor
 if defined UE_EDITOR (echo   [OK] Unreal: !UE_EDITOR!) else (echo   [!!] Unreal Engine 5 not found)
 
-if exist "C:\Program Files (x86)\Epic Games\Launcher" (echo   [OK] Epic Launcher folder) else (echo   [!!] Epic Launcher not found)
+call "C:\Sylvorin\scripts\detect-tools.cmd"
+if defined EPIC_LAUNCHER (echo   [OK] Epic Launcher: !EPIC_LAUNCHER!) else (
+  if exist "C:\Program Files (x86)\Epic Games\Launcher" (echo   [OK] Epic Launcher folder) else (echo   [!!] Epic Launcher not found)
+)
 
 echo.
 echo  TIP: .md and .txt docs may open in Word — that is normal.
@@ -189,14 +193,7 @@ pause
 goto :end
 
 :find_ue5_editor
-set "UE_EDITOR="
-for %%V in (5.5 5.4 5.3 5.2 5.1 5.0) do (
-  if exist "C:\Program Files\Epic Games\UE_%%V\Engine\Binaries\Win64\UnrealEditor.exe" (
-    set "UE_EDITOR=C:\Program Files\Epic Games\UE_%%V\Engine\Binaries\Win64\UnrealEditor.exe"
-    goto :found_ue
-  )
-)
-:found_ue
+call "C:\Sylvorin\scripts\detect-tools.cmd"
 exit /b 0
 
 :end

@@ -1,6 +1,6 @@
 {
   "FileVersion": 3,
-  "EngineAssociation": "5.4",
+  "EngineAssociation": "5.8",
   "Category": "Games",
   "Description": "Sylvorin — WoW-inspired MMORPG (UE5)",
   "Modules": [
