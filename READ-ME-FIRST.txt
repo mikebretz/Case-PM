@@ -1,0 +1,27 @@
+READ THIS FIRST — SYLVORIN
+==========================
+
+DO NOT double-click these (they open in Word or do nothing useful):
+  - README.md
+  - GETTING-STARTED.md
+  - DESIGN-SPEC.md
+  - Sylvorin.uproject  (only works AFTER Unreal Engine 5 is installed)
+
+DOUBLE-CLICK THIS ONE FILE TO START:
+====================================
+
+  SETUP-SYLVORIN.bat
+
+Then choose:
+  1 = Install Git, Node, Python, Epic Launcher
+  2 = Open Unreal Engine 5 (after you install UE5 from Epic Launcher)
+  3 = Play simple browser game
+  4 = Check what is missing
+
+UNREAL ENGINE 5 — required for the real game:
+  1. Run SETUP-SYLVORIN.bat -> option 1
+  2. Open Epic Games Launcher -> Install UE 5.4 or 5.5
+  3. Install Visual Studio 2022 with "Game development with C++"
+  4. Run SETUP-SYLVORIN.bat -> option 2
+
+Project folder: C:\Sylvorin\Unreal\
