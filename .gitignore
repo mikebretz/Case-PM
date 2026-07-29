@@ -1,2 +1,9 @@
-# Ignore local path overrides (machine-specific)
+node_modules/
+dist/
+venv/
+logs/
+*.local
+install-sylvorin.ps1
+__pycache__/
+*.pyc
 unreal.paths.cfg

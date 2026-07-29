@@ -1,23 +1,17 @@
-SYLVORIN — everything lives at C:\Sylvorin
-============================================
+SYLVORIN — everything via GitHub pull
+======================================
 
-NOT part of Case PM / KSPM.
+Repo: https://github.com/mikebretz/Sylvorin
 
-FIRST TIME — get latest files from GitHub (no Pull Request needed):
-  DOWNLOAD-SYLVORIN-FROM-GITHUB.bat
+STEP 1 — Pull files to C:\Sylvorin
+  PULL-FROM-GITHUB.bat
+  (or SETUP-SYLVORIN.bat option 6)
 
-Then:
-  SETUP-SYLVORIN.bat  (option 4 = check, option 2 = open Unreal)
+STEP 2 — Fix "Unreal not found" (UE 5.8 running)
+  FIND-MY-UNREAL.bat   (run while Unreal is open)
+  OR SET-UNREAL-PATH.bat (paste path manually)
 
-  Then always:
-    C:\Sylvorin\INSTALL-DESKTOP.bat
-
-FILES AT C:\Sylvorin:
-  INSTALL-DESKTOP.bat     setup (run once)
-  RUN-DESKTOP.bat         play game
-  RUN-SYLVORIN.bat        play in browser
-  desktop_launcher.py     desktop window
-  src\game\               all game code
-  index.html              game page
-
-GitHub: https://github.com/mikebretz/Sylvorin
+STEP 3 — Open game
+  SETUP-SYLVORIN.bat option 2
+  OR File -> Open Project in Unreal:
+    C:\Sylvorin\Unreal\Sylvorin.uproject
