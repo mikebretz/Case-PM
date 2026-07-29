@@ -31,15 +31,21 @@ echo    2 = Open Sylvorin in UNREAL ENGINE 5
 echo    3 = Play the simple web prototype (browser game)
 echo    4 = Check what is installed (diagnostics)
 echo    5 = Exit
+echo    6 = Pull latest from GitHub (github.com/mikebretz/Sylvorin)
 echo.
-set /p CHOICE="Type 1, 2, 3, 4, or 5 and press Enter: "
+set /p CHOICE="Type 1-6 and press Enter: "
 
 if "%CHOICE%"=="1" goto :install_all
 if "%CHOICE%"=="2" goto :open_ue5
 if "%CHOICE%"=="3" goto :play_web
 if "%CHOICE%"=="4" goto :diagnostics
 if "%CHOICE%"=="5" goto :end
+if "%CHOICE%"=="6" goto :pull_github
 goto :bad_choice
+
+:pull_github
+call "C:\Sylvorin\PULL-FROM-GITHUB.bat"
+goto :end
 
 :bad_choice
 echo Invalid choice.
@@ -114,12 +120,11 @@ if not exist "C:\Sylvorin\Unreal\Sylvorin.uproject" (
 call :find_ue5_editor
 if not defined UE_EDITOR (
   echo.
-  echo  UNREAL ENGINE 5 IS NOT INSTALLED ON THIS PC
-  echo  =============================================
-  echo  1. Run SETUP-SYLVORIN.bat and choose option 1
-  echo  2. Open Epic Games Launcher
-  echo  3. Install Unreal Engine 5.4 or 5.5
-  echo  4. Run this again (option 2)
+  echo  Could not find Unreal automatically.
+  echo  With Unreal 5.8 RUNNING, run: FIND-MY-UNREAL.bat
+  echo  Or run: SET-UNREAL-PATH.bat
+  echo.
+  echo  Or open manually: File -^> Open Project -^> C:\Sylvorin\Unreal\Sylvorin.uproject
   echo.
   echo  Opening Epic Games Launcher if installed...
   call "C:\Sylvorin\scripts\detect-tools.cmd"
