@@ -1,17 +1,20 @@
-SYLVORIN — everything via GitHub pull
-======================================
+SYLVORIN — GitHub download
+============================
 
 Repo: https://github.com/mikebretz/Sylvorin
 
-STEP 1 — Pull files to C:\Sylvorin
-  PULL-FROM-GITHUB.bat
-  (or SETUP-SYLVORIN.bat option 6)
+FIRST TIME (empty Sylvorin repo on GitHub)
+  1. DOWNLOAD-SYLVORIN-FROM-GITHUB.bat   (gets files to C:\Sylvorin)
+  2. PUBLISH-SYLVORIN-TO-GITHUB.bat      (ONE TIME — uploads to Sylvorin repo)
+     Sign in to GitHub if prompted.
 
-STEP 2 — Fix "Unreal not found" (UE 5.8 running)
-  FIND-MY-UNREAL.bat   (run while Unreal is open)
-  OR SET-UNREAL-PATH.bat (paste path manually)
+AFTER Sylvorin repo has files
+  PULL-FROM-GITHUB.bat                   (git pull)
+  or DOWNLOAD-SYLVORIN-FROM-GITHUB.bat   (zip download, no git)
 
-STEP 3 — Open game
-  SETUP-SYLVORIN.bat option 2
-  OR File -> Open Project in Unreal:
-    C:\Sylvorin\Unreal\Sylvorin.uproject
+OPEN GAME
+  OPEN-SYLVORIN-PROJECT.bat
+  SETUP-GAME-NOW.txt
+
+Backup source (if Sylvorin repo empty):
+  Case-PM branch cursor/sylvorin-c-drive-c4a4

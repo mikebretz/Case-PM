@@ -54,9 +54,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$home='%HOME%';" ^
   "$zip=Join-Path $env:TEMP 'sylvorin-download.zip';" ^
   "$ex=Join-Path $env:TEMP 'sylvorin-extract';" ^
-  "$url='https://github.com/mikebretz/Case-PM/archive/refs/heads/cursor/sylvorin-c-drive-c4a4.zip';" ^
-  "Write-Host 'Downloading...';" ^
-  "Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing;" ^
+  "$url='https://github.com/mikebretz/Sylvorin/archive/refs/heads/main.zip';" ^
+  "$fallback='https://github.com/mikebretz/Case-PM/archive/refs/heads/cursor/sylvorin-c-drive-c4a4.zip';" ^
+  "Write-Host 'Downloading from Sylvorin repo...';" ^
+  "try { Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing } catch { Write-Host 'Using backup...'; Invoke-WebRequest -Uri $fallback -OutFile $zip -UseBasicParsing };" ^
   "if (Test-Path $ex) { Remove-Item $ex -Recurse -Force };" ^
   "Expand-Archive -Path $zip -DestinationPath $ex -Force;" ^
   "$folder = Get-ChildItem $ex -Directory | Select-Object -First 1;" ^
