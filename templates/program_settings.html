@@ -52,6 +52,7 @@
         <button onclick="switchSettingsTab('backup')" id="tab-backup" class="settings-tab-btn"><i class="fa-solid fa-database mr-1.5 opacity-70"></i>Backup</button>
         <button onclick="switchSettingsTab('email')" id="tab-email" class="settings-tab-btn"><i class="fa-solid fa-envelope mr-1.5 opacity-70"></i>Email</button>
         <button onclick="switchSettingsTab('security')" id="tab-security" class="settings-tab-btn"><i class="fa-solid fa-shield-halved mr-1.5 opacity-70"></i>Security</button>
+        <button onclick="switchSettingsTab('accounting')" id="tab-accounting" class="settings-tab-btn"><i class="fa-solid fa-book mr-1.5 opacity-70"></i>Accounting</button>
         <button onclick="switchSettingsTab('integrations')" id="tab-integrations" class="settings-tab-btn"><i class="fa-solid fa-plug mr-1.5 opacity-70"></i>Integrations</button>
         <button onclick="switchSettingsTab('sage')" id="tab-sage" class="settings-tab-btn"><i class="fa-solid fa-chart-line mr-1.5 opacity-70"></i>Sage 300</button>
     </div>
@@ -797,6 +798,45 @@
     </div>
 
     <!-- Integrations Tab -->
+    <!-- Integrations Tab -->
+    <div id="tab-content-accounting" class="hidden">
+        <div class="settings-panel">
+            <h2 class="text-xl font-semibold mb-2">Built-in Accounting</h2>
+            <p class="text-sm text-zinc-400 mb-6">G/L account mapping and auto-post from construction workflows (pay apps, commitments). Open the <a href="{{ url_for('accounting_page') }}" class="text-emerald-400 hover:underline">Accounting</a> module for day-to-day work.</p>
+            <form id="accountingDefaultsForm" onsubmit="saveAccountingDefaults(event)">
+                <div class="mb-5">
+                    <label class="flex items-center gap-2 text-sm text-zinc-300">
+                        <input type="checkbox" id="acct_auto_post_enabled" class="rounded border-zinc-600" {% if accounting_defaults.get('auto_post_enabled', '1') != '0' %}checked{% endif %}>
+                        Auto-post approved construction financials to built-in G/L / A/P / A/R
+                    </label>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {% for key, label in [
+                        ('cash_account', 'Cash account'),
+                        ('ar_account', 'Accounts receivable'),
+                        ('ap_account', 'Accounts payable'),
+                        ('revenue_account', 'Revenue'),
+                        ('subcontract_expense', 'Subcontract expense'),
+                        ('materials_expense', 'Materials expense'),
+                        ('labor_expense', 'Labor / payroll expense'),
+                        ('payroll_liability', 'Payroll liabilities'),
+                        ('accum_dep_account', 'Accumulated depreciation'),
+                        ('depreciation_expense', 'Depreciation expense'),
+                    ] %}
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1">{{ label }}</label>
+                        <input type="text" name="{{ key }}" id="acct_{{ key }}" value="{{ accounting_defaults.get(key, '') }}"
+                               class="settings-input font-mono" placeholder="e.g. 1000">
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="mt-6 flex gap-3">
+                    <button type="submit" class="settings-btn settings-btn-primary"><i class="fa-solid fa-save"></i> Save accounting defaults</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div id="tab-content-integrations" class="hidden">
         <div class="settings-panel">
             <h2 class="text-xl font-semibold mb-2">Integrations Status</h2>
@@ -1001,6 +1041,29 @@
     async function renderProgramEmailSettings() {
         if (window.CasePMProgramSettings) {
             await CasePMProgramSettings.renderEmailAdminTab();
+        }
+    }
+
+    async function saveAccountingDefaults(e) {
+        e.preventDefault();
+        const form = document.getElementById('accountingDefaultsForm');
+        const accounting = { auto_post_enabled: document.getElementById('acct_auto_post_enabled')?.checked ? '1' : '0' };
+        form.querySelectorAll('input[name]').forEach((el) => {
+            if (el.id === 'acct_auto_post_enabled') return;
+            accounting[el.name] = el.value.trim();
+        });
+        try {
+            const res = await fetch('/api/program-settings/accounting', {
+                method: 'PUT',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ accounting }),
+            });
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.error || 'Save failed');
+            CasePMDialog.alert('Accounting defaults saved. Construction auto-post will use these G/L mappings.', 'success');
+        } catch (err) {
+            CasePMDialog.alert(err.message || 'Could not save accounting settings.', 'error');
         }
     }
 

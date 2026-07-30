@@ -268,6 +268,20 @@ def define_accounting_models(db):
         journal_batch_id = db.Column(db.Integer, db.ForeignKey('acct_journal_batch.id'), nullable=True)
         created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    class AcctReportDefinition(db.Model):
+        """Saved custom report — filters and layout for Accounting → Reports."""
+        __tablename__ = 'acct_report_definition'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        name = db.Column(db.String(120), nullable=False)
+        report_type = db.Column(db.String(40), nullable=False)
+        filters_json = db.Column(db.Text)
+        columns_json = db.Column(db.Text)
+        is_favorite = db.Column(db.Boolean, default=False)
+        created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+        updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
     class AcctPayrollRun(db.Model):
         __tablename__ = 'acct_payroll_run'
         id = db.Column(db.Integer, primary_key=True)
@@ -302,5 +316,6 @@ def define_accounting_models(db):
         'AcctARReceipt': AcctARReceipt,
         'AcctARReceiptApply': AcctARReceiptApply,
         'AcctDepreciationRun': AcctDepreciationRun,
+        'AcctReportDefinition': AcctReportDefinition,
         'AcctPayrollRun': AcctPayrollRun,
     }
