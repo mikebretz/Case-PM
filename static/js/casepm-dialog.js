@@ -412,6 +412,79 @@
     });
   }
 
+  function showFormDialog(options = {}) {
+    ensureStyles();
+    const title = options.title || 'Form';
+    const fields = options.fields || [];
+    const submitLabel = options.submitLabel || 'Save';
+    const cancelLabel = options.cancelLabel || 'Cancel';
+    return new Promise((resolve) => {
+      const dialog = document.createElement('dialog');
+      dialog.className = 'casepm-dialog';
+      dialog.style.maxWidth = 'min(560px, 92vw)';
+      dialog.style.width = 'min(560px, 92vw)';
+      const fieldsHtml = fields.map((f) => {
+        const id = `casepm-form-${f.key}`;
+        const req = f.required ? ' required' : '';
+        if (f.type === 'select') {
+          const opts = (f.options || []).map((o) => {
+            const val = typeof o === 'object' ? o.value : o;
+            const lab = typeof o === 'object' ? o.label : o;
+            const sel = String(f.defaultValue ?? '') === String(val) ? ' selected' : '';
+            return `<option value="${escapeHtml(String(val))}"${sel}>${escapeHtml(String(lab))}</option>`;
+          }).join('');
+          return `<div class="casepm-dialog-field mb-3"><label for="${id}">${escapeHtml(f.label)}</label>
+            <select id="${id}" name="${escapeHtml(f.key)}"${req}>${opts}</select></div>`;
+        }
+        const type = f.type === 'number' ? 'number' : 'text';
+        const step = f.step ? ` step="${escapeHtml(String(f.step))}"` : '';
+        return `<div class="casepm-dialog-field mb-3"><label for="${id}">${escapeHtml(f.label)}</label>
+          <input type="${type}" id="${id}" name="${escapeHtml(f.key)}" value="${escapeHtml(String(f.defaultValue ?? ''))}" placeholder="${escapeHtml(f.placeholder || '')}"${step}${req}></div>`;
+      }).join('');
+      dialog.innerHTML = `
+        <div class="casepm-dialog-panel">
+          <div class="casepm-dialog-title">${iconForType('info')}<span>${escapeHtml(title)}</span></div>
+          <div class="casepm-dialog-body">${options.message ? `<p class="mb-3 text-sm text-zinc-400">${escapeHtml(String(options.message))}</p>` : ''}${fieldsHtml}</div>
+          <div class="casepm-dialog-actions">
+            <button type="button" class="casepm-dialog-btn casepm-dialog-btn-secondary" data-action="cancel">${escapeHtml(cancelLabel)}</button>
+            <button type="button" class="casepm-dialog-btn casepm-dialog-btn-primary" data-action="confirm">${escapeHtml(submitLabel)}</button>
+          </div>
+        </div>`;
+      document.body.appendChild(dialog);
+      makeDraggable(dialog, '.casepm-dialog-title');
+      const firstInput = dialog.querySelector('input, select, textarea');
+      openCenteredDialog(dialog);
+      firstInput?.focus();
+
+      const collect = () => {
+        const out = {};
+        let valid = true;
+        fields.forEach((f) => {
+          const el = dialog.querySelector(`[name="${f.key}"]`);
+          if (!el) return;
+          const val = el.value.trim();
+          if (f.required && !val) valid = false;
+          out[f.key] = f.type === 'number' ? (val === '' ? '' : parseFloat(val)) : val;
+        });
+        return valid ? out : null;
+      };
+
+      dialog.querySelector('[data-action="cancel"]').onclick = () => resolve(closeDialog(dialog, null));
+      dialog.querySelector('[data-action="confirm"]').onclick = () => {
+        const data = collect();
+        if (!data) {
+          showCenteredAlert('Please fill in all required fields.', 'warning');
+          return;
+        }
+        resolve(closeDialog(dialog, data));
+      };
+      dialog.addEventListener('cancel', (e) => {
+        e.preventDefault();
+        resolve(closeDialog(dialog, null));
+      });
+    });
+  }
+
   function showCenteredConfirm(message, options = {}) {
     ensureStyles();
     const title = options.title || 'Confirm';
@@ -454,6 +527,7 @@
     alert: showCenteredAlert,
     confirm: showCenteredConfirm,
     prompt: showCenteredPrompt,
+    form: showFormDialog,
     select: showSelectDialog,
     open: openCenteredDialog,
     makeDraggable,

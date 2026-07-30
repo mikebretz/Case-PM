@@ -202,6 +202,7 @@
 
   function bindTaxExtras() {
     const { api, switchModule } = helpers();
+    const AD = () => global.CasePMAccountingDialog || {};
     document.getElementById('acctTaxCalcBtn')?.addEventListener('click', async () => {
       const amount = parseFloat(document.getElementById('acctTaxCalcAmt')?.value || '0');
       const code = document.getElementById('acctTaxCalcCode')?.value?.trim();
@@ -219,7 +220,7 @@
     });
     document.querySelectorAll('.acct-tax-edit').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        const rate = prompt('New rate %');
+        const rate = await AD().prompt('New rate %', '', { title: 'Edit tax rate', label: 'Rate %' });
         if (rate == null) return;
         await api(`/api/accounting/tax/groups/${btn.getAttribute('data-id')}`, {
           method: 'PATCH',
@@ -233,9 +234,13 @@
 
   function bindAssetExtras() {
     const { api, switchModule } = helpers();
+    const AD = () => global.CasePMAccountingDialog || {};
     document.querySelectorAll('.acct-asset-dispose').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        const proceeds = prompt('Disposal proceeds (cash received)', '0');
+        const proceeds = await AD().prompt('Disposal proceeds (cash received)', '0', {
+          title: 'Dispose asset',
+          label: 'Proceeds',
+        });
         if (proceeds == null) return;
         try {
           await api(`/api/accounting/assets/${btn.getAttribute('data-id')}/dispose`, {
@@ -245,7 +250,7 @@
           });
           switchModule('assets');
         } catch (e) {
-          alert(e.message);
+          await AD().alert(e.message, 'error');
         }
       });
     });
@@ -253,6 +258,7 @@
 
   function bindPOExtras() {
     const { api, switchModule } = helpers();
+    const AD = () => global.CasePMAccountingDialog || {};
     document.querySelectorAll('.acct-po-receive').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-id');
@@ -269,7 +275,7 @@
           });
           switchModule('po');
         } catch (e) {
-          alert(e.message);
+          await AD().alert(e.message, 'error');
         }
       });
     });
@@ -277,6 +283,7 @@
 
   function bindOEExtras() {
     const { api, switchModule } = helpers();
+    const AD = () => global.CasePMAccountingDialog || {};
     document.querySelectorAll('.acct-oe-ship').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-id');
@@ -293,7 +300,7 @@
           });
           switchModule('oe');
         } catch (e) {
-          alert(e.message);
+          await AD().alert(e.message, 'error');
         }
       });
     });
@@ -301,10 +308,10 @@
       btn.addEventListener('click', async () => {
         try {
           const out = await api(`/api/accounting/oe/orders/${btn.getAttribute('data-id')}/invoice`, { method: 'POST', body: '{}' });
-          alert(`A/R invoice #${out.ar_document_id} created for ${out.amount}`);
+          await AD().alert(`A/R invoice #${out.ar_document_id} created for ${out.amount}`, 'success');
           switchModule('oe');
         } catch (e) {
-          alert(e.message);
+          await AD().alert(e.message, 'error');
         }
       });
     });

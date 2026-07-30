@@ -117,21 +117,38 @@
 
   function bindHandlers() {
     const { api, switchModule, projectId } = h();
+    const AD = () => global.CasePMAccountingDialog || {};
 
     document.getElementById('acctPrAddEmp')?.addEventListener('click', async () => {
-      const employee_number = prompt('Employee #');
-      const first_name = prompt('First name');
-      const last_name = prompt('Last name');
-      if (!employee_number || !first_name || !last_name) return;
-      const pay_type = prompt('Pay type: hourly or salary', 'hourly') || 'hourly';
-      const hourly_rate = parseFloat(prompt('Hourly rate (if hourly)', '35') || '0');
-      const annual_salary = parseFloat(prompt('Annual salary (if salary)', '0') || '0');
+      const data = await AD().form({
+        title: 'Add employee',
+        fields: [
+          { key: 'employee_number', label: 'Employee #', required: true },
+          { key: 'first_name', label: 'First name', required: true },
+          { key: 'last_name', label: 'Last name', required: true },
+          {
+            key: 'pay_type',
+            label: 'Pay type',
+            type: 'select',
+            defaultValue: 'hourly',
+            options: [{ value: 'hourly', label: 'Hourly' }, { value: 'salary', label: 'Salary' }],
+          },
+          { key: 'hourly_rate', label: 'Hourly rate', type: 'number', step: '0.01', defaultValue: '35' },
+          { key: 'annual_salary', label: 'Annual salary (if salary)', type: 'number', step: '0.01', defaultValue: '0' },
+        ],
+      });
+      if (!data) return;
       const pid = projectId();
       await api('/api/accounting/payroll/employees', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          employee_number, first_name, last_name, pay_type, hourly_rate, annual_salary,
+          employee_number: data.employee_number,
+          first_name: data.first_name,
+          last_name: data.last_name,
+          pay_type: data.pay_type || 'hourly',
+          hourly_rate: parseFloat(data.hourly_rate || 0),
+          annual_salary: parseFloat(data.annual_salary || 0),
           default_project_id: pid || null,
         }),
       });
@@ -139,18 +156,24 @@
     });
 
     document.getElementById('acctPrAddDed')?.addEventListener('click', async () => {
-      const code = prompt('Deduction code (e.g. 401K)');
-      if (!code) return;
-      const amount = parseFloat(prompt('Fixed amount per period (or 0)', '0') || '0');
-      const percent = parseFloat(prompt('Or percent of gross (or 0)', '0') || '0');
+      const data = await AD().form({
+        title: 'Add deduction code',
+        fields: [
+          { key: 'code', label: 'Code (e.g. 401K)', required: true },
+          { key: 'amount', label: 'Fixed amount per period (or 0)', type: 'number', step: '0.01', defaultValue: '0' },
+          { key: 'percent', label: 'Or percent of gross (or 0)', type: 'number', step: '0.01', defaultValue: '0' },
+        ],
+      });
+      if (!data) return;
+      const percent = parseFloat(data.percent || 0);
       await api('/api/accounting/payroll/deductions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          code,
-          description: code,
+          code: data.code,
+          description: data.code,
           calc_method: percent > 0 ? 'percent' : 'fixed',
-          amount,
+          amount: parseFloat(data.amount || 0),
           percent,
         }),
       });
@@ -181,10 +204,10 @@
     async function postRun(id) {
       try {
         const out = await api(`/api/accounting/payroll/runs/${id}/post`, { method: 'POST', body: '{}' });
-        alert(`Posted payroll · G/L batch ${out.journal_batch_id}`);
+        await AD().alert(`Posted payroll · G/L batch ${out.journal_batch_id}`, 'success');
         switchModule('payroll');
       } catch (e) {
-        alert(e.message);
+        await AD().alert(e.message, 'error');
       }
     }
 

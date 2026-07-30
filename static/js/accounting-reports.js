@@ -4,6 +4,10 @@
 (function (global) {
   'use strict';
 
+  function AD() {
+    return global.CasePMAccountingDialog || {};
+  }
+
   function esc(s) {
     const d = document.createElement('div');
     d.textContent = s == null ? '' : String(s);
@@ -293,13 +297,16 @@
       try {
         await exportCsv();
       } catch (e) {
-        alert(e.message);
+        await AD().alert(e.message, 'error');
       }
     });
 
     document.getElementById('acctSaveCustomBtn')?.addEventListener('click', async () => {
       const name = document.getElementById('acctCustomReportName')?.value?.trim();
-      if (!name) return alert('Enter a name for this saved report.');
+      if (!name) {
+        await AD().alert('Enter a name for this saved report.', 'warning');
+        return;
+      }
       try {
         await api('/api/accounting/reports/custom', {
           method: 'POST',
@@ -314,7 +321,7 @@
         if (global.CasePMAccounting?.switchModule) global.CasePMAccounting.switchModule('reports');
         else location.reload();
       } catch (e) {
-        alert(e.message);
+        await AD().alert(e.message, 'error');
       }
     });
 
@@ -340,12 +347,13 @@
     document.querySelectorAll('.acct-del-saved').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-id');
-        if (!confirm('Delete this saved report?')) return;
+        const ok = await AD().confirm('Delete this saved report?', { title: 'Delete report', danger: true, confirmLabel: 'Delete' });
+        if (!ok) return;
         try {
           await api(`/api/accounting/reports/custom/${id}`, { method: 'DELETE' });
           if (global.CasePMAccounting?.switchModule) global.CasePMAccounting.switchModule('reports');
         } catch (e) {
-          alert(e.message);
+          await AD().alert(e.message, 'error');
         }
       });
     });
