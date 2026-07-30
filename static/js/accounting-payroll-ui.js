@@ -48,6 +48,7 @@
       <div class="flex flex-wrap justify-between gap-2 items-center">
         <h2 class="text-lg font-semibold text-white">Payroll</h2>
         <div class="flex flex-wrap gap-2">
+          <button type="button" id="acctPrImportUser" class="text-xs px-2 py-1 bg-zinc-800 border border-zinc-600 rounded text-sky-400">Import from Users</button>
           <button type="button" id="acctPrAddEmp" class="text-xs px-2 py-1 bg-zinc-800 border border-zinc-600 rounded">+ Employee</button>
           <button type="button" id="acctPrAddDed" class="text-xs px-2 py-1 bg-zinc-800 border border-zinc-600 rounded">+ Deduction</button>
           <button type="button" id="acctPrNewRun" class="text-xs px-2 py-1 bg-emerald-700 rounded">+ Pay run</button>
@@ -119,6 +120,28 @@
     const { api, switchModule, projectId } = h();
     const AD = () => global.CasePMAccountingDialog || {};
 
+    document.getElementById('acctPrImportUser')?.addEventListener('click', async () => {
+      const res = await api('/api/accounting/payroll/import/users');
+      const available = (res.users || []).filter((u) => !u.already_imported);
+      if (!available.length) {
+        await AD().alert('All active users are already on payroll, or no users found.', 'info');
+        return;
+      }
+      const pick = await AD().select({
+        title: 'Import employee from User Management',
+        message: 'Creates a payroll employee linked to the user. Removing the user later does not delete payroll records.',
+        items: available.map((u) => ({ value: String(u.id), label: `${u.name} · ${u.email}` })),
+        submitLabel: 'Import',
+      });
+      if (!pick) return;
+      await api('/api/accounting/payroll/employees/from-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: parseInt(pick.value, 10) }),
+      });
+      switchModule('payroll');
+    });
+
     document.getElementById('acctPrAddEmp')?.addEventListener('click', async () => {
       const data = await AD().form({
         title: 'Add employee',
@@ -133,8 +156,8 @@
             defaultValue: 'hourly',
             options: [{ value: 'hourly', label: 'Hourly' }, { value: 'salary', label: 'Salary' }],
           },
-          { key: 'hourly_rate', label: 'Hourly rate', type: 'number', step: '0.01', defaultValue: '35' },
-          { key: 'annual_salary', label: 'Annual salary (if salary)', type: 'number', step: '0.01', defaultValue: '0' },
+          { key: 'hourly_rate', label: 'Hourly rate', type: 'number', step: '0.01' },
+          { key: 'annual_salary', label: 'Annual salary (if salary)', type: 'number', step: '0.01' },
         ],
       });
       if (!data) return;
