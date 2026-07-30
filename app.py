@@ -279,6 +279,7 @@ _audit_schema_ready = False
 MODULE_ROUTE_GUARD = {
     'budget_page': 'budget',
     'forecast_page': 'forecast',
+    'accounting_page': 'accounting',
     'pay_applications_page': 'pay_applications',
     'commitments_page': 'commitments',
     'companies_page': 'companies',
@@ -18447,6 +18448,20 @@ register_platform_tier2_routes(app, {
     'ClientPortalApproval': ClientPortalApproval,
     'RFI': RFI,
     'ChangeOrder': ChangeOrder,
+})
+
+
+from accounting_routes import register_accounting_routes
+register_accounting_routes(app, {
+    'db': db,
+    'request': request,
+    'jsonify': jsonify,
+    'login_required': login_required,
+    'current_user': current_user,
+    'get_current_project_id': get_current_project_id,
+    'get_active_project': get_active_project,
+    'Project': Project,
+    'SageSyncEvent': SageSyncEvent,
 })
 
 

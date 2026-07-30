@@ -31,6 +31,8 @@ def regenerate_session_on_login():
     session.modified = True
 
 FINANCIAL_MODULES = frozenset({
+    'accounting', 'accounting_overview', 'accounting_erp', 'accounting_catalog',
+    'accounting_inquiries', 'accounting_reconcile',
     'budget', 'forecast', 'commitments', 'pay_applications',
     'pay_applications_gc', 'pay_applications_sub', 'pay_applications_lien_waivers',
     'companies', 'estimating',
@@ -68,13 +70,14 @@ API_PREFIX_MODULE = [
     ('/api/documents', 'documents'),
     ('/api/document-folders', 'documents'),
     ('/api/drawings', 'drawings'),
+    ('/api/accounting/', 'accounting'),
     ('/api/budget', 'budget'),
     ('/api/forecast', 'forecast'),
     ('/api/commitments', 'commitments'),
     ('/api/pay-applications', 'pay_applications'),
     ('/api/pay_apps', 'pay_applications'),
     ('/api/companies', 'companies'),
-    ('/api/sage/', 'budget'),
+    ('/api/sage/', 'accounting'),
     ('/api/schedules', 'schedule'),
     ('/api/schedule', 'schedule'),
     ('/api/projects/', 'projects'),

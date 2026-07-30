@@ -725,6 +725,11 @@
                     <span>Forecast</span>
                 </a>
 
+                <a href="{{ url_for('accounting_page', project_id=active_project.id) if active_project else url_for('accounting_page') }}" data-nav-module="accounting" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'accounting_page' %}active{% endif %}">
+                    <i class="fa-solid fa-calculator w-5 text-emerald-500"></i>
+                    <span>Accounting</span>
+                </a>
+
                 <a href="{{ url_for('commitments_page', project_id=active_project.id) if active_project else url_for('commitments_page') }}" data-nav-module="commitments" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'commitments_page' %}active{% endif %}">
                     <i class="fa-solid fa-handshake w-5"></i>
                     <span>Commitments</span>

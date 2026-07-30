@@ -365,7 +365,7 @@ ROLE_PERMISSIONS = {
     'Contractor Accounting': {
         'portal': 'staff',
         'approve': ['Pay Applications', 'Change Orders', 'Commitments'],
-        'modules': ['Pay Applications', 'Change Orders', 'Commitments', 'Budget', 'Documents', 'Email', 'Schedule'],
+        'modules': ['Pay Applications', 'Change Orders', 'Commitments', 'Budget', 'Accounting', 'Documents', 'Email', 'Schedule'],
     },
     'Company User': {'portal': 'sub', 'approve': [], 'modules': ['Pay Applications', 'Submittals', 'Documents', 'Email', 'RFIs']},
     'Viewer': {'portal': 'staff', 'approve': [], 'modules': 'view'},
