@@ -395,6 +395,9 @@ def create_ap_payment(
     payment_method='Check',
     bank_account_id=None,
     user_id=None,
+    payment_batch_id=None,
+    check_number=None,
+    payment_date=None,
 ):
     """Pay vendor invoices: Dr AP, Cr Cash; update invoice paid amounts."""
     opts = load_accounting_options()
@@ -412,15 +415,20 @@ def create_ap_payment(
         raise ValueError('amount required')
 
     pay_num = f'AP-PAY-{datetime.utcnow().strftime("%Y%m%d%H%M%S")}'
+    pay_dt = payment_date if payment_date else date.today()
+    if isinstance(pay_dt, str):
+        pay_dt = date.fromisoformat(pay_dt)
     payment = AcctAPPayment(
         ledger_id=ledger.id,
         payment_number=pay_num,
         vendor_id=int(vendor_id),
-        payment_date=date.today(),
+        payment_date=pay_dt,
         amount=amount,
         payment_method=payment_method,
         bank_account_id=bank_account_id,
         status='Posted',
+        payment_batch_id=int(payment_batch_id) if payment_batch_id else None,
+        check_number=(str(check_number)[:20] if check_number else None),
     )
     db.session.add(payment)
     db.session.flush()
@@ -460,7 +468,7 @@ def create_ap_payment(
         if bank:
             bt = AcctBankTransaction(
                 bank_account_id=bank.id,
-                transaction_date=date.today(),
+                transaction_date=pay_dt,
                 description=f'AP Payment {pay_num}',
                 amount=-amount,
                 transaction_type='Payment',
