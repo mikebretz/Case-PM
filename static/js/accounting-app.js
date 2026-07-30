@@ -369,44 +369,60 @@
       </div>`;
   }
 
+  function AD() {
+    return global.CasePMAccountingDialog || {};
+  }
+
   function bindPanelHandlers(route) {
     document.querySelectorAll('[data-acct-dash]').forEach((btn) => {
       btn.addEventListener('click', () => switchModule(btn.getAttribute('data-acct-dash')));
     });
     document.getElementById('acctPayApBtn')?.addEventListener('click', async () => {
-      const invId = prompt('AP invoice id to pay (from list above)');
-      const vendorId = prompt('Vendor id');
-      const amt = prompt('Payment amount');
-      if (!invId || !vendorId || !amt) return;
+      const data = await AD().form({
+        title: 'Pay A/P invoice',
+        fields: [
+          { key: 'invId', label: 'AP invoice id (from list above)', required: true },
+          { key: 'vendorId', label: 'Vendor id', required: true },
+          { key: 'amt', label: 'Payment amount', type: 'number', step: '0.01', required: true },
+        ],
+        submitLabel: 'Post payment',
+      });
+      if (!data) return;
       const banks = await api('/api/accounting/bank/accounts');
       const bankId = (banks.accounts || [])[0]?.id;
       await api('/api/accounting/ap/payments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          vendor_id: parseInt(vendorId, 10),
-          amount: parseFloat(amt),
+          vendor_id: parseInt(data.vendorId, 10),
+          amount: parseFloat(data.amt),
           bank_account_id: bankId,
-          applications: [{ ap_document_id: parseInt(invId, 10), amount: parseFloat(amt) }],
+          applications: [{ ap_document_id: parseInt(data.invId, 10), amount: parseFloat(data.amt) }],
         }),
       });
       switchModule('ap');
     });
     document.getElementById('acctArReceiptBtn')?.addEventListener('click', async () => {
-      const invId = prompt('AR invoice id');
-      const custId = prompt('Customer id');
-      const amt = prompt('Receipt amount');
-      if (!invId || !custId || !amt) return;
+      const data = await AD().form({
+        title: 'Apply A/R receipt',
+        fields: [
+          { key: 'invId', label: 'AR invoice id', required: true },
+          { key: 'custId', label: 'Customer id', required: true },
+          { key: 'amt', label: 'Receipt amount', type: 'number', step: '0.01', required: true },
+        ],
+        submitLabel: 'Apply receipt',
+      });
+      if (!data) return;
       const banks = await api('/api/accounting/bank/accounts');
       const bankId = (banks.accounts || [])[0]?.id;
       await api('/api/accounting/ar/receipts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customer_id: parseInt(custId, 10),
-          amount: parseFloat(amt),
+          customer_id: parseInt(data.custId, 10),
+          amount: parseFloat(data.amt),
           bank_account_id: bankId,
-          applications: [{ ar_document_id: parseInt(invId, 10), amount: parseFloat(amt) }],
+          applications: [{ ar_document_id: parseInt(data.invId, 10), amount: parseFloat(data.amt) }],
         }),
       });
       switchModule('ar');
@@ -424,17 +440,23 @@
       switchModule('bank');
     });
     document.getElementById('acctNewPayroll')?.addEventListener('click', async () => {
-      const gross = prompt('Total gross wages');
-      const net = prompt('Net pay (employee deposits)');
-      const taxes = prompt('Payroll taxes / withholdings (optional)');
-      if (!gross) return;
+      const data = await AD().form({
+        title: 'Quick pay run (totals only)',
+        fields: [
+          { key: 'gross', label: 'Total gross wages', type: 'number', step: '0.01', required: true },
+          { key: 'net', label: 'Net pay (employee deposits)', type: 'number', step: '0.01', defaultValue: '0' },
+          { key: 'taxes', label: 'Payroll taxes / withholdings', type: 'number', step: '0.01', defaultValue: '0' },
+        ],
+        submitLabel: 'Create run',
+      });
+      if (!data) return;
       await api('/api/accounting/payroll/runs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          total_gross: parseFloat(gross),
-          total_net: parseFloat(net || 0),
-          total_taxes: parseFloat(taxes || 0),
+          total_gross: parseFloat(data.gross),
+          total_net: parseFloat(data.net || 0),
+          total_taxes: parseFloat(data.taxes || 0),
         }),
       });
       switchModule('payroll');
@@ -448,60 +470,90 @@
     document.getElementById('acctRunDep')?.addEventListener('click', async () => {
       try {
         const out = await api('/api/accounting/assets/depreciate', { method: 'POST', body: '{}' });
-        alert(`Depreciation posted: ${money(out.total)}`);
+        await AD().alert(`Depreciation posted: ${money(out.total)}`, 'success');
         switchModule('assets');
       } catch (e) {
-        alert(e.message);
+        await AD().alert(e.message, 'error');
       }
     });
     document.getElementById('acctAddVendor')?.addEventListener('click', async () => {
-      const code = prompt('Vendor code');
-      const name = prompt('Vendor name');
-      if (!code || !name) return;
-      await api('/api/accounting/ap/vendors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, name }) });
+      const data = await AD().form({
+        title: 'Add vendor',
+        fields: [
+          { key: 'code', label: 'Vendor code', required: true },
+          { key: 'name', label: 'Vendor name', required: true },
+        ],
+      });
+      if (!data) return;
+      await api('/api/accounting/ap/vendors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
       switchModule('ap');
     });
     document.getElementById('acctAddCustomer')?.addEventListener('click', async () => {
-      const code = prompt('Customer code');
-      const name = prompt('Customer name');
-      if (!code || !name) return;
-      await api('/api/accounting/ar/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, name }) });
+      const data = await AD().form({
+        title: 'Add customer',
+        fields: [
+          { key: 'code', label: 'Customer code', required: true },
+          { key: 'name', label: 'Customer name', required: true },
+        ],
+      });
+      if (!data) return;
+      await api('/api/accounting/ar/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
       switchModule('ar');
     });
     document.getElementById('acctAddBank')?.addEventListener('click', async () => {
-      const code = prompt('Bank code');
-      const name = prompt('Bank name');
-      if (!code || !name) return;
-      await api('/api/accounting/bank/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, name }) });
+      const data = await AD().form({
+        title: 'Add bank account',
+        fields: [
+          { key: 'code', label: 'Bank code', required: true },
+          { key: 'name', label: 'Bank name', required: true },
+        ],
+      });
+      if (!data) return;
+      await api('/api/accounting/bank/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
       switchModule('bank');
     });
     document.getElementById('acctAddTax')?.addEventListener('click', async () => {
-      const code = prompt('Tax group code (e.g. FL-SALES)');
-      if (!code) return;
-      const rate = prompt('Rate %', '7');
-      const tax_type = prompt('Type: sales, use, or withholding', 'sales') || 'sales';
+      const data = await AD().form({
+        title: 'Add tax group',
+        fields: [
+          { key: 'code', label: 'Tax group code (e.g. FL-SALES)', required: true },
+          { key: 'rate', label: 'Rate %', type: 'number', step: '0.01', defaultValue: '7', required: true },
+          {
+            key: 'tax_type',
+            label: 'Type',
+            type: 'select',
+            defaultValue: 'sales',
+            options: [
+              { value: 'sales', label: 'Sales tax' },
+              { value: 'use', label: 'Use tax' },
+              { value: 'withholding', label: 'Withholding' },
+            ],
+          },
+        ],
+      });
+      if (!data) return;
       await api('/api/accounting/tax/groups', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          code,
-          description: code,
-          rate_percent: parseFloat(rate || 0),
-          tax_type,
+          code: data.code,
+          description: data.code,
+          rate_percent: parseFloat(data.rate || 0),
+          tax_type: data.tax_type,
           authority: 'State',
         }),
       });
       switchModule('tax');
     });
     document.getElementById('acctAddItem')?.addEventListener('click', async () => {
-      const item_number = prompt('Item number');
+      const item_number = await AD().promptRequired('Item number', '', { title: 'Add inventory item' });
       if (!item_number) return;
       await api('/api/accounting/inventory/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_number, description: item_number }) });
       switchModule('inventory');
     });
     document.querySelectorAll('.acct-inv-adj').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        const delta = prompt('Quantity change (+ receive, − issue)', '1');
+        const delta = await AD().prompt('Quantity change (+ receive, − issue)', '1', { title: 'Adjust quantity', label: 'Qty delta' });
         if (delta == null || delta === '') return;
         await api(`/api/accounting/inventory/items/${btn.getAttribute('data-id')}/adjust`, {
           method: 'POST',
@@ -512,19 +564,27 @@
       });
     });
     document.getElementById('acctAddPO')?.addEventListener('click', async () => {
-      const po_number = prompt('PO number');
-      if (!po_number) return;
-      const vendorId = prompt('Vendor id (optional)');
-      const item = prompt('Line item number (inventory)', 'MAT-001');
-      const qty = parseFloat(prompt('Quantity', '1') || '1');
-      const price = parseFloat(prompt('Unit price', '0') || '0');
+      const data = await AD().form({
+        title: 'New purchase order',
+        fields: [
+          { key: 'po_number', label: 'PO number', required: true },
+          { key: 'vendorId', label: 'Vendor id (optional)' },
+          { key: 'item', label: 'Line item number (inventory)', defaultValue: 'MAT-001' },
+          { key: 'qty', label: 'Quantity', type: 'number', step: '0.01', defaultValue: '1' },
+          { key: 'price', label: 'Unit price', type: 'number', step: '0.01', defaultValue: '0' },
+        ],
+      });
+      if (!data) return;
+      const qty = parseFloat(data.qty || 1);
+      const price = parseFloat(data.price || 0);
+      const item = data.item;
       const lines = item ? [{ item_number: item, description: item, qty, unit_price: price, qty_received: 0 }] : [];
       await api('/api/accounting/po/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          po_number,
-          vendor_id: vendorId ? parseInt(vendorId, 10) : null,
+          po_number: data.po_number,
+          vendor_id: data.vendorId ? parseInt(data.vendorId, 10) : null,
           project_id: projectId(),
           lines,
         }),
@@ -532,19 +592,24 @@
       switchModule('po');
     });
     document.getElementById('acctAddOE')?.addEventListener('click', async () => {
-      const order_number = prompt('Order number');
-      if (!order_number) return;
-      const customerId = prompt('Customer id');
-      const desc = prompt('Line description', 'Materials sale');
-      const qty = parseFloat(prompt('Qty', '1') || '1');
-      const price = parseFloat(prompt('Unit price', '100') || '100');
-      const lines = [{ description: desc, qty, unit_price: price, qty_shipped: 0 }];
+      const data = await AD().form({
+        title: 'New sales order',
+        fields: [
+          { key: 'order_number', label: 'Order number', required: true },
+          { key: 'customerId', label: 'Customer id' },
+          { key: 'desc', label: 'Line description', defaultValue: 'Materials sale' },
+          { key: 'qty', label: 'Qty', type: 'number', step: '0.01', defaultValue: '1' },
+          { key: 'price', label: 'Unit price', type: 'number', step: '0.01', defaultValue: '100' },
+        ],
+      });
+      if (!data) return;
+      const lines = [{ description: data.desc, qty: parseFloat(data.qty || 1), unit_price: parseFloat(data.price || 0), qty_shipped: 0 }];
       await api('/api/accounting/oe/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          order_number,
-          customer_id: customerId ? parseInt(customerId, 10) : null,
+          order_number: data.order_number,
+          customer_id: data.customerId ? parseInt(data.customerId, 10) : null,
           project_id: projectId(),
           lines,
         }),
@@ -552,21 +617,26 @@
       switchModule('oe');
     });
     document.getElementById('acctAddAsset')?.addEventListener('click', async () => {
-      const asset_number = prompt('Asset number');
-      if (!asset_number) return;
-      const description = prompt('Description', asset_number);
-      const cost = parseFloat(prompt('Acquisition cost', '0') || '0');
-      const months = parseInt(prompt('Useful life (months)', '60') || '60', 10);
-      const location = prompt('Location (optional)', '');
+      const data = await AD().form({
+        title: 'Add fixed asset',
+        fields: [
+          { key: 'asset_number', label: 'Asset number', required: true },
+          { key: 'description', label: 'Description' },
+          { key: 'cost', label: 'Acquisition cost', type: 'number', step: '0.01', defaultValue: '0' },
+          { key: 'months', label: 'Useful life (months)', type: 'number', defaultValue: '60' },
+          { key: 'location', label: 'Location (optional)' },
+        ],
+      });
+      if (!data) return;
       await api('/api/accounting/assets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          asset_number,
-          description,
-          acquisition_cost: cost,
-          useful_life_months: months,
-          location: location || '',
+          asset_number: data.asset_number,
+          description: data.description || data.asset_number,
+          acquisition_cost: parseFloat(data.cost || 0),
+          useful_life_months: parseInt(data.months || 60, 10),
+          location: data.location || '',
         }),
       });
       switchModule('assets');
@@ -574,7 +644,10 @@
     document.getElementById('acctNewJeBatch')?.addEventListener('click', async () => {
       const acct = await api('/api/accounting/gl/accounts');
       const accounts = acct.accounts || [];
-      if (accounts.length < 2) return alert('Need at least 2 GL accounts');
+      if (accounts.length < 2) {
+        await AD().alert('Need at least 2 GL accounts', 'warning');
+        return;
+      }
       const cash = accounts.find((a) => a.account_number.startsWith('10')) || accounts[0];
       const expense = accounts.find((a) => a.account_type === 'expense') || accounts[1];
       await api('/api/accounting/gl/batches', {
