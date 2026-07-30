@@ -48,11 +48,12 @@ MODULE_SUBMODULES = {
         ('change_orders_erp', 'ERP Accounting Queue'),
     ],
     'accounting': [
-        ('accounting_overview', 'Overview & Dashboard'),
-        ('accounting_erp', 'ERP / Sage Export Queue'),
-        ('accounting_catalog', 'Sage 300 Module Catalog'),
-        ('accounting_inquiries', 'Sage Web API Inquiries'),
-        ('accounting_reconcile', 'Reconcile & Sage Pull'),
+        ('accounting', 'Accounting (built-in ERP)'),
+        ('accounting_overview', 'Dashboard'),
+        ('accounting_erp', 'Export queue (when Sage sync on)'),
+        ('accounting_catalog', 'Module reference'),
+        ('accounting_inquiries', 'Advanced inquiries'),
+        ('accounting_reconcile', 'Reconcile & job cost'),
     ],
     'estimating': [
         ('estimating_summary', 'Summary'),
@@ -127,7 +128,7 @@ MODULE_GROUPS = [
         'id': 'financial',
         'label': 'Financial',
         'modules': [
-            ('accounting', 'Accounting (Sage 300)'),
+            ('accounting', 'Accounting (built-in ERP)'),
             ('budget', 'Budget'),
             ('forecast', 'Forecast'),
             ('commitments', 'Commitments'),

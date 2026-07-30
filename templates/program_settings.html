@@ -808,13 +808,17 @@
         </div>
     </div>
 
-    <!-- Sage 300 Tab -->
+    <!-- Sage 300 Tab (optional external sync) -->
     <div id="tab-content-sage" class="hidden">
         <div class="settings-panel">
+            <div class="mb-6 p-4 rounded-lg border border-emerald-900/40 bg-emerald-950/20">
+                <h3 class="text-sm font-semibold text-emerald-300">Built-in accounting is primary</h3>
+                <p class="text-xs text-zinc-400 mt-1">Case PM includes a full <a href="{{ url_for('accounting_page') }}" class="text-emerald-400 hover:underline">Accounting</a> suite (G/L, A/P, A/R, Bank, and more) that runs standalone. Use this tab only when you want to <strong class="text-zinc-300">optionally sync</strong> construction financials with Sage 300 — not required for daily bookkeeping.</p>
+            </div>
             <div class="mb-6">
-                <h2 class="text-xl font-semibold">Sage 300 CRE</h2>
-                <p class="text-sm text-zinc-400 mt-1">Quick database connect for most setups, or detailed GL/account mapping. Projects inherit these defaults; each job only needs its own <strong class="text-zinc-300">Sage job number</strong> unless overridden.</p>
-                <p class="text-xs text-zinc-500 mt-2">Financial pages (Budget, Pay Apps, Commitments) read these settings. Live sync uses <code class="text-emerald-400">SAGE_API_URL</code> or the API URL below.</p>
+                <h2 class="text-xl font-semibold">Sage 300 sync (optional)</h2>
+                <p class="text-sm text-zinc-400 mt-1">Connect Sage for pay apps, commitments, and job-cost export. Projects inherit these defaults unless overridden.</p>
+                <p class="text-xs text-zinc-500 mt-2">When sync is off, Case PM Accounting remains the system of record.</p>
             </div>
 
             <div class="flex gap-2 mb-6">

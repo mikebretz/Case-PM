@@ -2044,6 +2044,25 @@ ClientPortalDrawRequest = _extended_models['ClientPortalDrawRequest']
 ClientPortalPayment = _extended_models['ClientPortalPayment']
 OperationsBimScheduleLink = _extended_models['OperationsBimScheduleLink']
 
+from accounting_models import define_accounting_models
+_acct_models = define_accounting_models(db)
+AcctLedger = _acct_models['AcctLedger']
+AcctGLAccount = _acct_models['AcctGLAccount']
+AcctJournalBatch = _acct_models['AcctJournalBatch']
+AcctJournalLine = _acct_models['AcctJournalLine']
+AcctVendor = _acct_models['AcctVendor']
+AcctCustomer = _acct_models['AcctCustomer']
+AcctAPDocument = _acct_models['AcctAPDocument']
+AcctARDocument = _acct_models['AcctARDocument']
+AcctBankAccount = _acct_models['AcctBankAccount']
+AcctBankTransaction = _acct_models['AcctBankTransaction']
+AcctTaxGroup = _acct_models['AcctTaxGroup']
+AcctInventoryItem = _acct_models['AcctInventoryItem']
+AcctPurchaseOrder = _acct_models['AcctPurchaseOrder']
+AcctSalesOrder = _acct_models['AcctSalesOrder']
+AcctFixedAsset = _acct_models['AcctFixedAsset']
+AcctPayrollRun = _acct_models['AcctPayrollRun']
+
 
 class Company(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -14538,12 +14557,15 @@ def _migrate_program_schemas():
         ('drawing_persistence', 'ensure_drawing_schema'),
         ('commitment_persistence', 'ensure_commitment_schema'),
         ('document_persistence', 'ensure_document_schema'),
+        ('accounting_persistence', 'ensure_accounting_schema'),
     ):
         try:
             mod = __import__(hook[0], fromlist=[hook[1]])
             fn = getattr(mod, hook[1])
             if hook[0] == 'companies_persistence':
                 fn(db)
+            elif hook[0] == 'accounting_persistence':
+                fn(db, _acct_models)
             else:
                 fn(db.engine, db)
         except Exception:
@@ -18462,6 +18484,7 @@ register_accounting_routes(app, {
     'get_active_project': get_active_project,
     'Project': Project,
     'SageSyncEvent': SageSyncEvent,
+    **_acct_models,
 })
 
 
