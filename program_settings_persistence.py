@@ -192,6 +192,47 @@ def save_section(name, payload, defaults=None):
     return merged
 
 
+ACCOUNTING_DEFAULT_KEYS = [
+    'auto_post_enabled',
+    'cash_account',
+    'ar_account',
+    'ap_account',
+    'revenue_account',
+    'subcontract_expense',
+    'materials_expense',
+    'payroll_liability',
+    'labor_expense',
+    'accum_dep_account',
+    'depreciation_expense',
+]
+
+
+def load_accounting_defaults():
+    acct = get_section('accounting', {})
+    out = {k: (acct.get(k) or '').strip() if k != 'auto_post_enabled' else acct.get(k, '1') for k in ACCOUNTING_DEFAULT_KEYS}
+    if not str(out.get('auto_post_enabled', '1')).strip():
+        out['auto_post_enabled'] = '1'
+    for k, default in (
+        ('cash_account', '1000'), ('ar_account', '1100'), ('ap_account', '2000'),
+        ('revenue_account', '4000'), ('subcontract_expense', '5100'), ('materials_expense', '5200'),
+        ('payroll_liability', '2300'), ('labor_expense', '5000'),
+        ('accum_dep_account', '1710'), ('depreciation_expense', '5350'),
+    ):
+        if not out.get(k):
+            out[k] = default
+    return out
+
+
+def save_accounting_defaults(form_data):
+    payload = {}
+    for k in ACCOUNTING_DEFAULT_KEYS:
+        if k == 'auto_post_enabled':
+            payload[k] = '1' if form_data.get(k) in (True, '1', 'on', 'true') else '0'
+        else:
+            payload[k] = (form_data.get(k) or '').strip()
+    return save_section('accounting', payload)
+
+
 def load_sage_defaults():
     sage = get_section('sage', {})
     out = {k: (sage.get(k) or '').strip() for k in SAGE_DEFAULT_KEYS}

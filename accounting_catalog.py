@@ -145,7 +145,7 @@ ACCOUNTING_MODULES = [
         'id': 'pr',
         'code': 'PR',
         'name': 'Payroll',
-        'status': 'planned',
+        'status': 'beta',
         'route': 'payroll',
         'summary': 'Pay runs, taxes, direct deposit (roadmap).',
         'features': ['US/Canada payroll', 'EFT', 'Job cost labor posting'],

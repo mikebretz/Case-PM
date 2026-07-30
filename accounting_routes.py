@@ -442,3 +442,180 @@ def register_accounting_routes(app, deps):
             SageSyncEvent.created_at.desc()
         ).limit(limit).all()
         return jsonify({'events': [sage_event_to_dict(e) for e in events]})
+
+    @app.route('/api/accounting/ap/payments', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_ap_payments():
+        from financial_security import require_accounting_role
+        from accounting_posting import create_ap_payment
+        AcctAPPayment = models['AcctAPPayment']
+        lid = _ledger_id()
+        if request.method == 'GET':
+            rows = AcctAPPayment.query.filter_by(ledger_id=lid).order_by(AcctAPPayment.id.desc()).limit(100).all()
+            return jsonify({'payments': [{
+                'id': p.id, 'payment_number': p.payment_number, 'vendor_id': p.vendor_id,
+                'amount': p.amount, 'payment_date': p.payment_date.isoformat() if p.payment_date else None,
+                'payment_method': p.payment_method,
+            } for p in rows]})
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        body = request.get_json(silent=True) or {}
+        try:
+            out = create_ap_payment(
+                db, models,
+                vendor_id=body['vendor_id'],
+                amount=body.get('amount'),
+                applications=body.get('applications') or [],
+                payment_method=body.get('payment_method') or 'Check',
+                bank_account_id=body.get('bank_account_id'),
+                user_id=current_user.id,
+            )
+            db.session.commit()
+            p = out['payment']
+            return jsonify({'ok': True, 'payment_id': p.id, 'journal_batch_id': out['journal_batch_id']})
+        except (ValueError, KeyError) as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/ar/receipts', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_ar_receipts():
+        from financial_security import require_accounting_role
+        from accounting_posting import create_ar_receipt
+        AcctARReceipt = models['AcctARReceipt']
+        lid = _ledger_id()
+        if request.method == 'GET':
+            rows = AcctARReceipt.query.filter_by(ledger_id=lid).order_by(AcctARReceipt.id.desc()).limit(100).all()
+            return jsonify({'receipts': [{
+                'id': r.id, 'receipt_number': r.receipt_number, 'customer_id': r.customer_id,
+                'amount': r.amount, 'receipt_date': r.receipt_date.isoformat() if r.receipt_date else None,
+            } for r in rows]})
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        body = request.get_json(silent=True) or {}
+        try:
+            out = create_ar_receipt(
+                db, models,
+                customer_id=body['customer_id'],
+                amount=body.get('amount'),
+                applications=body.get('applications') or [],
+                payment_method=body.get('payment_method') or 'ACH',
+                bank_account_id=body.get('bank_account_id'),
+                user_id=current_user.id,
+            )
+            db.session.commit()
+            r = out['receipt']
+            return jsonify({'ok': True, 'receipt_id': r.id, 'journal_batch_id': out['journal_batch_id']})
+        except (ValueError, KeyError) as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/bank/transactions', methods=['GET'])
+    @login_required
+    def api_acct_bank_transactions():
+        bank_id = request.args.get('bank_account_id', type=int)
+        AcctBankTransaction = models['AcctBankTransaction']
+        q = AcctBankTransaction.query
+        if bank_id:
+            q = q.filter_by(bank_account_id=bank_id)
+        rows = q.order_by(AcctBankTransaction.id.desc()).limit(200).all()
+        return jsonify({'transactions': [{
+            'id': t.id, 'bank_account_id': t.bank_account_id,
+            'transaction_date': t.transaction_date.isoformat() if t.transaction_date else None,
+            'description': t.description, 'amount': t.amount,
+            'reconciled': t.reconciled, 'reference': t.reference,
+        } for t in rows]})
+
+    @app.route('/api/accounting/bank/reconcile', methods=['POST'])
+    @login_required
+    def api_acct_bank_reconcile():
+        from financial_security import require_accounting_role
+        from accounting_posting import reconcile_bank_transactions
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        body = request.get_json(silent=True) or {}
+        try:
+            out = reconcile_bank_transactions(
+                db, models,
+                body['bank_account_id'],
+                body.get('transaction_ids') or [],
+                user_id=current_user.id,
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except (ValueError, KeyError) as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/payroll/runs', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_payroll_runs():
+        from datetime import date as date_cls
+        AcctPayrollRun = models['AcctPayrollRun']
+        lid = _ledger_id()
+        if request.method == 'GET':
+            rows = AcctPayrollRun.query.filter_by(ledger_id=lid).order_by(AcctPayrollRun.id.desc()).limit(50).all()
+            return jsonify({'runs': [{
+                'id': r.id, 'run_number': r.run_number, 'status': r.status,
+                'total_gross': r.total_gross, 'total_net': r.total_net,
+                'total_taxes': getattr(r, 'total_taxes', 0),
+            } for r in rows]})
+        body = request.get_json(silent=True) or {}
+        run = AcctPayrollRun(
+            ledger_id=lid,
+            run_number=(body.get('run_number') or f'PR-{date_cls.today().isoformat()}')[:30],
+            pay_date=date_cls.today(),
+            total_gross=float(body.get('total_gross') or 0),
+            total_net=float(body.get('total_net') or 0),
+            total_taxes=float(body.get('total_taxes') or 0),
+            status='Open',
+        )
+        db.session.add(run)
+        db.session.commit()
+        return jsonify({'ok': True, 'run_id': run.id})
+
+    @app.route('/api/accounting/payroll/runs/<int:run_id>/post', methods=['POST'])
+    @login_required
+    def api_acct_payroll_post(run_id):
+        from financial_security import require_accounting_role
+        from accounting_posting import run_payroll_post
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        try:
+            out = run_payroll_post(db, models, run_id, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/assets/depreciate', methods=['POST'])
+    @login_required
+    def api_acct_depreciate():
+        from financial_security import require_accounting_role
+        from accounting_posting import run_depreciation
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        try:
+            out = run_depreciation(db, models, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/settings', methods=['GET'])
+    @login_required
+    def api_acct_settings_get():
+        from program_settings_persistence import load_accounting_defaults
+        return jsonify(load_accounting_defaults())
