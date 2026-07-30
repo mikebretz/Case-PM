@@ -577,39 +577,85 @@ def reconcile_bank_transactions(db, models, bank_account_id, transaction_ids, *,
 def run_payroll_post(db, models, payroll_run_id, *, user_id=None):
     opts = load_accounting_options()
     AcctPayrollRun = models['AcctPayrollRun']
+    AcctPayrollRunLine = models['AcctPayrollRunLine']
     AcctLedger = models['AcctLedger']
     AcctGLAccount = models['AcctGLAccount']
     run = AcctPayrollRun.query.get_or_404(int(payroll_run_id))
     if run.status == 'Posted':
         raise ValueError('Payroll run already posted')
+
+    lines = AcctPayrollRunLine.query.filter_by(run_id=run.id).all()
+    if lines:
+        from accounting_payroll import recalculate_run
+        recalculate_run(db, models, run.id)
+
     gross = round(float(run.total_gross or 0), 2)
     net = round(float(run.total_net or 0), 2)
     taxes = round(float(getattr(run, 'total_taxes', 0) or 0), 2)
+    deductions = round(float(getattr(run, 'total_deductions', 0) or 0), 2)
+    employer = round(float(getattr(run, 'total_employer_taxes', 0) or 0), 2)
+
     if gross <= 0:
-        raise ValueError('Set total_gross on payroll run before posting')
-    if net <= 0:
-        net = gross - taxes
-    if taxes <= 0:
-        taxes = round(gross - net, 2)
+        raise ValueError('Payroll run has no gross wages — add employees and calculate first')
 
     ledger = get_or_create_default_ledger(db, AcctLedger)
     labor = _account_by_number(AcctGLAccount, ledger.id, opts['labor_expense'])
     liability = _account_by_number(AcctGLAccount, ledger.id, opts['payroll_liability'])
     cash = _account_by_number(AcctGLAccount, ledger.id, opts['cash_account'])
+
+    je_lines = []
+    if lines:
+        by_project: dict[int | None, float] = {}
+        for ln in lines:
+            pid = ln.project_id
+            by_project[pid] = by_project.get(pid, 0) + float(ln.gross_pay or 0)
+        for pid, amt in by_project.items():
+            if amt <= 0:
+                continue
+            je_lines.append({
+                'account_id': labor.id,
+                'debit': round(amt, 2),
+                'credit': 0,
+                'project_id': pid,
+                'description': f'Payroll labor PR {run.run_number}',
+            })
+    else:
+        je_lines.append({'account_id': labor.id, 'debit': gross, 'credit': 0})
+
+    if employer > 0:
+        je_lines.append({
+            'account_id': labor.id,
+            'debit': employer,
+            'credit': 0,
+            'description': 'Employer FICA/Medicare',
+        })
+
+    liability_credit = round(taxes + deductions + employer, 2)
+    if liability_credit > 0:
+        je_lines.append({
+            'account_id': liability.id,
+            'debit': 0,
+            'credit': liability_credit,
+            'description': 'Payroll taxes, deductions & employer share',
+        })
+    if net > 0:
+        je_lines.append({'account_id': cash.id, 'debit': 0, 'credit': net, 'description': 'Net pay disbursement'})
+
     batch = _create_posted_batch(
         db, models, ledger_id=ledger.id, source='PR',
         description=f'Payroll {run.run_number}',
         user_id=user_id,
-        lines=[
-            {'account_id': labor.id, 'debit': gross, 'credit': 0},
-            {'account_id': liability.id, 'debit': 0, 'credit': taxes},
-            {'account_id': cash.id, 'debit': 0, 'credit': net},
-        ],
+        lines=je_lines,
     )
     run.status = 'Posted'
     run.journal_batch_id = batch.id
     db.session.flush()
-    return {'journal_batch_id': batch.id, 'payroll_run_id': run.id}
+    return {
+        'journal_batch_id': batch.id,
+        'payroll_run_id': run.id,
+        'lines_posted': len(lines),
+        'job_cost_projects': len({ln.project_id for ln in lines if ln.project_id}),
+    }
 
 
 def run_depreciation(db, models, *, user_id=None):

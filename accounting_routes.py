@@ -812,32 +812,216 @@ def register_accounting_routes(app, deps):
             db.session.rollback()
             return jsonify({'error': str(exc)}), 400
 
+    @app.route('/api/accounting/payroll/employees', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_payroll_employees():
+        from accounting_payroll import serialize_employee
+        AcctPayrollEmployee = models['AcctPayrollEmployee']
+        lid = _ledger_id()
+        if request.method == 'GET':
+            rows = AcctPayrollEmployee.query.filter_by(ledger_id=lid).order_by(AcctPayrollEmployee.last_name).all()
+            return jsonify({'employees': [serialize_employee(e) for e in rows]})
+        body = request.get_json(silent=True) or {}
+        e = AcctPayrollEmployee(
+            ledger_id=lid,
+            employee_number=(body.get('employee_number') or '').strip(),
+            first_name=(body.get('first_name') or '').strip(),
+            last_name=(body.get('last_name') or '').strip(),
+            pay_type=(body.get('pay_type') or 'hourly')[:20],
+            hourly_rate=float(body.get('hourly_rate') or 0),
+            annual_salary=float(body.get('annual_salary') or 0),
+            default_project_id=body.get('default_project_id'),
+            department=(body.get('department') or '')[:80],
+            federal_wh_percent=float(body.get('federal_wh_percent', 22)),
+            state_wh_percent=float(body.get('state_wh_percent', 5)),
+            payment_method=(body.get('payment_method') or 'direct_deposit')[:20],
+            bank_account_last4=(body.get('bank_account_last4') or '')[:4],
+            user_id=body.get('user_id'),
+        )
+        if not e.employee_number or not e.first_name or not e.last_name:
+            return jsonify({'error': 'employee_number, first_name, last_name required'}), 400
+        db.session.add(e)
+        db.session.commit()
+        return jsonify({'ok': True, 'employee': serialize_employee(e)})
+
+    @app.route('/api/accounting/payroll/employees/<int:emp_id>', methods=['PATCH'])
+    @login_required
+    def api_acct_payroll_employee_patch(emp_id):
+        from accounting_payroll import serialize_employee
+        AcctPayrollEmployee = models['AcctPayrollEmployee']
+        e = AcctPayrollEmployee.query.get_or_404(emp_id)
+        if e.ledger_id != _ledger_id():
+            return jsonify({'error': 'Not found'}), 404
+        body = request.get_json(silent=True) or {}
+        for field in ('first_name', 'last_name', 'department', 'pay_type', 'payment_method', 'status'):
+            if field in body:
+                setattr(e, field, str(body[field])[:80])
+        for field in ('hourly_rate', 'annual_salary', 'federal_wh_percent', 'state_wh_percent'):
+            if field in body:
+                setattr(e, field, float(body[field] or 0))
+        if 'default_project_id' in body:
+            e.default_project_id = body['default_project_id']
+        db.session.commit()
+        return jsonify({'ok': True, 'employee': serialize_employee(e)})
+
+    @app.route('/api/accounting/payroll/deductions', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_payroll_deductions():
+        from accounting_payroll import serialize_deduction
+        AcctPayrollDeduction = models['AcctPayrollDeduction']
+        lid = _ledger_id()
+        if request.method == 'GET':
+            rows = AcctPayrollDeduction.query.filter_by(ledger_id=lid).order_by(AcctPayrollDeduction.code).all()
+            return jsonify({'deductions': [serialize_deduction(d) for d in rows]})
+        body = request.get_json(silent=True) or {}
+        d = AcctPayrollDeduction(
+            ledger_id=lid,
+            code=(body.get('code') or '').strip(),
+            description=body.get('description') or '',
+            deduction_type=(body.get('deduction_type') or 'posttax')[:20],
+            calc_method=(body.get('calc_method') or 'fixed')[:10],
+            amount=float(body.get('amount') or 0),
+            percent=float(body.get('percent') or 0),
+        )
+        if not d.code:
+            return jsonify({'error': 'code required'}), 400
+        db.session.add(d)
+        db.session.commit()
+        return jsonify({'ok': True, 'deduction': serialize_deduction(d)})
+
+    @app.route('/api/accounting/payroll/deductions/enroll', methods=['POST'])
+    @login_required
+    def api_acct_payroll_deduction_enroll():
+        AcctPayrollEmployeeDeduction = models['AcctPayrollEmployeeDeduction']
+        body = request.get_json(silent=True) or {}
+        emp_id = body.get('employee_id')
+        ded_id = body.get('deduction_id')
+        if not emp_id or not ded_id:
+            return jsonify({'error': 'employee_id and deduction_id required'}), 400
+        existing = AcctPayrollEmployeeDeduction.query.filter_by(
+            employee_id=int(emp_id), deduction_id=int(ded_id)
+        ).first()
+        if existing:
+            return jsonify({'ok': True, 'id': existing.id})
+        row = AcctPayrollEmployeeDeduction(
+            employee_id=int(emp_id),
+            deduction_id=int(ded_id),
+            override_amount=body.get('override_amount'),
+        )
+        db.session.add(row)
+        db.session.commit()
+        return jsonify({'ok': True, 'id': row.id})
+
+    @app.route('/api/accounting/payroll/register', methods=['GET'])
+    @login_required
+    def api_acct_payroll_register():
+        from accounting_payroll import payroll_register
+        return jsonify(payroll_register(db, models, _ledger_id()))
+
     @app.route('/api/accounting/payroll/runs', methods=['GET', 'POST'])
     @login_required
     def api_acct_payroll_runs():
         from datetime import date as date_cls
+        from accounting_payroll import serialize_run
         AcctPayrollRun = models['AcctPayrollRun']
         lid = _ledger_id()
         if request.method == 'GET':
             rows = AcctPayrollRun.query.filter_by(ledger_id=lid).order_by(AcctPayrollRun.id.desc()).limit(50).all()
-            return jsonify({'runs': [{
-                'id': r.id, 'run_number': r.run_number, 'status': r.status,
-                'total_gross': r.total_gross, 'total_net': r.total_net,
-                'total_taxes': getattr(r, 'total_taxes', 0),
-            } for r in rows]})
+            return jsonify({'runs': [serialize_run(r) for r in rows]})
         body = request.get_json(silent=True) or {}
+
+        def _d(v):
+            if not v:
+                return None
+            if hasattr(v, 'isoformat'):
+                return v
+            return date_cls.fromisoformat(str(v)[:10])
+
         run = AcctPayrollRun(
             ledger_id=lid,
             run_number=(body.get('run_number') or f'PR-{date_cls.today().isoformat()}')[:30],
-            pay_date=date_cls.today(),
+            pay_date=_d(body.get('pay_date')) or date_cls.today(),
+            period_start=_d(body.get('period_start')),
+            period_end=_d(body.get('period_end')),
+            pay_frequency=(body.get('pay_frequency') or 'biweekly')[:20],
             total_gross=float(body.get('total_gross') or 0),
             total_net=float(body.get('total_net') or 0),
             total_taxes=float(body.get('total_taxes') or 0),
             status='Open',
+            notes=body.get('notes') or '',
         )
         db.session.add(run)
         db.session.commit()
-        return jsonify({'ok': True, 'run_id': run.id})
+        return jsonify({'ok': True, 'run': serialize_run(run)})
+
+    @app.route('/api/accounting/payroll/runs/<int:run_id>', methods=['GET'])
+    @login_required
+    def api_acct_payroll_run_detail(run_id):
+        from accounting_payroll import serialize_run, serialize_run_line
+        AcctPayrollRun = models['AcctPayrollRun']
+        AcctPayrollRunLine = models['AcctPayrollRunLine']
+        AcctPayrollEmployee = models['AcctPayrollEmployee']
+        run = AcctPayrollRun.query.get_or_404(run_id)
+        if run.ledger_id != _ledger_id():
+            return jsonify({'error': 'Not found'}), 404
+        lines = AcctPayrollRunLine.query.filter_by(run_id=run.id).all()
+        return jsonify({
+            'run': serialize_run(run, [
+                serialize_run_line(ln, AcctPayrollEmployee.query.get(ln.employee_id)) for ln in lines
+            ]),
+        })
+
+    @app.route('/api/accounting/payroll/runs/<int:run_id>/build', methods=['POST'])
+    @login_required
+    def api_acct_payroll_run_build(run_id):
+        from accounting_payroll import build_run_from_employees
+        body = request.get_json(silent=True) or {}
+        try:
+            out = build_run_from_employees(
+                db, models, _ledger_id(), run_id,
+                default_hours=float(body.get('default_hours') or 40),
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/payroll/runs/<int:run_id>/calculate', methods=['POST'])
+    @login_required
+    def api_acct_payroll_run_calculate(run_id):
+        from accounting_payroll import recalculate_run
+        try:
+            run = recalculate_run(db, models, run_id)
+            db.session.commit()
+            return jsonify({'ok': True, 'run': run})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/payroll/runs/<int:run_id>/lines', methods=['POST'])
+    @login_required
+    def api_acct_payroll_run_line(run_id):
+        from accounting_payroll import recalculate_run, serialize_run_line
+        AcctPayrollRun = models['AcctPayrollRun']
+        AcctPayrollRunLine = models['AcctPayrollRunLine']
+        AcctPayrollEmployee = models['AcctPayrollEmployee']
+        run = AcctPayrollRun.query.get_or_404(run_id)
+        if run.ledger_id != _ledger_id() or run.status != 'Open':
+            return jsonify({'error': 'Run not editable'}), 400
+        body = request.get_json(silent=True) or {}
+        ln = AcctPayrollRunLine(
+            run_id=run.id,
+            employee_id=int(body['employee_id']),
+            hours_regular=float(body.get('hours_regular') or 0),
+            hours_overtime=float(body.get('hours_overtime') or 0),
+            project_id=body.get('project_id'),
+        )
+        db.session.add(ln)
+        db.session.flush()
+        run_data = recalculate_run(db, models, run.id)
+        db.session.commit()
+        return jsonify({'ok': True, 'run': run_data})
 
     @app.route('/api/accounting/payroll/runs/<int:run_id>/post', methods=['POST'])
     @login_required
