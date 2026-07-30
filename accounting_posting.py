@@ -630,9 +630,11 @@ def run_depreciation(db, models, *, user_id=None):
     for asset in assets:
         cost = float(asset.acquisition_cost or 0)
         accum_amt = float(asset.accumulated_depreciation or 0)
+        salvage = float(getattr(asset, 'salvage_value', 0) or 0)
         book = cost - accum_amt
         months = int(asset.useful_life_months or 60) or 60
-        monthly = round(cost / months, 2) if months else 0
+        depreciable = max(cost - salvage, 0)
+        monthly = round(depreciable / months, 2) if months else 0
         if monthly <= 0 or book <= 0:
             continue
         dep = min(monthly, book)

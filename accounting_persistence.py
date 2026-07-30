@@ -50,6 +50,26 @@ def ensure_accounting_schema(db, models):
                 db.session.execute(text('ALTER TABLE acct_payroll_run ADD COLUMN total_taxes FLOAT DEFAULT 0'))
             if 'journal_batch_id' not in cols:
                 db.session.execute(text('ALTER TABLE acct_payroll_run ADD COLUMN journal_batch_id INTEGER'))
+        if 'acct_tax_group' in insp.get_table_names():
+            cols = {c['name'] for c in insp.get_columns('acct_tax_group')}
+            for col, ddl in (
+                ('tax_type', "VARCHAR(20) DEFAULT 'sales'"),
+                ('applies_to', "VARCHAR(10) DEFAULT 'both'"),
+                ('is_active', 'BOOLEAN DEFAULT 1'),
+            ):
+                if col not in cols:
+                    db.session.execute(text(f'ALTER TABLE acct_tax_group ADD COLUMN {col} {ddl}'))
+        if 'acct_fixed_asset' in insp.get_table_names():
+            cols = {c['name'] for c in insp.get_columns('acct_fixed_asset')}
+            for col, ddl in (
+                ('location', 'VARCHAR(120)'),
+                ('serial_number', 'VARCHAR(80)'),
+                ('salvage_value', 'FLOAT DEFAULT 0'),
+            ):
+                if col not in cols:
+                    db.session.execute(text(f'ALTER TABLE acct_fixed_asset ADD COLUMN {col} {ddl}'))
+            if 'in_service_date' not in cols:
+                db.session.execute(text('ALTER TABLE acct_fixed_asset ADD COLUMN in_service_date DATE'))
         db.session.commit()
     except Exception:
         db.session.rollback()

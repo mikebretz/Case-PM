@@ -270,14 +270,12 @@ def register_accounting_routes(app, deps):
     @app.route('/api/accounting/tax/groups', methods=['GET', 'POST'])
     @login_required
     def api_acct_tax_groups():
+        from accounting_operations import serialize_tax_group
         AcctTaxGroup = models['AcctTaxGroup']
         lid = _ledger_id()
         if request.method == 'GET':
-            rows = AcctTaxGroup.query.filter_by(ledger_id=lid).all()
-            return jsonify({'groups': [{
-                'id': g.id, 'code': g.code, 'description': g.description,
-                'rate_percent': g.rate_percent, 'authority': g.authority,
-            } for g in rows]})
+            rows = AcctTaxGroup.query.filter_by(ledger_id=lid).order_by(AcctTaxGroup.code).all()
+            return jsonify({'groups': [serialize_tax_group(g) for g in rows]})
         body = request.get_json(silent=True) or {}
         g = AcctTaxGroup(
             ledger_id=lid,
@@ -285,24 +283,70 @@ def register_accounting_routes(app, deps):
             description=body.get('description') or '',
             rate_percent=float(body.get('rate_percent') or 0),
             authority=body.get('authority') or '',
+            tax_type=(body.get('tax_type') or 'sales')[:20],
+            applies_to=(body.get('applies_to') or 'both')[:10],
+            is_active=body.get('is_active', True) is not False,
         )
         if not g.code:
             return jsonify({'error': 'code required'}), 400
         db.session.add(g)
         db.session.commit()
-        return jsonify({'ok': True, 'group': {'id': g.id, 'code': g.code}})
+        return jsonify({'ok': True, 'group': serialize_tax_group(g)})
+
+    @app.route('/api/accounting/tax/groups/<int:group_id>', methods=['PATCH', 'DELETE'])
+    @login_required
+    def api_acct_tax_group_detail(group_id):
+        from accounting_operations import serialize_tax_group
+        AcctTaxGroup = models['AcctTaxGroup']
+        g = AcctTaxGroup.query.get_or_404(group_id)
+        if g.ledger_id != _ledger_id():
+            return jsonify({'error': 'Not found'}), 404
+        if request.method == 'DELETE':
+            db.session.delete(g)
+            db.session.commit()
+            return jsonify({'ok': True})
+        body = request.get_json(silent=True) or {}
+        for field in ('description', 'authority', 'tax_type', 'applies_to'):
+            if field in body:
+                setattr(g, field, str(body[field])[:80])
+        if 'rate_percent' in body:
+            g.rate_percent = float(body['rate_percent'] or 0)
+        if 'is_active' in body:
+            g.is_active = bool(body['is_active'])
+        db.session.commit()
+        return jsonify({'ok': True, 'group': serialize_tax_group(g)})
+
+    @app.route('/api/accounting/tax/calculate', methods=['POST'])
+    @login_required
+    def api_acct_tax_calculate():
+        from accounting_operations import calculate_tax
+        body = request.get_json(silent=True) or {}
+        try:
+            out = calculate_tax(
+                db, models, _ledger_id(),
+                amount=body.get('amount', 0),
+                tax_group_code=body.get('tax_group_code'),
+                tax_group_id=body.get('tax_group_id'),
+            )
+            return jsonify(out)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/tax/summary', methods=['GET'])
+    @login_required
+    def api_acct_tax_summary():
+        from accounting_operations import tax_liability_summary
+        return jsonify(tax_liability_summary(db, models, _ledger_id()))
 
     @app.route('/api/accounting/inventory/items', methods=['GET', 'POST'])
     @login_required
     def api_acct_inventory():
+        from accounting_operations import serialize_inventory_item
         AcctInventoryItem = models['AcctInventoryItem']
         lid = _ledger_id()
         if request.method == 'GET':
             rows = AcctInventoryItem.query.filter_by(ledger_id=lid).limit(500).all()
-            return jsonify({'items': [{
-                'id': i.id, 'item_number': i.item_number, 'description': i.description,
-                'qty_on_hand': i.qty_on_hand, 'unit_cost': i.unit_cost, 'status': i.status,
-            } for i in rows]})
+            return jsonify({'items': [serialize_inventory_item(i) for i in rows]})
         body = request.get_json(silent=True) or {}
         i = AcctInventoryItem(
             ledger_id=lid,
@@ -310,104 +354,229 @@ def register_accounting_routes(app, deps):
             description=body.get('description') or '',
             qty_on_hand=float(body.get('qty_on_hand') or 0),
             unit_cost=float(body.get('unit_cost') or 0),
+            uom=(body.get('uom') or 'EA')[:10],
         )
         if not i.item_number:
             return jsonify({'error': 'item_number required'}), 400
         db.session.add(i)
         db.session.commit()
-        return jsonify({'ok': True, 'item': {'id': i.id, 'item_number': i.item_number}})
+        return jsonify({'ok': True, 'item': serialize_inventory_item(i)})
+
+    @app.route('/api/accounting/inventory/transactions', methods=['GET'])
+    @login_required
+    def api_acct_inventory_txns():
+        AcctInventoryTransaction = models['AcctInventoryTransaction']
+        AcctInventoryItem = models['AcctInventoryItem']
+        lid = _ledger_id()
+        item_id = request.args.get('item_id', type=int)
+        q = AcctInventoryTransaction.query.filter_by(ledger_id=lid)
+        if item_id:
+            q = q.filter_by(item_id=item_id)
+        rows = q.order_by(AcctInventoryTransaction.id.desc()).limit(200).all()
+        items = {i.id: i.item_number for i in AcctInventoryItem.query.filter_by(ledger_id=lid).all()}
+        return jsonify({'transactions': [{
+            'id': t.id,
+            'item_id': t.item_id,
+            'item_number': items.get(t.item_id, ''),
+            'txn_type': t.txn_type,
+            'qty_delta': t.qty_delta,
+            'unit_cost': t.unit_cost,
+            'reference': t.reference,
+            'created_at': t.created_at.isoformat() if t.created_at else None,
+        } for t in rows]})
 
     @app.route('/api/accounting/inventory/items/<int:item_id>/adjust', methods=['POST'])
     @login_required
     def api_acct_inventory_adjust(item_id):
         """Receive (+) or issue (-) quantity on hand."""
-        AcctInventoryItem = models['AcctInventoryItem']
-        item = AcctInventoryItem.query.get_or_404(item_id)
-        if item.ledger_id != _ledger_id():
-            return jsonify({'error': 'Not found'}), 404
+        from accounting_operations import record_inventory_movement
         body = request.get_json(silent=True) or {}
         delta = float(body.get('qty_delta') or 0)
         if delta == 0:
             return jsonify({'error': 'qty_delta required'}), 400
-        item.qty_on_hand = float(item.qty_on_hand or 0) + delta
-        if item.qty_on_hand < 0:
+        try:
+            out = record_inventory_movement(
+                db, models, _ledger_id(), item_id,
+                qty_delta=delta,
+                txn_type=body.get('txn_type') or 'adjust',
+                unit_cost=body.get('unit_cost'),
+                reference=body.get('reference') or '',
+                project_id=body.get('project_id'),
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
             db.session.rollback()
-            return jsonify({'error': 'Insufficient quantity on hand'}), 400
-        if body.get('unit_cost') is not None:
-            item.unit_cost = float(body.get('unit_cost'))
-        db.session.commit()
-        return jsonify({'ok': True, 'item': {
-            'id': item.id, 'qty_on_hand': item.qty_on_hand, 'unit_cost': item.unit_cost,
-        }})
+            return jsonify({'error': str(exc)}), 404
 
     @app.route('/api/accounting/po/orders', methods=['GET', 'POST'])
     @login_required
     def api_acct_po():
+        import json as json_mod
         from datetime import date as date_cls
+        from accounting_operations import po_recompute_total, serialize_po
         AcctPurchaseOrder = models['AcctPurchaseOrder']
+        AcctVendor = models['AcctVendor']
         lid = _ledger_id()
+        vendors = {v.id: v.name for v in AcctVendor.query.filter_by(ledger_id=lid).all()}
         if request.method == 'GET':
             rows = AcctPurchaseOrder.query.filter_by(ledger_id=lid).order_by(AcctPurchaseOrder.id.desc()).limit(200).all()
-            return jsonify({'orders': [{
-                'id': o.id, 'po_number': o.po_number, 'status': o.status,
-                'vendor_id': o.vendor_id, 'total_amount': o.total_amount, 'project_id': o.project_id,
-            } for o in rows]})
+            return jsonify({'orders': [serialize_po(o, vendors) for o in rows]})
         body = request.get_json(silent=True) or {}
+        lines = body.get('lines') or []
+        total = float(body.get('total_amount') or 0)
+        if lines:
+            total = po_recompute_total(lines)
         o = AcctPurchaseOrder(
             ledger_id=lid,
             vendor_id=body.get('vendor_id'),
             po_number=(body.get('po_number') or '').strip(),
             order_date=date_cls.today(),
-            total_amount=float(body.get('total_amount') or 0),
+            total_amount=total,
             project_id=body.get('project_id'),
             status='Open',
+            lines_json=json_mod.dumps(lines) if lines else None,
         )
         if not o.po_number:
             return jsonify({'error': 'po_number required'}), 400
         db.session.add(o)
         db.session.commit()
-        return jsonify({'ok': True, 'order': {'id': o.id, 'po_number': o.po_number}})
+        return jsonify({'ok': True, 'order': serialize_po(o, vendors)})
+
+    @app.route('/api/accounting/po/orders/<int:po_id>', methods=['GET', 'PATCH'])
+    @login_required
+    def api_acct_po_detail(po_id):
+        import json as json_mod
+        from accounting_operations import po_recompute_total, serialize_po
+        AcctPurchaseOrder = models['AcctPurchaseOrder']
+        AcctVendor = models['AcctVendor']
+        lid = _ledger_id()
+        vendors = {v.id: v.name for v in AcctVendor.query.filter_by(ledger_id=lid).all()}
+        o = AcctPurchaseOrder.query.get_or_404(po_id)
+        if o.ledger_id != lid:
+            return jsonify({'error': 'Not found'}), 404
+        if request.method == 'GET':
+            return jsonify({'order': serialize_po(o, vendors)})
+        body = request.get_json(silent=True) or {}
+        if 'status' in body:
+            o.status = str(body['status'])[:20]
+        if 'vendor_id' in body:
+            o.vendor_id = body['vendor_id']
+        if 'lines' in body:
+            lines = body['lines'] or []
+            o.lines_json = json_mod.dumps(lines)
+            o.total_amount = po_recompute_total(lines)
+        db.session.commit()
+        return jsonify({'ok': True, 'order': serialize_po(o, vendors)})
+
+    @app.route('/api/accounting/po/orders/<int:po_id>/receive', methods=['POST'])
+    @login_required
+    def api_acct_po_receive(po_id):
+        from accounting_operations import receive_purchase_order
+        body = request.get_json(silent=True) or {}
+        try:
+            out = receive_purchase_order(db, models, _ledger_id(), po_id, lines_received=body.get('lines'))
+            db.session.commit()
+            return jsonify({'ok': True, 'order': out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
 
     @app.route('/api/accounting/oe/orders', methods=['GET', 'POST'])
     @login_required
     def api_acct_oe():
+        import json as json_mod
         from datetime import date as date_cls
+        from accounting_operations import po_recompute_total, serialize_oe
         AcctSalesOrder = models['AcctSalesOrder']
+        AcctCustomer = models['AcctCustomer']
         lid = _ledger_id()
+        customers = {c.id: c.name for c in AcctCustomer.query.filter_by(ledger_id=lid).all()}
         if request.method == 'GET':
             rows = AcctSalesOrder.query.filter_by(ledger_id=lid).order_by(AcctSalesOrder.id.desc()).limit(200).all()
-            return jsonify({'orders': [{
-                'id': o.id, 'order_number': o.order_number, 'status': o.status,
-                'customer_id': o.customer_id, 'total_amount': o.total_amount,
-            } for o in rows]})
+            return jsonify({'orders': [serialize_oe(o, customers) for o in rows]})
         body = request.get_json(silent=True) or {}
+        lines = body.get('lines') or []
+        total = float(body.get('total_amount') or 0)
+        if lines:
+            total = po_recompute_total(lines)
         o = AcctSalesOrder(
             ledger_id=lid,
             customer_id=body.get('customer_id'),
             order_number=(body.get('order_number') or '').strip(),
             order_date=date_cls.today(),
-            total_amount=float(body.get('total_amount') or 0),
+            total_amount=total,
             project_id=body.get('project_id'),
             status='Open',
+            lines_json=json_mod.dumps(lines) if lines else None,
         )
         if not o.order_number:
             return jsonify({'error': 'order_number required'}), 400
         db.session.add(o)
         db.session.commit()
-        return jsonify({'ok': True, 'order': {'id': o.id, 'order_number': o.order_number}})
+        return jsonify({'ok': True, 'order': serialize_oe(o, customers)})
+
+    @app.route('/api/accounting/oe/orders/<int:order_id>', methods=['GET', 'PATCH'])
+    @login_required
+    def api_acct_oe_detail(order_id):
+        import json as json_mod
+        from accounting_operations import po_recompute_total, serialize_oe
+        AcctSalesOrder = models['AcctSalesOrder']
+        AcctCustomer = models['AcctCustomer']
+        lid = _ledger_id()
+        customers = {c.id: c.name for c in AcctCustomer.query.filter_by(ledger_id=lid).all()}
+        o = AcctSalesOrder.query.get_or_404(order_id)
+        if o.ledger_id != lid:
+            return jsonify({'error': 'Not found'}), 404
+        if request.method == 'GET':
+            return jsonify({'order': serialize_oe(o, customers)})
+        body = request.get_json(silent=True) or {}
+        if 'status' in body:
+            o.status = str(body['status'])[:20]
+        if 'customer_id' in body:
+            o.customer_id = body['customer_id']
+        if 'lines' in body:
+            lines = body['lines'] or []
+            o.lines_json = json_mod.dumps(lines)
+            o.total_amount = po_recompute_total(lines)
+        db.session.commit()
+        return jsonify({'ok': True, 'order': serialize_oe(o, customers)})
+
+    @app.route('/api/accounting/oe/orders/<int:order_id>/ship', methods=['POST'])
+    @login_required
+    def api_acct_oe_ship(order_id):
+        from accounting_operations import ship_sales_order
+        body = request.get_json(silent=True) or {}
+        try:
+            out = ship_sales_order(db, models, _ledger_id(), order_id, lines_shipped=body.get('lines'))
+            db.session.commit()
+            return jsonify({'ok': True, 'order': out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/oe/orders/<int:order_id>/invoice', methods=['POST'])
+    @login_required
+    def api_acct_oe_invoice(order_id):
+        from accounting_operations import invoice_sales_order
+        try:
+            out = invoice_sales_order(db, models, _ledger_id(), order_id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
 
     @app.route('/api/accounting/assets', methods=['GET', 'POST'])
     @login_required
     def api_acct_assets():
         from datetime import date as date_cls
+        from accounting_operations import serialize_asset
         AcctFixedAsset = models['AcctFixedAsset']
         lid = _ledger_id()
         if request.method == 'GET':
-            rows = AcctFixedAsset.query.filter_by(ledger_id=lid).all()
-            return jsonify({'assets': [{
-                'id': a.id, 'asset_number': a.asset_number, 'description': a.description,
-                'acquisition_cost': a.acquisition_cost, 'book': a.book, 'status': a.status,
-            } for a in rows]})
+            rows = AcctFixedAsset.query.filter_by(ledger_id=lid).order_by(AcctFixedAsset.asset_number).all()
+            return jsonify({'assets': [serialize_asset(a) for a in rows]})
         body = request.get_json(silent=True) or {}
         a = AcctFixedAsset(
             ledger_id=lid,
@@ -415,12 +584,70 @@ def register_accounting_routes(app, deps):
             description=body.get('description') or '',
             acquisition_date=date_cls.today(),
             acquisition_cost=float(body.get('acquisition_cost') or 0),
+            useful_life_months=int(body.get('useful_life_months') or 60),
+            depreciation_method=(body.get('depreciation_method') or 'straight_line')[:30],
+            location=(body.get('location') or '')[:120],
+            serial_number=(body.get('serial_number') or '')[:80],
+            salvage_value=float(body.get('salvage_value') or 0),
         )
         if not a.asset_number:
             return jsonify({'error': 'asset_number required'}), 400
         db.session.add(a)
         db.session.commit()
-        return jsonify({'ok': True, 'asset': {'id': a.id, 'asset_number': a.asset_number}})
+        return jsonify({'ok': True, 'asset': serialize_asset(a)})
+
+    @app.route('/api/accounting/assets/<int:asset_id>', methods=['PATCH'])
+    @login_required
+    def api_acct_asset_patch(asset_id):
+        from accounting_operations import serialize_asset
+        AcctFixedAsset = models['AcctFixedAsset']
+        a = AcctFixedAsset.query.get_or_404(asset_id)
+        if a.ledger_id != _ledger_id():
+            return jsonify({'error': 'Not found'}), 404
+        body = request.get_json(silent=True) or {}
+        for field in ('description', 'location', 'serial_number', 'depreciation_method', 'book', 'status'):
+            if field in body:
+                setattr(a, field, str(body[field])[:120])
+        for field in ('acquisition_cost', 'salvage_value', 'accumulated_depreciation'):
+            if field in body:
+                setattr(a, field, float(body[field] or 0))
+        if 'useful_life_months' in body:
+            a.useful_life_months = int(body['useful_life_months'] or 60)
+        db.session.commit()
+        return jsonify({'ok': True, 'asset': serialize_asset(a)})
+
+    @app.route('/api/accounting/assets/<int:asset_id>/dispose', methods=['POST'])
+    @login_required
+    def api_acct_asset_dispose(asset_id):
+        from financial_security import require_accounting_role
+        from accounting_operations import dispose_fixed_asset
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        body = request.get_json(silent=True) or {}
+        try:
+            out = dispose_fixed_asset(db, models, _ledger_id(), asset_id, proceeds=body.get('proceeds', 0))
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/assets/depreciation-runs', methods=['GET'])
+    @login_required
+    def api_acct_depreciation_runs():
+        AcctDepreciationRun = models['AcctDepreciationRun']
+        lid = _ledger_id()
+        rows = AcctDepreciationRun.query.filter_by(ledger_id=lid).order_by(AcctDepreciationRun.id.desc()).limit(24).all()
+        return jsonify({'runs': [{
+            'id': r.id,
+            'run_number': r.run_number,
+            'period_date': r.period_date.isoformat() if r.period_date else None,
+            'total_amount': r.total_amount,
+            'journal_batch_id': r.journal_batch_id,
+            'status': r.status,
+        } for r in rows]})
 
     @app.route('/api/accounting/reports/trial-balance', methods=['GET'])
     @login_required

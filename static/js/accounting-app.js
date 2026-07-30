@@ -71,11 +71,11 @@
       else if (route === 'ap') root.innerHTML = await renderAP();
       else if (route === 'ar') root.innerHTML = await renderAR();
       else if (route === 'bank') root.innerHTML = await renderBank();
-      else if (route === 'tax') root.innerHTML = await renderTax();
-      else if (route === 'inventory') root.innerHTML = await renderInventory();
-      else if (route === 'po') root.innerHTML = await renderPO();
-      else if (route === 'oe') root.innerHTML = await renderOE();
-      else if (route === 'assets') root.innerHTML = await renderAssets();
+      else if (route === 'tax') root.innerHTML = global.CasePMAcctModulesUI ? await global.CasePMAcctModulesUI.renderTax() : await renderTax();
+      else if (route === 'inventory') root.innerHTML = global.CasePMAcctModulesUI ? await global.CasePMAcctModulesUI.renderInventory() : await renderInventory();
+      else if (route === 'po') root.innerHTML = global.CasePMAcctModulesUI ? await global.CasePMAcctModulesUI.renderPO() : await renderPO();
+      else if (route === 'oe') root.innerHTML = global.CasePMAcctModulesUI ? await global.CasePMAcctModulesUI.renderOE() : await renderOE();
+      else if (route === 'assets') root.innerHTML = global.CasePMAcctModulesUI ? await global.CasePMAcctModulesUI.renderAssets() : await renderAssets();
       else if (route === 'jobcost') root.innerHTML = renderJobCost();
       else if (route === 'reports') {
         if (global.CasePMAccountingReports) {
@@ -92,6 +92,7 @@
         root.innerHTML = mod ? renderPlannedModule(route, mod) : '<p class="text-zinc-500">Module not found.</p>';
       }
       bindPanelHandlers(route);
+      if (global.CasePMAcctModulesUI?.bindExtras) global.CasePMAcctModulesUI.bindExtras(route);
       if (route === 'reports' && global.CasePMAccountingReports?.bindHandlers) {
         global.CasePMAccountingReports.bindHandlers();
       }
@@ -468,9 +469,21 @@
       switchModule('bank');
     });
     document.getElementById('acctAddTax')?.addEventListener('click', async () => {
-      const code = prompt('Tax group code');
+      const code = prompt('Tax group code (e.g. FL-SALES)');
       if (!code) return;
-      await api('/api/accounting/tax/groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, description: code, rate_percent: 0 }) });
+      const rate = prompt('Rate %', '7');
+      const tax_type = prompt('Type: sales, use, or withholding', 'sales') || 'sales';
+      await api('/api/accounting/tax/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code,
+          description: code,
+          rate_percent: parseFloat(rate || 0),
+          tax_type,
+          authority: 'State',
+        }),
+      });
       switchModule('tax');
     });
     document.getElementById('acctAddItem')?.addEventListener('click', async () => {
@@ -494,19 +507,61 @@
     document.getElementById('acctAddPO')?.addEventListener('click', async () => {
       const po_number = prompt('PO number');
       if (!po_number) return;
-      await api('/api/accounting/po/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ po_number, total_amount: 0 }) });
+      const vendorId = prompt('Vendor id (optional)');
+      const item = prompt('Line item number (inventory)', 'MAT-001');
+      const qty = parseFloat(prompt('Quantity', '1') || '1');
+      const price = parseFloat(prompt('Unit price', '0') || '0');
+      const lines = item ? [{ item_number: item, description: item, qty, unit_price: price, qty_received: 0 }] : [];
+      await api('/api/accounting/po/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          po_number,
+          vendor_id: vendorId ? parseInt(vendorId, 10) : null,
+          project_id: projectId(),
+          lines,
+        }),
+      });
       switchModule('po');
     });
     document.getElementById('acctAddOE')?.addEventListener('click', async () => {
       const order_number = prompt('Order number');
       if (!order_number) return;
-      await api('/api/accounting/oe/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order_number, total_amount: 0 }) });
+      const customerId = prompt('Customer id');
+      const desc = prompt('Line description', 'Materials sale');
+      const qty = parseFloat(prompt('Qty', '1') || '1');
+      const price = parseFloat(prompt('Unit price', '100') || '100');
+      const lines = [{ description: desc, qty, unit_price: price, qty_shipped: 0 }];
+      await api('/api/accounting/oe/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order_number,
+          customer_id: customerId ? parseInt(customerId, 10) : null,
+          project_id: projectId(),
+          lines,
+        }),
+      });
       switchModule('oe');
     });
     document.getElementById('acctAddAsset')?.addEventListener('click', async () => {
       const asset_number = prompt('Asset number');
       if (!asset_number) return;
-      await api('/api/accounting/assets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ asset_number, acquisition_cost: 0 }) });
+      const description = prompt('Description', asset_number);
+      const cost = parseFloat(prompt('Acquisition cost', '0') || '0');
+      const months = parseInt(prompt('Useful life (months)', '60') || '60', 10);
+      const location = prompt('Location (optional)', '');
+      await api('/api/accounting/assets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          asset_number,
+          description,
+          acquisition_cost: cost,
+          useful_life_months: months,
+          location: location || '',
+        }),
+      });
       switchModule('assets');
     });
     document.getElementById('acctNewJeBatch')?.addEventListener('click', async () => {
@@ -571,5 +626,12 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 
-  global.CasePMAccounting = { refresh, switchModule };
+  global.CasePMAccounting = {
+    refresh,
+    switchModule,
+    _api: api,
+    _esc: esc,
+    _money: money,
+    _projectId: projectId,
+  };
 })(window);
