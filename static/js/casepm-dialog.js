@@ -144,7 +144,12 @@
         border-bottom: 1px solid #3f3f46;
         font-weight: 600;
         font-size: 1rem;
-        cursor: move;
+        cursor: grab;
+        user-select: none;
+        touch-action: none;
+      }
+      .casepm-dialog-title:active {
+        cursor: grabbing;
       }
       .casepm-drag-handle, dialog .drag-handle {
         cursor: move;
@@ -167,11 +172,21 @@
     if (!handle) return;
     el.dataset.casepmDraggable = '1';
     el.classList.add('casepm-draggable');
-    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
     handle.onmousedown = (e) => {
       if (e.button !== 0) return;
       if (e.target.closest('button, input, select, textarea, a, label')) return;
       e.preventDefault();
+      startDrag(e.clientX, e.clientY);
+    };
+    handle.ontouchstart = (e) => {
+      if (e.target.closest('button, input, select, textarea, a, label')) return;
+      const t = e.touches[0];
+      if (!t) return;
+      e.preventDefault();
+      startDrag(t.clientX, t.clientY, true);
+    };
+
+    function startDrag(clientX, clientY, isTouch) {
       const rect = el.getBoundingClientRect();
       el.style.position = 'fixed';
       el.style.margin = '0';
@@ -179,24 +194,42 @@
       el.style.left = rect.left + 'px';
       el.style.transform = 'none';
       el.classList.add('casepm-dragged');
-      pos3 = e.clientX;
-      pos4 = e.clientY;
+      let pos3 = clientX;
+      let pos4 = clientY;
       const onUp = () => {
         document.removeEventListener('mouseup', onUp);
         document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('touchend', onUp);
+        document.removeEventListener('touchmove', onTouchMove);
       };
       const onMove = (ev) => {
         ev.preventDefault();
-        pos1 = pos3 - ev.clientX;
-        pos2 = pos4 - ev.clientY;
+        const pos1 = pos3 - ev.clientX;
+        const pos2 = pos4 - ev.clientY;
         pos3 = ev.clientX;
         pos4 = ev.clientY;
         el.style.top = (el.offsetTop - pos2) + 'px';
         el.style.left = (el.offsetLeft - pos1) + 'px';
       };
-      document.addEventListener('mouseup', onUp);
-      document.addEventListener('mousemove', onMove);
-    };
+      const onTouchMove = (ev) => {
+        const touch = ev.touches[0];
+        if (!touch) return;
+        ev.preventDefault();
+        const pos1 = pos3 - touch.clientX;
+        const pos2 = pos4 - touch.clientY;
+        pos3 = touch.clientX;
+        pos4 = touch.clientY;
+        el.style.top = (el.offsetTop - pos2) + 'px';
+        el.style.left = (el.offsetLeft - pos1) + 'px';
+      };
+      if (isTouch) {
+        document.addEventListener('touchend', onUp);
+        document.addEventListener('touchmove', onTouchMove, { passive: false });
+      } else {
+        document.addEventListener('mouseup', onUp);
+        document.addEventListener('mousemove', onMove);
+      }
+    }
   }
 
   function findDialogHandle(dialog) {
@@ -274,6 +307,11 @@
     return 'Case PM';
   }
 
+  function dialogTitleHtml(title, type) {
+    const t = escapeHtml(String(title ?? ''));
+    return `${iconForType(type || 'info')}<i class="fa-solid fa-grip-vertical text-zinc-500 opacity-60 text-sm casepm-dialog-grip" aria-hidden="true"></i><span class="flex-1 min-w-0">${t}</span><span class="text-[10px] text-zinc-500 font-normal shrink-0 hidden md:inline">Drag to move</span>`;
+  }
+
   function closeDialog(dialog, result) {
     dialog.close();
     dialog.remove();
@@ -293,7 +331,7 @@
       dialog.className = 'casepm-dialog';
       dialog.innerHTML = `
         <div class="casepm-dialog-panel">
-          <div class="casepm-dialog-title">${iconForType(type)}<span>${titleForType(type)}</span></div>
+          <div class="casepm-dialog-title">${dialogTitleHtml(titleForType(type), type)}</div>
           <div class="casepm-dialog-body">${escapeHtml(String(message ?? ''))}</div>
           <div class="casepm-dialog-actions">
             <button type="button" class="casepm-dialog-btn casepm-dialog-btn-primary" data-action="ok">OK</button>
@@ -321,7 +359,7 @@
       dialog.className = 'casepm-dialog';
       dialog.innerHTML = `
         <div class="casepm-dialog-panel">
-          <div class="casepm-dialog-title">${iconForType('info')}<span>${escapeHtml(title)}</span></div>
+          <div class="casepm-dialog-title">${dialogTitleHtml(title, 'info')}</div>
           <div class="casepm-dialog-body casepm-dialog-body--form">
             ${message && message !== label ? `<p class="mb-3 text-sm text-zinc-400">${escapeHtml(String(message))}</p>` : ''}
             <div class="casepm-dialog-field">
@@ -370,7 +408,7 @@
       dialog.style.width = 'min(560px, 92vw)';
       dialog.innerHTML = `
         <div class="casepm-dialog-panel">
-          <div class="casepm-dialog-title">${iconForType('info')}<span>${escapeHtml(title)}</span></div>
+          <div class="casepm-dialog-title">${dialogTitleHtml(title, 'info')}</div>
           <div class="casepm-dialog-body casepm-dialog-body--form">
             ${message ? `<p class="mb-3 text-sm text-zinc-400">${escapeHtml(String(message))}</p>` : ''}
             <div class="casepm-dialog-field">
@@ -462,7 +500,7 @@
       }).join('');
       dialog.innerHTML = `
         <div class="casepm-dialog-panel">
-          <div class="casepm-dialog-title">${iconForType('info')}<span>${escapeHtml(title)}</span></div>
+          <div class="casepm-dialog-title">${dialogTitleHtml(title, 'info')}</div>
           <div class="casepm-dialog-body casepm-dialog-body--form">${options.message ? `<p class="mb-3 text-sm text-zinc-400">${escapeHtml(String(options.message))}</p>` : ''}${fieldsHtml}</div>
           <div class="casepm-dialog-actions">
             <button type="button" class="casepm-dialog-btn casepm-dialog-btn-secondary" data-action="cancel">${escapeHtml(cancelLabel)}</button>
@@ -515,7 +553,7 @@
       dialog.className = 'casepm-dialog';
       dialog.innerHTML = `
         <div class="casepm-dialog-panel">
-          <div class="casepm-dialog-title">${iconForType(danger ? 'warning' : 'info')}<span>${escapeHtml(title)}</span></div>
+          <div class="casepm-dialog-title">${dialogTitleHtml(title, danger ? 'warning' : 'info')}</div>
           <div class="casepm-dialog-body">${escapeHtml(String(message ?? ''))}</div>
           <div class="casepm-dialog-actions">
             <button type="button" class="casepm-dialog-btn casepm-dialog-btn-secondary" data-action="cancel">${escapeHtml(cancelLabel)}</button>

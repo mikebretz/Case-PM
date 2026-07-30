@@ -67,7 +67,14 @@
     root.innerHTML = '<p class="text-zinc-500 text-sm">Loading…</p>';
     try {
       if (route === 'dashboard') root.innerHTML = renderDashboard();
-      else if (route === 'gl') root.innerHTML = await renderGL();
+      else if (route === 'gl') {
+        if (global.CasePMAcctGLUI) {
+          global.CasePMAcctGLUI.init({ api, esc, money, switchModule, AD: () => global.CasePMAccountingDialog || {}, projectId });
+          root.innerHTML = await global.CasePMAcctGLUI.render();
+        } else {
+          root.innerHTML = await renderGL();
+        }
+      }
       else if (route === 'ap') root.innerHTML = await renderAP();
       else if (route === 'ar') root.innerHTML = await renderAR();
       else if (route === 'bank') root.innerHTML = await renderBank();
@@ -96,6 +103,9 @@
         root.innerHTML = mod ? renderPlannedModule(route, mod) : '<p class="text-zinc-500">Module not found.</p>';
       }
       bindPanelHandlers(route);
+      if (route === 'gl' && global.CasePMAcctGLUI?.bindHandlers) {
+        global.CasePMAcctGLUI.bindHandlers();
+      }
       if (global.CasePMAcctModulesUI?.bindExtras) global.CasePMAcctModulesUI.bindExtras(route);
       if (route === 'payroll' && global.CasePMAcctPayrollUI?.bindHandlers) {
         global.CasePMAcctPayrollUI.bindHandlers();
@@ -209,28 +219,50 @@
       api('/api/accounting/ap/invoices'),
       api('/api/accounting/ap/payments'),
     ]);
+    const vendorMap = Object.fromEntries((vendors.vendors || []).map((v) => [v.id, v]));
     const open = (invoices.invoices || []).filter((i) => i.status === 'Open' || i.status === 'Partial');
     return `<div class="space-y-6">
-      <div class="flex justify-between items-center">
-        <h2 class="text-lg font-semibold text-white">Accounts Payable</h2>
-        <button type="button" id="acctAddVendor" class="text-xs text-emerald-400">+ Vendor</button>
+      <div class="flex flex-wrap justify-between items-center gap-2">
+        <div>
+          <h2 class="text-lg font-semibold text-white">Accounts Payable</h2>
+          <p class="text-xs text-zinc-500 mt-1">Vendors, invoices, payments, and optional G/L distribution posting.</p>
+        </div>
+        <div class="flex gap-2">
+          <button type="button" id="acctAddVendor" class="text-xs px-3 py-2 border border-zinc-700 rounded-md text-emerald-400">+ Vendor</button>
+          <button type="button" id="acctAddApInvoice" class="text-xs px-3 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-white">+ Invoice</button>
+        </div>
       </div>
       <div class="bg-zinc-800/40 border border-zinc-700 rounded-lg p-4">
-        <h3 class="text-sm font-medium text-zinc-300 mb-2">Pay open invoices</h3>
-        <p class="text-xs text-zinc-500 mb-3">Creates AP payment, posts Dr A/P · Cr Cash, and updates bank activity.</p>
-        <button type="button" id="acctPayApBtn" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 rounded text-sm" ${open.length ? '' : 'disabled'}>Pay selected invoice…</button>
-        <ul class="mt-3 text-xs space-y-1 max-h-32 overflow-y-auto">${open.map((i) =>
-          `<li class="text-zinc-400"><span class="font-mono">${esc(i.document_number)}</span> — ${money(i.amount)} (vendor #${i.vendor_id}) <span class="text-zinc-600">id ${i.id}</span></li>`
-        ).join('') || '<li>No open invoices — approve sub pay apps to auto-create AP.</li>'}</ul>
+        <h3 class="text-sm font-medium text-zinc-300 mb-2">Payments</h3>
+        <p class="text-xs text-zinc-500 mb-3">Post payment: Dr A/P · Cr Cash (requires accounting role).</p>
+        <button type="button" id="acctPayApBtn" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 rounded text-sm" ${open.length ? '' : 'disabled'}>Pay invoice…</button>
+      </div>
+      <div class="border border-zinc-700 rounded-lg overflow-hidden">
+        <div class="px-3 py-2 bg-zinc-800 text-xs text-zinc-500">Open invoices</div>
+        <table class="w-full text-sm"><thead class="text-xs text-zinc-500 bg-zinc-900"><tr>
+          <th class="text-left px-3 py-2">Invoice</th><th class="text-left px-3 py-2">Vendor</th>
+          <th class="text-right px-3 py-2">Amount</th><th class="text-left px-3 py-2">G/L</th><th class="text-right px-3 py-2"></th>
+        </tr></thead><tbody>
+          ${open.map((i) => {
+            const v = vendorMap[i.vendor_id];
+            return `<tr class="border-t border-zinc-800">
+              <td class="px-3 py-2 font-mono text-xs">${esc(i.document_number)}</td>
+              <td class="px-3 py-2 text-xs">${esc(v ? `${v.code} — ${v.name}` : `Vendor #${i.vendor_id}`)}</td>
+              <td class="px-3 py-2 text-right">${money(i.amount)}</td>
+              <td class="px-3 py-2 text-xs">${i.gl_posted ? '<span class="text-emerald-400">Posted</span>' : '<span class="text-zinc-500">Subledger only</span>'}</td>
+              <td class="px-3 py-2 text-right">${!i.gl_posted ? `<button type="button" class="text-violet-400 text-xs acct-ap-post-gl" data-id="${i.id}">Post to G/L</button>` : ''}</td>
+            </tr>`;
+          }).join('') || '<tr><td colspan="5" class="p-4 text-zinc-500 text-sm">No open invoices.</td></tr>'}
+        </tbody></table>
       </div>
       <div class="grid md:grid-cols-2 gap-4">
-        <div class="border border-zinc-700 rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+        <div class="border border-zinc-700 rounded-lg overflow-hidden max-h-56 overflow-y-auto">
           <div class="px-3 py-2 bg-zinc-800 text-xs text-zinc-500">Vendors</div>
           <table class="w-full text-sm"><tbody>${(vendors.vendors || []).map((v) =>
-            `<tr class="border-t border-zinc-800"><td class="px-3 py-2 font-mono text-xs">${esc(v.code)}</td><td class="px-3 py-2">${esc(v.name)}</td></tr>`
+            `<tr class="border-t border-zinc-800"><td class="px-3 py-2 font-mono text-xs">${esc(v.code)}</td><td class="px-3 py-2">${esc(v.name)}</td><td class="px-3 py-2 text-xs text-zinc-500">${esc(v.terms || '')}</td></tr>`
           ).join('')}</tbody></table>
         </div>
-        <div class="border border-zinc-700 rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+        <div class="border border-zinc-700 rounded-lg overflow-hidden max-h-56 overflow-y-auto">
           <div class="px-3 py-2 bg-zinc-800 text-xs text-zinc-500">Recent payments</div>
           ${(payments.payments || []).map((p) =>
             `<div class="px-3 py-2 border-t border-zinc-800 text-xs font-mono">${esc(p.payment_number)} ${money(p.amount)}</div>`
@@ -246,22 +278,46 @@
       api('/api/accounting/ar/invoices'),
       api('/api/accounting/ar/receipts'),
     ]);
+    const custMap = Object.fromEntries((customers.customers || []).map((c) => [c.id, c]));
     const open = (invoices.invoices || []).filter((i) => i.status === 'Open' || i.status === 'Partial');
-    return `<div class="space-y-4">
-      <div class="flex justify-between"><h2 class="text-lg font-semibold text-white">Accounts Receivable</h2>
-        <button type="button" id="acctAddCustomer" class="text-xs text-emerald-400">+ Customer</button></div>
+    return `<div class="space-y-6">
+      <div class="flex flex-wrap justify-between items-center gap-2">
+        <div>
+          <h2 class="text-lg font-semibold text-white">Accounts Receivable</h2>
+          <p class="text-xs text-zinc-500 mt-1">Customers, invoices, cash receipts, and revenue G/L posting.</p>
+        </div>
+        <div class="flex gap-2">
+          <button type="button" id="acctAddCustomer" class="text-xs px-3 py-2 border border-zinc-700 rounded-md text-emerald-400">+ Customer</button>
+          <button type="button" id="acctAddArInvoice" class="text-xs px-3 py-2 bg-sky-600 hover:bg-sky-500 rounded-md text-white">+ Invoice</button>
+        </div>
+      </div>
       <div class="bg-zinc-800/40 border border-zinc-700 rounded-lg p-4">
         <h3 class="text-sm font-medium text-zinc-300 mb-2">Cash application</h3>
         <button type="button" id="acctArReceiptBtn" class="px-3 py-2 bg-sky-600 hover:bg-sky-500 rounded text-sm" ${open.length ? '' : 'disabled'}>Apply receipt…</button>
-        <ul class="mt-3 text-xs space-y-1">${open.map((i) =>
-          `<li class="text-zinc-400 font-mono">${esc(i.document_number)} — ${money(i.amount)} (cust #${i.customer_id}) id ${i.id}</li>`
-        ).join('') || '<li class="text-zinc-500">No open AR — approve G702 to auto-create owner invoices.</li>'}</ul>
+      </div>
+      <div class="border border-zinc-700 rounded-lg overflow-hidden">
+        <div class="px-3 py-2 bg-zinc-800 text-xs text-zinc-500">Open invoices</div>
+        <table class="w-full text-sm"><thead class="text-xs text-zinc-500 bg-zinc-900"><tr>
+          <th class="text-left px-3 py-2">Invoice</th><th class="text-left px-3 py-2">Customer</th>
+          <th class="text-right px-3 py-2">Amount</th><th class="text-left px-3 py-2">G/L</th><th class="text-right px-3 py-2"></th>
+        </tr></thead><tbody>
+          ${open.map((i) => {
+            const c = custMap[i.customer_id];
+            return `<tr class="border-t border-zinc-800">
+              <td class="px-3 py-2 font-mono text-xs">${esc(i.document_number)}</td>
+              <td class="px-3 py-2 text-xs">${esc(c ? `${c.code} — ${c.name}` : `Customer #${i.customer_id}`)}</td>
+              <td class="px-3 py-2 text-right">${money(i.amount)}</td>
+              <td class="px-3 py-2 text-xs">${i.gl_posted ? '<span class="text-emerald-400">Posted</span>' : '<span class="text-zinc-500">Subledger only</span>'}</td>
+              <td class="px-3 py-2 text-right">${!i.gl_posted ? `<button type="button" class="text-violet-400 text-xs acct-ar-post-gl" data-id="${i.id}">Post to G/L</button>` : ''}</td>
+            </tr>`;
+          }).join('') || '<tr><td colspan="5" class="p-4 text-zinc-500 text-sm">No open AR invoices.</td></tr>'}
+        </tbody></table>
       </div>
       <div class="grid md:grid-cols-2 gap-4 text-sm">
-        <div class="border border-zinc-700 rounded-lg max-h-48 overflow-y-auto">
+        <div class="border border-zinc-700 rounded-lg max-h-56 overflow-y-auto">
           ${(customers.customers || []).map((c) => `<div class="px-3 py-2 border-t border-zinc-800 font-mono text-xs">${esc(c.code)} — ${esc(c.name)}</div>`).join('')}
         </div>
-        <div class="border border-zinc-700 rounded-lg max-h-48 overflow-y-auto">
+        <div class="border border-zinc-700 rounded-lg max-h-56 overflow-y-auto">
           ${(receipts.receipts || []).map((r) => `<div class="px-3 py-2 border-t border-zinc-800 text-xs">${esc(r.receipt_number)} ${money(r.amount)}</div>`).join('') || '<div class="p-3 text-zinc-500 text-xs">No receipts.</div>'}
         </div>
       </div>
@@ -378,12 +434,28 @@
       btn.addEventListener('click', () => switchModule(btn.getAttribute('data-acct-dash')));
     });
     document.getElementById('acctPayApBtn')?.addEventListener('click', async () => {
-      const data = await AD().form({
+      const invRes = await api('/api/accounting/ap/invoices');
+      const open = (invRes.invoices || []).filter((i) => i.status === 'Open' || i.status === 'Partial');
+      if (!open.length) return;
+      const vendors = await api('/api/accounting/ap/vendors');
+      const vmap = Object.fromEntries((vendors.vendors || []).map((v) => [v.id, v]));
+      const pick = await AD().select({
         title: 'Pay A/P invoice',
+        message: 'Select an open invoice to pay.',
+        items: open.map((i) => ({
+          value: String(i.id),
+          label: `${i.document_number} — ${money(i.amount - (i.amount_paid || 0))} open · ${vmap[i.vendor_id]?.name || 'Vendor'}`,
+        })),
+        submitLabel: 'Continue',
+      });
+      if (!pick) return;
+      const inv = open.find((i) => String(i.id) === String(pick.value));
+      if (!inv) return;
+      const openAmt = (parseFloat(inv.amount) || 0) - (parseFloat(inv.amount_paid) || 0);
+      const data = await AD().form({
+        title: 'Payment amount',
         fields: [
-          { key: 'invId', label: 'AP invoice id (from list above)', required: true },
-          { key: 'vendorId', label: 'Vendor id', required: true },
-          { key: 'amt', label: 'Payment amount', type: 'number', step: '0.01', required: true },
+          { key: 'amt', label: 'Payment amount', type: 'number', step: '0.01', defaultValue: String(openAmt), required: true },
         ],
         submitLabel: 'Post payment',
       });
@@ -394,21 +466,37 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          vendor_id: parseInt(data.vendorId, 10),
+          vendor_id: inv.vendor_id,
           amount: parseFloat(data.amt),
           bank_account_id: bankId,
-          applications: [{ ap_document_id: parseInt(data.invId, 10), amount: parseFloat(data.amt) }],
+          applications: [{ ap_document_id: inv.id, amount: parseFloat(data.amt) }],
         }),
       });
       switchModule('ap');
     });
     document.getElementById('acctArReceiptBtn')?.addEventListener('click', async () => {
-      const data = await AD().form({
+      const invRes = await api('/api/accounting/ar/invoices');
+      const open = (invRes.invoices || []).filter((i) => i.status === 'Open' || i.status === 'Partial');
+      if (!open.length) return;
+      const customers = await api('/api/accounting/ar/customers');
+      const cmap = Object.fromEntries((customers.customers || []).map((c) => [c.id, c]));
+      const pick = await AD().select({
         title: 'Apply A/R receipt',
+        message: 'Select an open invoice.',
+        items: open.map((i) => ({
+          value: String(i.id),
+          label: `${i.document_number} — ${money(i.amount)} · ${cmap[i.customer_id]?.name || 'Customer'}`,
+        })),
+        submitLabel: 'Continue',
+      });
+      if (!pick) return;
+      const inv = open.find((i) => String(i.id) === String(pick.value));
+      if (!inv) return;
+      const openAmt = (parseFloat(inv.amount) || 0) - (parseFloat(inv.amount_paid) || 0);
+      const data = await AD().form({
+        title: 'Receipt amount',
         fields: [
-          { key: 'invId', label: 'AR invoice id', required: true },
-          { key: 'custId', label: 'Customer id', required: true },
-          { key: 'amt', label: 'Receipt amount', type: 'number', step: '0.01', required: true },
+          { key: 'amt', label: 'Receipt amount', type: 'number', step: '0.01', defaultValue: String(openAmt), required: true },
         ],
         submitLabel: 'Apply receipt',
       });
@@ -419,10 +507,10 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customer_id: parseInt(data.custId, 10),
+          customer_id: inv.customer_id,
           amount: parseFloat(data.amt),
           bank_account_id: bankId,
-          applications: [{ ar_document_id: parseInt(data.invId, 10), amount: parseFloat(data.amt) }],
+          applications: [{ ar_document_id: inv.id, amount: parseFloat(data.amt) }],
         }),
       });
       switchModule('ar');
@@ -482,11 +570,90 @@
         fields: [
           { key: 'code', label: 'Vendor code', required: true },
           { key: 'name', label: 'Vendor name', required: true },
+          { key: 'terms', label: 'Payment terms', placeholder: 'Net 30' },
+          { key: 'email', label: 'Email' },
+          { key: 'phone', label: 'Phone' },
+          { key: 'tax_group', label: 'Tax group code' },
         ],
       });
       if (!data) return;
       await api('/api/accounting/ap/vendors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
       switchModule('ap');
+    });
+    document.getElementById('acctAddApInvoice')?.addEventListener('click', async () => {
+      const [vendors, accounts] = await Promise.all([
+        api('/api/accounting/ap/vendors'),
+        api('/api/accounting/gl/accounts'),
+      ]);
+      const vlist = vendors.vendors || [];
+      if (!vlist.length) {
+        await AD().alert('Add a vendor first.', 'warning');
+        return;
+      }
+      const expAccounts = (accounts.accounts || []).filter((a) => a.account_type === 'expense');
+      const data = await AD().form({
+        title: 'New A/P invoice',
+        fields: [
+          {
+            key: 'vendor_id',
+            label: 'Vendor',
+            type: 'select',
+            required: true,
+            options: vlist.map((v) => ({ value: String(v.id), label: `${v.code} — ${v.name}` })),
+          },
+          { key: 'document_number', label: 'Invoice number', required: true },
+          { key: 'document_date', label: 'Invoice date (YYYY-MM-DD)', defaultValue: new Date().toISOString().slice(0, 10) },
+          { key: 'due_date', label: 'Due date (YYYY-MM-DD)' },
+          { key: 'amount', label: 'Amount', type: 'number', step: '0.01', required: true },
+          {
+            key: 'post_to_gl',
+            label: 'Post to G/L on save',
+            type: 'select',
+            defaultValue: '0',
+            options: [{ value: '0', label: 'Subledger only' }, { value: '1', label: 'Post Dr expense · Cr A/P' }],
+          },
+          {
+            key: 'expense_account_id',
+            label: 'Expense account (if posting)',
+            type: 'select',
+            options: [{ value: '', label: 'Use program default' }].concat(
+              expAccounts.map((a) => ({ value: String(a.id), label: `${a.account_number} — ${a.description}` })),
+            ),
+          },
+        ],
+        submitLabel: 'Create invoice',
+      });
+      if (!data) return;
+      const payload = {
+        vendor_id: parseInt(data.vendor_id, 10),
+        document_number: data.document_number,
+        document_date: data.document_date,
+        due_date: data.due_date || undefined,
+        amount: parseFloat(data.amount),
+        project_id: projectId(),
+        post_to_gl: data.post_to_gl === '1',
+        expense_account_id: data.expense_account_id ? parseInt(data.expense_account_id, 10) : undefined,
+      };
+      try {
+        await api('/api/accounting/ap/invoices', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        switchModule('ap');
+      } catch (e) {
+        await AD().alert(e.message, 'error');
+      }
+    });
+    document.querySelectorAll('.acct-ap-post-gl').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        try {
+          await api(`/api/accounting/ap/invoices/${btn.getAttribute('data-id')}/post-gl`, { method: 'POST', body: '{}' });
+          switchModule('ap');
+        } catch (e) {
+          await AD().alert(e.message, 'error');
+        }
+      });
     });
     document.getElementById('acctAddCustomer')?.addEventListener('click', async () => {
       const data = await AD().form({
@@ -494,11 +661,89 @@
         fields: [
           { key: 'code', label: 'Customer code', required: true },
           { key: 'name', label: 'Customer name', required: true },
+          { key: 'terms', label: 'Payment terms', placeholder: 'Net 30' },
+          { key: 'email', label: 'Email' },
+          { key: 'credit_limit', label: 'Credit limit', type: 'number', step: '0.01' },
         ],
       });
       if (!data) return;
       await api('/api/accounting/ar/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
       switchModule('ar');
+    });
+    document.getElementById('acctAddArInvoice')?.addEventListener('click', async () => {
+      const [customers, accounts] = await Promise.all([
+        api('/api/accounting/ar/customers'),
+        api('/api/accounting/gl/accounts'),
+      ]);
+      const clist = customers.customers || [];
+      if (!clist.length) {
+        await AD().alert('Add a customer first.', 'warning');
+        return;
+      }
+      const revAccounts = (accounts.accounts || []).filter((a) => a.account_type === 'revenue');
+      const data = await AD().form({
+        title: 'New A/R invoice',
+        fields: [
+          {
+            key: 'customer_id',
+            label: 'Customer',
+            type: 'select',
+            required: true,
+            options: clist.map((c) => ({ value: String(c.id), label: `${c.code} — ${c.name}` })),
+          },
+          { key: 'document_number', label: 'Invoice number', required: true },
+          { key: 'document_date', label: 'Invoice date (YYYY-MM-DD)', defaultValue: new Date().toISOString().slice(0, 10) },
+          { key: 'due_date', label: 'Due date (YYYY-MM-DD)' },
+          { key: 'amount', label: 'Amount', type: 'number', step: '0.01', required: true },
+          {
+            key: 'post_to_gl',
+            label: 'Post to G/L on save',
+            type: 'select',
+            defaultValue: '0',
+            options: [{ value: '0', label: 'Subledger only' }, { value: '1', label: 'Post Dr A/R · Cr revenue' }],
+          },
+          {
+            key: 'revenue_account_id',
+            label: 'Revenue account (if posting)',
+            type: 'select',
+            options: [{ value: '', label: 'Use program default' }].concat(
+              revAccounts.map((a) => ({ value: String(a.id), label: `${a.account_number} — ${a.description}` })),
+            ),
+          },
+        ],
+        submitLabel: 'Create invoice',
+      });
+      if (!data) return;
+      const payload = {
+        customer_id: parseInt(data.customer_id, 10),
+        document_number: data.document_number,
+        document_date: data.document_date,
+        due_date: data.due_date || undefined,
+        amount: parseFloat(data.amount),
+        project_id: projectId(),
+        post_to_gl: data.post_to_gl === '1',
+        revenue_account_id: data.revenue_account_id ? parseInt(data.revenue_account_id, 10) : undefined,
+      };
+      try {
+        await api('/api/accounting/ar/invoices', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        switchModule('ar');
+      } catch (e) {
+        await AD().alert(e.message, 'error');
+      }
+    });
+    document.querySelectorAll('.acct-ar-post-gl').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        try {
+          await api(`/api/accounting/ar/invoices/${btn.getAttribute('data-id')}/post-gl`, { method: 'POST', body: '{}' });
+          switchModule('ar');
+        } catch (e) {
+          await AD().alert(e.message, 'error');
+        }
+      });
     });
     document.getElementById('acctAddBank')?.addEventListener('click', async () => {
       const data = await AD().form({
@@ -569,9 +814,9 @@
         fields: [
           { key: 'po_number', label: 'PO number', required: true },
           { key: 'vendorId', label: 'Vendor id (optional)' },
-          { key: 'item', label: 'Line item number (inventory)', defaultValue: 'MAT-001' },
-          { key: 'qty', label: 'Quantity', type: 'number', step: '0.01', defaultValue: '1' },
-          { key: 'price', label: 'Unit price', type: 'number', step: '0.01', defaultValue: '0' },
+          { key: 'item', label: 'Line item number (inventory)' },
+          { key: 'qty', label: 'Quantity', type: 'number', step: '0.01' },
+          { key: 'price', label: 'Unit price', type: 'number', step: '0.01' },
         ],
       });
       if (!data) return;
@@ -597,9 +842,9 @@
         fields: [
           { key: 'order_number', label: 'Order number', required: true },
           { key: 'customerId', label: 'Customer id' },
-          { key: 'desc', label: 'Line description', defaultValue: 'Materials sale' },
-          { key: 'qty', label: 'Qty', type: 'number', step: '0.01', defaultValue: '1' },
-          { key: 'price', label: 'Unit price', type: 'number', step: '0.01', defaultValue: '100' },
+          { key: 'desc', label: 'Line description' },
+          { key: 'qty', label: 'Qty', type: 'number', step: '0.01' },
+          { key: 'price', label: 'Unit price', type: 'number', step: '0.01' },
         ],
       });
       if (!data) return;
@@ -641,32 +886,14 @@
       });
       switchModule('assets');
     });
-    document.getElementById('acctNewJeBatch')?.addEventListener('click', async () => {
-      const acct = await api('/api/accounting/gl/accounts');
-      const accounts = acct.accounts || [];
-      if (accounts.length < 2) {
-        await AD().alert('Need at least 2 GL accounts', 'warning');
-        return;
-      }
-      const cash = accounts.find((a) => a.account_number.startsWith('10')) || accounts[0];
-      const expense = accounts.find((a) => a.account_type === 'expense') || accounts[1];
-      await api('/api/accounting/gl/batches', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          description: 'Sample entry',
-          lines: [
-            { account_id: expense.id, debit: 100, credit: 0, description: 'Sample expense' },
-            { account_id: cash.id, debit: 0, credit: 100, description: 'Cash offset' },
-          ],
-        }),
-      });
-      switchModule('gl');
-    });
     document.querySelectorAll('[data-post-batch]').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        await api(`/api/accounting/gl/batches/${btn.getAttribute('data-post-batch')}/post`, { method: 'POST', body: '{}' });
-        switchModule('gl');
+        try {
+          await api(`/api/accounting/gl/batches/${btn.getAttribute('data-post-batch')}/post`, { method: 'POST', body: '{}' });
+          switchModule('gl');
+        } catch (e) {
+          await AD().alert(e.message, 'error');
+        }
       });
     });
     document.getElementById('acctJobReconcile')?.addEventListener('click', async () => {

@@ -144,12 +144,156 @@ def register_accounting_routes(app, deps):
             return jsonify({'error': str(exc)}), 403
         batch = models['AcctJournalBatch'].query.get_or_404(batch_id)
         try:
-            post_journal_batch(db, batch, models['AcctJournalLine'])
+            ledger = models['AcctLedger'].query.get(batch.ledger_id)
+            post_journal_batch(db, batch, models['AcctJournalLine'], ledger=ledger)
             db.session.commit()
         except ValueError as exc:
             db.session.rollback()
             return jsonify({'error': str(exc)}), 400
         return jsonify({'ok': True, 'batch': serialize_batch(batch)})
+
+    @app.route('/api/accounting/gl/accounts/<int:account_id>', methods=['PATCH'])
+    @login_required
+    def api_acct_gl_account_patch(account_id):
+        from accounting_persistence import serialize_account
+        from accounting_gl_service import patch_gl_account
+        AcctGLAccount = models['AcctGLAccount']
+        lid = _ledger_id()
+        acct = AcctGLAccount.query.filter_by(id=account_id, ledger_id=lid).first_or_404()
+        body = request.get_json(silent=True) or {}
+        patch_gl_account(acct, body)
+        db.session.commit()
+        return jsonify({'ok': True, 'account': serialize_account(acct)})
+
+    @app.route('/api/accounting/gl/accounts/<int:account_id>/register', methods=['GET'])
+    @login_required
+    def api_acct_gl_account_register(account_id):
+        from accounting_gl_service import account_register
+        lid = _ledger_id()
+        try:
+            data = account_register(db, models, lid, account_id)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+        return jsonify(data)
+
+    @app.route('/api/accounting/gl/batches/<int:batch_id>', methods=['GET', 'PATCH', 'DELETE'])
+    @login_required
+    def api_acct_gl_batch_detail(batch_id):
+        from accounting_persistence import serialize_batch
+        from accounting_gl_service import batch_lines_payload, update_open_batch
+        AcctJournalBatch = models['AcctJournalBatch']
+        AcctJournalLine = models['AcctJournalLine']
+        AcctGLAccount = models['AcctGLAccount']
+        AcctLedger = models['AcctLedger']
+        lid = _ledger_id()
+        batch = AcctJournalBatch.query.filter_by(id=batch_id, ledger_id=lid).first_or_404()
+        if request.method == 'GET':
+            lines = batch_lines_payload(AcctJournalLine, AcctGLAccount, batch.id)
+            return jsonify({'batch': serialize_batch(batch, lines)})
+        if request.method == 'DELETE':
+            if batch.status != 'Open':
+                return jsonify({'error': 'Only open batches can be deleted'}), 400
+            AcctJournalLine.query.filter_by(batch_id=batch.id).delete()
+            db.session.delete(batch)
+            db.session.commit()
+            return jsonify({'ok': True})
+        body = request.get_json(silent=True) or {}
+        try:
+            update_open_batch(db, models, batch, body, AcctLedger)
+            db.session.commit()
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+        lines = batch_lines_payload(AcctJournalLine, AcctGLAccount, batch.id)
+        return jsonify({'ok': True, 'batch': serialize_batch(batch, lines)})
+
+    @app.route('/api/accounting/gl/options', methods=['GET', 'PATCH'])
+    @login_required
+    def api_acct_gl_options():
+        from accounting_gl_service import ledger_gl_options, update_ledger_gl_options
+        AcctLedger = models['AcctLedger']
+        lid = _ledger_id()
+        ledger = AcctLedger.query.get(lid)
+        if request.method == 'GET':
+            return jsonify(ledger_gl_options(ledger))
+        body = request.get_json(silent=True) or {}
+        data = update_ledger_gl_options(ledger, body)
+        db.session.commit()
+        return jsonify({'ok': True, 'options': data})
+
+    @app.route('/api/accounting/ap/invoices/<int:invoice_id>/post-gl', methods=['POST'])
+    @login_required
+    def api_acct_ap_invoice_post_gl(invoice_id):
+        from accounting_posting import post_ap_invoice_to_gl
+        from financial_security import require_accounting_role
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        body = request.get_json(silent=True) or {}
+        try:
+            out = post_ap_invoice_to_gl(
+                db, models, invoice_id,
+                expense_account_id=body.get('expense_account_id'),
+                user_id=getattr(current_user, 'id', None),
+            )
+            db.session.commit()
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/ar/invoices/<int:invoice_id>/post-gl', methods=['POST'])
+    @login_required
+    def api_acct_ar_invoice_post_gl(invoice_id):
+        from accounting_posting import post_ar_invoice_to_gl
+        from financial_security import require_accounting_role
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        body = request.get_json(silent=True) or {}
+        try:
+            out = post_ar_invoice_to_gl(
+                db, models, invoice_id,
+                revenue_account_id=body.get('revenue_account_id'),
+                user_id=getattr(current_user, 'id', None),
+            )
+            db.session.commit()
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/ap/vendors/<int:vendor_id>', methods=['PATCH'])
+    @login_required
+    def api_acct_ap_vendor_patch(vendor_id):
+        from accounting_persistence import serialize_vendor
+        AcctVendor = models['AcctVendor']
+        lid = _ledger_id()
+        v = AcctVendor.query.filter_by(id=vendor_id, ledger_id=lid).first_or_404()
+        body = request.get_json(silent=True) or {}
+        for field in ('name', 'terms', 'tax_group', 'email', 'phone', 'status'):
+            if field in body:
+                setattr(v, field, str(body[field])[:200] if body[field] is not None else '')
+        db.session.commit()
+        return jsonify({'ok': True, 'vendor': serialize_vendor(v)})
+
+    @app.route('/api/accounting/ar/customers/<int:customer_id>', methods=['PATCH'])
+    @login_required
+    def api_acct_ar_customer_patch(customer_id):
+        from accounting_persistence import serialize_customer
+        AcctCustomer = models['AcctCustomer']
+        lid = _ledger_id()
+        c = AcctCustomer.query.filter_by(id=customer_id, ledger_id=lid).first_or_404()
+        body = request.get_json(silent=True) or {}
+        for field in ('name', 'terms', 'email', 'status'):
+            if field in body:
+                setattr(c, field, str(body[field])[:200] if body[field] is not None else '')
+        if 'credit_limit' in body:
+            c.credit_limit = float(body['credit_limit'] or 0)
+        db.session.commit()
+        return jsonify({'ok': True, 'customer': serialize_customer(c)})
 
     @app.route('/api/accounting/ap/vendors', methods=['GET', 'POST'])
     @login_required
@@ -200,10 +344,22 @@ def register_accounting_routes(app, deps):
         if not doc.document_number:
             return jsonify({'error': 'document_number required'}), 400
         db.session.add(doc)
+        db.session.flush()
+        if body.get('post_to_gl'):
+            from accounting_posting import post_ap_invoice_to_gl
+            from financial_security import require_accounting_role
+            try:
+                require_accounting_role(current_user)
+                post_ap_invoice_to_gl(
+                    db, models, doc.id,
+                    expense_account_id=body.get('expense_account_id'),
+                    user_id=getattr(current_user, 'id', None),
+                )
+            except (PermissionError, ValueError) as exc:
+                db.session.rollback()
+                return jsonify({'error': str(exc)}), 400
         db.session.commit()
         return jsonify({'ok': True, 'invoice': serialize_ap_doc(doc)})
-
-    @app.route('/api/accounting/ar/customers', methods=['GET', 'POST'])
     @login_required
     def api_acct_ar_customers():
         from accounting_persistence import serialize_customer
@@ -250,6 +406,20 @@ def register_accounting_routes(app, deps):
         if not doc.document_number:
             return jsonify({'error': 'document_number required'}), 400
         db.session.add(doc)
+        db.session.flush()
+        if body.get('post_to_gl'):
+            from accounting_posting import post_ar_invoice_to_gl
+            from financial_security import require_accounting_role
+            try:
+                require_accounting_role(current_user)
+                post_ar_invoice_to_gl(
+                    db, models, doc.id,
+                    revenue_account_id=body.get('revenue_account_id'),
+                    user_id=getattr(current_user, 'id', None),
+                )
+            except (PermissionError, ValueError) as exc:
+                db.session.rollback()
+                return jsonify({'error': str(exc)}), 400
         db.session.commit()
         return jsonify({'ok': True, 'invoice': serialize_ar_doc(doc)})
 
