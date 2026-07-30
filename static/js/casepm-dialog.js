@@ -196,40 +196,62 @@
 
     function startDrag(clientX, clientY, isTouch) {
       const rect = el.getBoundingClientRect();
-      el.style.position = 'fixed';
-      el.style.margin = '0';
-      el.style.top = rect.top + 'px';
-      el.style.left = rect.left + 'px';
-      el.style.transform = 'none';
-      el.classList.add('casepm-dragged');
-      let pos3 = clientX;
-      let pos4 = clientY;
+      const originTop = rect.top;
+      const originLeft = rect.left;
+      let startX = clientX;
+      let startY = clientY;
+      let dragging = false;
+
+      const applyDragPosition = (dx, dy) => {
+        el.style.top = `${originTop + dy}px`;
+        el.style.left = `${originLeft + dx}px`;
+      };
+
+      const beginDragging = () => {
+        if (dragging) return;
+        dragging = true;
+        el.style.position = 'fixed';
+        el.style.margin = '0';
+        el.style.right = 'auto';
+        el.style.bottom = 'auto';
+        el.style.transform = 'none';
+        el.classList.add('casepm-dragged');
+        applyDragPosition(0, 0);
+      };
+
       const onUp = () => {
         document.removeEventListener('mouseup', onUp);
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('touchend', onUp);
         document.removeEventListener('touchmove', onTouchMove);
       };
+
       const onMove = (ev) => {
+        const cx = ev.clientX;
+        const cy = ev.clientY;
+        const dx = cx - startX;
+        const dy = cy - startY;
+        if (!dragging) {
+          if (Math.abs(dx) + Math.abs(dy) < 4) return;
+          beginDragging();
+        }
         ev.preventDefault();
-        const pos1 = pos3 - ev.clientX;
-        const pos2 = pos4 - ev.clientY;
-        pos3 = ev.clientX;
-        pos4 = ev.clientY;
-        el.style.top = (el.offsetTop - pos2) + 'px';
-        el.style.left = (el.offsetLeft - pos1) + 'px';
+        applyDragPosition(dx, dy);
       };
+
       const onTouchMove = (ev) => {
         const touch = ev.touches[0];
         if (!touch) return;
+        const dx = touch.clientX - startX;
+        const dy = touch.clientY - startY;
+        if (!dragging) {
+          if (Math.abs(dx) + Math.abs(dy) < 6) return;
+          beginDragging();
+        }
         ev.preventDefault();
-        const pos1 = pos3 - touch.clientX;
-        const pos2 = pos4 - touch.clientY;
-        pos3 = touch.clientX;
-        pos4 = touch.clientY;
-        el.style.top = (el.offsetTop - pos2) + 'px';
-        el.style.left = (el.offsetLeft - pos1) + 'px';
+        applyDragPosition(dx, dy);
       };
+
       if (isTouch) {
         document.addEventListener('touchend', onUp);
         document.addEventListener('touchmove', onTouchMove, { passive: false });
@@ -317,7 +339,7 @@
 
   function dialogTitleHtml(title, type) {
     const t = escapeHtml(String(title ?? ''));
-    return `${iconForType(type || 'info')}<i class="fa-solid fa-grip-vertical text-zinc-500 opacity-60 text-sm casepm-dialog-grip" aria-hidden="true"></i><span class="flex-1 min-w-0">${t}</span><span class="text-[10px] text-zinc-500 font-normal shrink-0 hidden md:inline">Drag to move</span>`;
+    return `${iconForType(type || 'info')}<span class="flex-1 min-w-0">${t}</span>`;
   }
 
   function closeDialog(dialog, result) {
