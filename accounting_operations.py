@@ -34,8 +34,11 @@ def serialize_tax_group(g):
 
 def serialize_asset(a):
     cost = float(a.acquisition_cost or 0)
-    accum = float(a.accumulated_depreciation or 0)
-    salvage = float(getattr(a, 'salvage_value', 0) or 0)
+    accum = float(getattr(a, 'accumulated_depreciation', None) or 0)
+    salvage = float(getattr(a, 'salvage_value', None) or 0)
+    life = int(getattr(a, 'useful_life_months', None) or 60) or 60
+    method = getattr(a, 'depreciation_method', None) or 'straight_line'
+    isd = getattr(a, 'in_service_date', None)
     return {
         'id': a.id,
         'asset_number': a.asset_number,
@@ -45,14 +48,14 @@ def serialize_asset(a):
         'accumulated_depreciation': accum,
         'net_book_value': round(max(cost - accum, 0), 2),
         'salvage_value': salvage,
-        'useful_life_months': int(a.useful_life_months or 60),
-        'depreciation_method': a.depreciation_method or 'straight_line',
-        'monthly_depreciation': round((cost - salvage) / max(int(a.useful_life_months or 60), 1), 2),
+        'useful_life_months': life,
+        'depreciation_method': method,
+        'monthly_depreciation': round((cost - salvage) / max(life, 1), 2),
         'book': a.book or 'GAAP',
         'status': a.status,
         'location': getattr(a, 'location', None) or '',
         'serial_number': getattr(a, 'serial_number', None) or '',
-        'in_service_date': a.in_service_date.isoformat() if getattr(a, 'in_service_date', None) else None,
+        'in_service_date': isd.isoformat() if isd else None,
     }
 
 

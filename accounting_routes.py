@@ -14,8 +14,16 @@ def register_accounting_routes(app, deps):
 
     models = {k: deps[k] for k in deps if k.startswith('Acct')}
 
+    def _ensure_schema():
+        from accounting_persistence import ensure_accounting_schema
+        try:
+            ensure_accounting_schema(db, models)
+        except Exception:
+            db.session.rollback()
+
     def _ledger_id():
         from accounting_persistence import get_or_create_default_ledger, seed_chart_of_accounts
+        _ensure_schema()
         ledger = get_or_create_default_ledger(db, models['AcctLedger'])
         seed_chart_of_accounts(db, models['AcctLedger'], models['AcctGLAccount'], ledger)
         return ledger.id
@@ -24,6 +32,7 @@ def register_accounting_routes(app, deps):
     @login_required
     def accounting_page():
         from flask import render_template
+        _ensure_schema()
         active = deps.get('get_active_project')()
         return render_template('accounting.html', active_project=active, page_module='accounting')
 

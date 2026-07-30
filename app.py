@@ -14569,7 +14569,10 @@ def _migrate_program_schemas():
                 fn(db, _acct_models)
             else:
                 fn(db.engine, db)
-        except Exception:
+        except Exception as exc:
+            if hook[0] == 'accounting_persistence':
+                import logging
+                logging.getLogger(__name__).warning('accounting schema migration failed: %s', exc)
             pass
     try:
         ensure_project_schema()
