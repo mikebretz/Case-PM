@@ -160,6 +160,7 @@ def serialize_vendor(v):
         'email': v.email,
         'phone': v.phone,
         'status': v.status,
+        'company_id': v.company_id,
     }
 
 
@@ -172,6 +173,7 @@ def serialize_customer(c):
         'credit_limit': c.credit_limit,
         'email': c.email,
         'status': c.status,
+        'company_id': c.company_id,
     }
 
 

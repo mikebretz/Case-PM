@@ -101,10 +101,7 @@ def _create_posted_batch(
             reference=ln.get('reference') or '',
         ))
     db.session.flush()
-    ledger = AcctLedger.query.get(ledger_id) if 'AcctLedger' in models else None
-    if ledger is None:
-        AcctLedger = models.get('AcctLedger')
-        ledger = AcctLedger.query.get(ledger_id) if AcctLedger else None
+    ledger = models['AcctLedger'].query.get(ledger_id)
     post_journal_batch(db, batch, AcctJournalLine, ledger=ledger)
     return batch
 
