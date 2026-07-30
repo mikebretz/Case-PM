@@ -47,6 +47,13 @@ MODULE_SUBMODULES = {
         ('change_orders_cpco', 'Commitment PCOs (CPCO)'),
         ('change_orders_erp', 'ERP Accounting Queue'),
     ],
+    'accounting': [
+        ('accounting_overview', 'Overview & Dashboard'),
+        ('accounting_erp', 'ERP / Sage Export Queue'),
+        ('accounting_catalog', 'Sage 300 Module Catalog'),
+        ('accounting_inquiries', 'Sage Web API Inquiries'),
+        ('accounting_reconcile', 'Reconcile & Sage Pull'),
+    ],
     'estimating': [
         ('estimating_summary', 'Summary'),
         ('estimating_worksheet', 'Worksheet'),
@@ -120,6 +127,7 @@ MODULE_GROUPS = [
         'id': 'financial',
         'label': 'Financial',
         'modules': [
+            ('accounting', 'Accounting (Sage 300)'),
             ('budget', 'Budget'),
             ('forecast', 'Forecast'),
             ('commitments', 'Commitments'),
@@ -148,6 +156,8 @@ APPROVAL_MODULES = frozenset({
 })
 
 FINANCIAL_MODULE_KEYS = frozenset({
+    'accounting', 'accounting_overview', 'accounting_erp', 'accounting_catalog',
+    'accounting_inquiries', 'accounting_reconcile',
     'budget', 'forecast', 'commitments', 'pay_applications',
     'pay_applications_gc', 'pay_applications_sub', 'pay_applications_lien_waivers',
     'companies', 'estimating',
@@ -183,6 +193,8 @@ LEGACY_MODULE_MAP = {
     'Email': 'email',
     'Internal Messages': 'internal_messages',
     'Forecast': 'forecast',
+    'Accounting': 'accounting',
+    'Accounting (Sage 300)': 'accounting',
     'Deliveries': 'deliveries',
     'Operations Center': 'operations_center',
     'Inspections': 'inspections',
@@ -198,6 +210,7 @@ WORKFLOW_MODULE_MAP = {
     'Submittals': 'submittals',
     'RFIs': 'rfis',
     'Budget': 'budget',
+    'Accounting': 'accounting',
     'Daily Log': 'daily_log',
     'Safety': 'safety',
     'Documents': 'documents',
@@ -341,6 +354,12 @@ ROLE_TEMPLATES = {
             'estimating_takeoff': ('edit', 'approve_reject'),
             'estimating_leveling': ('edit', 'approve_reject'),
             'estimating_award': ('edit', 'approve_reject'),
+            'accounting': ('edit', 'approve_reject'),
+            'accounting_overview': ('edit', 'approve_reject'),
+            'accounting_erp': ('edit', 'approve_reject'),
+            'accounting_catalog': ('view', 'none'),
+            'accounting_inquiries': ('edit', 'none'),
+            'accounting_reconcile': ('edit', 'approve_reject'),
             'budget': ('edit', 'approve_reject'),
             'commitments': ('edit', 'approve_reject'),
             'pay_applications': ('edit', 'approve_reject'),
@@ -455,6 +474,12 @@ ROLE_TEMPLATES = {
         'description': 'GC financial modules — budget, commitments, full pay applications',
         'modules': _set_modules(default_module_perms('none', 'none'), **{
             'dashboard': ('view', 'none'),
+            'accounting': ('edit', 'approve_reject'),
+            'accounting_overview': ('edit', 'approve_reject'),
+            'accounting_erp': ('edit', 'approve_reject'),
+            'accounting_catalog': ('view', 'none'),
+            'accounting_inquiries': ('edit', 'none'),
+            'accounting_reconcile': ('edit', 'approve_reject'),
             'budget': ('edit', 'approve_reject'),
             'forecast': ('edit', 'none'),
             'commitments': ('edit', 'approve_reject'),
