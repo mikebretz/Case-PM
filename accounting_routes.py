@@ -481,25 +481,89 @@ def register_accounting_routes(app, deps):
     @app.route('/api/accounting/bank/accounts', methods=['GET', 'POST'])
     @login_required
     def api_acct_bank_accounts():
+        from accounting_bank_service import bank_ledger_summary, serialize_bank_account, patch_bank_account
         AcctBankAccount = models['AcctBankAccount']
+        AcctGLAccount = models['AcctGLAccount']
         lid = _ledger_id()
         if request.method == 'GET':
-            rows = AcctBankAccount.query.filter_by(ledger_id=lid).all()
-            return jsonify({'accounts': [{
-                'id': a.id, 'code': a.code, 'name': a.name, 'currency': a.currency, 'status': a.status,
-            } for a in rows]})
+            return jsonify({'accounts': bank_ledger_summary(db, models, lid)})
         body = request.get_json(silent=True) or {}
         a = AcctBankAccount(
             ledger_id=lid,
             code=(body.get('code') or '').strip(),
             name=(body.get('name') or '').strip(),
             currency=body.get('currency') or 'USD',
+            gl_account_id=body.get('gl_account_id'),
         )
         if not a.code or not a.name:
             return jsonify({'error': 'code and name required'}), 400
         db.session.add(a)
         db.session.commit()
-        return jsonify({'ok': True, 'account': {'id': a.id, 'code': a.code, 'name': a.name}})
+        return jsonify({'ok': True, 'account': serialize_bank_account(a, balance=0, unreconciled=0)})
+
+    @app.route('/api/accounting/bank/accounts/<int:account_id>', methods=['PATCH'])
+    @login_required
+    def api_acct_bank_account_patch(account_id):
+        from accounting_bank_service import patch_bank_account, serialize_bank_account, bank_ledger_summary
+        AcctBankAccount = models['AcctBankAccount']
+        AcctGLAccount = models['AcctGLAccount']
+        lid = _ledger_id()
+        a = AcctBankAccount.query.filter_by(id=account_id, ledger_id=lid).first_or_404()
+        body = request.get_json(silent=True) or {}
+        try:
+            patch_bank_account(a, body, AcctGLAccount, lid)
+            db.session.commit()
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+        summary = {x['id']: x for x in bank_ledger_summary(db, models, lid)}
+        return jsonify({'ok': True, 'account': summary.get(a.id, serialize_bank_account(a))})
+
+    @app.route('/api/accounting/bank/transactions', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_bank_transactions_mut():
+        from accounting_bank_service import record_manual_bank_transaction
+        from financial_security import require_accounting_role
+        from datetime import date as date_cls
+        AcctBankTransaction = models['AcctBankTransaction']
+        if request.method == 'GET':
+            bank_id = request.args.get('bank_account_id', type=int)
+            q = AcctBankTransaction.query
+            if bank_id:
+                q = q.filter_by(bank_account_id=bank_id)
+            rows = q.order_by(AcctBankTransaction.id.desc()).limit(200).all()
+            return jsonify({'transactions': [{
+                'id': t.id, 'bank_account_id': t.bank_account_id,
+                'transaction_date': t.transaction_date.isoformat() if t.transaction_date else None,
+                'description': t.description, 'amount': t.amount,
+                'transaction_type': t.transaction_type,
+                'reconciled': t.reconciled, 'reference': t.reference,
+            } for t in rows]})
+        body = request.get_json(silent=True) or {}
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        try:
+            td = body.get('transaction_date')
+            out = record_manual_bank_transaction(
+                db, models,
+                ledger_id=_ledger_id(),
+                bank_account_id=body['bank_account_id'],
+                amount=body.get('amount'),
+                description=body.get('description') or '',
+                transaction_type=body.get('transaction_type') or 'Manual',
+                reference=body.get('reference') or '',
+                transaction_date=date_cls.fromisoformat(td) if td else None,
+                post_gl=bool(body.get('post_to_gl')),
+                offset_account_id=body.get('offset_account_id'),
+                user_id=getattr(current_user, 'id', None),
+            )
+            db.session.commit()
+        except (ValueError, KeyError) as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+        return jsonify({'ok': True, **out})
 
     @app.route('/api/accounting/tax/groups', methods=['GET', 'POST'])
     @login_required
@@ -998,22 +1062,6 @@ def register_accounting_routes(app, deps):
             db.session.rollback()
             return jsonify({'error': str(exc)}), 400
 
-    @app.route('/api/accounting/bank/transactions', methods=['GET'])
-    @login_required
-    def api_acct_bank_transactions():
-        bank_id = request.args.get('bank_account_id', type=int)
-        AcctBankTransaction = models['AcctBankTransaction']
-        q = AcctBankTransaction.query
-        if bank_id:
-            q = q.filter_by(bank_account_id=bank_id)
-        rows = q.order_by(AcctBankTransaction.id.desc()).limit(200).all()
-        return jsonify({'transactions': [{
-            'id': t.id, 'bank_account_id': t.bank_account_id,
-            'transaction_date': t.transaction_date.isoformat() if t.transaction_date else None,
-            'description': t.description, 'amount': t.amount,
-            'reconciled': t.reconciled, 'reference': t.reference,
-        } for t in rows]})
-
     @app.route('/api/accounting/bank/reconcile', methods=['POST'])
     @login_required
     def api_acct_bank_reconcile():
@@ -1036,6 +1084,35 @@ def register_accounting_routes(app, deps):
         except (ValueError, KeyError) as exc:
             db.session.rollback()
             return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/payroll/import/users', methods=['GET'])
+    @login_required
+    def api_acct_payroll_import_users():
+        from accounting_master_data import list_importable_users
+        User = deps.get('User')
+        if not User:
+            return jsonify({'error': 'User directory not available'}), 503
+        users = list_importable_users(db, User, models['AcctPayrollEmployee'], _ledger_id())
+        return jsonify({'users': users})
+
+    @app.route('/api/accounting/payroll/employees/from-user', methods=['POST'])
+    @login_required
+    def api_acct_payroll_employee_from_user():
+        from accounting_master_data import import_employee_from_user
+        from accounting_payroll import serialize_employee
+        User = deps.get('User')
+        if not User:
+            return jsonify({'error': 'User directory not available'}), 503
+        body = request.get_json(silent=True) or {}
+        if not body.get('user_id'):
+            return jsonify({'error': 'user_id required'}), 400
+        try:
+            e, created = import_employee_from_user(db, {**models, 'User': User}, _ledger_id(), body['user_id'])
+            db.session.commit()
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+        return jsonify({'ok': True, 'created': created, 'employee': serialize_employee(e)})
 
     @app.route('/api/accounting/payroll/employees', methods=['GET', 'POST'])
     @login_required

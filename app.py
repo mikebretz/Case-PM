@@ -18507,6 +18507,7 @@ register_accounting_routes(app, {
     'get_active_project': get_active_project,
     'Project': Project,
     'Company': Company,
+    'User': User,
     'SageSyncEvent': SageSyncEvent,
     **_acct_models,
 })

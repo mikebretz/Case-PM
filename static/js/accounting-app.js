@@ -77,7 +77,14 @@
       }
       else if (route === 'ap') root.innerHTML = await renderAP();
       else if (route === 'ar') root.innerHTML = await renderAR();
-      else if (route === 'bank') root.innerHTML = await renderBank();
+      else if (route === 'bank') {
+        if (global.CasePMAcctBankUI) {
+          global.CasePMAcctBankUI.init({ api, esc, money, switchModule, AD: () => global.CasePMAccountingDialog || {}, projectId });
+          root.innerHTML = await global.CasePMAcctBankUI.render();
+        } else {
+          root.innerHTML = await renderBank();
+        }
+      }
       else if (route === 'tax') root.innerHTML = global.CasePMAcctModulesUI ? await global.CasePMAcctModulesUI.renderTax() : await renderTax();
       else if (route === 'inventory') root.innerHTML = global.CasePMAcctModulesUI ? await global.CasePMAcctModulesUI.renderInventory() : await renderInventory();
       else if (route === 'po') root.innerHTML = global.CasePMAcctModulesUI ? await global.CasePMAcctModulesUI.renderPO() : await renderPO();
@@ -105,6 +112,9 @@
       bindPanelHandlers(route);
       if (route === 'gl' && global.CasePMAcctGLUI?.bindHandlers) {
         global.CasePMAcctGLUI.bindHandlers();
+      }
+      if (route === 'bank' && global.CasePMAcctBankUI?.bindHandlers) {
+        global.CasePMAcctBankUI.bindHandlers();
       }
       if (global.CasePMAcctModulesUI?.bindExtras) global.CasePMAcctModulesUI.bindExtras(route);
       if (route === 'payroll' && global.CasePMAcctPayrollUI?.bindHandlers) {
@@ -214,13 +224,17 @@
   }
 
   async function renderAP() {
-    const [vendors, invoices, payments] = await Promise.all([
+    const [vendors, invoices, payments, aging] = await Promise.all([
       api('/api/accounting/ap/vendors'),
       api('/api/accounting/ap/invoices'),
       api('/api/accounting/ap/payments'),
+      api('/api/accounting/reports/ap-aging'),
     ]);
     const vendorMap = Object.fromEntries((vendors.vendors || []).map((v) => [v.id, v]));
     const open = (invoices.invoices || []).filter((i) => i.status === 'Open' || i.status === 'Partial');
+    const agingHtml = global.CasePMAcctBankUI?.agingBucketsHtml
+      ? global.CasePMAcctBankUI.agingBucketsHtml(aging.buckets, money, esc)
+      : '';
     return `<div class="space-y-6">
       <div class="flex flex-wrap justify-between items-center gap-2">
         <div>
@@ -233,6 +247,7 @@
           <button type="button" id="acctAddApInvoice" class="text-xs px-3 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-white">+ Invoice</button>
         </div>
       </div>
+      ${agingHtml ? `<div><h3 class="text-sm text-zinc-400 mb-2">A/P aging (open)</h3>${agingHtml}</div>` : ''}
       <div class="bg-zinc-800/40 border border-zinc-700 rounded-lg p-4">
         <h3 class="text-sm font-medium text-zinc-300 mb-2">Payments</h3>
         <p class="text-xs text-zinc-500 mb-3">Post payment: Dr A/P · Cr Cash (requires accounting role).</p>
@@ -274,13 +289,17 @@
   }
 
   async function renderAR() {
-    const [customers, invoices, receipts] = await Promise.all([
+    const [customers, invoices, receipts, aging] = await Promise.all([
       api('/api/accounting/ar/customers'),
       api('/api/accounting/ar/invoices'),
       api('/api/accounting/ar/receipts'),
+      api('/api/accounting/reports/ar-aging'),
     ]);
     const custMap = Object.fromEntries((customers.customers || []).map((c) => [c.id, c]));
     const open = (invoices.invoices || []).filter((i) => i.status === 'Open' || i.status === 'Partial');
+    const agingHtml = global.CasePMAcctBankUI?.agingBucketsHtml
+      ? global.CasePMAcctBankUI.agingBucketsHtml(aging.buckets, money, esc)
+      : '';
     return `<div class="space-y-6">
       <div class="flex flex-wrap justify-between items-center gap-2">
         <div>
@@ -293,6 +312,7 @@
           <button type="button" id="acctAddArInvoice" class="text-xs px-3 py-2 bg-sky-600 hover:bg-sky-500 rounded-md text-white">+ Invoice</button>
         </div>
       </div>
+      ${agingHtml ? `<div><h3 class="text-sm text-zinc-400 mb-2">A/R aging (open)</h3>${agingHtml}</div>` : ''}
       <div class="bg-zinc-800/40 border border-zinc-700 rounded-lg p-4">
         <h3 class="text-sm font-medium text-zinc-300 mb-2">Cash application</h3>
         <button type="button" id="acctArReceiptBtn" class="px-3 py-2 bg-sky-600 hover:bg-sky-500 rounded text-sm" ${open.length ? '' : 'disabled'}>Apply receipt…</button>
@@ -552,6 +572,7 @@
       switchModule('ar');
     });
     document.getElementById('acctReconBtn')?.addEventListener('click', async () => {
+      if (global.CasePMAcctBankUI) return;
       const banks = await api('/api/accounting/bank/accounts');
       const bankId = (banks.accounts || [])[0]?.id;
       if (!bankId) return;
@@ -808,6 +829,7 @@
       });
     });
     document.getElementById('acctAddBank')?.addEventListener('click', async () => {
+      if (global.CasePMAcctBankUI) return;
       const data = await AD().form({
         title: 'Add bank account',
         fields: [
@@ -871,27 +893,36 @@
       });
     });
     document.getElementById('acctAddPO')?.addEventListener('click', async () => {
+      const vendors = await api('/api/accounting/ap/vendors');
+      const vlist = vendors.vendors || [];
       const data = await AD().form({
         title: 'New purchase order',
         fields: [
           { key: 'po_number', label: 'PO number', required: true },
-          { key: 'vendorId', label: 'Vendor id (optional)' },
+          {
+            key: 'vendor_id',
+            label: 'Vendor',
+            type: 'select',
+            options: [{ value: '', label: '— None —' }].concat(
+              vlist.map((v) => ({ value: String(v.id), label: `${v.code} — ${v.name}` })),
+            ),
+          },
           { key: 'item', label: 'Line item number (inventory)' },
           { key: 'qty', label: 'Quantity', type: 'number', step: '0.01' },
           { key: 'price', label: 'Unit price', type: 'number', step: '0.01' },
         ],
       });
       if (!data) return;
-      const qty = parseFloat(data.qty || 1);
-      const price = parseFloat(data.price || 0);
-      const item = data.item;
-      const lines = item ? [{ item_number: item, description: item, qty, unit_price: price, qty_received: 0 }] : [];
+      const qty = parseFloat(data.qty || 0) || 0;
+      const price = parseFloat(data.price || 0) || 0;
+      const item = data.item?.trim();
+      const lines = item ? [{ item_number: item, description: item, qty: qty || 1, unit_price: price, qty_received: 0 }] : [];
       await api('/api/accounting/po/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           po_number: data.po_number,
-          vendor_id: data.vendorId ? parseInt(data.vendorId, 10) : null,
+          vendor_id: data.vendor_id ? parseInt(data.vendor_id, 10) : null,
           project_id: projectId(),
           lines,
         }),
@@ -899,24 +930,38 @@
       switchModule('po');
     });
     document.getElementById('acctAddOE')?.addEventListener('click', async () => {
+      const customers = await api('/api/accounting/ar/customers');
+      const clist = customers.customers || [];
       const data = await AD().form({
         title: 'New sales order',
         fields: [
           { key: 'order_number', label: 'Order number', required: true },
-          { key: 'customerId', label: 'Customer id' },
+          {
+            key: 'customer_id',
+            label: 'Customer',
+            type: 'select',
+            options: [{ value: '', label: '— None —' }].concat(
+              clist.map((c) => ({ value: String(c.id), label: `${c.code} — ${c.name}` })),
+            ),
+          },
           { key: 'desc', label: 'Line description' },
           { key: 'qty', label: 'Qty', type: 'number', step: '0.01' },
           { key: 'price', label: 'Unit price', type: 'number', step: '0.01' },
         ],
       });
       if (!data) return;
-      const lines = [{ description: data.desc, qty: parseFloat(data.qty || 1), unit_price: parseFloat(data.price || 0), qty_shipped: 0 }];
+      const lines = [{
+        description: data.desc || '',
+        qty: parseFloat(data.qty || 0) || 1,
+        unit_price: parseFloat(data.price || 0) || 0,
+        qty_shipped: 0,
+      }];
       await api('/api/accounting/oe/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           order_number: data.order_number,
-          customer_id: data.customerId ? parseInt(data.customerId, 10) : null,
+          customer_id: data.customer_id ? parseInt(data.customer_id, 10) : null,
           project_id: projectId(),
           lines,
         }),

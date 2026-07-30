@@ -127,3 +127,51 @@ def import_customer_from_company(db, models, ledger_id, company_id):
     db.session.flush()
     from accounting_persistence import serialize_customer
     return c, True
+
+
+def list_importable_users(db, User, AcctPayrollEmployee, ledger_id):
+    linked = {
+        e.user_id for e in AcctPayrollEmployee.query.filter_by(ledger_id=ledger_id).all()
+        if e.user_id
+    }
+    rows = User.query.filter_by(status='Active').order_by(User.last_name, User.first_name).all()
+    return [{
+        'id': u.id,
+        'name': f'{u.first_name or ""} {u.last_name or ""}'.strip() or u.email,
+        'email': u.email or '',
+        'already_imported': u.id in linked,
+    } for u in rows]
+
+
+def import_employee_from_user(db, models, ledger_id, user_id):
+    User = models.get('User')
+    AcctPayrollEmployee = models['AcctPayrollEmployee']
+    if not User:
+        raise ValueError('User directory not available')
+    user = User.query.get(int(user_id))
+    if not user:
+        raise ValueError('User not found')
+    existing = AcctPayrollEmployee.query.filter_by(ledger_id=ledger_id, user_id=user.id).first()
+    if existing:
+        from accounting_payroll import serialize_employee
+        return existing, False
+    num = f'U{user.id}'
+    suffix = 0
+    base = num
+    while AcctPayrollEmployee.query.filter_by(ledger_id=ledger_id, employee_number=num).first():
+        suffix += 1
+        num = f'{base}-{suffix}'
+    e = AcctPayrollEmployee(
+        ledger_id=ledger_id,
+        employee_number=num,
+        first_name=user.first_name or 'Employee',
+        last_name=user.last_name or str(user.id),
+        pay_type='hourly',
+        user_id=user.id,
+        department=(getattr(user, 'job_title', None) or '')[:80],
+        status='Active',
+    )
+    db.session.add(e)
+    db.session.flush()
+    from accounting_payroll import serialize_employee
+    return e, True
