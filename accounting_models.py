@@ -14,6 +14,7 @@ def define_accounting_models(db):
         base_currency = db.Column(db.String(3), default='USD')
         fiscal_year_end_month = db.Column(db.Integer, default=12)
         is_active = db.Column(db.Boolean, default=True)
+        parent_ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=True, index=True)
         settings_json = db.Column(db.Text)
         created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -246,6 +247,64 @@ def define_accounting_models(db):
         bank_account_id = db.Column(db.Integer, db.ForeignKey('acct_bank_account.id'), nullable=True)
         status = db.Column(db.String(20), default='Posted')
         journal_batch_id = db.Column(db.Integer, db.ForeignKey('acct_journal_batch.id'), nullable=True)
+        payment_batch_id = db.Column(db.Integer, db.ForeignKey('acct_payment_batch.id'), nullable=True, index=True)
+        check_number = db.Column(db.String(20), nullable=True)
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class AcctPaymentBatch(db.Model):
+        """AP payment batch — checks, ACH, wire (Payment Processing)."""
+        __tablename__ = 'acct_payment_batch'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        batch_number = db.Column(db.String(30), nullable=False)
+        status = db.Column(db.String(20), default='Open')  # Open, Posted, Cancelled
+        payment_date = db.Column(db.Date)
+        payment_method = db.Column(db.String(20), default='Check')
+        bank_account_id = db.Column(db.Integer, db.ForeignKey('acct_bank_account.id'), nullable=True)
+        check_number_start = db.Column(db.String(20), nullable=True)
+        total_amount = db.Column(db.Float, default=0)
+        notes = db.Column(db.Text)
+        posted_at = db.Column(db.DateTime, nullable=True)
+        created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class AcctPaymentBatchLine(db.Model):
+        __tablename__ = 'acct_payment_batch_line'
+        id = db.Column(db.Integer, primary_key=True)
+        batch_id = db.Column(db.Integer, db.ForeignKey('acct_payment_batch.id'), nullable=False, index=True)
+        vendor_id = db.Column(db.Integer, db.ForeignKey('acct_vendor.id'), nullable=False)
+        ap_document_id = db.Column(db.Integer, db.ForeignKey('acct_ap_document.id'), nullable=True)
+        amount = db.Column(db.Float, default=0)
+        check_number = db.Column(db.String(20), nullable=True)
+        reference = db.Column(db.String(80))
+
+    class AcctPayNowLink(db.Model):
+        """Customer invoice pay link (card/ACH portal)."""
+        __tablename__ = 'acct_pay_now_link'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        token = db.Column(db.String(64), unique=True, nullable=False, index=True)
+        ar_document_id = db.Column(db.Integer, db.ForeignKey('acct_ar_document.id'), nullable=False)
+        customer_id = db.Column(db.Integer, db.ForeignKey('acct_customer.id'), nullable=False)
+        amount = db.Column(db.Float, default=0)
+        status = db.Column(db.String(20), default='Pending')  # Pending, Paid, Cancelled, Expired
+        payment_method = db.Column(db.String(20), default='card')
+        expires_at = db.Column(db.DateTime, nullable=True)
+        paid_at = db.Column(db.DateTime, nullable=True)
+        ar_receipt_id = db.Column(db.Integer, db.ForeignKey('acct_ar_receipt.id'), nullable=True)
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class AcctConsolidationRun(db.Model):
+        __tablename__ = 'acct_consolidation_run'
+        id = db.Column(db.Integer, primary_key=True)
+        parent_ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        run_number = db.Column(db.String(30), nullable=False)
+        period_end = db.Column(db.Date)
+        status = db.Column(db.String(20), default='Open')  # Open, Posted
+        elimination_batch_id = db.Column(db.Integer, db.ForeignKey('acct_journal_batch.id'), nullable=True)
+        rollup_batch_id = db.Column(db.Integer, db.ForeignKey('acct_journal_batch.id'), nullable=True)
+        details_json = db.Column(db.Text)
+        posted_at = db.Column(db.DateTime, nullable=True)
         created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     class AcctAPPaymentApply(db.Model):
@@ -408,4 +467,8 @@ def define_accounting_models(db):
         'AcctPayrollDeduction': AcctPayrollDeduction,
         'AcctPayrollEmployeeDeduction': AcctPayrollEmployeeDeduction,
         'AcctPayrollRunLine': AcctPayrollRunLine,
+        'AcctPaymentBatch': AcctPaymentBatch,
+        'AcctPaymentBatchLine': AcctPaymentBatchLine,
+        'AcctPayNowLink': AcctPayNowLink,
+        'AcctConsolidationRun': AcctConsolidationRun,
     }

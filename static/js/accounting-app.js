@@ -103,8 +103,21 @@
           ? await global.CasePMAcctPayrollUI.render()
           : await renderPayroll();
       }
-      else if (route === 'payments' || route === 'consolidation') {
-        root.innerHTML = renderPlannedModule(route);
+      else if (route === 'payments') {
+        if (global.CasePMAcctPaymentsUI) {
+          global.CasePMAcctPaymentsUI.init({ api, esc, money, switchModule, AD: () => global.CasePMAccountingDialog || {}, projectId });
+          root.innerHTML = await global.CasePMAcctPaymentsUI.render();
+        } else {
+          root.innerHTML = renderPlannedModule(route);
+        }
+      }
+      else if (route === 'consolidation') {
+        if (global.CasePMAcctConsolidationUI) {
+          global.CasePMAcctConsolidationUI.init({ api, esc, money, switchModule, AD: () => global.CasePMAccountingDialog || {}, projectId });
+          root.innerHTML = await global.CasePMAcctConsolidationUI.render();
+        } else {
+          root.innerHTML = renderPlannedModule(route);
+        }
       } else {
         const mod = (catalog?.modules || []).find((m) => m.route === route);
         root.innerHTML = mod ? renderPlannedModule(route, mod) : '<p class="text-zinc-500">Module not found.</p>';
@@ -122,6 +135,12 @@
       }
       if (route === 'reports' && global.CasePMAccountingReports?.bindHandlers) {
         global.CasePMAccountingReports.bindHandlers();
+      }
+      if (route === 'payments' && global.CasePMAcctPaymentsUI?.bindHandlers) {
+        global.CasePMAcctPaymentsUI.bindHandlers();
+      }
+      if (route === 'consolidation' && global.CasePMAcctConsolidationUI?.bindHandlers) {
+        global.CasePMAcctConsolidationUI.bindHandlers();
       }
     } catch (e) {
       root.innerHTML = `<p class="text-red-400">${esc(e.message)}</p>`;

@@ -80,6 +80,13 @@ def ensure_accounting_schema(db, models):
         if 'acct_inventory_item' in table_names:
             add_column('acct_inventory_item', 'uom', "VARCHAR(10) DEFAULT 'EA'")
 
+        if 'acct_ledger' in table_names:
+            add_column('acct_ledger', 'parent_ledger_id', 'INTEGER')
+
+        if 'acct_ap_payment' in table_names:
+            add_column('acct_ap_payment', 'payment_batch_id', 'INTEGER')
+            add_column('acct_ap_payment', 'check_number', 'VARCHAR(20)')
+
         try:
             db.create_all()
             db.session.commit()

@@ -173,10 +173,16 @@ ACCOUNTING_MODULES = [
         'id': 'pp',
         'code': 'PP',
         'name': 'Payment Processing',
-        'status': 'planned',
+        'status': 'live',
         'route': 'payments',
         'summary': 'Card processing and invoice pay links.',
-        'features': ['Card processors', 'Pay Now links', 'MICR checks'],
+        'features': [
+            'AP payment batches (check, ACH, wire)',
+            'Batch post to G/L and bank register',
+            'MICR check export (CSV)',
+            'Pay Now links for open AR invoices',
+            'Processor and MICR company settings',
+        ],
     },
     {
         'id': 'bi',
@@ -198,10 +204,15 @@ ACCOUNTING_MODULES = [
         'id': 'consolidation',
         'code': 'CON',
         'name': 'G/L Consolidation',
-        'status': 'planned',
+        'status': 'live',
         'route': 'consolidation',
         'summary': 'Multi-entity roll-up reporting.',
-        'features': ['Elimination entries', 'Consolidated statements'],
+        'features': [
+            'Subsidiary ledger tree',
+            'Consolidated trial balance by account',
+            'Consolidation runs with period end',
+            'Elimination journal entries on parent books',
+        ],
     },
 ]
 

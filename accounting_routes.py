@@ -1476,3 +1476,259 @@ def register_accounting_routes(app, deps):
                 headers={'Content-Disposition': f'attachment; filename=casepm-report-{report_id}.csv'},
             )
         return jsonify(data)
+
+    # —— Payment Processing ——
+    @app.route('/api/accounting/payments/settings', methods=['GET', 'PATCH'])
+    @login_required
+    def api_acct_payment_settings():
+        from financial_security import require_accounting_role
+        from accounting_payment_processing import payment_processor_settings, update_payment_processor_settings
+        AcctLedger = models['AcctLedger']
+        lid = _ledger_id()
+        ledger = AcctLedger.query.get(lid)
+        if request.method == 'GET':
+            return jsonify(payment_processor_settings(ledger))
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        body = request.get_json(silent=True) or {}
+        out = update_payment_processor_settings(ledger, body)
+        db.session.commit()
+        return jsonify(out)
+
+    @app.route('/api/accounting/payments/batches', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_payment_batches():
+        from financial_security import require_accounting_role
+        from accounting_payment_processing import (
+            batch_lines,
+            create_payment_batch,
+            serialize_payment_batch,
+        )
+        AcctPaymentBatch = models['AcctPaymentBatch']
+        AcctPaymentBatchLine = models['AcctPaymentBatchLine']
+        AcctVendor = models['AcctVendor']
+        lid = _ledger_id()
+        if request.method == 'GET':
+            rows = AcctPaymentBatch.query.filter_by(ledger_id=lid).order_by(AcctPaymentBatch.id.desc()).limit(50).all()
+            out = []
+            for b in rows:
+                lines = batch_lines(AcctPaymentBatchLine, b.id)
+                out.append(serialize_payment_batch(b, lines=[{
+                    'id': ln.id,
+                    'vendor_id': ln.vendor_id,
+                    'vendor_name': (AcctVendor.query.get(ln.vendor_id).name if AcctVendor.query.get(ln.vendor_id) else ''),
+                    'ap_document_id': ln.ap_document_id,
+                    'amount': ln.amount,
+                    'check_number': ln.check_number,
+                    'reference': ln.reference,
+                } for ln in lines]))
+            return jsonify({'batches': out})
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        body = request.get_json(silent=True) or {}
+        try:
+            batch = create_payment_batch(db, models, lid, body, user_id=current_user.id)
+            db.session.commit()
+            lines = batch_lines(AcctPaymentBatchLine, batch.id)
+            return jsonify({'batch': serialize_payment_batch(batch, lines=[{
+                'id': ln.id, 'vendor_id': ln.vendor_id, 'ap_document_id': ln.ap_document_id,
+                'amount': ln.amount, 'reference': ln.reference,
+            } for ln in lines])}), 201
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/payments/batches/<int:batch_id>/post', methods=['POST'])
+    @login_required
+    def api_acct_payment_batch_post(batch_id):
+        from financial_security import require_accounting_role
+        from accounting_payment_processing import post_payment_batch, serialize_payment_batch, batch_lines
+        AcctPaymentBatch = models['AcctPaymentBatch']
+        AcctPaymentBatchLine = models['AcctPaymentBatchLine']
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        lid = _ledger_id()
+        batch = AcctPaymentBatch.query.filter_by(id=batch_id, ledger_id=lid).first_or_404()
+        try:
+            out = post_payment_batch(db, models, batch, user_id=current_user.id)
+            db.session.commit()
+            lines = batch_lines(AcctPaymentBatchLine, batch.id)
+            return jsonify({'ok': True, **out, 'batch': serialize_payment_batch(batch, lines=[{
+                'id': ln.id, 'vendor_id': ln.vendor_id, 'amount': ln.amount,
+            } for ln in lines])})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/payments/batches/<int:batch_id>/micr', methods=['GET'])
+    @login_required
+    def api_acct_payment_batch_micr(batch_id):
+        from accounting_payment_processing import micr_export_rows
+        from flask import Response
+        import csv
+        import io
+        lid = _ledger_id()
+        try:
+            rows = micr_export_rows(db, models, batch_id, lid)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+        fmt = (request.args.get('format') or 'json').lower()
+        if fmt == 'csv':
+            buf = io.StringIO()
+            w = csv.DictWriter(buf, fieldnames=[
+                'check_number', 'payment_number', 'vendor_name', 'amount',
+                'payment_date', 'micr_routing', 'micr_account', 'company_name',
+            ])
+            w.writeheader()
+            for r in rows:
+                w.writerow({k: r.get(k, '') for k in w.fieldnames})
+            return Response(
+                buf.getvalue(),
+                mimetype='text/csv',
+                headers={'Content-Disposition': f'attachment; filename=micr-batch-{batch_id}.csv'},
+            )
+        return jsonify({'rows': rows})
+
+    @app.route('/api/accounting/payments/pay-now-links', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_pay_now_links():
+        from financial_security import require_accounting_role
+        from accounting_payment_processing import create_pay_now_link, serialize_pay_now_link
+        AcctPayNowLink = models['AcctPayNowLink']
+        lid = _ledger_id()
+        if request.method == 'GET':
+            rows = AcctPayNowLink.query.filter_by(ledger_id=lid).order_by(AcctPayNowLink.id.desc()).limit(40).all()
+            return jsonify({'links': [serialize_pay_now_link(x) for x in rows]})
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        body = request.get_json(silent=True) or {}
+        try:
+            link = create_pay_now_link(
+                db, models, lid,
+                body['ar_document_id'],
+                days_valid=body.get('days_valid', 30),
+                payment_method=body.get('payment_method', 'card'),
+            )
+            db.session.commit()
+            return jsonify({'link': serialize_pay_now_link(link)}), 201
+        except (KeyError, ValueError) as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/payments/pay-now/<token>/complete', methods=['POST'])
+    @login_required
+    def api_acct_pay_now_complete(token):
+        from accounting_payment_processing import complete_pay_now_link, serialize_pay_now_link
+        body = request.get_json(silent=True) or {}
+        try:
+            out = complete_pay_now_link(
+                db, models, token,
+                bank_account_id=body.get('bank_account_id'),
+                user_id=current_user.id,
+            )
+            db.session.commit()
+            return jsonify({
+                'ok': True,
+                'link': serialize_pay_now_link(out['link']),
+                'receipt_id': out['receipt_id'],
+                'journal_batch_id': out.get('journal_batch_id'),
+            })
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    # —— G/L Consolidation ——
+    @app.route('/api/accounting/consolidation/ledgers', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_consolidation_ledgers():
+        from financial_security import require_accounting_role
+        from accounting_consolidation import create_subsidiary_ledger, ledger_tree, serialize_ledger
+        AcctLedger = models['AcctLedger']
+        _ensure_schema()
+        if request.method == 'GET':
+            return jsonify(ledger_tree(AcctLedger))
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        body = request.get_json(silent=True) or {}
+        parent_id = body.get('parent_ledger_id') or _ledger_id()
+        try:
+            child = create_subsidiary_ledger(db, models, parent_id, body)
+            db.session.commit()
+            return jsonify({'ledger': serialize_ledger(child)}), 201
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/consolidation/trial-balance', methods=['GET'])
+    @login_required
+    def api_acct_consolidation_trial_balance():
+        from accounting_consolidation import consolidated_trial_balance
+        parent_id = request.args.get('parent_ledger_id', type=int) or _ledger_id()
+        child_raw = request.args.get('child_ledger_ids', '')
+        child_ids = [int(x) for x in child_raw.split(',') if x.strip()] if child_raw else None
+        include_parent = request.args.get('include_parent', '1') != '0'
+        try:
+            data = consolidated_trial_balance(
+                db, models, parent_id,
+                include_parent=include_parent,
+                child_ids=child_ids,
+            )
+            return jsonify(data)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/consolidation/runs', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_consolidation_runs():
+        from financial_security import require_accounting_role
+        from accounting_consolidation import create_consolidation_run, serialize_consolidation_run
+        AcctConsolidationRun = models['AcctConsolidationRun']
+        parent_id = request.args.get('parent_ledger_id', type=int) or _ledger_id()
+        if request.method == 'GET':
+            rows = AcctConsolidationRun.query.filter_by(parent_ledger_id=parent_id).order_by(
+                AcctConsolidationRun.id.desc(),
+            ).limit(30).all()
+            return jsonify({'runs': [serialize_consolidation_run(r) for r in rows]})
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        body = request.get_json(silent=True) or {}
+        body.setdefault('parent_ledger_id', parent_id)
+        try:
+            run = create_consolidation_run(db, models, parent_id, body)
+            db.session.commit()
+            return jsonify({'run': serialize_consolidation_run(run)}), 201
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/consolidation/runs/<int:run_id>/post-eliminations', methods=['POST'])
+    @login_required
+    def api_acct_consolidation_post_eliminations(run_id):
+        from financial_security import require_accounting_role
+        from accounting_consolidation import post_consolidation_eliminations, serialize_consolidation_run
+        AcctConsolidationRun = models['AcctConsolidationRun']
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        run = AcctConsolidationRun.query.get_or_404(run_id)
+        body = request.get_json(silent=True) or {}
+        try:
+            out = post_consolidation_eliminations(db, models, run, body, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out, 'run': serialize_consolidation_run(run)})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
