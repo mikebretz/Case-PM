@@ -27,50 +27,58 @@ DEFAULT_COA = [
 
 
 def ensure_accounting_schema(db, models):
-    """Create tables via SQLAlchemy metadata."""
+    """Create tables and migrate columns on existing accounting databases."""
     try:
         db.create_all()
+        db.session.commit()
     except Exception:
-        pass
+        db.session.rollback()
     try:
         from sqlalchemy import inspect, text
         insp = inspect(db.engine)
-        if 'acct_fixed_asset' in insp.get_table_names():
-            cols = {c['name'] for c in insp.get_columns('acct_fixed_asset')}
+        table_names = set(insp.get_table_names())
+
+        def add_column(table, col, ddl):
+            if table not in table_names:
+                return
+            cols = {c['name'] for c in insp.get_columns(table)}
+            if col in cols:
+                return
+            try:
+                db.session.execute(text(f'ALTER TABLE {table} ADD COLUMN {col} {ddl}'))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
+        if 'acct_fixed_asset' in table_names:
             for col, ddl in (
                 ('accumulated_depreciation', 'FLOAT DEFAULT 0'),
                 ('useful_life_months', 'INTEGER DEFAULT 60'),
                 ('depreciation_method', "VARCHAR(30) DEFAULT 'straight_line'"),
-            ):
-                if col not in cols:
-                    db.session.execute(text(f'ALTER TABLE acct_fixed_asset ADD COLUMN {col} {ddl}'))
-        if 'acct_payroll_run' in insp.get_table_names():
-            cols = {c['name'] for c in insp.get_columns('acct_payroll_run')}
-            if 'total_taxes' not in cols:
-                db.session.execute(text('ALTER TABLE acct_payroll_run ADD COLUMN total_taxes FLOAT DEFAULT 0'))
-            if 'journal_batch_id' not in cols:
-                db.session.execute(text('ALTER TABLE acct_payroll_run ADD COLUMN journal_batch_id INTEGER'))
-        if 'acct_tax_group' in insp.get_table_names():
-            cols = {c['name'] for c in insp.get_columns('acct_tax_group')}
-            for col, ddl in (
-                ('tax_type', "VARCHAR(20) DEFAULT 'sales'"),
-                ('applies_to', "VARCHAR(10) DEFAULT 'both'"),
-                ('is_active', 'BOOLEAN DEFAULT 1'),
-            ):
-                if col not in cols:
-                    db.session.execute(text(f'ALTER TABLE acct_tax_group ADD COLUMN {col} {ddl}'))
-        if 'acct_fixed_asset' in insp.get_table_names():
-            cols = {c['name'] for c in insp.get_columns('acct_fixed_asset')}
-            for col, ddl in (
                 ('location', 'VARCHAR(120)'),
                 ('serial_number', 'VARCHAR(80)'),
                 ('salvage_value', 'FLOAT DEFAULT 0'),
+                ('in_service_date', 'DATE'),
             ):
-                if col not in cols:
-                    db.session.execute(text(f'ALTER TABLE acct_fixed_asset ADD COLUMN {col} {ddl}'))
-            if 'in_service_date' not in cols:
-                db.session.execute(text('ALTER TABLE acct_fixed_asset ADD COLUMN in_service_date DATE'))
-        db.session.commit()
+                add_column('acct_fixed_asset', col, ddl)
+
+        if 'acct_payroll_run' in table_names:
+            add_column('acct_payroll_run', 'total_taxes', 'FLOAT DEFAULT 0')
+            add_column('acct_payroll_run', 'journal_batch_id', 'INTEGER')
+
+        if 'acct_tax_group' in table_names:
+            add_column('acct_tax_group', 'tax_type', "VARCHAR(20) DEFAULT 'sales'")
+            add_column('acct_tax_group', 'applies_to', "VARCHAR(10) DEFAULT 'both'")
+            add_column('acct_tax_group', 'is_active', 'INTEGER DEFAULT 1')
+
+        if 'acct_inventory_item' in table_names:
+            add_column('acct_inventory_item', 'uom', "VARCHAR(10) DEFAULT 'EA'")
+
+        try:
+            db.create_all()
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
     except Exception:
         db.session.rollback()
 
