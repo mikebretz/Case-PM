@@ -152,6 +152,9 @@ def define_accounting_models(db):
         description = db.Column(db.String(200))
         rate_percent = db.Column(db.Float, default=0)
         authority = db.Column(db.String(80))
+        tax_type = db.Column(db.String(20), default='sales')  # sales, use, withholding
+        applies_to = db.Column(db.String(10), default='both')  # ap, ar, both
+        is_active = db.Column(db.Boolean, default=True)
 
     class AcctInventoryItem(db.Model):
         __tablename__ = 'acct_inventory_item'
@@ -163,6 +166,18 @@ def define_accounting_models(db):
         qty_on_hand = db.Column(db.Float, default=0)
         unit_cost = db.Column(db.Float, default=0)
         status = db.Column(db.String(20), default='Active')
+
+    class AcctInventoryTransaction(db.Model):
+        __tablename__ = 'acct_inventory_transaction'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        item_id = db.Column(db.Integer, db.ForeignKey('acct_inventory_item.id'), nullable=False, index=True)
+        txn_type = db.Column(db.String(20), default='adjust')  # receive, issue, adjust, po_receipt
+        qty_delta = db.Column(db.Float, default=0)
+        unit_cost = db.Column(db.Float, default=0)
+        reference = db.Column(db.String(80))
+        project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     class AcctPurchaseOrder(db.Model):
         __tablename__ = 'acct_purchase_order'
@@ -201,6 +216,10 @@ def define_accounting_models(db):
         depreciation_method = db.Column(db.String(30), default='straight_line')
         book = db.Column(db.String(20), default='GAAP')
         status = db.Column(db.String(20), default='Active')
+        location = db.Column(db.String(120))
+        serial_number = db.Column(db.String(80))
+        salvage_value = db.Column(db.Float, default=0)
+        in_service_date = db.Column(db.Date, nullable=True)
 
     class AcctPostLink(db.Model):
         """Idempotent link from construction events to accounting documents."""
@@ -307,6 +326,7 @@ def define_accounting_models(db):
         'AcctBankTransaction': AcctBankTransaction,
         'AcctTaxGroup': AcctTaxGroup,
         'AcctInventoryItem': AcctInventoryItem,
+        'AcctInventoryTransaction': AcctInventoryTransaction,
         'AcctPurchaseOrder': AcctPurchaseOrder,
         'AcctSalesOrder': AcctSalesOrder,
         'AcctFixedAsset': AcctFixedAsset,
