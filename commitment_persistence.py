@@ -698,6 +698,24 @@ def queue_commitment_sage_event(
             allocations = []
 
     payload = build_commitment_sage_payload(commitment, allocations, extra)
+    if event_type == 'CommitmentApproved':
+        payload['idempotency_key'] = f'CommitmentApproved:{commitment.id}'
+        try:
+            import app as app_mod
+            from accounting_posting import process_construction_event
+            process_construction_event(
+                event_type,
+                commitment.project_id,
+                payload,
+                db=db,
+                models=app_mod._acct_models,
+                user_id=user_id,
+                Project=Project,
+                Company=app_mod.Company,
+                commitment=commitment,
+            )
+        except Exception:
+            pass
     try:
         return create_and_process_sage_event(
             SageSyncEvent,

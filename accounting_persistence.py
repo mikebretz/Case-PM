@@ -32,6 +32,27 @@ def ensure_accounting_schema(db, models):
         db.create_all()
     except Exception:
         pass
+    try:
+        from sqlalchemy import inspect, text
+        insp = inspect(db.engine)
+        if 'acct_fixed_asset' in insp.get_table_names():
+            cols = {c['name'] for c in insp.get_columns('acct_fixed_asset')}
+            for col, ddl in (
+                ('accumulated_depreciation', 'FLOAT DEFAULT 0'),
+                ('useful_life_months', 'INTEGER DEFAULT 60'),
+                ('depreciation_method', "VARCHAR(30) DEFAULT 'straight_line'"),
+            ):
+                if col not in cols:
+                    db.session.execute(text(f'ALTER TABLE acct_fixed_asset ADD COLUMN {col} {ddl}'))
+        if 'acct_payroll_run' in insp.get_table_names():
+            cols = {c['name'] for c in insp.get_columns('acct_payroll_run')}
+            if 'total_taxes' not in cols:
+                db.session.execute(text('ALTER TABLE acct_payroll_run ADD COLUMN total_taxes FLOAT DEFAULT 0'))
+            if 'journal_batch_id' not in cols:
+                db.session.execute(text('ALTER TABLE acct_payroll_run ADD COLUMN journal_batch_id INTEGER'))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
 
 
 def get_or_create_default_ledger(db, AcctLedger):

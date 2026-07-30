@@ -140,6 +140,9 @@ def define_accounting_models(db):
         transaction_type = db.Column(db.String(20), default='Payment')
         reconciled = db.Column(db.Boolean, default=False)
         reference = db.Column(db.String(80))
+        matched_payment_id = db.Column(db.Integer, db.ForeignKey('acct_ap_payment.id'), nullable=True)
+        matched_receipt_id = db.Column(db.Integer, db.ForeignKey('acct_ar_receipt.id'), nullable=True)
+        statement_ref = db.Column(db.String(80))
 
     class AcctTaxGroup(db.Model):
         __tablename__ = 'acct_tax_group'
@@ -193,8 +196,77 @@ def define_accounting_models(db):
         description = db.Column(db.String(300))
         acquisition_date = db.Column(db.Date)
         acquisition_cost = db.Column(db.Float, default=0)
+        accumulated_depreciation = db.Column(db.Float, default=0)
+        useful_life_months = db.Column(db.Integer, default=60)
+        depreciation_method = db.Column(db.String(30), default='straight_line')
         book = db.Column(db.String(20), default='GAAP')
         status = db.Column(db.String(20), default='Active')
+
+    class AcctPostLink(db.Model):
+        """Idempotent link from construction events to accounting documents."""
+        __tablename__ = 'acct_post_link'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        source_type = db.Column(db.String(40), nullable=False)
+        source_key = db.Column(db.String(120), nullable=False, index=True)
+        journal_batch_id = db.Column(db.Integer, db.ForeignKey('acct_journal_batch.id'), nullable=True)
+        ap_document_id = db.Column(db.Integer, db.ForeignKey('acct_ap_document.id'), nullable=True)
+        ar_document_id = db.Column(db.Integer, db.ForeignKey('acct_ar_document.id'), nullable=True)
+        purchase_order_id = db.Column(db.Integer, db.ForeignKey('acct_purchase_order.id'), nullable=True)
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class AcctAPPayment(db.Model):
+        __tablename__ = 'acct_ap_payment'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        payment_number = db.Column(db.String(40), nullable=False)
+        vendor_id = db.Column(db.Integer, db.ForeignKey('acct_vendor.id'), nullable=False)
+        payment_date = db.Column(db.Date)
+        amount = db.Column(db.Float, default=0)
+        payment_method = db.Column(db.String(20), default='Check')
+        bank_account_id = db.Column(db.Integer, db.ForeignKey('acct_bank_account.id'), nullable=True)
+        status = db.Column(db.String(20), default='Posted')
+        journal_batch_id = db.Column(db.Integer, db.ForeignKey('acct_journal_batch.id'), nullable=True)
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class AcctAPPaymentApply(db.Model):
+        __tablename__ = 'acct_ap_payment_apply'
+        id = db.Column(db.Integer, primary_key=True)
+        payment_id = db.Column(db.Integer, db.ForeignKey('acct_ap_payment.id'), nullable=False, index=True)
+        ap_document_id = db.Column(db.Integer, db.ForeignKey('acct_ap_document.id'), nullable=False)
+        amount = db.Column(db.Float, default=0)
+
+    class AcctARReceipt(db.Model):
+        __tablename__ = 'acct_ar_receipt'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        receipt_number = db.Column(db.String(40), nullable=False)
+        customer_id = db.Column(db.Integer, db.ForeignKey('acct_customer.id'), nullable=False)
+        receipt_date = db.Column(db.Date)
+        amount = db.Column(db.Float, default=0)
+        payment_method = db.Column(db.String(20), default='ACH')
+        bank_account_id = db.Column(db.Integer, db.ForeignKey('acct_bank_account.id'), nullable=True)
+        status = db.Column(db.String(20), default='Posted')
+        journal_batch_id = db.Column(db.Integer, db.ForeignKey('acct_journal_batch.id'), nullable=True)
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class AcctARReceiptApply(db.Model):
+        __tablename__ = 'acct_ar_receipt_apply'
+        id = db.Column(db.Integer, primary_key=True)
+        receipt_id = db.Column(db.Integer, db.ForeignKey('acct_ar_receipt.id'), nullable=False, index=True)
+        ar_document_id = db.Column(db.Integer, db.ForeignKey('acct_ar_document.id'), nullable=False)
+        amount = db.Column(db.Float, default=0)
+
+    class AcctDepreciationRun(db.Model):
+        __tablename__ = 'acct_depreciation_run'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        run_number = db.Column(db.String(30), nullable=False)
+        period_date = db.Column(db.Date)
+        status = db.Column(db.String(20), default='Posted')
+        total_amount = db.Column(db.Float, default=0)
+        journal_batch_id = db.Column(db.Integer, db.ForeignKey('acct_journal_batch.id'), nullable=True)
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     class AcctPayrollRun(db.Model):
         __tablename__ = 'acct_payroll_run'
@@ -205,6 +277,8 @@ def define_accounting_models(db):
         status = db.Column(db.String(20), default='Open')
         total_gross = db.Column(db.Float, default=0)
         total_net = db.Column(db.Float, default=0)
+        total_taxes = db.Column(db.Float, default=0)
+        journal_batch_id = db.Column(db.Integer, db.ForeignKey('acct_journal_batch.id'), nullable=True)
 
     return {
         'AcctLedger': AcctLedger,
@@ -222,5 +296,11 @@ def define_accounting_models(db):
         'AcctPurchaseOrder': AcctPurchaseOrder,
         'AcctSalesOrder': AcctSalesOrder,
         'AcctFixedAsset': AcctFixedAsset,
+        'AcctPostLink': AcctPostLink,
+        'AcctAPPayment': AcctAPPayment,
+        'AcctAPPaymentApply': AcctAPPaymentApply,
+        'AcctARReceipt': AcctARReceipt,
+        'AcctARReceiptApply': AcctARReceiptApply,
+        'AcctDepreciationRun': AcctDepreciationRun,
         'AcctPayrollRun': AcctPayrollRun,
     }

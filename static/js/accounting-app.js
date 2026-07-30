@@ -78,7 +78,8 @@
       else if (route === 'assets') root.innerHTML = await renderAssets();
       else if (route === 'jobcost') root.innerHTML = renderJobCost();
       else if (route === 'reports') root.innerHTML = await renderReports();
-      else if (route === 'payroll' || route === 'payments' || route === 'consolidation') {
+      else if (route === 'payroll') root.innerHTML = await renderPayroll();
+      else if (route === 'payments' || route === 'consolidation') {
         root.innerHTML = renderPlannedModule(route);
       } else {
         const mod = (catalog?.modules || []).find((m) => m.route === route);
@@ -180,54 +181,117 @@
   }
 
   async function renderAP() {
-    const [vendors, invoices] = await Promise.all([
+    const [vendors, invoices, payments] = await Promise.all([
       api('/api/accounting/ap/vendors'),
       api('/api/accounting/ap/invoices'),
+      api('/api/accounting/ap/payments'),
     ]);
+    const open = (invoices.invoices || []).filter((i) => i.status === 'Open' || i.status === 'Partial');
     return `<div class="space-y-6">
-      <div class="flex justify-between"><h2 class="text-lg font-semibold text-white">Accounts Payable</h2>
-        <button type="button" id="acctAddVendor" class="text-xs text-emerald-400">+ Vendor</button></div>
+      <div class="flex justify-between items-center">
+        <h2 class="text-lg font-semibold text-white">Accounts Payable</h2>
+        <button type="button" id="acctAddVendor" class="text-xs text-emerald-400">+ Vendor</button>
+      </div>
+      <div class="bg-zinc-800/40 border border-zinc-700 rounded-lg p-4">
+        <h3 class="text-sm font-medium text-zinc-300 mb-2">Pay open invoices</h3>
+        <p class="text-xs text-zinc-500 mb-3">Creates AP payment, posts Dr A/P · Cr Cash, and updates bank activity.</p>
+        <button type="button" id="acctPayApBtn" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 rounded text-sm" ${open.length ? '' : 'disabled'}>Pay selected invoice…</button>
+        <ul class="mt-3 text-xs space-y-1 max-h-32 overflow-y-auto">${open.map((i) =>
+          `<li class="text-zinc-400"><span class="font-mono">${esc(i.document_number)}</span> — ${money(i.amount)} (vendor #${i.vendor_id}) <span class="text-zinc-600">id ${i.id}</span></li>`
+        ).join('') || '<li>No open invoices — approve sub pay apps to auto-create AP.</li>'}</ul>
+      </div>
       <div class="grid md:grid-cols-2 gap-4">
-        <div class="border border-zinc-700 rounded-lg overflow-hidden max-h-64 overflow-y-auto">
+        <div class="border border-zinc-700 rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+          <div class="px-3 py-2 bg-zinc-800 text-xs text-zinc-500">Vendors</div>
           <table class="w-full text-sm"><tbody>${(vendors.vendors || []).map((v) =>
             `<tr class="border-t border-zinc-800"><td class="px-3 py-2 font-mono text-xs">${esc(v.code)}</td><td class="px-3 py-2">${esc(v.name)}</td></tr>`
           ).join('')}</tbody></table>
         </div>
-        <div class="border border-zinc-700 rounded-lg overflow-hidden max-h-64 overflow-y-auto">
-          <table class="w-full text-sm"><tbody>${(invoices.invoices || []).map((i) =>
-            `<tr class="border-t border-zinc-800"><td class="px-3 py-2 font-mono">${esc(i.document_number)}</td><td class="px-3 py-2 text-right">${money(i.amount)}</td></tr>`
-          ).join('')}</tbody></table>
+        <div class="border border-zinc-700 rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+          <div class="px-3 py-2 bg-zinc-800 text-xs text-zinc-500">Recent payments</div>
+          ${(payments.payments || []).map((p) =>
+            `<div class="px-3 py-2 border-t border-zinc-800 text-xs font-mono">${esc(p.payment_number)} ${money(p.amount)}</div>`
+          ).join('') || '<div class="p-3 text-zinc-500 text-xs">No payments yet.</div>'}
         </div>
       </div>
     </div>`;
   }
 
   async function renderAR() {
-    const [customers, invoices] = await Promise.all([
+    const [customers, invoices, receipts] = await Promise.all([
       api('/api/accounting/ar/customers'),
       api('/api/accounting/ar/invoices'),
+      api('/api/accounting/ar/receipts'),
     ]);
+    const open = (invoices.invoices || []).filter((i) => i.status === 'Open' || i.status === 'Partial');
     return `<div class="space-y-4">
       <div class="flex justify-between"><h2 class="text-lg font-semibold text-white">Accounts Receivable</h2>
         <button type="button" id="acctAddCustomer" class="text-xs text-emerald-400">+ Customer</button></div>
-      <div class="grid md:grid-cols-2 gap-4">
-        <div class="border border-zinc-700 rounded-lg max-h-64 overflow-y-auto text-sm">
+      <div class="bg-zinc-800/40 border border-zinc-700 rounded-lg p-4">
+        <h3 class="text-sm font-medium text-zinc-300 mb-2">Cash application</h3>
+        <button type="button" id="acctArReceiptBtn" class="px-3 py-2 bg-sky-600 hover:bg-sky-500 rounded text-sm" ${open.length ? '' : 'disabled'}>Apply receipt…</button>
+        <ul class="mt-3 text-xs space-y-1">${open.map((i) =>
+          `<li class="text-zinc-400 font-mono">${esc(i.document_number)} — ${money(i.amount)} (cust #${i.customer_id}) id ${i.id}</li>`
+        ).join('') || '<li class="text-zinc-500">No open AR — approve G702 to auto-create owner invoices.</li>'}</ul>
+      </div>
+      <div class="grid md:grid-cols-2 gap-4 text-sm">
+        <div class="border border-zinc-700 rounded-lg max-h-48 overflow-y-auto">
           ${(customers.customers || []).map((c) => `<div class="px-3 py-2 border-t border-zinc-800 font-mono text-xs">${esc(c.code)} — ${esc(c.name)}</div>`).join('')}
         </div>
-        <div class="border border-zinc-700 rounded-lg max-h-64 overflow-y-auto text-sm">
-          ${(invoices.invoices || []).map((i) => `<div class="px-3 py-2 border-t border-zinc-800 flex justify-between"><span>${esc(i.document_number)}</span><span>${money(i.amount)}</span></div>`).join('')}
+        <div class="border border-zinc-700 rounded-lg max-h-48 overflow-y-auto">
+          ${(receipts.receipts || []).map((r) => `<div class="px-3 py-2 border-t border-zinc-800 text-xs">${esc(r.receipt_number)} ${money(r.amount)}</div>`).join('') || '<div class="p-3 text-zinc-500 text-xs">No receipts.</div>'}
         </div>
       </div>
     </div>`;
   }
 
   async function renderBank() {
-    const data = await api('/api/accounting/bank/accounts');
+    const accounts = await api('/api/accounting/bank/accounts');
+    const bankList = accounts.accounts || [];
+    const bankId = bankList[0]?.id;
+    let tx = { transactions: [] };
+    if (bankId) tx = await api(`/api/accounting/bank/transactions?bank_account_id=${bankId}`);
     return `<h2 class="text-lg font-semibold text-white mb-3">Bank Services</h2>
       <button type="button" id="acctAddBank" class="text-xs text-emerald-400 mb-3">+ Bank account</button>
-      <ul class="text-sm space-y-2">${(data.accounts || []).map((a) =>
+      <ul class="text-sm space-y-2 mb-4">${bankList.map((a) =>
         `<li class="bg-zinc-800 border border-zinc-700 rounded px-3 py-2 font-mono">${esc(a.code)} — ${esc(a.name)}</li>`
-      ).join('') || '<li class="text-zinc-500">No bank accounts yet.</li>'}</ul>`;
+      ).join('') || '<li class="text-zinc-500">No bank accounts yet.</li>'}</ul>
+      <h3 class="text-sm text-zinc-400 mb-2">Unreconciled activity ${bankId ? `(account ${bankId})` : ''}</h3>
+      <form id="acctReconForm" class="space-y-2 max-h-56 overflow-y-auto border border-zinc-700 rounded-lg p-2">
+        ${(tx.transactions || []).filter((t) => !t.reconciled).map((t) =>
+          `<label class="flex items-center gap-2 text-xs py-1 border-b border-zinc-800">
+            <input type="checkbox" name="tx" value="${t.id}" />
+            <span class="font-mono w-20">${money(t.amount)}</span>
+            <span class="text-zinc-400 truncate">${esc(t.description || t.reference)}</span>
+          </label>`
+        ).join('') || '<p class="text-zinc-500 text-xs p-2">No unreconciled items — payments and receipts create bank lines automatically.</p>'}
+      </form>
+      <button type="button" id="acctReconBtn" class="mt-3 px-3 py-2 bg-violet-600 hover:bg-violet-500 rounded text-sm" ${bankId ? '' : 'disabled'}>Mark selected reconciled</button>`;
+  }
+
+  async function renderPayroll() {
+    const data = await api('/api/accounting/payroll/runs');
+    return `<div>
+      <h2 class="text-lg font-semibold text-white mb-2">Payroll</h2>
+      <p class="text-xs text-zinc-500 mb-4">Create a pay run, then post to G/L (Dr labor · Cr liabilities · Cr cash).</p>
+      <button type="button" id="acctNewPayroll" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded text-sm mb-4">+ New pay run</button>
+      <ul class="text-sm space-y-2">${(data.runs || []).map((r) =>
+        `<li class="flex justify-between items-center border border-zinc-700 rounded px-3 py-2">
+          <span class="font-mono text-xs">${esc(r.run_number)} — gross ${money(r.total_gross)} · ${esc(r.status)}</span>
+          ${r.status === 'Open' ? `<button type="button" data-post-payroll="${r.id}" class="text-emerald-400 text-xs">Post to G/L</button>` : ''}
+        </li>`
+      ).join('') || '<li class="text-zinc-500">No pay runs.</li>'}</ul>
+    </div>`;
+  }
+
+  async function renderAssets() {
+    const data = await api('/api/accounting/assets');
+    return `<h2 class="text-lg font-semibold text-white mb-3">Fixed Assets</h2>
+      <div class="flex gap-2 mb-3">
+        <button type="button" id="acctAddAsset" class="text-xs text-emerald-400">+ Asset</button>
+        <button type="button" id="acctRunDep" class="text-xs text-violet-400">Run monthly depreciation</button>
+      </div>
+      <ul class="text-sm">${(data.assets || []).map((a) => `<li class="py-2 border-b border-zinc-800">${esc(a.asset_number)} — ${money(a.acquisition_cost)} · ${esc(a.status)}</li>`).join('')}</ul>`;
   }
 
   async function renderTax() {
@@ -262,13 +326,6 @@
       <ul class="text-sm">${(data.orders || []).map((o) => `<li class="py-2 border-b border-zinc-800 font-mono">${esc(o.order_number)} — ${money(o.total_amount)}</li>`).join('')}</ul>`;
   }
 
-  async function renderAssets() {
-    const data = await api('/api/accounting/assets');
-    return `<h2 class="text-lg font-semibold text-white mb-3">Fixed Assets</h2>
-      <button type="button" id="acctAddAsset" class="text-xs text-emerald-400 mb-3">+ Asset</button>
-      <ul class="text-sm">${(data.assets || []).map((a) => `<li class="py-2 border-b border-zinc-800">${esc(a.asset_number)} — ${money(a.acquisition_cost)}</li>`).join('')}</ul>`;
-  }
-
   async function renderReports() {
     const [tb, ap, ar] = await Promise.all([
       api('/api/accounting/reports/trial-balance'),
@@ -289,6 +346,87 @@
   }
 
   function bindPanelHandlers(route) {
+    document.getElementById('acctPayApBtn')?.addEventListener('click', async () => {
+      const invId = prompt('AP invoice id to pay (from list above)');
+      const vendorId = prompt('Vendor id');
+      const amt = prompt('Payment amount');
+      if (!invId || !vendorId || !amt) return;
+      const banks = await api('/api/accounting/bank/accounts');
+      const bankId = (banks.accounts || [])[0]?.id;
+      await api('/api/accounting/ap/payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vendor_id: parseInt(vendorId, 10),
+          amount: parseFloat(amt),
+          bank_account_id: bankId,
+          applications: [{ ap_document_id: parseInt(invId, 10), amount: parseFloat(amt) }],
+        }),
+      });
+      switchModule('ap');
+    });
+    document.getElementById('acctArReceiptBtn')?.addEventListener('click', async () => {
+      const invId = prompt('AR invoice id');
+      const custId = prompt('Customer id');
+      const amt = prompt('Receipt amount');
+      if (!invId || !custId || !amt) return;
+      const banks = await api('/api/accounting/bank/accounts');
+      const bankId = (banks.accounts || [])[0]?.id;
+      await api('/api/accounting/ar/receipts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_id: parseInt(custId, 10),
+          amount: parseFloat(amt),
+          bank_account_id: bankId,
+          applications: [{ ar_document_id: parseInt(invId, 10), amount: parseFloat(amt) }],
+        }),
+      });
+      switchModule('ar');
+    });
+    document.getElementById('acctReconBtn')?.addEventListener('click', async () => {
+      const banks = await api('/api/accounting/bank/accounts');
+      const bankId = (banks.accounts || [])[0]?.id;
+      if (!bankId) return;
+      const ids = [...document.querySelectorAll('#acctReconForm input[name=tx]:checked')].map((el) => parseInt(el.value, 10));
+      await api('/api/accounting/bank/reconcile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bank_account_id: bankId, transaction_ids: ids }),
+      });
+      switchModule('bank');
+    });
+    document.getElementById('acctNewPayroll')?.addEventListener('click', async () => {
+      const gross = prompt('Total gross wages');
+      const net = prompt('Net pay (employee deposits)');
+      const taxes = prompt('Payroll taxes / withholdings (optional)');
+      if (!gross) return;
+      await api('/api/accounting/payroll/runs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          total_gross: parseFloat(gross),
+          total_net: parseFloat(net || 0),
+          total_taxes: parseFloat(taxes || 0),
+        }),
+      });
+      switchModule('payroll');
+    });
+    document.querySelectorAll('[data-post-payroll]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        await api(`/api/accounting/payroll/runs/${btn.getAttribute('data-post-payroll')}/post`, { method: 'POST', body: '{}' });
+        switchModule('payroll');
+      });
+    });
+    document.getElementById('acctRunDep')?.addEventListener('click', async () => {
+      try {
+        const out = await api('/api/accounting/assets/depreciate', { method: 'POST', body: '{}' });
+        alert(`Depreciation posted: ${money(out.total)}`);
+        switchModule('assets');
+      } catch (e) {
+        alert(e.message);
+      }
+    });
     document.getElementById('acctAddVendor')?.addEventListener('click', async () => {
       const code = prompt('Vendor code');
       const name = prompt('Vendor name');
