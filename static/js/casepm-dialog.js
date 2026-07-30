@@ -28,12 +28,18 @@
       dialog.casepm-dialog::backdrop {
         background: rgba(0, 0, 0, 0.72);
       }
+      dialog.casepm-dialog[open] {
+        display: block !important;
+      }
       .casepm-dialog-panel {
         background: #18181b;
         border: 1px solid #3f3f46;
         border-radius: 12px;
         overflow: hidden;
         box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.55);
+        display: flex;
+        flex-direction: column;
+        width: 100%;
       }
       .casepm-dialog-body {
         padding: 1.25rem 1.5rem;
@@ -41,6 +47,19 @@
         line-height: 1.5;
         color: #e4e4e7;
         white-space: pre-wrap;
+      }
+      .casepm-dialog-body.casepm-dialog-body--form {
+        white-space: normal;
+      }
+      .casepm-dialog-field {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.25rem;
+        margin-bottom: 0.75rem;
+      }
+      .casepm-dialog-field:last-child {
+        margin-bottom: 0;
       }
       .casepm-dialog-actions {
         display: flex;
@@ -77,6 +96,7 @@
       .casepm-dialog-field select,
       .casepm-dialog-field textarea {
         width: 100%;
+        margin-top: 0;
         background: #27272a;
         border: 1px solid #3f3f46;
         border-radius: 0.375rem;
@@ -88,7 +108,8 @@
         display: block;
         font-size: 0.75rem;
         color: #a1a1aa;
-        margin-bottom: 0.25rem;
+        margin: 0;
+        line-height: 1.25;
       }
       .casepm-dialog-select-list {
         max-height: 220px;
@@ -301,7 +322,7 @@
       dialog.innerHTML = `
         <div class="casepm-dialog-panel">
           <div class="casepm-dialog-title">${iconForType('info')}<span>${escapeHtml(title)}</span></div>
-          <div class="casepm-dialog-body">
+          <div class="casepm-dialog-body casepm-dialog-body--form">
             ${message && message !== label ? `<p class="mb-3 text-sm text-zinc-400">${escapeHtml(String(message))}</p>` : ''}
             <div class="casepm-dialog-field">
               <label for="casepm-prompt-input">${escapeHtml(label)}</label>
@@ -350,9 +371,9 @@
       dialog.innerHTML = `
         <div class="casepm-dialog-panel">
           <div class="casepm-dialog-title">${iconForType('info')}<span>${escapeHtml(title)}</span></div>
-          <div class="casepm-dialog-body">
+          <div class="casepm-dialog-body casepm-dialog-body--form">
             ${message ? `<p class="mb-3 text-sm text-zinc-400">${escapeHtml(String(message))}</p>` : ''}
-            <div class="casepm-dialog-field mb-2">
+            <div class="casepm-dialog-field">
               <label for="casepm-select-search">Search</label>
               <input type="text" id="casepm-select-search" placeholder="Type to filter…">
             </div>
@@ -433,18 +454,16 @@
             const sel = String(f.defaultValue ?? '') === String(val) ? ' selected' : '';
             return `<option value="${escapeHtml(String(val))}"${sel}>${escapeHtml(String(lab))}</option>`;
           }).join('');
-          return `<div class="casepm-dialog-field mb-3"><label for="${id}">${escapeHtml(f.label)}</label>
-            <select id="${id}" name="${escapeHtml(f.key)}"${req}>${opts}</select></div>`;
+          return `<div class="casepm-dialog-field"><label for="${id}">${escapeHtml(f.label)}</label><select id="${id}" name="${escapeHtml(f.key)}"${req}>${opts}</select></div>`;
         }
         const type = f.type === 'number' ? 'number' : 'text';
         const step = f.step ? ` step="${escapeHtml(String(f.step))}"` : '';
-        return `<div class="casepm-dialog-field mb-3"><label for="${id}">${escapeHtml(f.label)}</label>
-          <input type="${type}" id="${id}" name="${escapeHtml(f.key)}" value="${escapeHtml(String(f.defaultValue ?? ''))}" placeholder="${escapeHtml(f.placeholder || '')}"${step}${req}></div>`;
+        return `<div class="casepm-dialog-field"><label for="${id}">${escapeHtml(f.label)}</label><input type="${type}" id="${id}" name="${escapeHtml(f.key)}" value="${escapeHtml(String(f.defaultValue ?? ''))}" placeholder="${escapeHtml(f.placeholder || '')}"${step}${req}></div>`;
       }).join('');
       dialog.innerHTML = `
         <div class="casepm-dialog-panel">
           <div class="casepm-dialog-title">${iconForType('info')}<span>${escapeHtml(title)}</span></div>
-          <div class="casepm-dialog-body">${options.message ? `<p class="mb-3 text-sm text-zinc-400">${escapeHtml(String(options.message))}</p>` : ''}${fieldsHtml}</div>
+          <div class="casepm-dialog-body casepm-dialog-body--form">${options.message ? `<p class="mb-3 text-sm text-zinc-400">${escapeHtml(String(options.message))}</p>` : ''}${fieldsHtml}</div>
           <div class="casepm-dialog-actions">
             <button type="button" class="casepm-dialog-btn casepm-dialog-btn-secondary" data-action="cancel">${escapeHtml(cancelLabel)}</button>
             <button type="button" class="casepm-dialog-btn casepm-dialog-btn-primary" data-action="confirm">${escapeHtml(submitLabel)}</button>
