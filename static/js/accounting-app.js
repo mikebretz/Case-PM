@@ -1,11 +1,12 @@
 /**
- * Case PM Accounting module — Sage 300 dashboard, ERP queue, catalog, inquiries.
+ * Case PM built-in accounting suite (standalone ERP).
  */
 (function (global) {
   'use strict';
 
-  let catalogCache = null;
-  let currentTab = 'overview';
+  let catalog = null;
+  let dashboard = null;
+  let activeModule = 'dashboard';
 
   function projectId() {
     if (global.CASEPM_ACTIVE_PROJECT_ID) return global.CASEPM_ACTIVE_PROJECT_ID;
@@ -26,311 +27,380 @@
     return d.innerHTML;
   }
 
-  function switchTab(tab) {
-    currentTab = tab;
-    document.querySelectorAll('.acct-tab').forEach((btn) => {
-      const on = btn.getAttribute('data-acct-tab') === tab;
-      btn.classList.toggle('bg-emerald-600', on);
-      btn.classList.toggle('text-white', on);
-      btn.classList.toggle('bg-zinc-800', !on);
-      btn.classList.toggle('text-zinc-300', !on);
-    });
-    document.querySelectorAll('.acct-panel').forEach((p) => p.classList.add('hidden'));
-    const panel = document.getElementById(`acctPanel${tab.charAt(0).toUpperCase() + tab.slice(1)}`);
-    if (panel) panel.classList.remove('hidden');
-    if (tab === 'catalog' && !catalogCache) loadCatalog();
-    if (tab === 'erp') loadErpQueue();
+  function money(n) {
+    const v = parseFloat(n) || 0;
+    return v.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
   }
 
-  function renderRecentEvents(events) {
-    const tbody = document.getElementById('acctRecentEvents');
-    if (!tbody) return;
-    if (!events || !events.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-zinc-500">No sync events for this project.</td></tr>';
-      return;
-    }
-    tbody.innerHTML = events.map((e) => `
-      <tr class="hover:bg-zinc-800/50">
-        <td class="px-4 py-2 text-xs text-zinc-500">${esc((e.created_at || '').slice(0, 19))}</td>
-        <td class="px-4 py-2 font-mono text-xs">${esc(e.event_type)}</td>
-        <td class="px-4 py-2 text-xs">${esc(e.status)}</td>
-        <td class="px-4 py-2 text-xs">${esc(e.accounting_status || '—')}</td>
-        <td class="px-4 py-2 text-xs text-zinc-400 truncate max-w-xs">${esc(e.message || '')}</td>
-      </tr>
-    `).join('');
+  function statusClass(st) {
+    if (st === 'live') return 'status-live';
+    if (st === 'beta') return 'status-beta';
+    return 'status-planned';
   }
 
-  function renderLinkedModules(mods) {
-    const el = document.getElementById('acctLinkedModules');
-    if (!el) return;
-    el.innerHTML = (mods || []).map((m) => `
-      <span class="text-[10px] px-2 py-1 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-300" title="${esc((m.events || []).join(', '))}">
-        ${esc(m.name)} <span class="text-emerald-500">${esc(m.integration || '')}</span>
-      </span>
-    `).join('');
-  }
-
-  async function loadDashboard() {
-    const pid = projectId();
-    if (!pid) {
-      document.getElementById('acctJobNumber').textContent = 'Select a project';
-      return;
-    }
-    const data = await api(`/api/accounting/dashboard?project_id=${pid}`);
-    const p = data.project || {};
-    document.getElementById('acctJobNumber').textContent = p.sage_job_number || 'Not set';
-    const st = data.sage_sync_status || {};
-    document.getElementById('acctSyncLabel').textContent = st.label || '—';
-    document.getElementById('acctSyncLabel').className = `text-lg font-semibold mt-1 ${st.class || 'text-zinc-300'}`;
-    document.getElementById('acctSyncDetail').textContent = st.detail || '';
-    document.getElementById('acctPendingReview').textContent = String((data.erp_queue || {}).pending_review_count || 0);
-    const conn = data.connection || {};
-    document.getElementById('acctMode').textContent = (conn.mode || 'offline').replace(/_/g, ' ');
-    renderRecentEvents(data.recent_events);
-    renderLinkedModules(data.linked_sage_modules);
-    updateConnBadge(conn);
-  }
-
-  function updateConnBadge(conn) {
-    const badge = document.getElementById('acctConnBadge');
-    if (!badge) return;
-    const mode = (conn && conn.mode) || 'offline';
-    const colors = {
-      cre_bridge_and_web_api: 'text-emerald-400 border-emerald-700',
-      cre_bridge: 'text-sky-400 border-sky-700',
-      web_api: 'text-violet-400 border-violet-700',
-      web_api_partial: 'text-amber-400 border-amber-700',
-      offline: 'text-zinc-500 border-zinc-700',
-    };
-    badge.className = `text-xs font-medium px-3 py-1 rounded-full bg-zinc-800 border ${colors[mode] || colors.offline}`;
-    badge.textContent = mode.replace(/_/g, ' ');
-  }
-
-  async function loadConnection() {
-    try {
-      const conn = await api('/api/accounting/connection');
-      updateConnBadge(conn);
-    } catch (e) {
-      console.warn('[Accounting]', e);
-    }
-  }
-
-  async function loadErpQueue() {
-    const pid = projectId();
-    const tbody = document.getElementById('acctErpBody');
-    if (!tbody || !pid) return;
-    const filter = document.getElementById('acctErpFilter')?.value || '';
-    let url = `/api/accounting/erp-queue?project_id=${pid}&limit=150`;
-    if (filter) url += `&accounting_status=${encodeURIComponent(filter)}`;
-    const data = await api(url);
-    const events = data.events || [];
-    if (!events.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-10 text-center text-zinc-500">No events in queue.</td></tr>';
-      return;
-    }
-    tbody.innerHTML = events.map((e) => {
-      const reviewBtns = e.accounting_status === 'pending_review'
-        ? `<button type="button" data-erp-accept="${e.id}" class="text-emerald-400 text-xs mr-2">Accept</button>
-           <button type="button" data-erp-reject="${e.id}" class="text-red-400 text-xs">Reject</button>`
-        : `<button type="button" data-erp-retry="${e.id}" class="text-sky-400 text-xs">Retry Sage</button>`;
-      return `<tr class="hover:bg-zinc-800/50">
-        <td class="px-4 py-2 text-xs">${e.id}</td>
-        <td class="px-4 py-2 text-xs font-mono">${esc(e.event_type)}</td>
-        <td class="px-4 py-2 text-xs">${esc(e.status)}</td>
-        <td class="px-4 py-2 text-xs">${esc(e.accounting_status)}</td>
-        <td class="px-4 py-2 text-xs font-mono">${esc(e.sage_job_number)}</td>
-        <td class="px-4 py-2 text-right">${reviewBtns}</td>
-      </tr>`;
+  function buildNav() {
+    const mods = [{ id: 'dashboard', name: 'Dashboard', route: 'dashboard', status: 'live' }];
+    (catalog?.modules || []).forEach((m) => mods.push(m));
+    const nav = document.getElementById('acctModuleNav');
+    const mob = document.getElementById('acctModuleNavMobile');
+    const html = mods.map((m) => {
+      const route = m.route || m.id;
+      return `<button type="button" class="acct-nav-btn ${activeModule === route ? 'active' : ''}" data-route="${esc(route)}">
+        <span class="${statusClass(m.status)} mr-1">●</span>${esc(m.name)}
+      </button>`;
     }).join('');
-    tbody.querySelectorAll('[data-erp-accept]').forEach((btn) => {
-      btn.addEventListener('click', () => erpReview(btn.getAttribute('data-erp-accept'), 'accept'));
+    if (nav) nav.innerHTML = html;
+    if (mob) mob.innerHTML = mods.map((m) => {
+      const route = m.route || m.id;
+      return `<button type="button" class="acct-nav-btn whitespace-nowrap px-3 ${activeModule === route ? 'active' : ''}" data-route="${esc(route)}">${esc(m.name)}</button>`;
+    }).join('');
+    document.querySelectorAll('.acct-nav-btn').forEach((btn) => {
+      btn.addEventListener('click', () => switchModule(btn.getAttribute('data-route')));
     });
-    tbody.querySelectorAll('[data-erp-reject]').forEach((btn) => {
-      btn.addEventListener('click', () => erpReview(btn.getAttribute('data-erp-reject'), 'reject'));
-    });
-    tbody.querySelectorAll('[data-erp-retry]').forEach((btn) => {
-      btn.addEventListener('click', () => erpRetry(btn.getAttribute('data-erp-retry')));
-    });
   }
 
-  async function erpReview(id, action) {
-    if (typeof CasePMPayAppWorkflow !== 'undefined' && CasePMPayAppWorkflow.erpReview) {
-      await CasePMPayAppWorkflow.erpReview(id, action);
-    } else {
-      await api(`/api/sage/sync-events/${id}/accounting`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
-      });
-    }
-    await loadErpQueue();
-    await loadDashboard();
-  }
-
-  async function erpRetry(id) {
-    await api(`/api/sage/sync-events/${id}/retry`, { method: 'POST' });
-    await loadErpQueue();
-    await loadDashboard();
-  }
-
-  async function loadCatalog() {
-    catalogCache = await api('/api/accounting/catalog');
-    const notes = document.getElementById('acctCatalogNotes');
-    if (notes && catalogCache.notes) {
-      notes.textContent = catalogCache.notes.join(' ');
-    }
-    const plat = document.getElementById('acctPlatformGrid');
-    if (plat) {
-      plat.innerHTML = (catalogCache.platform || []).map((f) => `
-        <div class="bg-zinc-900 border border-zinc-800 rounded p-3">
-          <div class="text-sm font-medium text-zinc-200">${esc(f.name)}</div>
-          <div class="text-[11px] text-zinc-500 mt-1">${esc(f.description)}</div>
-        </div>
-      `).join('');
-    }
-    const mods = document.getElementById('acctModuleGrid');
-    if (mods) {
-      mods.innerHTML = (catalogCache.modules || []).map((m) => {
-        const apiInfo = m.web_api
-          ? `<span class="text-[10px] text-sky-400 font-mono">${esc(m.web_api.module)}/${esc((m.web_api.resources || [])[0] || '')}</span>`
-          : '<span class="text-[10px] text-zinc-600">CRE / desktop</span>';
-        const events = ((m.casepm || {}).events || []).slice(0, 4).join(', ');
-        return `<article class="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
-          <div class="flex justify-between gap-2 flex-wrap">
-            <h4 class="font-semibold text-white">${esc(m.name)} <span class="text-zinc-500 font-normal text-xs">(${esc(m.code)})</span></h4>
-            <span class="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-zinc-800 text-zinc-400">${esc(m.integration)} · ${esc(m.edition)}</span>
-          </div>
-          <p class="text-xs text-zinc-400 mt-1">${esc(m.summary)}</p>
-          <ul class="text-[11px] text-zinc-500 mt-2 list-disc pl-4 space-y-0.5">${(m.features || []).slice(0, 5).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
-          <div class="mt-2 flex flex-wrap gap-2 items-center">${apiInfo}
-            ${events ? `<span class="text-[10px] text-emerald-500">Case PM: ${esc(events)}${(m.casepm.events || []).length > 4 ? '…' : ''}</span>` : ''}
-          </div>
-        </article>`;
-      }).join('');
-    }
-    const presetSel = document.getElementById('acctInquiryPreset');
-    if (presetSel && presetSel.options.length <= 1) {
-      (catalogCache.inquiry_presets || []).forEach((p, i) => {
-        const opt = document.createElement('option');
-        opt.value = String(i);
-        opt.textContent = p.label;
-        opt.dataset.module = p.module;
-        opt.dataset.resource = p.resource;
-        presetSel.appendChild(opt);
-      });
-    }
-  }
-
-  function applyInquiryPreset() {
-    const sel = document.getElementById('acctInquiryPreset');
-    const opt = sel?.selectedOptions?.[0];
-    if (!opt) return;
-    document.getElementById('acctInquiryModule').value = opt.dataset.module || '';
-    document.getElementById('acctInquiryResource').value = opt.dataset.resource || '';
-  }
-
-  async function runInquiry() {
-    const mod = document.getElementById('acctInquiryModule')?.value?.trim();
-    const res = document.getElementById('acctInquiryResource')?.value?.trim();
-    const out = document.getElementById('acctInquiryResult');
-    if (!mod || !res) return;
-    out.textContent = 'Loading…';
+  async function switchModule(route) {
+    activeModule = route || 'dashboard';
+    buildNav();
+    const root = document.getElementById('acctPanelRoot');
+    if (!root) return;
+    root.innerHTML = '<p class="text-zinc-500 text-sm">Loading…</p>';
     try {
-      const data = await api(`/api/accounting/web-api/resource?module=${encodeURIComponent(mod)}&resource=${encodeURIComponent(res)}&top=25`);
-      out.textContent = JSON.stringify(data, null, 2);
-    } catch (e) {
-      out.textContent = e.message || String(e);
-    }
-  }
-
-  async function probeWebApi() {
-    const out = document.getElementById('acctInquiryResult');
-    out.textContent = 'Probing…';
-    try {
-      const data = await api('/api/accounting/web-api/probe', { method: 'POST', body: '{}' });
-      out.textContent = JSON.stringify(data, null, 2);
-    } catch (e) {
-      out.textContent = e.message || String(e);
-    }
-  }
-
-  async function reconcile() {
-    const out = document.getElementById('acctReconcileResult');
-    out.textContent = 'Running…';
-    try {
-      if (typeof CasePMAccountingReconcile !== 'undefined') {
-        const json = await CasePMAccountingReconcile.reconcileProject({ force: true });
-        out.textContent = JSON.stringify(json, null, 2);
+      if (route === 'dashboard') root.innerHTML = renderDashboard();
+      else if (route === 'gl') root.innerHTML = await renderGL();
+      else if (route === 'ap') root.innerHTML = await renderAP();
+      else if (route === 'ar') root.innerHTML = await renderAR();
+      else if (route === 'bank') root.innerHTML = await renderBank();
+      else if (route === 'tax') root.innerHTML = await renderTax();
+      else if (route === 'inventory') root.innerHTML = await renderInventory();
+      else if (route === 'po') root.innerHTML = await renderPO();
+      else if (route === 'oe') root.innerHTML = await renderOE();
+      else if (route === 'assets') root.innerHTML = await renderAssets();
+      else if (route === 'jobcost') root.innerHTML = renderJobCost();
+      else if (route === 'reports') root.innerHTML = await renderReports();
+      else if (route === 'payroll' || route === 'payments' || route === 'consolidation') {
+        root.innerHTML = renderPlannedModule(route);
       } else {
-        const pid = projectId();
-        const json = await api(`/api/accounting/reconcile?project_id=${pid}`, { method: 'POST', body: '{}' });
-        out.textContent = JSON.stringify(json, null, 2);
+        const mod = (catalog?.modules || []).find((m) => m.route === route);
+        root.innerHTML = mod ? renderPlannedModule(route, mod) : '<p class="text-zinc-500">Module not found.</p>';
       }
+      bindPanelHandlers(route);
     } catch (e) {
-      out.textContent = e.message || String(e);
+      root.innerHTML = `<p class="text-red-400">${esc(e.message)}</p>`;
     }
   }
 
-  async function pullSage() {
-    const out = document.getElementById('acctPullResult');
+  function renderDashboard() {
+    const d = dashboard || {};
+    const k = d.kpis || {};
+    const sync = d.external_sync?.sage_300 || {};
+    return `
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4"><div class="text-xs text-zinc-500">Open A/P</div><div class="text-xl font-semibold text-amber-400">${money(k.open_ap)}</div></div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4"><div class="text-xs text-zinc-500">Open A/R</div><div class="text-xl font-semibold text-sky-400">${money(k.open_ar)}</div></div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4"><div class="text-xs text-zinc-500">G/L Accounts</div><div class="text-xl font-semibold">${k.gl_accounts || 0}</div></div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4"><div class="text-xs text-zinc-500">Open J/E Batches</div><div class="text-xl font-semibold">${k.open_batches || 0}</div></div>
+      </div>
+      ${d.project ? `<p class="text-xs text-zinc-500 mb-4">Active project context: <strong class="text-zinc-300">${esc(d.project.name)}</strong> · Job ${esc(d.project.job_number || '—')}</p>` : ''}
+      <div class="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4 mb-4">
+        <h2 class="text-sm font-semibold text-white mb-2">Company books</h2>
+        <p class="text-xs text-zinc-400">Ledger <span class="font-mono text-emerald-400">${esc(d.ledger?.code)}</span> — ${esc(d.ledger?.name)} (${esc(d.ledger?.base_currency)})</p>
+        <p class="text-xs text-zinc-500 mt-2">Vendors: ${k.vendors || 0} · Customers: ${k.customers || 0} · Bank accounts: ${k.bank_accounts || 0}</p>
+      </div>
+      <div class="text-xs text-zinc-500 border border-zinc-800 rounded-lg p-3 ${sync.enabled ? 'border-amber-900/50' : ''}">
+        <i class="fa-solid fa-plug mr-1"></i>
+        External Sage 300 sync: <strong class="${sync.enabled ? 'text-amber-400' : 'text-zinc-400'}">${sync.enabled ? 'Enabled' : 'Off (standalone mode)'}</strong>.
+        ${sync.enabled && d.external_sync?.pending_construction_exports ? ` · ${d.external_sync.pending_construction_exports} construction export(s) pending review.` : ''}
+        <a href="/program-settings?tab=sage" class="text-emerald-400 hover:underline ml-1">Configure in Program Settings</a>
+      </div>`;
+  }
+
+  function renderPlannedModule(route, mod) {
+    const m = mod || (catalog?.modules || []).find((x) => x.route === route);
+    return `<div class="max-w-xl">
+      <h2 class="text-lg font-semibold text-white">${esc(m?.name || route)}</h2>
+      <p class="text-sm text-zinc-400 mt-2">${esc(m?.summary || '')}</p>
+      <p class="text-xs text-amber-400 mt-4 uppercase tracking-wide">${esc(m?.status || 'planned')} — expanded workflows shipping in upcoming releases.</p>
+      <ul class="text-xs text-zinc-500 mt-3 list-disc pl-5">${(m?.features || []).map((f) => `<li>${esc(f)}</li>`).join('')}</ul>
+    </div>`;
+  }
+
+  function renderJobCost() {
     const pid = projectId();
-    if (!pid) {
-      out.textContent = 'Select a project first.';
-      return;
-    }
-    out.textContent = 'Pulling…';
-    try {
-      const data = await api('/api/sage/pull', {
+    return `<div>
+      <h2 class="text-lg font-semibold text-white">Project &amp; Job Costing</h2>
+      <p class="text-sm text-zinc-400 mt-2">Job cost lives in Case PM Budget, Commitments, and Pay Applications. Posting flows into the built-in G/L when journal batches are created.</p>
+      <div class="flex flex-wrap gap-3 mt-4 text-sm">
+        <a href="/budget${pid ? '?project_id=' + pid : ''}" class="text-emerald-400 hover:underline">Budget</a>
+        <a href="/commitments" class="text-emerald-400 hover:underline">Commitments</a>
+        <a href="/pay-applications" class="text-emerald-400 hover:underline">Pay Applications</a>
+        <a href="/forecast" class="text-emerald-400 hover:underline">Forecast</a>
+      </div>
+      <button type="button" id="acctJobReconcile" class="mt-6 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium">Reconcile project financials</button>
+      <pre id="acctJobReconcileOut" class="text-xs text-zinc-500 mt-2 font-mono"></pre>
+    </div>`;
+  }
+
+  async function renderGL() {
+    const [acct, batches] = await Promise.all([
+      api('/api/accounting/gl/accounts'),
+      api('/api/accounting/gl/batches'),
+    ]);
+    return `<div class="space-y-6">
+      <section>
+        <div class="flex justify-between items-center mb-2">
+          <h2 class="text-lg font-semibold text-white">Chart of Accounts</h2>
+          <button type="button" id="acctAddAccount" class="text-xs text-emerald-400 hover:underline">+ Account</button>
+        </div>
+        <div class="overflow-x-auto border border-zinc-700 rounded-lg">
+          <table class="w-full text-sm"><thead class="bg-zinc-800 text-zinc-400 text-xs"><tr>
+            <th class="text-left px-3 py-2">Number</th><th class="text-left px-3 py-2">Description</th><th class="text-left px-3 py-2">Type</th>
+          </tr></thead><tbody>
+            ${(acct.accounts || []).map((a) => `<tr class="border-t border-zinc-800"><td class="px-3 py-2 font-mono">${esc(a.account_number)}</td><td class="px-3 py-2">${esc(a.description)}</td><td class="px-3 py-2 text-xs">${esc(a.account_type)}</td></tr>`).join('')}
+          </tbody></table>
+        </div>
+      </section>
+      <section>
+        <h2 class="text-lg font-semibold text-white mb-2">Journal batches</h2>
+        <div class="overflow-x-auto border border-zinc-700 rounded-lg">
+          <table class="w-full text-sm"><thead class="bg-zinc-800 text-xs text-zinc-400"><tr>
+            <th class="px-3 py-2 text-left">Batch</th><th class="px-3 py-2 text-left">Date</th><th class="px-3 py-2 text-left">Status</th><th class="px-3 py-2"></th>
+          </tr></thead><tbody>
+            ${(batches.batches || []).map((b) => `<tr class="border-t border-zinc-800">
+              <td class="px-3 py-2 font-mono">${esc(b.batch_number)}</td>
+              <td class="px-3 py-2">${esc(b.batch_date)}</td>
+              <td class="px-3 py-2">${esc(b.status)}</td>
+              <td class="px-3 py-2 text-right">${b.status === 'Open' ? `<button type="button" data-post-batch="${b.id}" class="text-emerald-400 text-xs">Post</button>` : ''}</td>
+            </tr>`).join('')}
+          </tbody></table>
+        </div>
+        <button type="button" id="acctNewJeBatch" class="mt-3 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">New sample journal batch</button>
+      </section>
+    </div>`;
+  }
+
+  async function renderAP() {
+    const [vendors, invoices] = await Promise.all([
+      api('/api/accounting/ap/vendors'),
+      api('/api/accounting/ap/invoices'),
+    ]);
+    return `<div class="space-y-6">
+      <div class="flex justify-between"><h2 class="text-lg font-semibold text-white">Accounts Payable</h2>
+        <button type="button" id="acctAddVendor" class="text-xs text-emerald-400">+ Vendor</button></div>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="border border-zinc-700 rounded-lg overflow-hidden max-h-64 overflow-y-auto">
+          <table class="w-full text-sm"><tbody>${(vendors.vendors || []).map((v) =>
+            `<tr class="border-t border-zinc-800"><td class="px-3 py-2 font-mono text-xs">${esc(v.code)}</td><td class="px-3 py-2">${esc(v.name)}</td></tr>`
+          ).join('')}</tbody></table>
+        </div>
+        <div class="border border-zinc-700 rounded-lg overflow-hidden max-h-64 overflow-y-auto">
+          <table class="w-full text-sm"><tbody>${(invoices.invoices || []).map((i) =>
+            `<tr class="border-t border-zinc-800"><td class="px-3 py-2 font-mono">${esc(i.document_number)}</td><td class="px-3 py-2 text-right">${money(i.amount)}</td></tr>`
+          ).join('')}</tbody></table>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  async function renderAR() {
+    const [customers, invoices] = await Promise.all([
+      api('/api/accounting/ar/customers'),
+      api('/api/accounting/ar/invoices'),
+    ]);
+    return `<div class="space-y-4">
+      <div class="flex justify-between"><h2 class="text-lg font-semibold text-white">Accounts Receivable</h2>
+        <button type="button" id="acctAddCustomer" class="text-xs text-emerald-400">+ Customer</button></div>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="border border-zinc-700 rounded-lg max-h-64 overflow-y-auto text-sm">
+          ${(customers.customers || []).map((c) => `<div class="px-3 py-2 border-t border-zinc-800 font-mono text-xs">${esc(c.code)} — ${esc(c.name)}</div>`).join('')}
+        </div>
+        <div class="border border-zinc-700 rounded-lg max-h-64 overflow-y-auto text-sm">
+          ${(invoices.invoices || []).map((i) => `<div class="px-3 py-2 border-t border-zinc-800 flex justify-between"><span>${esc(i.document_number)}</span><span>${money(i.amount)}</span></div>`).join('')}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  async function renderBank() {
+    const data = await api('/api/accounting/bank/accounts');
+    return `<h2 class="text-lg font-semibold text-white mb-3">Bank Services</h2>
+      <button type="button" id="acctAddBank" class="text-xs text-emerald-400 mb-3">+ Bank account</button>
+      <ul class="text-sm space-y-2">${(data.accounts || []).map((a) =>
+        `<li class="bg-zinc-800 border border-zinc-700 rounded px-3 py-2 font-mono">${esc(a.code)} — ${esc(a.name)}</li>`
+      ).join('') || '<li class="text-zinc-500">No bank accounts yet.</li>'}</ul>`;
+  }
+
+  async function renderTax() {
+    const data = await api('/api/accounting/tax/groups');
+    return `<h2 class="text-lg font-semibold text-white mb-3">Tax Services</h2>
+      <button type="button" id="acctAddTax" class="text-xs text-emerald-400 mb-3">+ Tax group</button>
+      <ul class="text-sm">${(data.groups || []).map((g) =>
+        `<li class="py-2 border-b border-zinc-800">${esc(g.code)} — ${esc(g.description)} (${g.rate_percent}%)</li>`
+      ).join('') || '<li class="text-zinc-500">No tax groups.</li>'}</ul>`;
+  }
+
+  async function renderInventory() {
+    const data = await api('/api/accounting/inventory/items');
+    return `<h2 class="text-lg font-semibold text-white mb-3">Inventory Control</h2>
+      <button type="button" id="acctAddItem" class="text-xs text-emerald-400 mb-3">+ Item</button>
+      <table class="w-full text-sm border border-zinc-700 rounded-lg"><tbody>
+        ${(data.items || []).map((i) => `<tr class="border-t border-zinc-800"><td class="px-3 py-2 font-mono">${esc(i.item_number)}</td><td class="px-3 py-2">${esc(i.description)}</td><td class="px-3 py-2 text-right">${i.qty_on_hand}</td></tr>`).join('')}
+      </tbody></table>`;
+  }
+
+  async function renderPO() {
+    const data = await api('/api/accounting/po/orders');
+    return `<h2 class="text-lg font-semibold text-white mb-3">Purchase Orders</h2>
+      <button type="button" id="acctAddPO" class="text-xs text-emerald-400 mb-3">+ PO</button>
+      <ul class="text-sm">${(data.orders || []).map((o) => `<li class="py-2 border-b border-zinc-800 font-mono">${esc(o.po_number)} — ${money(o.total_amount)}</li>`).join('')}</ul>`;
+  }
+
+  async function renderOE() {
+    const data = await api('/api/accounting/oe/orders');
+    return `<h2 class="text-lg font-semibold text-white mb-3">Order Entry</h2>
+      <button type="button" id="acctAddOE" class="text-xs text-emerald-400 mb-3">+ Sales order</button>
+      <ul class="text-sm">${(data.orders || []).map((o) => `<li class="py-2 border-b border-zinc-800 font-mono">${esc(o.order_number)} — ${money(o.total_amount)}</li>`).join('')}</ul>`;
+  }
+
+  async function renderAssets() {
+    const data = await api('/api/accounting/assets');
+    return `<h2 class="text-lg font-semibold text-white mb-3">Fixed Assets</h2>
+      <button type="button" id="acctAddAsset" class="text-xs text-emerald-400 mb-3">+ Asset</button>
+      <ul class="text-sm">${(data.assets || []).map((a) => `<li class="py-2 border-b border-zinc-800">${esc(a.asset_number)} — ${money(a.acquisition_cost)}</li>`).join('')}</ul>`;
+  }
+
+  async function renderReports() {
+    const [tb, ap, ar] = await Promise.all([
+      api('/api/accounting/reports/trial-balance'),
+      api('/api/accounting/reports/ap-aging'),
+      api('/api/accounting/reports/ar-aging'),
+    ]);
+    return `<h2 class="text-lg font-semibold text-white mb-4">Financial Reports</h2>
+      <h3 class="text-sm font-medium text-zinc-300 mb-2">Trial balance</h3>
+      <div class="overflow-x-auto border border-zinc-700 rounded-lg mb-6 max-h-48 overflow-y-auto">
+        <table class="w-full text-xs"><tbody>
+          ${(tb.rows || []).map((r) => `<tr class="border-t border-zinc-800"><td class="px-2 py-1 font-mono">${esc(r.account_number)}</td><td class="px-2 py-1">${esc(r.description)}</td><td class="px-2 py-1 text-right">${money(r.debit)}</td><td class="px-2 py-1 text-right">${money(r.credit)}</td></tr>`).join('')}
+        </tbody></table>
+      </div>
+      <div class="grid md:grid-cols-2 gap-4 text-sm">
+        <div><h3 class="text-sm text-zinc-400 mb-2">A/P aging</h3><pre class="text-xs font-mono text-zinc-500">${esc(JSON.stringify(ap.buckets, null, 2))}</pre></div>
+        <div><h3 class="text-sm text-zinc-400 mb-2">A/R aging</h3><pre class="text-xs font-mono text-zinc-500">${esc(JSON.stringify(ar.buckets, null, 2))}</pre></div>
+      </div>`;
+  }
+
+  function bindPanelHandlers(route) {
+    document.getElementById('acctAddVendor')?.addEventListener('click', async () => {
+      const code = prompt('Vendor code');
+      const name = prompt('Vendor name');
+      if (!code || !name) return;
+      await api('/api/accounting/ap/vendors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, name }) });
+      switchModule('ap');
+    });
+    document.getElementById('acctAddCustomer')?.addEventListener('click', async () => {
+      const code = prompt('Customer code');
+      const name = prompt('Customer name');
+      if (!code || !name) return;
+      await api('/api/accounting/ar/customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, name }) });
+      switchModule('ar');
+    });
+    document.getElementById('acctAddBank')?.addEventListener('click', async () => {
+      const code = prompt('Bank code');
+      const name = prompt('Bank name');
+      if (!code || !name) return;
+      await api('/api/accounting/bank/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, name }) });
+      switchModule('bank');
+    });
+    document.getElementById('acctAddTax')?.addEventListener('click', async () => {
+      const code = prompt('Tax group code');
+      if (!code) return;
+      await api('/api/accounting/tax/groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, description: code, rate_percent: 0 }) });
+      switchModule('tax');
+    });
+    document.getElementById('acctAddItem')?.addEventListener('click', async () => {
+      const item_number = prompt('Item number');
+      if (!item_number) return;
+      await api('/api/accounting/inventory/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_number, description: item_number }) });
+      switchModule('inventory');
+    });
+    document.getElementById('acctAddPO')?.addEventListener('click', async () => {
+      const po_number = prompt('PO number');
+      if (!po_number) return;
+      await api('/api/accounting/po/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ po_number, total_amount: 0 }) });
+      switchModule('po');
+    });
+    document.getElementById('acctAddOE')?.addEventListener('click', async () => {
+      const order_number = prompt('Order number');
+      if (!order_number) return;
+      await api('/api/accounting/oe/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order_number, total_amount: 0 }) });
+      switchModule('oe');
+    });
+    document.getElementById('acctAddAsset')?.addEventListener('click', async () => {
+      const asset_number = prompt('Asset number');
+      if (!asset_number) return;
+      await api('/api/accounting/assets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ asset_number, acquisition_cost: 0 }) });
+      switchModule('assets');
+    });
+    document.getElementById('acctNewJeBatch')?.addEventListener('click', async () => {
+      const acct = await api('/api/accounting/gl/accounts');
+      const accounts = acct.accounts || [];
+      if (accounts.length < 2) return alert('Need at least 2 GL accounts');
+      const cash = accounts.find((a) => a.account_number.startsWith('10')) || accounts[0];
+      const expense = accounts.find((a) => a.account_type === 'expense') || accounts[1];
+      await api('/api/accounting/gl/batches', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project_id: pid }),
+        body: JSON.stringify({
+          description: 'Sample entry',
+          lines: [
+            { account_id: expense.id, debit: 100, credit: 0, description: 'Sample expense' },
+            { account_id: cash.id, debit: 0, credit: 100, description: 'Cash offset' },
+          ],
+        }),
       });
-      out.textContent = JSON.stringify(data, null, 2);
-    } catch (e) {
-      out.textContent = e.message || String(e);
-    }
+      switchModule('gl');
+    });
+    document.querySelectorAll('[data-post-batch]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        await api(`/api/accounting/gl/batches/${btn.getAttribute('data-post-batch')}/post`, { method: 'POST', body: '{}' });
+        switchModule('gl');
+      });
+    });
+    document.getElementById('acctJobReconcile')?.addEventListener('click', async () => {
+      const out = document.getElementById('acctJobReconcileOut');
+      try {
+        const json = await (global.CasePMAccountingReconcile?.reconcileProject({ force: true }) || api(`/api/accounting/reconcile?project_id=${projectId()}`, { method: 'POST', body: '{}' }));
+        out.textContent = JSON.stringify(json, null, 2);
+      } catch (e) {
+        out.textContent = e.message;
+      }
+    });
   }
 
   async function refresh() {
-    await loadConnection();
-    await loadDashboard();
-    if (currentTab === 'erp') await loadErpQueue();
-  }
-
-  function bindUi() {
-    document.querySelectorAll('.acct-tab').forEach((btn) => {
-      btn.addEventListener('click', () => switchTab(btn.getAttribute('data-acct-tab')));
-    });
-    document.getElementById('acctRefreshBtn')?.addEventListener('click', () => refresh());
-    document.getElementById('acctErpReload')?.addEventListener('click', () => loadErpQueue());
-    document.getElementById('acctErpFilter')?.addEventListener('change', () => loadErpQueue());
-    document.getElementById('acctInquiryPreset')?.addEventListener('change', applyInquiryPreset);
-    document.getElementById('acctInquiryRun')?.addEventListener('click', runInquiry);
-    document.getElementById('acctProbeBtn')?.addEventListener('click', probeWebApi);
-    document.getElementById('acctReconcileBtn')?.addEventListener('click', reconcile);
-    document.getElementById('acctPullBtn')?.addEventListener('click', pullSage);
+    const pid = projectId();
+    const q = pid ? `?project_id=${pid}` : '';
+    [catalog, dashboard] = await Promise.all([
+      api('/api/accounting/catalog'),
+      api(`/api/accounting/dashboard${q}`),
+    ]);
+    const badge = document.getElementById('acctLedgerBadge');
+    if (badge && dashboard.ledger) {
+      badge.textContent = `${dashboard.ledger.code} · ${dashboard.ledger.base_currency}`;
+    }
+    buildNav();
+    await switchModule(activeModule);
   }
 
   async function init() {
-    bindUi();
-    switchTab('overview');
+    document.getElementById('acctRefreshBtn')?.addEventListener('click', refresh);
     const params = new URLSearchParams(global.location.search);
-    const tab = params.get('tab');
-    if (tab && document.querySelector(`[data-acct-tab="${tab}"]`)) switchTab(tab);
-    try {
-      await refresh();
-      await loadCatalog();
-      applyInquiryPreset();
-    } catch (e) {
-      console.warn('[Accounting] init', e);
-    }
+    const m = params.get('module');
+    if (m) activeModule = m;
+    await refresh();
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 
-  global.CasePMAccounting = { refresh, switchTab, loadErpQueue };
+  global.CasePMAccounting = { refresh, switchModule };
 })(window);
