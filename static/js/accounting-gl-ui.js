@@ -34,9 +34,7 @@
       <div class="casepm-dialog-panel casepm-dialog-panel--dark">
         <div class="casepm-dialog-title">
           <i class="fa-solid fa-circle-info text-sky-400"></i>
-          <i class="fa-solid fa-grip-vertical text-zinc-500 opacity-60 text-sm" aria-hidden="true"></i>
           <span class="flex-1 min-w-0">${ctx.esc(title)}</span>
-          <span class="text-[10px] text-zinc-500 font-normal hidden md:inline">Drag to move</span>
         </div>
         <div class="casepm-dialog-body casepm-dialog-body--form text-zinc-200">${bodyHtml}</div>
         <div class="casepm-dialog-actions">${actionsHtml || ''}</div>
