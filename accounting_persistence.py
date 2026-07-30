@@ -170,11 +170,20 @@ def serialize_customer(c):
         'name': c.name,
         'terms': c.terms,
         'credit_limit': c.credit_limit,
+        'email': c.email,
         'status': c.status,
     }
 
 
+def _doc_meta(d):
+    try:
+        return json.loads(d.details_json or '{}') if d.details_json else {}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+
+
 def serialize_ap_doc(d):
+    meta = _doc_meta(d)
     return {
         'id': d.id,
         'vendor_id': d.vendor_id,
@@ -186,10 +195,13 @@ def serialize_ap_doc(d):
         'amount_paid': d.amount_paid,
         'status': d.status,
         'project_id': d.project_id,
+        'gl_posted': bool(meta.get('journal_batch_id')),
+        'journal_batch_id': meta.get('journal_batch_id'),
     }
 
 
 def serialize_ar_doc(d):
+    meta = _doc_meta(d)
     return {
         'id': d.id,
         'customer_id': d.customer_id,
@@ -200,6 +212,8 @@ def serialize_ar_doc(d):
         'amount_paid': d.amount_paid,
         'status': d.status,
         'project_id': d.project_id,
+        'gl_posted': bool(meta.get('journal_batch_id')),
+        'journal_batch_id': meta.get('journal_batch_id'),
     }
 
 
@@ -286,7 +300,7 @@ def next_batch_number(AcctJournalBatch, ledger_id):
     return f'JB-{datetime.utcnow().strftime("%Y%m")}-{count + 1:04d}'
 
 
-def post_journal_batch(db, batch, AcctJournalLine):
+def post_journal_batch(db, batch, AcctJournalLine, *, ledger=None):
     lines = AcctJournalLine.query.filter_by(batch_id=batch.id).all()
     if not lines:
         raise ValueError('Batch has no lines')
@@ -294,6 +308,9 @@ def post_journal_batch(db, batch, AcctJournalLine):
     total_c = sum(float(l.credit or 0) for l in lines)
     if round(total_d - total_c, 2) != 0:
         raise ValueError(f'Batch out of balance by {total_d - total_c:.2f}')
+    if ledger is not None and batch.batch_date:
+        from accounting_gl_service import assert_period_open
+        assert_period_open(ledger, batch.batch_date)
     batch.status = 'Posted'
     batch.posted_at = datetime.utcnow()
     db.session.flush()

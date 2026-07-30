@@ -101,7 +101,11 @@ def _create_posted_batch(
             reference=ln.get('reference') or '',
         ))
     db.session.flush()
-    post_journal_batch(db, batch, AcctJournalLine)
+    ledger = AcctLedger.query.get(ledger_id) if 'AcctLedger' in models else None
+    if ledger is None:
+        AcctLedger = models.get('AcctLedger')
+        ledger = AcctLedger.query.get(ledger_id) if AcctLedger else None
+    post_journal_batch(db, batch, AcctJournalLine, ledger=ledger)
     return batch
 
 
@@ -715,3 +719,116 @@ def run_depreciation(db, models, *, user_id=None):
     db.session.add(dep_run)
     db.session.flush()
     return {'depreciation_run_id': dep_run.id, 'journal_batch_id': batch.id, 'total': total, 'assets': lines_meta}
+
+
+def _set_doc_gl_meta(doc, batch_id):
+    try:
+        meta = json.loads(doc.details_json or '{}') if doc.details_json else {}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        meta = {}
+    meta['journal_batch_id'] = batch_id
+    doc.details_json = json.dumps(meta)
+
+
+def post_ap_invoice_to_gl(db, models, invoice_id, *, expense_account_id=None, user_id=None):
+    """Post open AP invoice: Dr expense · Cr A/P (Sage-style distribution)."""
+    AcctAPDocument = models['AcctAPDocument']
+    AcctLedger = models['AcctLedger']
+    AcctGLAccount = models['AcctGLAccount']
+    doc = AcctAPDocument.query.get(invoice_id)
+    if not doc:
+        raise ValueError('Invoice not found')
+    meta = json.loads(doc.details_json or '{}') if doc.details_json else {}
+    if meta.get('journal_batch_id'):
+        raise ValueError('Invoice already posted to G/L')
+    amount = float(doc.amount or 0)
+    if amount <= 0:
+        raise ValueError('Invoice amount must be positive')
+    opts = load_accounting_options()
+    ledger = get_or_create_default_ledger(db, AcctLedger)
+    seed_chart_of_accounts(db, AcctLedger, AcctGLAccount, ledger)
+    ap_acct = _account_by_number(AcctGLAccount, ledger.id, opts['ap_account'])
+    if expense_account_id:
+        exp_acct = AcctGLAccount.query.filter_by(id=int(expense_account_id), ledger_id=ledger.id).first()
+        if not exp_acct:
+            raise ValueError('Expense account not found')
+    else:
+        exp_acct = _account_by_number(AcctGLAccount, ledger.id, opts['materials_expense'])
+    batch = _create_posted_batch(
+        db, models, ledger_id=ledger.id, source='AP',
+        description=f'AP invoice {doc.document_number}',
+        user_id=user_id,
+        lines=[
+            {
+                'account_id': exp_acct.id,
+                'debit': amount,
+                'credit': 0,
+                'description': doc.document_number,
+                'project_id': doc.project_id,
+                'reference': f'AP-{doc.id}',
+            },
+            {
+                'account_id': ap_acct.id,
+                'debit': 0,
+                'credit': amount,
+                'description': doc.document_number,
+                'project_id': doc.project_id,
+                'reference': f'AP-{doc.id}',
+            },
+        ],
+    )
+    _set_doc_gl_meta(doc, batch.id)
+    db.session.flush()
+    return {'journal_batch_id': batch.id, 'invoice_id': doc.id}
+
+
+def post_ar_invoice_to_gl(db, models, invoice_id, *, revenue_account_id=None, user_id=None):
+    """Post open AR invoice: Dr A/R · Cr revenue."""
+    AcctARDocument = models['AcctARDocument']
+    AcctLedger = models['AcctLedger']
+    AcctGLAccount = models['AcctGLAccount']
+    doc = AcctARDocument.query.get(invoice_id)
+    if not doc:
+        raise ValueError('Invoice not found')
+    meta = json.loads(doc.details_json or '{}') if doc.details_json else {}
+    if meta.get('journal_batch_id'):
+        raise ValueError('Invoice already posted to G/L')
+    amount = float(doc.amount or 0)
+    if amount <= 0:
+        raise ValueError('Invoice amount must be positive')
+    opts = load_accounting_options()
+    ledger = get_or_create_default_ledger(db, AcctLedger)
+    seed_chart_of_accounts(db, AcctLedger, AcctGLAccount, ledger)
+    ar_acct = _account_by_number(AcctGLAccount, ledger.id, opts['ar_account'])
+    if revenue_account_id:
+        rev_acct = AcctGLAccount.query.filter_by(id=int(revenue_account_id), ledger_id=ledger.id).first()
+        if not rev_acct:
+            raise ValueError('Revenue account not found')
+    else:
+        rev_acct = _account_by_number(AcctGLAccount, ledger.id, opts['revenue_account'])
+    batch = _create_posted_batch(
+        db, models, ledger_id=ledger.id, source='AR',
+        description=f'AR invoice {doc.document_number}',
+        user_id=user_id,
+        lines=[
+            {
+                'account_id': ar_acct.id,
+                'debit': amount,
+                'credit': 0,
+                'description': doc.document_number,
+                'project_id': doc.project_id,
+                'reference': f'AR-{doc.id}',
+            },
+            {
+                'account_id': rev_acct.id,
+                'debit': 0,
+                'credit': amount,
+                'description': doc.document_number,
+                'project_id': doc.project_id,
+                'reference': f'AR-{doc.id}',
+            },
+        ],
+    )
+    _set_doc_gl_meta(doc, batch.id)
+    db.session.flush()
+    return {'journal_batch_id': batch.id, 'invoice_id': doc.id}
