@@ -317,6 +317,29 @@ def register_accounting_routes(app, deps):
         db.session.commit()
         return jsonify({'ok': True, 'item': {'id': i.id, 'item_number': i.item_number}})
 
+    @app.route('/api/accounting/inventory/items/<int:item_id>/adjust', methods=['POST'])
+    @login_required
+    def api_acct_inventory_adjust(item_id):
+        """Receive (+) or issue (-) quantity on hand."""
+        AcctInventoryItem = models['AcctInventoryItem']
+        item = AcctInventoryItem.query.get_or_404(item_id)
+        if item.ledger_id != _ledger_id():
+            return jsonify({'error': 'Not found'}), 404
+        body = request.get_json(silent=True) or {}
+        delta = float(body.get('qty_delta') or 0)
+        if delta == 0:
+            return jsonify({'error': 'qty_delta required'}), 400
+        item.qty_on_hand = float(item.qty_on_hand or 0) + delta
+        if item.qty_on_hand < 0:
+            db.session.rollback()
+            return jsonify({'error': 'Insufficient quantity on hand'}), 400
+        if body.get('unit_cost') is not None:
+            item.unit_cost = float(body.get('unit_cost'))
+        db.session.commit()
+        return jsonify({'ok': True, 'item': {
+            'id': item.id, 'qty_on_hand': item.qty_on_hand, 'unit_cost': item.unit_cost,
+        }})
+
     @app.route('/api/accounting/po/orders', methods=['GET', 'POST'])
     @login_required
     def api_acct_po():
@@ -619,3 +642,115 @@ def register_accounting_routes(app, deps):
     def api_acct_settings_get():
         from program_settings_persistence import load_accounting_defaults
         return jsonify(load_accounting_defaults())
+
+    @app.route('/api/accounting/settings', methods=['POST'])
+    @login_required
+    def api_acct_settings_post():
+        from program_settings_persistence import save_accounting_defaults
+        try:
+            from app import admin_required
+        except ImportError:
+            admin_required = lambda f: f
+        # Enforced via financial_security or admin check
+        if getattr(current_user, 'role', '') not in ('Admin', 'Developer'):
+            return jsonify({'error': 'Admin required'}), 403
+        body = request.get_json(silent=True) or {}
+        saved = save_accounting_defaults(body)
+        return jsonify({'ok': True, 'accounting': saved})
+
+    @app.route('/api/accounting/reports/catalog', methods=['GET'])
+    @login_required
+    def api_acct_report_catalog():
+        from accounting_reports import report_catalog
+        return jsonify(report_catalog())
+
+    @app.route('/api/accounting/reports/run', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_report_run():
+        from accounting_reports import report_to_csv, run_report
+        from flask import Response
+        body = request.get_json(silent=True) if request.method == 'POST' else {}
+        report_type = (body or {}).get('report_type') or request.args.get('type') or request.args.get('report_type')
+        if not report_type:
+            return jsonify({'error': 'report_type required'}), 400
+        filters = (body or {}).get('filters') or {}
+        if request.args.get('project_id'):
+            filters['project_id'] = request.args.get('project_id', type=int)
+        if request.args.get('start_date'):
+            filters['start_date'] = request.args.get('start_date')
+        if request.args.get('end_date'):
+            filters['end_date'] = request.args.get('end_date')
+        lid = _ledger_id()
+        try:
+            data = run_report(db, models, lid, report_type, filters=filters, Project=Project)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+        fmt = (request.args.get('format') or (body or {}).get('format') or '').lower()
+        if fmt == 'csv':
+            csv_text = report_to_csv(data)
+            return Response(
+                csv_text,
+                mimetype='text/csv',
+                headers={'Content-Disposition': f'attachment; filename=casepm-{report_type}.csv'},
+            )
+        return jsonify(data)
+
+    @app.route('/api/accounting/reports/custom', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_custom_reports():
+        from accounting_reports import serialize_report_definition
+        AcctReportDefinition = models['AcctReportDefinition']
+        lid = _ledger_id()
+        if request.method == 'GET':
+            rows = AcctReportDefinition.query.filter_by(ledger_id=lid).order_by(
+                AcctReportDefinition.is_favorite.desc(),
+                AcctReportDefinition.name.asc(),
+            ).all()
+            return jsonify({'reports': [serialize_report_definition(r) for r in rows]})
+        body = request.get_json(silent=True) or {}
+        name = (body.get('name') or '').strip()
+        rtype = (body.get('report_type') or '').strip()
+        if not name or not rtype:
+            return jsonify({'error': 'name and report_type required'}), 400
+        import json as json_mod
+        row = AcctReportDefinition(
+            ledger_id=lid,
+            name=name[:120],
+            report_type=rtype,
+            filters_json=json_mod.dumps(body.get('filters') or {}),
+            columns_json=json_mod.dumps(body.get('columns') or {}),
+            is_favorite=bool(body.get('is_favorite')),
+            created_by_id=current_user.id,
+        )
+        db.session.add(row)
+        db.session.commit()
+        return jsonify({'ok': True, 'report': serialize_report_definition(row)})
+
+    @app.route('/api/accounting/reports/custom/<int:report_id>', methods=['DELETE'])
+    @login_required
+    def api_acct_custom_report_delete(report_id):
+        AcctReportDefinition = models['AcctReportDefinition']
+        row = AcctReportDefinition.query.get_or_404(report_id)
+        db.session.delete(row)
+        db.session.commit()
+        return jsonify({'ok': True})
+
+    @app.route('/api/accounting/reports/custom/<int:report_id>/run', methods=['POST', 'GET'])
+    @login_required
+    def api_acct_custom_report_run(report_id):
+        from accounting_reports import report_to_csv, run_report, serialize_report_definition
+        from flask import Response
+        import json as json_mod
+        AcctReportDefinition = models['AcctReportDefinition']
+        row = AcctReportDefinition.query.get_or_404(report_id)
+        filters = json_mod.loads(row.filters_json) if row.filters_json else {}
+        data = run_report(db, models, row.ledger_id, row.report_type, filters=filters, Project=Project)
+        data['custom_report'] = serialize_report_definition(row)
+        fmt = request.args.get('format', '').lower()
+        if fmt == 'csv':
+            return Response(
+                report_to_csv(data),
+                mimetype='text/csv',
+                headers={'Content-Disposition': f'attachment; filename=casepm-report-{report_id}.csv'},
+            )
+        return jsonify(data)

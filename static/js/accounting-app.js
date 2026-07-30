@@ -77,7 +77,13 @@
       else if (route === 'oe') root.innerHTML = await renderOE();
       else if (route === 'assets') root.innerHTML = await renderAssets();
       else if (route === 'jobcost') root.innerHTML = renderJobCost();
-      else if (route === 'reports') root.innerHTML = await renderReports();
+      else if (route === 'reports') {
+        if (global.CasePMAccountingReports) {
+          root.innerHTML = await global.CasePMAccountingReports.render();
+        } else {
+          root.innerHTML = await renderReportsLegacy();
+        }
+      }
       else if (route === 'payroll') root.innerHTML = await renderPayroll();
       else if (route === 'payments' || route === 'consolidation') {
         root.innerHTML = renderPlannedModule(route);
@@ -86,6 +92,9 @@
         root.innerHTML = mod ? renderPlannedModule(route, mod) : '<p class="text-zinc-500">Module not found.</p>';
       }
       bindPanelHandlers(route);
+      if (route === 'reports' && global.CasePMAccountingReports?.bindHandlers) {
+        global.CasePMAccountingReports.bindHandlers();
+      }
     } catch (e) {
       root.innerHTML = `<p class="text-red-400">${esc(e.message)}</p>`;
     }
@@ -113,6 +122,12 @@
         External Sage 300 sync: <strong class="${sync.enabled ? 'text-amber-400' : 'text-zinc-400'}">${sync.enabled ? 'Enabled' : 'Off (standalone mode)'}</strong>.
         ${sync.enabled && d.external_sync?.pending_construction_exports ? ` · ${d.external_sync.pending_construction_exports} construction export(s) pending review.` : ''}
         <a href="/program-settings?tab=sage" class="text-emerald-400 hover:underline ml-1">Configure in Program Settings</a>
+      </div>
+      <div class="flex flex-wrap gap-2 mt-4">
+        <button type="button" class="px-3 py-2 text-xs bg-zinc-800 border border-zinc-700 rounded-md hover:bg-zinc-700" data-acct-dash="reports">Financial reports</button>
+        <button type="button" class="px-3 py-2 text-xs bg-zinc-800 border border-zinc-700 rounded-md hover:bg-zinc-700" data-acct-dash="jobcost">Job cost</button>
+        <button type="button" class="px-3 py-2 text-xs bg-zinc-800 border border-zinc-700 rounded-md hover:bg-zinc-700" data-acct-dash="gl">General ledger</button>
+        <a href="/program-settings?tab=accounting" class="px-3 py-2 text-xs bg-zinc-800 border border-zinc-700 rounded-md hover:bg-zinc-700 inline-block">Construction G/L mapping</a>
       </div>`;
   }
 
@@ -308,7 +323,8 @@
     return `<h2 class="text-lg font-semibold text-white mb-3">Inventory Control</h2>
       <button type="button" id="acctAddItem" class="text-xs text-emerald-400 mb-3">+ Item</button>
       <table class="w-full text-sm border border-zinc-700 rounded-lg"><tbody>
-        ${(data.items || []).map((i) => `<tr class="border-t border-zinc-800"><td class="px-3 py-2 font-mono">${esc(i.item_number)}</td><td class="px-3 py-2">${esc(i.description)}</td><td class="px-3 py-2 text-right">${i.qty_on_hand}</td></tr>`).join('')}
+        ${(data.items || []).map((i) => `<tr class="border-t border-zinc-800"><td class="px-3 py-2 font-mono">${esc(i.item_number)}</td><td class="px-3 py-2">${esc(i.description)}</td><td class="px-3 py-2 text-right">${i.qty_on_hand}</td>
+          <td class="px-3 py-2 text-right"><button type="button" class="text-emerald-400 text-xs acct-inv-adj" data-id="${i.id}">± Qty</button></td></tr>`).join('')}
       </tbody></table>`;
   }
 
@@ -326,7 +342,7 @@
       <ul class="text-sm">${(data.orders || []).map((o) => `<li class="py-2 border-b border-zinc-800 font-mono">${esc(o.order_number)} — ${money(o.total_amount)}</li>`).join('')}</ul>`;
   }
 
-  async function renderReports() {
+  async function renderReportsLegacy() {
     const [tb, ap, ar] = await Promise.all([
       api('/api/accounting/reports/trial-balance'),
       api('/api/accounting/reports/ap-aging'),
@@ -346,6 +362,9 @@
   }
 
   function bindPanelHandlers(route) {
+    document.querySelectorAll('[data-acct-dash]').forEach((btn) => {
+      btn.addEventListener('click', () => switchModule(btn.getAttribute('data-acct-dash')));
+    });
     document.getElementById('acctPayApBtn')?.addEventListener('click', async () => {
       const invId = prompt('AP invoice id to pay (from list above)');
       const vendorId = prompt('Vendor id');
@@ -459,6 +478,18 @@
       if (!item_number) return;
       await api('/api/accounting/inventory/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_number, description: item_number }) });
       switchModule('inventory');
+    });
+    document.querySelectorAll('.acct-inv-adj').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const delta = prompt('Quantity change (+ receive, − issue)', '1');
+        if (delta == null || delta === '') return;
+        await api(`/api/accounting/inventory/items/${btn.getAttribute('data-id')}/adjust`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ qty_delta: parseFloat(delta) }),
+        });
+        switchModule('inventory');
+      });
     });
     document.getElementById('acctAddPO')?.addEventListener('click', async () => {
       const po_number = prompt('PO number');

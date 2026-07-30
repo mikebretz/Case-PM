@@ -165,8 +165,15 @@ ACCOUNTING_MODULES = [
         'name': 'Reporting & Analytics',
         'status': 'live',
         'route': 'reports',
-        'summary': 'Trial balance, aging, job cost, and custom exports.',
-        'features': ['Standard financial reports', 'Drill-down', 'Excel export', 'KPI dashboards (beta)'],
+        'summary': 'Trial balance, aging, job cost, and custom saved reports.',
+        'features': [
+            'Trial balance, P&L, balance sheet',
+            'A/P and A/R aging',
+            'Journal register and job cost',
+            'Construction bridge audit',
+            'Custom saved reports with CSV export',
+            'KPI dashboards (beta)',
+        ],
     },
     {
         'id': 'consolidation',

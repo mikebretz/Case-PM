@@ -700,6 +700,7 @@ def settings_summary_for_ui():
     return {
         'company': load_company_info(),
         'sage': load_sage_defaults(),
+        'accounting': load_accounting_defaults(),
         'backup': load_backup_settings(),
         'maintenance': load_maintenance_settings(),
         'email': load_email_settings_mirror(),

@@ -14316,6 +14316,7 @@ def program_settings():
     return render_template(
         'program_settings.html',
         sage_defaults=summary['sage'],
+        accounting_defaults=summary['accounting'],
         company_info=summary['company'],
         backup_settings=summary['backup'],
         maintenance_settings=summary['maintenance'],
@@ -15209,6 +15210,25 @@ def api_save_sage_program_settings():
     body = request.get_json(silent=True) or {}
     sage = save_sage_defaults(body.get('sage') or body)
     return jsonify({'ok': True, 'sage': sage})
+
+
+@app.route('/api/program-settings/accounting', methods=['GET'])
+@login_required
+@admin_required
+def api_get_accounting_program_settings():
+    from program_settings_persistence import load_accounting_defaults, ACCOUNTING_DEFAULT_KEYS
+    return jsonify({'accounting': load_accounting_defaults(), 'keys': ACCOUNTING_DEFAULT_KEYS})
+
+
+@app.route('/api/program-settings/accounting', methods=['PUT'])
+@login_required
+@admin_required
+def api_save_accounting_program_settings():
+    from program_settings_persistence import save_accounting_defaults
+    body = request.get_json(silent=True) or {}
+    acct = save_accounting_defaults(body.get('accounting') or body)
+    write_audit('Updated accounting settings', 'Program accounting defaults', module='program_settings', category='settings', commit=True)
+    return jsonify({'ok': True, 'accounting': acct})
 
 
 @app.route('/profile')
