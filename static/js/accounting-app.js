@@ -84,7 +84,11 @@
           root.innerHTML = await renderReportsLegacy();
         }
       }
-      else if (route === 'payroll') root.innerHTML = await renderPayroll();
+      else if (route === 'payroll') {
+        root.innerHTML = global.CasePMAcctPayrollUI
+          ? await global.CasePMAcctPayrollUI.render()
+          : await renderPayroll();
+      }
       else if (route === 'payments' || route === 'consolidation') {
         root.innerHTML = renderPlannedModule(route);
       } else {
@@ -93,6 +97,9 @@
       }
       bindPanelHandlers(route);
       if (global.CasePMAcctModulesUI?.bindExtras) global.CasePMAcctModulesUI.bindExtras(route);
+      if (route === 'payroll' && global.CasePMAcctPayrollUI?.bindHandlers) {
+        global.CasePMAcctPayrollUI.bindHandlers();
+      }
       if (route === 'reports' && global.CasePMAccountingReports?.bindHandlers) {
         global.CasePMAccountingReports.bindHandlers();
       }

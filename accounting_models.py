@@ -307,11 +307,77 @@ def define_accounting_models(db):
         ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
         run_number = db.Column(db.String(30), nullable=False)
         pay_date = db.Column(db.Date)
+        period_start = db.Column(db.Date, nullable=True)
+        period_end = db.Column(db.Date, nullable=True)
+        pay_frequency = db.Column(db.String(20), default='biweekly')  # weekly, biweekly, semimonthly, monthly
         status = db.Column(db.String(20), default='Open')
         total_gross = db.Column(db.Float, default=0)
         total_net = db.Column(db.Float, default=0)
         total_taxes = db.Column(db.Float, default=0)
+        total_deductions = db.Column(db.Float, default=0)
+        total_employer_taxes = db.Column(db.Float, default=0)
         journal_batch_id = db.Column(db.Integer, db.ForeignKey('acct_journal_batch.id'), nullable=True)
+        notes = db.Column(db.Text)
+
+    class AcctPayrollEmployee(db.Model):
+        __tablename__ = 'acct_payroll_employee'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        employee_number = db.Column(db.String(30), nullable=False)
+        first_name = db.Column(db.String(80), nullable=False)
+        last_name = db.Column(db.String(80), nullable=False)
+        status = db.Column(db.String(20), default='Active')
+        pay_type = db.Column(db.String(20), default='hourly')  # hourly, salary
+        hourly_rate = db.Column(db.Float, default=0)
+        annual_salary = db.Column(db.Float, default=0)
+        default_project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
+        department = db.Column(db.String(80))
+        user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+        federal_wh_percent = db.Column(db.Float, default=22.0)
+        state_wh_percent = db.Column(db.Float, default=5.0)
+        payment_method = db.Column(db.String(20), default='direct_deposit')
+        bank_account_last4 = db.Column(db.String(4))
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class AcctPayrollDeduction(db.Model):
+        __tablename__ = 'acct_payroll_deduction'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        code = db.Column(db.String(20), nullable=False)
+        description = db.Column(db.String(200))
+        deduction_type = db.Column(db.String(20), default='posttax')  # pretax, posttax
+        calc_method = db.Column(db.String(10), default='fixed')  # fixed, percent
+        amount = db.Column(db.Float, default=0)
+        percent = db.Column(db.Float, default=0)
+        is_active = db.Column(db.Boolean, default=True)
+
+    class AcctPayrollEmployeeDeduction(db.Model):
+        __tablename__ = 'acct_payroll_employee_deduction'
+        id = db.Column(db.Integer, primary_key=True)
+        employee_id = db.Column(db.Integer, db.ForeignKey('acct_payroll_employee.id'), nullable=False, index=True)
+        deduction_id = db.Column(db.Integer, db.ForeignKey('acct_payroll_deduction.id'), nullable=False)
+        override_amount = db.Column(db.Float, nullable=True)
+
+    class AcctPayrollRunLine(db.Model):
+        __tablename__ = 'acct_payroll_run_line'
+        id = db.Column(db.Integer, primary_key=True)
+        run_id = db.Column(db.Integer, db.ForeignKey('acct_payroll_run.id'), nullable=False, index=True)
+        employee_id = db.Column(db.Integer, db.ForeignKey('acct_payroll_employee.id'), nullable=False)
+        hours_regular = db.Column(db.Float, default=0)
+        hours_overtime = db.Column(db.Float, default=0)
+        gross_pay = db.Column(db.Float, default=0)
+        federal_wh = db.Column(db.Float, default=0)
+        state_wh = db.Column(db.Float, default=0)
+        fica_employee = db.Column(db.Float, default=0)
+        medicare_employee = db.Column(db.Float, default=0)
+        other_deductions = db.Column(db.Float, default=0)
+        net_pay = db.Column(db.Float, default=0)
+        employer_fica = db.Column(db.Float, default=0)
+        employer_medicare = db.Column(db.Float, default=0)
+        project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
+        check_number = db.Column(db.String(20))
+        payment_method = db.Column(db.String(20))
+        details_json = db.Column(db.Text)
 
     return {
         'AcctLedger': AcctLedger,
@@ -338,4 +404,8 @@ def define_accounting_models(db):
         'AcctDepreciationRun': AcctDepreciationRun,
         'AcctReportDefinition': AcctReportDefinition,
         'AcctPayrollRun': AcctPayrollRun,
+        'AcctPayrollEmployee': AcctPayrollEmployee,
+        'AcctPayrollDeduction': AcctPayrollDeduction,
+        'AcctPayrollEmployeeDeduction': AcctPayrollEmployeeDeduction,
+        'AcctPayrollRunLine': AcctPayrollRunLine,
     }

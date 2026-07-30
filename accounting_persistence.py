@@ -65,6 +65,12 @@ def ensure_accounting_schema(db, models):
         if 'acct_payroll_run' in table_names:
             add_column('acct_payroll_run', 'total_taxes', 'FLOAT DEFAULT 0')
             add_column('acct_payroll_run', 'journal_batch_id', 'INTEGER')
+            add_column('acct_payroll_run', 'period_start', 'DATE')
+            add_column('acct_payroll_run', 'period_end', 'DATE')
+            add_column('acct_payroll_run', 'pay_frequency', "VARCHAR(20) DEFAULT 'biweekly'")
+            add_column('acct_payroll_run', 'total_deductions', 'FLOAT DEFAULT 0')
+            add_column('acct_payroll_run', 'total_employer_taxes', 'FLOAT DEFAULT 0')
+            add_column('acct_payroll_run', 'notes', 'TEXT')
 
         if 'acct_tax_group' in table_names:
             add_column('acct_tax_group', 'tax_type', "VARCHAR(20) DEFAULT 'sales'")
