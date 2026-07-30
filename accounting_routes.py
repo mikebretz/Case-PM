@@ -360,6 +360,8 @@ def register_accounting_routes(app, deps):
                 return jsonify({'error': str(exc)}), 400
         db.session.commit()
         return jsonify({'ok': True, 'invoice': serialize_ap_doc(doc)})
+
+    @app.route('/api/accounting/ar/customers', methods=['GET', 'POST'])
     @login_required
     def api_acct_ar_customers():
         from accounting_persistence import serialize_customer
@@ -375,12 +377,65 @@ def register_accounting_routes(app, deps):
             name=(body.get('name') or '').strip(),
             terms=body.get('terms') or 'Net 30',
             credit_limit=float(body.get('credit_limit') or 0),
+            email=body.get('email') or '',
         )
         if not c.code or not c.name:
             return jsonify({'error': 'code and name required'}), 400
         db.session.add(c)
         db.session.commit()
         return jsonify({'ok': True, 'customer': serialize_customer(c)})
+
+    @app.route('/api/accounting/import/companies', methods=['GET'])
+    @login_required
+    def api_acct_import_companies():
+        from accounting_master_data import list_importable_companies
+        Company = deps.get('Company')
+        if not Company:
+            return jsonify({'error': 'Company directory not available'}), 503
+        role = (request.args.get('role') or 'vendor').strip().lower()
+        if role not in ('vendor', 'customer'):
+            role = 'vendor'
+        lid = _ledger_id()
+        companies = list_importable_companies(
+            db, Company, models['AcctVendor'], models['AcctCustomer'], lid, role=role,
+        )
+        return jsonify({'companies': companies})
+
+    @app.route('/api/accounting/ap/vendors/from-company', methods=['POST'])
+    @login_required
+    def api_acct_vendor_from_company():
+        from accounting_master_data import import_vendor_from_company
+        from accounting_persistence import serialize_vendor
+        if not deps.get('Company'):
+            return jsonify({'error': 'Company directory not available'}), 503
+        body = request.get_json(silent=True) or {}
+        if not body.get('company_id'):
+            return jsonify({'error': 'company_id required'}), 400
+        try:
+            v, created = import_vendor_from_company(db, {**models, 'Company': deps['Company']}, _ledger_id(), body['company_id'])
+            db.session.commit()
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+        return jsonify({'ok': True, 'created': created, 'vendor': serialize_vendor(v)})
+
+    @app.route('/api/accounting/ar/customers/from-company', methods=['POST'])
+    @login_required
+    def api_acct_customer_from_company():
+        from accounting_master_data import import_customer_from_company
+        from accounting_persistence import serialize_customer
+        if not deps.get('Company'):
+            return jsonify({'error': 'Company directory not available'}), 503
+        body = request.get_json(silent=True) or {}
+        if not body.get('company_id'):
+            return jsonify({'error': 'company_id required'}), 400
+        try:
+            c, created = import_customer_from_company(db, {**models, 'Company': deps['Company']}, _ledger_id(), body['company_id'])
+            db.session.commit()
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+        return jsonify({'ok': True, 'created': created, 'customer': serialize_customer(c)})
 
     @app.route('/api/accounting/ar/invoices', methods=['GET', 'POST'])
     @login_required

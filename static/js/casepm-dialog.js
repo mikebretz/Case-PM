@@ -51,6 +51,14 @@
       .casepm-dialog-body.casepm-dialog-body--form {
         white-space: normal;
       }
+      .casepm-dialog-body .acct-dialog-table {
+        width: 100%;
+        color: #e4e4e7;
+      }
+      .casepm-dialog-body .acct-dialog-table th {
+        color: #a1a1aa;
+        font-weight: 500;
+      }
       .casepm-dialog-field {
         display: flex;
         flex-direction: column;
@@ -587,6 +595,7 @@
     form: showFormDialog,
     select: showSelectDialog,
     open: openCenteredDialog,
+    ensureStyles,
     makeDraggable,
     initAllDialogs,
     observeDialogs,

@@ -228,6 +228,7 @@
           <p class="text-xs text-zinc-500 mt-1">Vendors, invoices, payments, and optional G/L distribution posting.</p>
         </div>
         <div class="flex gap-2">
+          <button type="button" id="acctImportVendor" class="text-xs px-3 py-2 border border-zinc-700 rounded-md text-sky-400">Import from Companies</button>
           <button type="button" id="acctAddVendor" class="text-xs px-3 py-2 border border-zinc-700 rounded-md text-emerald-400">+ Vendor</button>
           <button type="button" id="acctAddApInvoice" class="text-xs px-3 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-white">+ Invoice</button>
         </div>
@@ -287,6 +288,7 @@
           <p class="text-xs text-zinc-500 mt-1">Customers, invoices, cash receipts, and revenue G/L posting.</p>
         </div>
         <div class="flex gap-2">
+          <button type="button" id="acctImportCustomer" class="text-xs px-3 py-2 border border-zinc-700 rounded-md text-sky-400">Import from Companies</button>
           <button type="button" id="acctAddCustomer" class="text-xs px-3 py-2 border border-zinc-700 rounded-md text-emerald-400">+ Customer</button>
           <button type="button" id="acctAddArInvoice" class="text-xs px-3 py-2 bg-sky-600 hover:bg-sky-500 rounded-md text-white">+ Invoice</button>
         </div>
@@ -429,6 +431,40 @@
     return global.CasePMAccountingDialog || {};
   }
 
+  async function importMasterFromCompanies(role) {
+    const res = await api(`/api/accounting/import/companies?role=${role}`);
+    const available = (res.companies || []).filter((c) => !c.already_imported);
+    if (!available.length) {
+      await AD().alert(
+        'Every company in your directory is already on this ledger, or there are no companies yet. Add companies under Companies, or create a record manually.',
+        'info',
+      );
+      return false;
+    }
+    const pick = await AD().select({
+      title: role === 'customer' ? 'Import customer from Companies' : 'Import vendor from Companies',
+      message: 'Creates an accounting-only copy. Removing a company later does not delete this vendor/customer.',
+      items: available.map((c) => ({
+        value: String(c.id),
+        label: `${c.name}${c.type ? ` (${c.type})` : ''}`,
+      })),
+      submitLabel: 'Import',
+    });
+    if (!pick) return false;
+    const path = role === 'customer'
+      ? '/api/accounting/ar/customers/from-company'
+      : '/api/accounting/ap/vendors/from-company';
+    const out = await api(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company_id: parseInt(pick.value, 10) }),
+    });
+    if (!out.created) {
+      await AD().alert('This company was already linked — using the existing accounting record.', 'info');
+    }
+    return true;
+  }
+
   function bindPanelHandlers(route) {
     document.querySelectorAll('[data-acct-dash]').forEach((btn) => {
       btn.addEventListener('click', () => switchModule(btn.getAttribute('data-acct-dash')));
@@ -564,6 +600,12 @@
         await AD().alert(e.message, 'error');
       }
     });
+    document.getElementById('acctImportVendor')?.addEventListener('click', async () => {
+      if (await importMasterFromCompanies('vendor')) switchModule('ap');
+    });
+    document.getElementById('acctImportCustomer')?.addEventListener('click', async () => {
+      if (await importMasterFromCompanies('customer')) switchModule('ar');
+    });
     document.getElementById('acctAddVendor')?.addEventListener('click', async () => {
       const data = await AD().form({
         title: 'Add vendor',
@@ -587,7 +629,17 @@
       ]);
       const vlist = vendors.vendors || [];
       if (!vlist.length) {
-        await AD().alert('Add a vendor first.', 'warning');
+        const goImport = await AD().confirm(
+          'No vendors on this ledger yet. Import from Companies (recommended) or add a vendor manually?',
+          { title: 'Add vendor', confirmLabel: 'Import from Companies', cancelLabel: 'Enter manually' },
+        );
+        if (goImport) {
+          if (await importMasterFromCompanies('vendor')) {
+            switchModule('ap');
+            return;
+          }
+        }
+        await document.getElementById('acctAddVendor')?.click();
         return;
       }
       const expAccounts = (accounts.accounts || []).filter((a) => a.account_type === 'expense');
@@ -677,7 +729,17 @@
       ]);
       const clist = customers.customers || [];
       if (!clist.length) {
-        await AD().alert('Add a customer first.', 'warning');
+        const goImport = await AD().confirm(
+          'No customers on this ledger yet. Import from Companies or add a customer manually?',
+          { title: 'Add customer', confirmLabel: 'Import from Companies', cancelLabel: 'Enter manually' },
+        );
+        if (goImport) {
+          if (await importMasterFromCompanies('customer')) {
+            switchModule('ar');
+            return;
+          }
+        }
+        await document.getElementById('acctAddCustomer')?.click();
         return;
       }
       const revAccounts = (accounts.accounts || []).filter((a) => a.account_type === 'revenue');

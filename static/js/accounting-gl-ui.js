@@ -20,6 +20,7 @@
   function openWorkspaceDialog(title, bodyHtml, actionsHtml, width) {
     const dlg = global.CasePMDialog;
     if (!dlg?.open) return null;
+    if (dlg.ensureStyles) dlg.ensureStyles();
     const dialog = document.createElement('dialog');
     dialog.className = 'casepm-dialog';
     if (width) {
@@ -30,14 +31,14 @@
       dialog.style.width = 'min(720px, 96vw)';
     }
     dialog.innerHTML = `
-      <div class="casepm-dialog-panel">
-        <div class="casepm-dialog-title casepm-drag-handle">
+      <div class="casepm-dialog-panel casepm-dialog-panel--dark">
+        <div class="casepm-dialog-title">
           <i class="fa-solid fa-circle-info text-sky-400"></i>
           <i class="fa-solid fa-grip-vertical text-zinc-500 opacity-60 text-sm" aria-hidden="true"></i>
           <span class="flex-1 min-w-0">${ctx.esc(title)}</span>
           <span class="text-[10px] text-zinc-500 font-normal hidden md:inline">Drag to move</span>
         </div>
-        <div class="casepm-dialog-body casepm-dialog-body--form">${bodyHtml}</div>
+        <div class="casepm-dialog-body casepm-dialog-body--form text-zinc-200">${bodyHtml}</div>
         <div class="casepm-dialog-actions">${actionsHtml || ''}</div>
       </div>`;
     document.body.appendChild(dialog);
@@ -208,8 +209,8 @@
     const body = `
       <p class="text-sm text-zinc-300 mb-2 font-mono">${esc(data.account.account_number)} — ${esc(data.account.description)}</p>
       <p class="text-xs text-zinc-500 mb-3">Posted activity · Balance ${money(data.totals?.balance)}</p>
-      <div class="max-h-64 overflow-y-auto border border-zinc-700 rounded-lg">
-        <table class="w-full"><thead class="bg-zinc-800 text-zinc-400 text-xs sticky top-0"><tr>
+      <div class="max-h-64 overflow-y-auto border border-zinc-700 rounded-lg bg-zinc-900/80">
+        <table class="acct-dialog-table text-xs"><thead class="bg-zinc-800 sticky top-0"><tr>
           <th class="text-left px-2 py-1">Date</th><th class="text-left px-2 py-1">Batch</th><th class="text-left px-2 py-1">Src</th>
           <th class="text-left px-2 py-1">Description</th><th class="text-right px-2 py-1">Debit</th><th class="text-right px-2 py-1">Credit</th>
         </tr></thead><tbody>${rows || '<tr><td colspan="6" class="p-3 text-zinc-500">No posted transactions on this account.</td></tr>'}</tbody></table>
