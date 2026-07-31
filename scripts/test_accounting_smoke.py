@@ -258,6 +258,18 @@ def main() -> int:
     except Exception as exc:
         errors.append(f'construction_integration: {exc}')
 
+    print('6v. PM–Sage accounting depth (43–44)…')
+    try:
+        import accounting_waves_43 as w43  # noqa: F401
+        import accounting_waves_44 as w44  # noqa: F401
+        assert callable(w43.budget_publish_accounting_wizard)
+        assert callable(w44.sage_unified_setup_health)
+        v13 = w44.sage_mirror_deploy_check_v13()
+        if not v13.get('ok'):
+            errors.append(f'sage_mirror_deploy_check_v13: {v13}')
+    except Exception as exc:
+        errors.append(f'accounting_waves_43_44: {exc}')
+
     print('6c. instance DB must not be tracked…')
     try:
         from accounting_waves_20 import git_tracked_paths_must_not_include_db

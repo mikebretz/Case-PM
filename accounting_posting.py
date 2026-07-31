@@ -93,6 +93,13 @@ def _create_posted_batch(
         raise
     except Exception:
         pass
+    try:
+        from accounting_waves_44 import assert_sage_period_open_for_post
+        assert_sage_period_open_for_post(db, models, ledger_id, date.today())
+    except PermissionError:
+        raise
+    except Exception:
+        pass
     batch = AcctJournalBatch(
         ledger_id=ledger_id,
         batch_number=next_batch_number(AcctJournalBatch, ledger_id),

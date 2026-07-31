@@ -143,7 +143,7 @@ SAGE300_MODULES = [
             'Depreciation schedules and compliance tracking',
         ],
         'web_api': {'module': 'FA', 'resources': ['FAAssets']},
-        'integration': 'planned',
+        'integration': 'hybrid',
         'casepm': {'bridge_module': None, 'events': [], 'ui': ['accounting']},
     },
     {
@@ -281,7 +281,7 @@ SAGE300_MODULES = [
         'summary': 'Region-specific payroll and EFT direct deposit.',
         'features': ['Pay runs', 'Tax filings', 'EFT payroll', 'HR document add-ons'],
         'web_api': {'module': 'PR', 'resources': ['PREmployees', 'PRPayRuns']},
-        'integration': 'planned',
+        'integration': 'hybrid',
         'casepm': {
             'bridge_module': 'JobCost',
             'events': ['TimesheetPosted'],
@@ -313,7 +313,7 @@ SAGE300_MODULES = [
             'True Sky / idu planning (partner)',
         ],
         'web_api': None,
-        'integration': 'planned',
+        'integration': 'hybrid',
         'casepm': {'bridge_module': None, 'events': [], 'ui': ['accounting', 'forecast', 'dashboard']},
     },
     {

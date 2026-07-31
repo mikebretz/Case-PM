@@ -1663,6 +1663,13 @@ def register_accounting_routes(app, deps):
             return jsonify({'error': str(exc)}), 403
         body = request.get_json(silent=True) or {}
         try:
+            from accounting_waves_43 import ap_payment_compliance_hold
+            hold = ap_payment_compliance_hold(
+                db, models, lid, int(body['vendor_id']), body.get('applications') or [],
+                PayAppProjectState=PayAppProjectState, Project=Project,
+            )
+            if hold.get('held'):
+                return jsonify({'error': 'AP payment blocked by compliance hold', 'holds': hold.get('holds')}), 409
             out = create_ap_payment(
                 db, models,
                 vendor_id=body['vendor_id'],
@@ -6349,3 +6356,124 @@ def register_accounting_routes(app, deps):
     def api_acct_cre_autopost_docs():
         from accounting_integration_health import cre_autopost_profile_documentation
         return jsonify(cre_autopost_profile_documentation())
+
+    # --- PM ↔ accounting depth & Sage PJ/PR/FA (waves 43–44) ---
+
+    @app.route('/api/accounting/budget/publish-accounting', methods=['POST'])
+    @login_required
+    def api_acct_budget_publish_accounting():
+        from budget_persistence import get_budget_state
+        from accounting_waves_43 import budget_publish_accounting_wizard
+        body = request.get_json(silent=True) or {}
+        pid = body.get('project_id') or get_current_project_id()
+        if not pid:
+            return jsonify({'error': 'project_id required'}), 400
+        _, state = get_budget_state(BudgetProjectState, int(pid))
+        if not state:
+            return jsonify({'error': 'no budget'}), 400
+        out = budget_publish_accounting_wizard(
+            db, models, int(pid), state, user_id=current_user.id,
+            push_sage=body.get('push_sage', True), Project=Project,
+        )
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/jc/equipment-daily-log/<int:daily_log_id>', methods=['POST'])
+    @login_required
+    def api_acct_equipment_daily_log(daily_log_id):
+        from accounting_waves_43 import post_equipment_daily_log_to_accounting
+        import app as app_mod
+        out = post_equipment_daily_log_to_accounting(
+            db, models, daily_log_id, user_id=current_user.id, Project=Project,
+            EquipmentEntry=app_mod.EquipmentEntry, DailyLog=app_mod.DailyLog,
+        )
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/distribution/delivery-receive/<int:delivery_id>', methods=['POST'])
+    @login_required
+    def api_acct_delivery_receive(delivery_id):
+        from accounting_waves_43 import delivery_received_to_ic_ap
+        import app as app_mod
+        body = request.get_json(silent=True) or {}
+        out = delivery_received_to_ic_ap(
+            db, models, _ledger_id(), delivery_id, body.get('amount', 0),
+            user_id=current_user.id, Delivery=app_mod.Delivery,
+        )
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/gl/segment-profile', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_gl_segment_profile():
+        from accounting_waves_43 import gl_segment_profile, save_gl_segment_profile
+        if request.method == 'GET':
+            return jsonify(gl_segment_profile(db, models, _ledger_id()))
+        body = request.get_json(silent=True) or {}
+        out = save_gl_segment_profile(
+            db, models, _ledger_id(), body.get('segment_count', 3), labels=body.get('labels'), user_id=current_user.id,
+        )
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/pj/reconcile-v2', methods=['GET'])
+    @login_required
+    def api_acct_sage_pj_reconcile_v2():
+        from accounting_waves_44 import sage_pj_portfolio_reconcile_v2
+        return jsonify(sage_pj_portfolio_reconcile_v2(
+            db, models, _ledger_id(), Project=Project, PayAppProjectState=PayAppProjectState,
+        ))
+
+    @app.route('/api/accounting/sage/pj/pull', methods=['POST'])
+    @login_required
+    def api_acct_sage_pj_pull():
+        from accounting_waves_44 import sage_pj_transactions_pull_v2
+        body = request.get_json(silent=True) or {}
+        out = sage_pj_transactions_pull_v2(
+            db, models, _ledger_id(), project_id=body.get('project_id'), user_id=current_user.id,
+        )
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/setup-health', methods=['GET'])
+    @login_required
+    def api_acct_sage_setup_health():
+        from accounting_waves_44 import sage_unified_setup_health
+        return jsonify(sage_unified_setup_health(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/sage/fiscal/pull', methods=['POST'])
+    @login_required
+    def api_acct_sage_fiscal_pull():
+        from accounting_waves_44 import sage_fiscal_calendar_pull_enforce
+        out = sage_fiscal_calendar_pull_enforce(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/pr/push-run/<int:run_id>', methods=['POST'])
+    @login_required
+    def api_acct_sage_pr_push_run(run_id):
+        from accounting_waves_44 import sage_pr_push_pay_run
+        out = sage_pr_push_pay_run(db, models, _ledger_id(), run_id, user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/fa/depreciation-ack', methods=['POST'])
+    @login_required
+    def api_acct_sage_fa_dep_ack():
+        from accounting_waves_44 import sage_fa_depreciation_ack_round_trip
+        out = sage_fa_depreciation_ack_round_trip(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/cron/pm-sage-depth', methods=['POST'])
+    def api_acct_cron_pm_sage_depth():
+        from accounting_waves_44 import cron_pm_sage_depth_maintenance
+        secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
+        try:
+            out = cron_pm_sage_depth_maintenance(
+                db, models, secret, Project=Project, PayAppProjectState=PayAppProjectState,
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403

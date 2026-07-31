@@ -16698,12 +16698,25 @@ def api_publish_budget():
         },
         user_id=current_user.id,
     )
+    accounting_publish = None
+    try:
+        import app as app_mod
+        from accounting_waves_43 import budget_publish_accounting_wizard
+
+        accounting_publish = budget_publish_accounting_wizard(
+            db, app_mod._acct_models, project_id, state,
+            user_id=current_user.id, push_sage=body.get('push_sage', True), Project=Project,
+        )
+        db.session.flush()
+    except Exception as acc_exc:
+        accounting_publish = {'error': str(acc_exc)[:200]}
     from sage_service import sage_event_to_dict
     return jsonify({
         'ok': True,
         'version': record.version,
         'event': sage_event_to_dict(event),
         'budgetLines': state.get('budgetLines'),
+        'accounting_publish': accounting_publish,
     })
 
 

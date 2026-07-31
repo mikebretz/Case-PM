@@ -211,3 +211,12 @@ Runs JC financial batch, waves 70–96 maintenance (KPI, optional fields, error 
 POST /api/accounting/cron/sage-roadmap-final
 X-CasePM-Cron-Secret: your-long-random-secret
 ```
+
+## PM–Sage depth cron (waves 43–44, optional)
+
+PJ reconcile v2, Sage fiscal calendar pull, unified setup health:
+
+```http
+POST /api/accounting/cron/pm-sage-depth
+X-CasePM-Cron-Secret: your-long-random-secret
+```

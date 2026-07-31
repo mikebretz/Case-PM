@@ -132,6 +132,8 @@
         <button type="button" id="acctRoadmap96" class="px-2 py-0.5 border border-zinc-500 rounded text-zinc-200">Roadmap 96</button>
         <button type="button" id="acctIntegrationHealth" class="px-2 py-0.5 border border-emerald-900 rounded text-emerald-200">Integration health</button>
         <button type="button" id="acctCreAutopost" class="px-2 py-0.5 border border-emerald-800 rounded text-emerald-300">Apply CRE auto-post</button>
+        <button type="button" id="acctSageSetup" class="px-2 py-0.5 border border-indigo-900 rounded text-indigo-200">Sage setup</button>
+        <button type="button" id="acctPjReconcile" class="px-2 py-0.5 border border-indigo-800 rounded text-indigo-300">PJ reconcile</button>
       </div>
       <ul class="max-h-20 overflow-y-auto">${log}</ul>
     </div>`;
@@ -430,6 +432,16 @@
       if (!ok) return;
       await api('/api/accounting/platform/apply-cre-autopost-profile', { method: 'POST', body: '{}' });
       await AD().alert('CRE auto-post profile applied. See docs/ACCOUNTING_CRE_AUTOPOST.md.', 'success');
+    });
+    document.getElementById('acctSageSetup')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/setup-health');
+      const cl = (r.checklist || []).filter((c) => !c.ok).length;
+      await AD().alert(`Sage setup — bridge ${r.cre_bridge_configured ? 'yes' : 'no'}, Web API ${r.web_api?.configured ? 'yes' : 'no'}, checklist open ${cl}.`, cl ? 'warning' : 'success');
+    });
+    document.getElementById('acctPjReconcile')?.addEventListener('click', async () => {
+      await api('/api/accounting/sage/pj/pull', { method: 'POST', body: '{}' });
+      const r = await api('/api/accounting/sage/pj/reconcile-v2');
+      await AD().alert(`PJ reconcile — ${(r.projects || []).length} project(s), Sage rows ${r.sage_pj_row_count || 0}.`, 'info');
     });
     document.getElementById('acctSageFlushC')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/sage/construction/flush-queue', { method: 'POST', body: '{}' });
