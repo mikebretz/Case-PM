@@ -1,5 +1,7 @@
 """Construction marketing — portfolio, pipeline, campaigns, reputation, DAM."""
 
+from flask import render_template
+
 
 def register_marketing_routes(app, deps):
     db = deps['db']
@@ -8,7 +10,6 @@ def register_marketing_routes(app, deps):
     get_current_project_id = deps.get('get_current_project_id')
     jsonify = deps['jsonify']
     request = deps['request']
-    render_template = deps['render_template']
     get_active_project = deps['get_active_project']
     MarketingLead = deps['MarketingLead']
     MarketingCaseStudy = deps['MarketingCaseStudy']
