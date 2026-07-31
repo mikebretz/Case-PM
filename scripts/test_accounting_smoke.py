@@ -154,6 +154,17 @@ def main() -> int:
     except Exception as exc:
         errors.append(f'accounting_waves_30: {exc}')
 
+    print('6n. Wave 31 Sage bank/cash (45–48)…')
+    try:
+        import accounting_waves_31 as w31  # noqa: F401
+        assert callable(w31.sage_pull_bk_transactions_v2)
+        assert callable(w31.sage_ap_payment_batch_ack)
+        v7 = w31.sage_mirror_deploy_check_v7()
+        if not v7.get('ok'):
+            errors.append(f'sage_mirror_deploy_check_v7: {v7}')
+    except Exception as exc:
+        errors.append(f'accounting_waves_31: {exc}')
+
     print('6c. instance DB must not be tracked…')
     try:
         from accounting_waves_20 import git_tracked_paths_must_not_include_db

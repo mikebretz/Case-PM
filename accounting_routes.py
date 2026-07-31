@@ -5695,3 +5695,105 @@ def register_accounting_routes(app, deps):
             return jsonify({'ok': True, **out})
         except PermissionError as exc:
             return jsonify({'error': str(exc)}), 403
+
+    # --- Waves 45–48 ---
+
+    @app.route('/api/accounting/sage/bk/pull', methods=['POST'])
+    @login_required
+    def api_acct_sage_bk_pull_v2():
+        from accounting_waves_31 import sage_pull_bk_transactions_v2
+        out = sage_pull_bk_transactions_v2(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/bk/push', methods=['POST'])
+    @login_required
+    def api_acct_sage_bk_push():
+        from accounting_waves_31 import sage_push_bk_transactions_batch
+        out = sage_push_bk_transactions_batch(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/bk/period-close', methods=['GET'])
+    @login_required
+    def api_acct_sage_bk_period():
+        from accounting_waves_31 import sync_bank_period_close_metadata
+        return jsonify(sync_bank_period_close_metadata(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/bank/<int:bank_id>/sage-recon', methods=['GET'])
+    @login_required
+    def api_acct_bank_sage_recon(bank_id):
+        from accounting_waves_31 import bank_sage_reconciliation_match_scores
+        return jsonify(bank_sage_reconciliation_match_scores(db, models, _ledger_id(), bank_id))
+
+    @app.route('/api/accounting/bank/sage-recon/exceptions', methods=['GET'])
+    @login_required
+    def api_acct_bank_sage_exceptions():
+        from accounting_waves_31 import bank_reconciliation_exception_inbox
+        return jsonify(bank_reconciliation_exception_inbox(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/bank/<int:bank_id>/sage-auto-match', methods=['POST'])
+    @login_required
+    def api_acct_bank_sage_auto_match(bank_id):
+        from accounting_waves_31 import apply_sage_bank_auto_matches
+        out = apply_sage_bank_auto_matches(db, models, _ledger_id(), bank_id, user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/ar/unapplied-cash', methods=['GET'])
+    @login_required
+    def api_acct_ar_unapplied():
+        from accounting_waves_31 import ar_unapplied_cash_summary
+        return jsonify(ar_unapplied_cash_summary(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/ar/cash-sage-round-trip', methods=['POST'])
+    @login_required
+    def api_acct_ar_cash_sage_rt():
+        from accounting_waves_31 import ar_cash_application_sage_round_trip
+        out = ar_cash_application_sage_round_trip(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/ar/adjustment', methods=['POST'])
+    @login_required
+    def api_acct_ar_adjustment():
+        from accounting_waves_31 import ar_writeoff_nsf_register
+        out = ar_writeoff_nsf_register(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/ap/payment-ack', methods=['POST'])
+    @login_required
+    def api_acct_sage_ap_payment_ack():
+        from accounting_waves_31 import sage_ap_payment_batch_ack
+        out = sage_ap_payment_batch_ack(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/ap/payments/<int:payment_id>/sage-void', methods=['POST'])
+    @login_required
+    def api_acct_ap_sage_void(payment_id):
+        from accounting_waves_31 import ap_void_payment_sage_mirror
+        data = request.get_json(silent=True) or {}
+        out = ap_void_payment_sage_mirror(db, models, _ledger_id(), payment_id, data.get('reason', ''), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/ap/payments/<int:payment_id>/distribution', methods=['POST'])
+    @login_required
+    def api_acct_ap_payment_dist(payment_id):
+        from accounting_waves_31 import ap_payment_distribution_codes
+        out = ap_payment_distribution_codes(db, models, _ledger_id(), payment_id, request.get_json(silent=True) or {}, user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/cron/sage-bank-cash', methods=['POST'])
+    def api_acct_cron_sage_bank_cash():
+        from accounting_waves_31 import cron_waves_45_48_maintenance
+        secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
+        try:
+            out = cron_waves_45_48_maintenance(db, models, secret, Project=Project)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
