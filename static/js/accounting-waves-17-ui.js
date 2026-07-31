@@ -127,6 +127,9 @@
         <button type="button" id="acctRetainageAuto" class="px-2 py-0.5 border border-emerald-800 rounded text-emerald-300">Retainage auto</button>
         <button type="button" id="acctWipGlPush" class="px-2 py-0.5 border border-fuchsia-900 rounded text-fuchsia-200">Push WIP GL</button>
         <button type="button" id="acctJcCloseGate" class="px-2 py-0.5 border border-fuchsia-800 rounded text-fuchsia-300">JC close gate</button>
+        <button type="button" id="acctBiKpi" class="px-2 py-0.5 border border-cyan-900 rounded text-cyan-200">BI KPI</button>
+        <button type="button" id="acctGoLive" class="px-2 py-0.5 border border-rose-900 rounded text-rose-200">Go-live</button>
+        <button type="button" id="acctRoadmap96" class="px-2 py-0.5 border border-zinc-500 rounded text-zinc-200">Roadmap 96</button>
       </div>
       <ul class="max-h-20 overflow-y-auto">${log}</ul>
     </div>`;
@@ -401,6 +404,19 @@
     document.getElementById('acctJcCloseGate')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/jc/month-close-gate');
       await AD().alert(`Month-close ready: ${r.ready ? 'yes' : 'no'} · blockers ${(r.blockers || []).length}.`, r.ready ? 'success' : 'warning');
+    });
+    document.getElementById('acctBiKpi')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/bi/kpi-snapshot');
+      await AD().alert(`Open AP ${r.open_ap} · AR ${r.open_ar} · health ${r.sync_health?.grade || '—'}.`, 'info');
+    });
+    document.getElementById('acctGoLive')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/platform/go-live');
+      await AD().alert(`Go-live ready: ${r.ready ? 'yes' : 'no'} (${(r.steps || []).filter((s) => s.ok).length}/${(r.steps || []).length} steps).`, r.ready ? 'success' : 'warning');
+    });
+    document.getElementById('acctRoadmap96')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/roadmap/status');
+      const w = r.waves_70_96 || {};
+      await AD().alert(`Roadmap through 96: ${r.complete_through_96 ? 'complete' : 'pending'} (${w.implemented || 0}/${w.total || 27} waves 70–96).`, r.complete_through_96 ? 'success' : 'info');
     });
     document.getElementById('acctSageFlushC')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/sage/construction/flush-queue', { method: 'POST', body: '{}' });

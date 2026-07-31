@@ -6218,3 +6218,112 @@ def register_accounting_routes(app, deps):
             return jsonify({'ok': True, **out})
         except PermissionError as exc:
             return jsonify({'error': str(exc)}), 403
+
+    # --- Waves 62 completion, 70–96 ---
+
+    @app.route('/api/accounting/compliance/filing-941-1099', methods=['GET'])
+    @login_required
+    def api_acct_filing_941_1099():
+        from accounting_waves_39 import filing_941_1099_amendment_bundle
+        yr = request.args.get('tax_year', type=int) or date.today().year - 1
+        return jsonify(filing_941_1099_amendment_bundle(db, models, _ledger_id(), yr, user_id=current_user.id))
+
+    @app.route('/api/accounting/compliance/efile-amendment', methods=['POST'])
+    @login_required
+    def api_acct_efile_amendment():
+        from accounting_waves_39 import efile_amendment_retransmit_loop
+        out = efile_amendment_retransmit_loop(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/platform/intercompany-settlement', methods=['POST'])
+    @login_required
+    def api_acct_ic_settlement():
+        from accounting_waves_39 import intercompany_settlement_round_trip
+        out = intercompany_settlement_round_trip(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/optional-fields/sync', methods=['POST'])
+    @login_required
+    def api_acct_optional_fields_sync():
+        from accounting_waves_39 import sage_optional_fields_sync
+        out = sage_optional_fields_sync(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/bi/kpi-snapshot', methods=['GET'])
+    @login_required
+    def api_acct_bi_kpi_snapshot():
+        from accounting_waves_39 import accounting_bi_kpi_snapshot
+        return jsonify(accounting_bi_kpi_snapshot(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/approvals/inbox', methods=['GET'])
+    @login_required
+    def api_acct_approvals_inbox():
+        from accounting_waves_39 import approval_rules_inbox
+        return jsonify(approval_rules_inbox(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/approvals/decision', methods=['POST'])
+    @login_required
+    def api_acct_approval_decision():
+        from accounting_waves_39 import record_approval_decision
+        out = record_approval_decision(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/platform/isv-manifest', methods=['GET'])
+    @login_required
+    def api_acct_isv_manifest():
+        from accounting_waves_40 import sage_isv_capability_manifest
+        return jsonify(sage_isv_capability_manifest())
+
+    @app.route('/api/accounting/platform/certification-harness', methods=['GET'])
+    @login_required
+    def api_acct_cert_harness():
+        from accounting_waves_40 import certification_regression_harness
+        return jsonify(certification_regression_harness())
+
+    @app.route('/api/accounting/platform/dr-export', methods=['POST'])
+    @login_required
+    def api_acct_dr_export():
+        from accounting_waves_40 import disaster_recovery_export_bundle
+        out = disaster_recovery_export_bundle(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/platform/soc2-export', methods=['POST'])
+    @login_required
+    def api_acct_soc2_export():
+        from accounting_waves_40 import soc2_audit_export_bundle
+        out = soc2_audit_export_bundle(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/platform/go-live', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_go_live():
+        from accounting_waves_42 import go_live_checklist_signoff
+        body = request.get_json(silent=True) if request.method == 'POST' else None
+        out = go_live_checklist_signoff(db, models, _ledger_id(), body=body, user_id=current_user.id)
+        db.session.commit()
+        return jsonify(out)
+
+    @app.route('/api/accounting/roadmap/status', methods=['GET'])
+    @login_required
+    def api_acct_roadmap_status():
+        from accounting_wave_registry import roadmap_waves_through_96_status
+        return jsonify(roadmap_waves_through_96_status())
+
+    @app.route('/api/accounting/cron/sage-roadmap-final', methods=['POST'])
+    def api_acct_cron_roadmap_final():
+        from accounting_waves_42 import cron_sage_roadmap_final_batch
+        secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
+        try:
+            out = cron_sage_roadmap_final_batch(
+                db, models, secret, Project=Project, PayAppProjectState=PayAppProjectState, Commitment=Commitment,
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
