@@ -330,6 +330,26 @@ def main() -> int:
     except Exception as exc:
         errors.append(f'accounting_waves_47: {exc}')
 
+    print('6z. Cutover hardening + parity gaps + integration pack (48)…')
+    try:
+        import accounting_waves_48 as w48  # noqa: F401
+        v17 = w48.sage_mirror_deploy_check_v17()
+        if not v17.get('ok'):
+            errors.append(f'sage_mirror_deploy_check_v17: {v17}')
+        import subprocess
+        proc = subprocess.run(
+            [sys.executable, 'scripts/test_accounting_construction_integration_pack.py'],
+            cwd='.',
+            env={**dict(__import__('os').environ), 'PYTHONPATH': '.'},
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if proc.returncode != 0:
+            errors.append(f'construction_integration_pack: {proc.stdout}\n{proc.stderr}')
+    except Exception as exc:
+        errors.append(f'accounting_waves_48: {exc}')
+
     print('6c. instance DB must not be tracked…')
     try:
         from accounting_waves_20 import git_tracked_paths_must_not_include_db

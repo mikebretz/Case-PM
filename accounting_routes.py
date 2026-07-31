@@ -6621,6 +6621,71 @@ def register_accounting_routes(app, deps):
         except PermissionError as exc:
             return jsonify({'error': str(exc)}), 403
 
+    @app.route('/api/accounting/sage/cutover-playbook', methods=['POST'])
+    @login_required
+    def api_acct_sage_cutover_playbook():
+        from accounting_waves_48 import sage_cutover_conflict_playbook
+        body = request.get_json(silent=True) or {}
+        try:
+            out = sage_cutover_conflict_playbook(
+                db, models, _ledger_id(), body, user_id=current_user.id, Project=Project,
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/sage/go-live-email-digest', methods=['POST'])
+    @login_required
+    def api_acct_sage_go_live_email_digest():
+        from accounting_waves_48 import sage_go_live_email_digest
+        out = sage_go_live_email_digest(db, models, _ledger_id())
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/cron/go-live-email-digest', methods=['POST'])
+    def api_acct_cron_go_live_email_digest():
+        from accounting_waves_48 import cron_go_live_email_digest
+        secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
+        try:
+            out = cron_go_live_email_digest(db, models, secret)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+
+    @app.route('/api/accounting/sage/parity-gaps-prioritized', methods=['GET'])
+    @login_required
+    def api_acct_sage_parity_gaps_prioritized():
+        from accounting_waves_48 import sage_parity_gap_prioritized_list
+        out = sage_parity_gap_prioritized_list(db, models, _ledger_id())
+        db.session.commit()
+        return jsonify(out)
+
+    @app.route('/api/accounting/sage/parity-gaps-auto-fix', methods=['POST'])
+    @login_required
+    def api_acct_sage_parity_gaps_auto_fix():
+        from accounting_waves_48 import sage_parity_gap_auto_fix_top
+        body = request.get_json(silent=True) or {}
+        limit = int(body.get('limit') or 3)
+        out = sage_parity_gap_auto_fix_top(
+            db, models, _ledger_id(), user_id=current_user.id, limit=limit, Project=Project,
+        )
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/estimating/sov-alignment', methods=['GET'])
+    @login_required
+    def api_acct_estimating_sov_alignment():
+        from accounting_waves_48 import estimate_sov_alignment_report
+        pid = request.args.get('project_id', type=int) or get_current_project_id()
+        if not pid:
+            return jsonify({'error': 'project_id required'}), 400
+        return jsonify(estimate_sov_alignment_report(
+            db, int(pid), BudgetProjectState=BudgetProjectState, PayAppProjectState=PayAppProjectState,
+        ))
+
     @app.route('/api/pm/scheduling/leveling', methods=['GET'])
     @login_required
     def api_pm_scheduling_leveling():

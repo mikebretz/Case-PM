@@ -282,6 +282,7 @@
     const pending = await api(`/api/accounting/construction/pending-dashboard?project_id=${pid}`);
     const cutover = await api('/api/accounting/sage/cutover-checklist').catch(() => ({}));
     const parity = await api('/api/accounting/sage/parity-matrix').catch(() => ({}));
+    const gapList = await api('/api/accounting/sage/parity-gaps-prioritized').catch(() => ({}));
     const alerts = await api('/api/accounting/sage/go-live-alerts').catch(() => ({}));
     const sections = (pending.sections || []).map((s) =>
       `<div class="border border-zinc-700 rounded p-3"><div class="text-sm text-white font-medium">${esc(s.label)} <span class="text-amber-400">(${s.count})</span></div>
@@ -293,12 +294,18 @@
     const gapRows = (parity.gaps || []).slice(0, 6).map((g) =>
       `<tr class="border-t border-zinc-800"><td class="px-2 py-1">${esc(g.module)}</td><td class="px-2 py-1 text-xs text-zinc-400">${esc(g.gap_notes)}</td></tr>`
     ).join('');
+    const priRows = (gapList.gaps || []).slice(0, 8).map((g) =>
+      `<tr class="border-t border-zinc-800"><td class="px-2 py-1">${g.rank || '—'}</td><td class="px-2 py-1 font-mono">${esc(g.module)}</td><td class="px-2 py-1 text-xs text-zinc-400">${esc(g.recommended_action)}</td></tr>`
+    ).join('');
     return `<div class="space-y-4">
       <h2 class="text-lg font-semibold text-white">Construction sync &amp; Sage operations</h2>
       <p class="text-xs text-zinc-500">Pending posts for project ${pid} · total ${pending.total_pending || 0}</p>
       <div class="grid md:grid-cols-2 gap-3">${sections || '<p class="text-emerald-400 text-sm">No pending construction financial posts.</p>'}</div>
       <div class="flex flex-wrap gap-2">
         <button type="button" id="acctCsSyncAll" class="px-3 py-2 text-sm bg-emerald-800 rounded">Sync all pending</button>
+        <button type="button" id="acctCsPlaybook" class="px-3 py-2 text-sm bg-violet-900 rounded">Run cutover playbook</button>
+        <button type="button" id="acctCsEmailDigest" class="px-3 py-2 text-sm bg-sky-900 rounded">Email go-live digest</button>
+        <button type="button" id="acctCsGapFix" class="px-3 py-2 text-sm bg-amber-900 rounded">Auto-fix top parity gaps</button>
         <button type="button" id="acctCsRefresh" class="px-3 py-2 text-sm bg-zinc-800 rounded">Refresh</button>
       </div>
       <div class="border border-zinc-700 rounded p-3">
@@ -312,6 +319,10 @@
       <div class="border border-zinc-700 rounded p-3 overflow-x-auto">
         <h3 class="text-sm text-zinc-300 mb-2">Sage parity gaps (${parity.gap_count || 0})</h3>
         <table class="w-full text-xs"><thead class="text-zinc-500"><tr><th class="text-left px-2">Module</th><th class="text-left px-2">Note</th></tr></thead><tbody>${gapRows || '<tr><td colspan="2" class="p-2">No critical gaps flagged.</td></tr>'}</tbody></table>
+      </div>
+      <div class="border border-zinc-700 rounded p-3 overflow-x-auto">
+        <h3 class="text-sm text-zinc-300 mb-2">Prioritized gap list (${gapList.gap_count || 0})</h3>
+        <table class="w-full text-xs"><thead class="text-zinc-500"><tr><th class="text-left px-2">#</th><th class="text-left px-2">Module</th><th class="text-left px-2">Action</th></tr></thead><tbody>${priRows || '<tr><td colspan="3" class="p-2">Run refresh to build list.</td></tr>'}</tbody></table>
       </div>
     </div>`;
   }
@@ -328,6 +339,34 @@
         body: JSON.stringify({ project_id: pid }),
       });
       await AD().alert('Sync complete.', 'success');
+      switchModule('construction-sync');
+    });
+    document.getElementById('acctCsPlaybook')?.addEventListener('click', async () => {
+      const pid = projectId();
+      const ok = await AD().confirm('Resolve Sage vendor name conflicts (Sage wins), retry AP push, and flush construction mirror queue?', 'Playbook');
+      if (!ok) return;
+      const out = await api('/api/accounting/sage/cutover-playbook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: pid, winner: 'sage' }),
+      });
+      await AD().alert(`Playbook done — ${out.vendor_resolved || 0} vendor(s) resolved.`, 'success');
+      switchModule('construction-sync');
+    });
+    document.getElementById('acctCsEmailDigest')?.addEventListener('click', async () => {
+      const out = await api('/api/accounting/sage/go-live-email-digest', { method: 'POST' });
+      const msg = out.sent ? 'Digest email sent to admin notification address.' : `Email not sent (${out.reason || 'unknown'}).`;
+      await AD().alert(msg, out.sent ? 'success' : 'info');
+    });
+    document.getElementById('acctCsGapFix')?.addEventListener('click', async () => {
+      const ok = await AD().confirm('Run automated fixes for the top prioritized Sage parity gaps?', 'Auto-fix');
+      if (!ok) return;
+      await api('/api/accounting/sage/parity-gaps-auto-fix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 3 }),
+      });
+      await AD().alert('Auto-fix batch finished.', 'success');
       switchModule('construction-sync');
     });
     document.getElementById('acctCsRefresh')?.addEventListener('click', () => switchModule('construction-sync'));

@@ -107,7 +107,13 @@ def cron_operations_bundle(db, models, secret: str) -> dict:
     cutover = []
     for ledger in models['AcctLedger'].query.limit(5).all():
         cutover.append({'ledger_id': ledger.id, 'checklist': sage_cutover_checklist(db, models, ledger.id)})
-    return {'go_live_alerts': alerts, 'cutover': cutover}
+    out = {'go_live_alerts': alerts, 'cutover': cutover}
+    try:
+        from accounting_waves_48 import cron_go_live_email_digest
+        out['go_live_email_digest'] = cron_go_live_email_digest(db, models, secret)
+    except Exception:
+        out['go_live_email_digest'] = {'error': 'wave48_unavailable'}
+    return out
 
 
 def sage_mirror_deploy_check_v16() -> dict:
