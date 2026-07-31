@@ -29,6 +29,7 @@
   async function maybePostEquipmentDailyLog(dailyLogId, equipmentRowCount) {
     if (!dailyLogId || !equipmentRowCount) return null;
     const prefs = await loadAccountingPrefs();
+    if (prefs.field_auto_post_silent === '1') return null;
     const autoFlag = prefs.auto_post_equipment_on_daily_log === '1';
     const dcOn = prefs.direct_cost_post_on_approve !== '0';
     if (!autoFlag && !dcOn) {
@@ -50,6 +51,7 @@
     if (!deliveryId || status !== 'Delivered') return null;
     if (prevStatus === 'Delivered') return null;
     const prefs = await loadAccountingPrefs();
+    if (prefs.field_auto_post_silent === '1') return null;
     const autoFlag = prefs.auto_post_delivery_on_delivered === '1';
     const dcOn = prefs.direct_cost_post_on_approve !== '0';
     if (!autoFlag && !dcOn) {

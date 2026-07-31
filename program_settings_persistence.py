@@ -204,6 +204,7 @@ ACCOUNTING_DEFAULT_KEYS = [
     'direct_cost_post_on_approve',
     'auto_post_equipment_on_daily_log',
     'auto_post_delivery_on_delivered',
+    'field_auto_post_silent',
     'ap_require_valid_coi',
     'labor_burden_percent',
     'equipment_default_hourly_rate',
@@ -234,6 +235,7 @@ def load_accounting_defaults():
             'retainage_accounting_enabled', 'timesheet_post_on_approve', 'direct_cost_post_on_approve',
             'commitment_po_one_step_on_approve', 'commitment_po_queue_sage_distribution',
             'auto_post_equipment_on_daily_log', 'auto_post_delivery_on_delivered', 'ap_require_valid_coi',
+            'field_auto_post_silent',
         )
         else acct.get(k, '1')
         for k in ACCOUNTING_DEFAULT_KEYS
@@ -260,6 +262,8 @@ def load_accounting_defaults():
         out['auto_post_equipment_on_daily_log'] = '0'
     if not str(out.get('auto_post_delivery_on_delivered', '0')).strip():
         out['auto_post_delivery_on_delivered'] = '0'
+    if not str(out.get('field_auto_post_silent', '0')).strip():
+        out['field_auto_post_silent'] = '0'
     if not str(out.get('ap_require_valid_coi', '0')).strip():
         out['ap_require_valid_coi'] = '0'
     if not str(out.get('labor_burden_percent', '0')).strip():
@@ -301,6 +305,7 @@ def save_accounting_defaults(form_data):
             'auto_post_equipment_on_daily_log',
             'auto_post_delivery_on_delivered',
             'ap_require_valid_coi',
+            'field_auto_post_silent',
         ):
             payload[k] = '1' if form_data.get(k) in (True, '1', 'on', 'true') else '0'
         else:

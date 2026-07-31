@@ -3955,8 +3955,19 @@ def api_daily_logs_create():
     db.session.flush()
     sync_manpower(db, ManpowerEntry, log.id, body.get('manpower'))
     sync_equipment(db, EquipmentEntry, log.id, body.get('equipment'))
+    field_acct = None
+    try:
+        from accounting_persistence import get_or_create_default_ledger
+        from accounting_waves_46 import field_silent_auto_post_daily_log
+        ledger = get_or_create_default_ledger(db, _acct_models['AcctLedger'])
+        field_acct = field_silent_auto_post_daily_log(
+            db, _acct_models, ledger.id, log.id, user_id=current_user.id,
+            EquipmentEntry=EquipmentEntry, DailyLog=DailyLog, Project=Project,
+        )
+    except Exception:
+        field_acct = None
     db.session.commit()
-    return jsonify({'ok': True, 'log': serialize_log(log, ManpowerEntry, EquipmentEntry, User=User, url_helpers=_daily_log_url_helpers())})
+    return jsonify({'ok': True, 'log': serialize_log(log, ManpowerEntry, EquipmentEntry, User=User, url_helpers=_daily_log_url_helpers()), 'accounting_field': field_acct})
 
 
 @app.route('/api/daily-logs/<int:log_id>', methods=['PUT'])
@@ -3976,8 +3987,19 @@ def api_daily_logs_update(log_id):
     log.details_json = json.dumps(build_details(body))
     sync_manpower(db, ManpowerEntry, log.id, body.get('manpower'))
     sync_equipment(db, EquipmentEntry, log.id, body.get('equipment'))
+    field_acct = None
+    try:
+        from accounting_persistence import get_or_create_default_ledger
+        from accounting_waves_46 import field_silent_auto_post_daily_log
+        ledger = get_or_create_default_ledger(db, _acct_models['AcctLedger'])
+        field_acct = field_silent_auto_post_daily_log(
+            db, _acct_models, ledger.id, log.id, user_id=current_user.id,
+            EquipmentEntry=EquipmentEntry, DailyLog=DailyLog, Project=Project,
+        )
+    except Exception:
+        field_acct = None
     db.session.commit()
-    return jsonify({'ok': True, 'log': serialize_log(log, ManpowerEntry, EquipmentEntry, User=User, url_helpers=_daily_log_url_helpers())})
+    return jsonify({'ok': True, 'log': serialize_log(log, ManpowerEntry, EquipmentEntry, User=User, url_helpers=_daily_log_url_helpers()), 'accounting_field': field_acct})
 
 
 @app.route('/api/daily-logs/<int:log_id>', methods=['DELETE'])
@@ -13140,12 +13162,31 @@ def api_delivery_get(delivery_id):
 def api_deliveries_update(delivery_id):
     from deliveries_persistence import serialize_delivery
     d = Delivery.query.get_or_404(delivery_id)
-    _delivery_apply(d, request.get_json(silent=True) or {})
+    body = request.get_json(silent=True) or {}
+    prev_status = d.status
+    _delivery_apply(d, body)
     # Keep the schedule in sync if this delivery is already pushed.
     if d.schedule_task_id:
         _sync_delivery_to_schedule(d)
+    field_acct = None
+    if (d.status or '') == 'Delivered' and prev_status != 'Delivered':
+        try:
+            from accounting_persistence import get_or_create_default_ledger
+            from accounting_waves_46 import field_silent_auto_post_delivery
+            amt = body.get('accounting_receipt_amount')
+            if amt is None and body.get('quantity'):
+                try:
+                    amt = float(str(body.get('quantity')).replace(',', ''))
+                except (TypeError, ValueError):
+                    amt = None
+            ledger = get_or_create_default_ledger(db, _acct_models['AcctLedger'])
+            field_acct = field_silent_auto_post_delivery(
+                db, _acct_models, ledger.id, d.id, amt, user_id=current_user.id, Delivery=Delivery,
+            )
+        except Exception:
+            field_acct = None
     db.session.commit()
-    return jsonify({'ok': True, 'delivery': serialize_delivery(d, User=User)})
+    return jsonify({'ok': True, 'delivery': serialize_delivery(d, User=User), 'accounting_field': field_acct})
 
 
 @app.route('/api/deliveries/<int:delivery_id>', methods=['DELETE'])
@@ -18525,6 +18566,7 @@ register_accounting_routes(app, {
     'Commitment': Commitment,
     'CommitmentAllocation': CommitmentAllocation,
     'BudgetProjectState': BudgetProjectState,
+    'ChangeOrder': ChangeOrder,
     'SageSyncEvent': SageSyncEvent,
     'PayAppProjectState': PayAppProjectState,
     **_acct_models,
@@ -18549,6 +18591,76 @@ def api_health():
 def api_pm_roadmap_status():
     from pm_product_roadmap import pm_roadmap_status
     return jsonify(pm_roadmap_status())
+
+
+@app.route('/api/pm/scheduling/resource-summary', methods=['GET'])
+@login_required
+def api_pm_scheduling_resource_summary():
+    from accounting_waves_46 import scheduling_resource_summary
+    pid = request.args.get('project_id', type=int) or get_current_project_id()
+    if not pid:
+        return jsonify({'error': 'project_id required'}), 400
+    return jsonify(scheduling_resource_summary(db, ScheduleData, int(pid)))
+
+
+@app.route('/api/portal/compliance-library', methods=['GET'])
+@login_required
+def api_portal_compliance_library():
+    from accounting_waves_46 import portal_compliance_library
+    return jsonify(portal_compliance_library(db, Company, COI))
+
+
+@app.route('/api/mobile/offline/schema', methods=['GET'])
+@login_required
+def api_mobile_offline_schema():
+    from accounting_waves_46 import mobile_offline_schema
+    return jsonify(mobile_offline_schema())
+
+
+@app.route('/api/mobile/offline/sync', methods=['POST'])
+@login_required
+def api_mobile_offline_sync():
+    from accounting_persistence import get_or_create_default_ledger
+    from accounting_waves_46 import mobile_offline_enqueue
+    body = request.get_json(silent=True) or {}
+    ledger = get_or_create_default_ledger(db, _acct_models['AcctLedger'])
+    out = mobile_offline_enqueue(db, _acct_models, ledger.id, body.get('items') or [], user_id=current_user.id)
+    db.session.commit()
+    return jsonify({'ok': True, **out})
+
+
+@app.route('/api/mobile/offline/process', methods=['POST'])
+@login_required
+def api_mobile_offline_process():
+    from accounting_persistence import get_or_create_default_ledger
+    from accounting_waves_46 import mobile_offline_process_queue
+    ledger = get_or_create_default_ledger(db, _acct_models['AcctLedger'])
+    out = mobile_offline_process_queue(
+        db, _acct_models, ledger.id, user_id=current_user.id,
+        DailyLog=DailyLog, EquipmentEntry=EquipmentEntry, Project=Project,
+    )
+    db.session.commit()
+    return jsonify({'ok': True, **out})
+
+
+@app.route('/api/pm/bim/status', methods=['GET'])
+@login_required
+def api_pm_bim_status():
+    from accounting_persistence import get_or_create_default_ledger
+    from accounting_waves_46 import bim_coordination_status
+    ledger = get_or_create_default_ledger(db, _acct_models['AcctLedger'])
+    return jsonify(bim_coordination_status(db, _acct_models, ledger.id))
+
+
+@app.route('/api/pm/bim/viewpoints', methods=['POST'])
+@login_required
+def api_pm_bim_viewpoints():
+    from accounting_persistence import get_or_create_default_ledger
+    from accounting_waves_46 import bim_register_viewpoint
+    ledger = get_or_create_default_ledger(db, _acct_models['AcctLedger'])
+    out = bim_register_viewpoint(db, _acct_models, ledger.id, request.get_json(silent=True) or {}, user_id=current_user.id)
+    db.session.commit()
+    return jsonify(out)
 
 
 with app.app_context():

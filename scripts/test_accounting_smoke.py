@@ -290,6 +290,26 @@ def main() -> int:
     except Exception as exc:
         errors.append(f'accounting_waves_45: {exc}')
 
+    print('6x. PM–accounting full integration (46) + construction matrix…')
+    try:
+        import accounting_waves_46 as w46  # noqa: F401
+        v15 = w46.sage_mirror_deploy_check_v15()
+        if not v15.get('ok'):
+            errors.append(f'sage_mirror_deploy_check_v15: {v15}')
+        import subprocess
+        proc = subprocess.run(
+            [sys.executable, 'scripts/test_accounting_construction_matrix.py'],
+            cwd='.',
+            env={**dict(__import__('os').environ), 'PYTHONPATH': '.'},
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if proc.returncode != 0:
+            errors.append(f'construction_matrix: {proc.stdout}\n{proc.stderr}')
+    except Exception as exc:
+        errors.append(f'accounting_waves_46: {exc}')
+
     print('6c. instance DB must not be tracked…')
     try:
         from accounting_waves_20 import git_tracked_paths_must_not_include_db
