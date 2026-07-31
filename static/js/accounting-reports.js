@@ -206,6 +206,11 @@
             <button type="button" id="acctRunReportBtn" class="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 rounded text-sm">Run</button>
             <button type="button" id="acctExportCsvBtn" class="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded text-sm">Export CSV</button>
           </div>
+          <div class="flex flex-col gap-1 mt-2">
+            <button type="button" id="acctReportCompare" class="px-3 py-1.5 border border-zinc-600 rounded text-sm text-violet-400">Comparative P&amp;L</button>
+            <button type="button" id="acctReportDesigner" class="px-3 py-1.5 border border-zinc-600 rounded text-sm">Report designer</button>
+            <button type="button" id="acctReportSchedRun" class="px-3 py-1.5 border border-zinc-600 rounded text-sm text-amber-400">Run scheduled (stub)</button>
+          </div>
         </div>
         <div class="border border-zinc-700 rounded-lg p-3">
           <h3 class="text-sm font-medium text-white mb-2">Save as custom</h3>
@@ -299,6 +304,42 @@
       } catch (e) {
         await AD().alert(e.message, 'error');
       }
+    });
+
+    document.getElementById('acctReportCompare')?.addEventListener('click', async () => {
+      const out = document.getElementById('acctReportOutput');
+      try {
+        const end = document.getElementById('acctReportEnd')?.value || defaultDates().end;
+        const pa = end.slice(0, 7);
+        const d = new Date(end);
+        d.setMonth(d.getMonth() - 1);
+        const pb = d.toISOString().slice(0, 7);
+        const data = await api(`/api/accounting/reports/comparative?period_a=${pa}&period_b=${pb}`);
+        out.innerHTML = `<div class="grid md:grid-cols-3 gap-3 mb-3">
+          <div class="bg-zinc-800 border border-zinc-700 rounded p-3"><div class="text-xs text-zinc-500">${esc(pa)} net</div><div class="text-lg">${money(data.net_income_a)}</div></div>
+          <div class="bg-zinc-800 border border-zinc-700 rounded p-3"><div class="text-xs text-zinc-500">${esc(pb)} net</div><div class="text-lg">${money(data.net_income_b)}</div></div>
+          <div class="bg-zinc-800 border border-zinc-700 rounded p-3"><div class="text-xs text-zinc-500">Variance</div><div class="text-lg">${money(data.variance)}</div></div>
+        </div>`;
+      } catch (e) {
+        out.innerHTML = `<p class="text-red-400">${esc(e.message)}</p>`;
+      }
+    });
+
+    document.getElementById('acctReportDesigner')?.addEventListener('click', async () => {
+      const list = await api('/api/accounting/reports/designer');
+      const name = await AD().prompt('New layout name:', 'Custom P&L', 'Report designer');
+      if (!name) return;
+      await api('/api/accounting/reports/designer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, report_type: 'custom', definition: { rows: [{ type: 'section', label: 'Revenue' }], columns: ['actual'] } }),
+      });
+      await AD().alert(`${(list.reports || []).length + 1} layout(s) on file.`, 'success');
+    });
+
+    document.getElementById('acctReportSchedRun')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/reports/run-scheduled', { method: 'POST', body: '{}' });
+      await AD().alert(`Ran ${r.ran} scheduled job(s) (email stub).`, 'info');
     });
 
     document.getElementById('acctSaveCustomBtn')?.addEventListener('click', async () => {
