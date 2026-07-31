@@ -310,6 +310,26 @@ def main() -> int:
     except Exception as exc:
         errors.append(f'accounting_waves_46: {exc}')
 
+    print('6y. Operations A–D (47) + construction full…')
+    try:
+        import accounting_waves_47 as w47  # noqa: F401
+        v16 = w47.sage_mirror_deploy_check_v16()
+        if not v16.get('ok'):
+            errors.append(f'sage_mirror_deploy_check_v16: {v16}')
+        import subprocess
+        proc = subprocess.run(
+            [sys.executable, 'scripts/test_accounting_construction_full.py'],
+            cwd='.',
+            env={**dict(__import__('os').environ), 'PYTHONPATH': '.'},
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if proc.returncode != 0:
+            errors.append(f'construction_full: {proc.stdout}\n{proc.stderr}')
+    except Exception as exc:
+        errors.append(f'accounting_waves_47: {exc}')
+
     print('6c. instance DB must not be tracked…')
     try:
         from accounting_waves_20 import git_tracked_paths_must_not_include_db

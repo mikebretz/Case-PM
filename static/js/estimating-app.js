@@ -498,6 +498,22 @@
     if (global.CasePMBudgetSync?.reload) global.CasePMBudgetSync.reload();
   }
 
+  async function accountingPipeline() {
+    if (!state.current?.id) return;
+    const ok = await estConfirm(
+      'Roll estimate lines to budget and run the accounting publish wizard (optional Sage queue)?',
+      { title: 'Budget + accounting', confirmLabel: 'Run pipeline' },
+    );
+    if (!ok) return;
+    const json = await api(`/api/accounting/estimating/${state.current.id}/auto-pipeline`, {
+      method: 'POST',
+      body: JSON.stringify({ push_accounting: true }),
+    });
+    const b = json.budget || {};
+    await estAlert(`Budget: ${b.lines_pushed || 0} line(s). Accounting wizard ${json.accounting ? 'ran' : 'skipped'}.`, 'success');
+    await loadCurrent();
+  }
+
   async function initPackageModalCsi() {
     if (!global.CasePMCsiCatalog) return;
     const divSel = document.getElementById('estPkgDivision');
@@ -603,6 +619,7 @@
     document.getElementById('estTakeoffForm')?.addEventListener('submit', e => submitTakeoffImport(e).catch(err => estAlert(err.message, 'error')));
     document.getElementById('estRefreshLeveling')?.addEventListener('click', () => renderLeveling().catch(e => estAlert(e.message, 'error')));
     document.getElementById('estAwardBudget')?.addEventListener('click', () => awardToBudget().catch(e => estAlert(e.message, 'error')));
+    document.getElementById('estAccountingPipeline')?.addEventListener('click', () => accountingPipeline().catch(e => estAlert(e.message, 'error')));
 
     const tab = new URLSearchParams(location.search).get('tab');
     if (tab) setTab(tab);

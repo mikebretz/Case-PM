@@ -6593,3 +6593,40 @@ def register_accounting_routes(app, deps):
             return jsonify({'ok': True, **out})
         except PermissionError as exc:
             return jsonify({'error': str(exc)}), 403
+
+    @app.route('/api/accounting/sage/cutover-checklist', methods=['GET'])
+    @login_required
+    def api_acct_sage_cutover_checklist():
+        from accounting_waves_47 import sage_cutover_checklist
+        out = sage_cutover_checklist(db, models, _ledger_id())
+        db.session.commit()
+        return jsonify(out)
+
+    @app.route('/api/accounting/sage/parity-matrix', methods=['GET'])
+    @login_required
+    def api_acct_sage_parity_matrix():
+        from accounting_waves_47 import sage_parity_matrix
+        out = sage_parity_matrix(db, models, _ledger_id())
+        db.session.commit()
+        return jsonify(out)
+
+    @app.route('/api/accounting/cron/operations-bundle', methods=['POST'])
+    def api_acct_cron_operations_bundle():
+        from accounting_waves_47 import cron_operations_bundle
+        secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
+        try:
+            out = cron_operations_bundle(db, models, secret)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+
+    @app.route('/api/pm/scheduling/leveling', methods=['GET'])
+    @login_required
+    def api_pm_scheduling_leveling():
+        from accounting_waves_47 import scheduling_resource_leveling_v1
+        import app as app_mod
+        pid = request.args.get('project_id', type=int) or get_current_project_id()
+        if not pid:
+            return jsonify({'error': 'project_id required'}), 400
+        return jsonify(scheduling_resource_leveling_v1(db, app_mod.ScheduleData, int(pid)))

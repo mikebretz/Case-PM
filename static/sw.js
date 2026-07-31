@@ -1,5 +1,5 @@
 /* Case PM — offline shell + web push (static assets only) */
-const CACHE = 'casepm-v4';
+const CACHE = 'casepm-v5';
 const PRECACHE = ['/static/manifest.json'];
 
 function isStaticAsset(url) {

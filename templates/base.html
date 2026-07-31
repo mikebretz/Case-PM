@@ -1409,6 +1409,7 @@
 
     {% endif %}
 
+<script src="{{ url_for('static', filename='js/mobile-offline-outbox.js') }}" defer></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function () {
