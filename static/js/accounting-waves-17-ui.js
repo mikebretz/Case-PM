@@ -76,6 +76,15 @@
         <button type="button" id="acctSagePullAp" class="px-2 py-0.5 border border-zinc-600 rounded text-cyan-400">Pull open AP</button>
         <button type="button" id="acctSageInbox" class="px-2 py-0.5 border border-zinc-600 rounded text-orange-400">Exception inbox</button>
         <button type="button" id="acctSagePullAr" class="px-2 py-0.5 border border-zinc-600 rounded text-emerald-300">Pull open AR</button>
+        <button type="button" id="acctSageMirrorCov" class="px-2 py-0.5 border border-indigo-700 rounded text-indigo-300">Mirror coverage</button>
+        <button type="button" id="acctSagePullCust" class="px-2 py-0.5 border border-zinc-600 rounded text-cyan-300">Pull customers</button>
+        <button type="button" id="acctSagePushCust" class="px-2 py-0.5 border border-zinc-600 rounded text-cyan-400">Push customers</button>
+        <button type="button" id="acctSagePushArLive" class="px-2 py-0.5 border border-rose-700 rounded text-rose-300">Push AR live</button>
+        <button type="button" id="acctSagePushApPay" class="px-2 py-0.5 border border-amber-800 rounded text-amber-300">Push AP payments</button>
+        <button type="button" id="acctSagePushGl" class="px-2 py-0.5 border border-violet-800 rounded text-violet-300">Push G/L batches</button>
+        <button type="button" id="acctSagePullBanks" class="px-2 py-0.5 border border-zinc-600 rounded">Pull banks</button>
+        <button type="button" id="acctSagePullTax" class="px-2 py-0.5 border border-zinc-600 rounded">Pull tax groups</button>
+        <button type="button" id="acctSageDistQueue" class="px-2 py-0.5 border border-zinc-600 rounded">Queue PO export</button>
         <button type="button" id="acctSageOps" class="px-2 py-0.5 border border-zinc-600 rounded text-zinc-300">Ops dashboard</button>
         <button type="button" id="acctSagePolicyCasepm" class="px-2 py-0.5 border border-zinc-600 rounded">SOR: Case PM</button>
         <button type="button" id="acctSagePolicySage" class="px-2 py-0.5 border border-zinc-600 rounded">SOR: Sage</button>
@@ -128,9 +137,52 @@
       const r = await api('/api/accounting/sage/sync/pull-open-ar', { method: 'POST', body: '{}' });
       await AD().alert(`Imported ${r.created || 0} AR invoice(s).`, 'info');
     });
+    document.getElementById('acctSageMirrorCov')?.addEventListener('click', async () => {
+      const c = await api('/api/accounting/sage/mirror/coverage');
+      const lines = (c.modules || []).filter((m) => m.mirror_pull || m.mirror_push).slice(0, 12).map(
+        (m) => `${m.code}: pull=${m.mirror_pull ? 'Y' : 'n'} push=${m.mirror_push ? 'Y' : 'n'}`,
+      ).join('\n');
+      await AD().alert(lines || 'No mirror capabilities.', 'info');
+    });
+    document.getElementById('acctSagePullCust')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/sync/pull-customers', { method: 'POST', body: '{}' });
+      await AD().alert(`Customers: ${r.created || 0} created, ${r.updated || 0} updated.`, 'info');
+    });
+    document.getElementById('acctSagePushCust')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/sync/push-customers', { method: 'POST', body: '{}' });
+      await AD().alert(`Pushed ${r.pushed || 0} customer(s). Errors: ${r.error_count || 0}.`, 'info');
+    });
+    document.getElementById('acctSagePushArLive')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/sync/push-open-ar-live', { method: 'POST', body: '{}' });
+      await AD().alert(`AR live: ${r.pushed || 0}. Errors: ${r.error_count || 0}.`, r.error_count ? 'warning' : 'info');
+    });
+    document.getElementById('acctSagePushApPay')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/sync/push-ap-payments', { method: 'POST', body: '{}' });
+      await AD().alert(`AP payment batches processed: ${r.processed || 0}.`, 'info');
+    });
+    document.getElementById('acctSagePushGl')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/sync/push-gl-batches', { method: 'POST', body: '{}' });
+      await AD().alert(`G/L batches processed: ${r.processed || 0}.`, 'info');
+    });
+    document.getElementById('acctSagePullBanks')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/sync/pull-banks', { method: 'POST', body: '{}' });
+      await AD().alert(`Bank accounts created: ${r.created || 0}.`, 'info');
+    });
+    document.getElementById('acctSagePullTax')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/sync/pull-tax-groups', { method: 'POST', body: '{}' });
+      await AD().alert(`Tax groups imported: ${r.imported || 0}.`, 'info');
+    });
+    document.getElementById('acctSageDistQueue')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/distribution/queue-export', { method: 'POST', body: '{}' });
+      await AD().alert(`Queued ${r.queued || 0} PO(s). Queue size ${r.queue_size || 0}.`, 'info');
+    });
     document.getElementById('acctSageOps')?.addEventListener('click', async () => {
-      const d = await api('/api/accounting/sage/ops-dashboard');
-      await AD().alert(`Queues: export ${d.export_queue_size || 0}, push ${d.push_queue_size || 0}. AP errors: ${(d.ap_push_errors || []).length}`, 'info');
+      const d = await api('/api/accounting/sage/mirror/dashboard');
+      const p = d.pending || {};
+      await AD().alert(
+        `Pending AR push: ${p.open_ar_pending_push || 0}. AP: ${p.open_ap_pending_push || 0}. Inbox AP errors: ${(d.inbox?.ap_push_errors || []).length}`,
+        'info',
+      );
     });
     document.getElementById('acctSageConflicts')?.addEventListener('click', async () => {
       const c = await api('/api/accounting/sage/conflicts/vendors');

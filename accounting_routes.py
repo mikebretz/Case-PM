@@ -4733,3 +4733,160 @@ def register_accounting_routes(app, deps):
             return jsonify({'ok': True, **out})
         except PermissionError as exc:
             return jsonify({'error': str(exc)}), 403
+
+    # --- Waves 14–19 Sage mirror ---
+
+    @app.route('/api/accounting/sage/mirror/dashboard', methods=['GET'])
+    @login_required
+    def api_acct_sage_mirror_dashboard():
+        from accounting_waves_24 import sage_mirror_dashboard
+        return jsonify(sage_mirror_dashboard(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/sage/mirror/coverage', methods=['GET'])
+    @login_required
+    def api_acct_sage_mirror_coverage():
+        from accounting_waves_24 import sage_module_coverage_report
+        return jsonify(sage_module_coverage_report())
+
+    @app.route('/api/accounting/sage/mirror/policy', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_sage_mirror_policy():
+        from accounting_waves_24 import save_sage_mirror_policy, sage_platform_mirror_settings
+        if request.method == 'GET':
+            return jsonify(sage_platform_mirror_settings(db, models, _ledger_id()))
+        try:
+            out = save_sage_mirror_policy(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/sage/mirror/pending', methods=['GET'])
+    @login_required
+    def api_acct_sage_mirror_pending():
+        from accounting_waves_24 import sage_pending_sync_summary
+        return jsonify(sage_pending_sync_summary(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/sage/sync/pull-customers', methods=['POST'])
+    @login_required
+    def api_acct_sage_pull_customers():
+        from accounting_waves_24 import sage_pull_customers
+        try:
+            out = sage_pull_customers(db, models, _ledger_id(), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 403
+
+    @app.route('/api/accounting/sage/sync/push-customers', methods=['POST'])
+    @login_required
+    def api_acct_sage_push_customers():
+        from accounting_waves_24 import sage_push_customers
+        try:
+            out = sage_push_customers(db, models, _ledger_id(), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 403
+
+    @app.route('/api/accounting/sage/sync/push-open-ar-live', methods=['POST'])
+    @login_required
+    def api_acct_sage_push_ar_live():
+        from accounting_waves_24 import sage_push_open_ar_live
+        try:
+            out = sage_push_open_ar_live(db, models, _ledger_id(), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 403
+
+    @app.route('/api/accounting/sage/sync/push-ap-payments', methods=['POST'])
+    @login_required
+    def api_acct_sage_push_ap_payments():
+        from accounting_waves_24 import sage_push_ap_payment_batches
+        try:
+            out = sage_push_ap_payment_batches(db, models, _ledger_id(), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 403
+
+    @app.route('/api/accounting/sage/sync/push-gl-batches', methods=['POST'])
+    @login_required
+    def api_acct_sage_push_gl_batches():
+        from accounting_waves_24 import sage_push_posted_gl_batches
+        try:
+            out = sage_push_posted_gl_batches(db, models, _ledger_id(), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 403
+
+    @app.route('/api/accounting/sage/sync/pull-banks', methods=['POST'])
+    @login_required
+    def api_acct_sage_pull_banks():
+        from accounting_waves_24 import sage_pull_bank_accounts
+        try:
+            out = sage_pull_bank_accounts(db, models, _ledger_id(), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 403
+
+    @app.route('/api/accounting/sage/sync/pull-tax-groups', methods=['POST'])
+    @login_required
+    def api_acct_sage_pull_tax_groups():
+        from accounting_waves_24 import sage_pull_tax_groups
+        try:
+            out = sage_pull_tax_groups(db, models, _ledger_id(), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 403
+
+    @app.route('/api/accounting/sage/bank/<int:bank_account_id>/export-period', methods=['POST'])
+    @login_required
+    def api_acct_sage_export_bk_period(bank_account_id):
+        from accounting_waves_24 import sage_push_bank_period_to_sage
+        data = request.get_json(silent=True) or {}
+        period_end = data.get('period_end') or date.today().isoformat()
+        try:
+            out = sage_push_bank_period_to_sage(db, models, _ledger_id(), bank_account_id, period_end, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 403
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/sage-reconcile', methods=['GET'])
+    @login_required
+    def api_acct_sage_job_reconcile(project_id):
+        from accounting_waves_24 import project_sage_ledger_reconcile
+        return jsonify(project_sage_ledger_reconcile(db, models, _ledger_id(), project_id, Project=Project))
+
+    @app.route('/api/accounting/sage/distribution/queue-export', methods=['POST'])
+    @login_required
+    def api_acct_sage_dist_queue():
+        from accounting_waves_24 import sage_queue_distribution_exports
+        out = sage_queue_distribution_exports(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/cron/sage-mirror', methods=['POST'])
+    def api_acct_cron_sage_mirror():
+        from accounting_waves_24 import cron_sage_mirror_maintenance
+        secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
+        try:
+            out = cron_sage_mirror_maintenance(db, models, secret)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
