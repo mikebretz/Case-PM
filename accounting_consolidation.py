@@ -277,3 +277,229 @@ def post_consolidation_eliminations(db, models, run, body, user_id=None):
     run.posted_at = datetime.utcnow()
     db.session.flush()
     return {'elimination_batch_id': batch.id, 'run_id': run.id}
+
+
+def serialize_ownership(row):
+    return {
+        'id': row.id,
+        'parent_ledger_id': row.parent_ledger_id,
+        'child_ledger_id': row.child_ledger_id,
+        'ownership_percent': float(row.ownership_percent or 100),
+        'effective_date': row.effective_date.isoformat() if row.effective_date else None,
+    }
+
+
+def list_ownership(models, parent_ledger_id):
+    AcctLedgerOwnership = models['AcctLedgerOwnership']
+    rows = AcctLedgerOwnership.query.filter_by(parent_ledger_id=int(parent_ledger_id)).all()
+    return {'ownership': [serialize_ownership(r) for r in rows]}
+
+
+def upsert_ownership(db, models, parent_ledger_id, body):
+    AcctLedgerOwnership = models['AcctLedgerOwnership']
+    child_id = int(body['child_ledger_id'])
+    pct = float(body.get('ownership_percent') or 100)
+    row = AcctLedgerOwnership.query.filter_by(
+        parent_ledger_id=int(parent_ledger_id), child_ledger_id=child_id,
+    ).first()
+    if not row:
+        row = AcctLedgerOwnership(parent_ledger_id=int(parent_ledger_id), child_ledger_id=child_id)
+        db.session.add(row)
+    row.ownership_percent = max(0.0, min(100.0, pct))
+    if body.get('effective_date'):
+        row.effective_date = date.fromisoformat(body['effective_date'])
+    db.session.flush()
+    return row
+
+
+def ownership_map(models, parent_ledger_id, child_ids):
+    AcctLedgerOwnership = models['AcctLedgerOwnership']
+    out = {int(cid): 100.0 for cid in child_ids}
+    for r in AcctLedgerOwnership.query.filter_by(parent_ledger_id=int(parent_ledger_id)).all():
+        if r.child_ledger_id in out:
+            out[r.child_ledger_id] = float(r.ownership_percent or 100)
+    return out
+
+
+def consolidated_financial_statement(db, models, parent_ledger_id, *, statement='balance_sheet', as_of=None):
+    """Roll up trial balance and split P&L vs balance sheet accounts."""
+    as_of = date.fromisoformat(as_of) if isinstance(as_of, str) and as_of else (as_of or date.today())
+    ctb = consolidated_trial_balance(db, models, parent_ledger_id)
+    pl_types = {'revenue', 'expense'}
+    bs_types = {'asset', 'liability', 'equity'}
+    rows = []
+    for r in ctb.get('rows') or []:
+        at = (r.get('account_type') or '').lower()
+        if statement == 'income_statement' and at not in pl_types:
+            continue
+        if statement == 'balance_sheet' and at not in bs_types:
+            continue
+        rows.append(r)
+    total_revenue = sum(float(r['balance']) for r in rows if r.get('account_type') == 'revenue')
+    total_expense = sum(float(r['balance']) for r in rows if r.get('account_type') == 'expense')
+    return {
+        'statement': statement,
+        'as_of': as_of.isoformat(),
+        'parent_ledger_id': ctb.get('parent_ledger_id'),
+        'rows': rows,
+        'totals': {
+            'revenue': round(abs(total_revenue), 2),
+            'expense': round(abs(total_expense), 2),
+            'net_income': round(abs(total_revenue) - abs(total_expense), 2),
+        } if statement == 'income_statement' else {},
+    }
+
+
+def fx_translate_consolidated_tb(db, models, parent_ledger_id, *, rate_date=None):
+    """Apply functional currency translation for subsidiaries with non-parent currency."""
+    from accounting_multicurrency import rate_on_date
+    AcctLedger = models['AcctLedger']
+    AcctCurrencyRate = models['AcctCurrencyRate']
+    parent = AcctLedger.query.get(int(parent_ledger_id))
+    if not parent:
+        raise ValueError('Parent ledger not found')
+    rate_date = date.fromisoformat(rate_date) if isinstance(rate_date, str) and rate_date else (rate_date or date.today())
+    child_ids = subsidiary_ledger_ids(AcctLedger, parent.id)
+    adjustments = []
+    for cid in child_ids:
+        child = AcctLedger.query.get(cid)
+        if not child or (child.base_currency or 'USD').upper() == (parent.base_currency or 'USD').upper():
+            continue
+        rate = rate_on_date(AcctCurrencyRate, cid, child.base_currency, rate_date)
+        if not rate:
+            adjustments.append({'child_ledger_id': cid, 'currency': child.base_currency, 'status': 'no_rate'})
+            continue
+        adjustments.append({
+            'child_ledger_id': cid,
+            'currency': child.base_currency,
+            'rate_to_parent': rate,
+            'status': 'applied',
+        })
+    return {'parent_currency': parent.base_currency, 'rate_date': rate_date.isoformat(), 'translations': adjustments}
+
+
+def suggest_auto_eliminations(db, models, parent_ledger_id, run):
+    """Suggest balanced elimination lines from intercompany rules and subsidiary due-from/to balances."""
+    AcctLedger = models['AcctLedger']
+    AcctGLAccount = models['AcctGLAccount']
+    AcctIntercompanyRule = models['AcctIntercompanyRule']
+    parent = AcctLedger.query.get(int(parent_ledger_id))
+    rules = AcctIntercompanyRule.query.filter_by(parent_ledger_id=parent.id, auto_eliminate=True).all()
+    if not rules:
+        rule = AcctIntercompanyRule(
+            parent_ledger_id=parent.id,
+            due_from_account_number='1500',
+            due_to_account_number='2500',
+            auto_eliminate=True,
+            description='Default IC due from / due to',
+        )
+        rules = [rule]
+    suggestions = []
+    ctb = consolidated_trial_balance(db, models, parent.id, include_parent=False)
+    by_num = {r['account_number']: r for r in ctb.get('rows') or []}
+    for rule in rules:
+        for num, label in (
+            (rule.due_from_account_number, 'Due from'),
+            (rule.due_to_account_number, 'Due to'),
+        ):
+            if not num:
+                continue
+            row = by_num.get(str(num))
+            if not row or abs(float(row.get('balance') or 0)) < 0.01:
+                continue
+            bal = float(row['balance'])
+            acct = AcctGLAccount.query.filter_by(ledger_id=parent.id, account_number=str(num)).first()
+            suggestions.append({
+                'account_id': acct.id if acct else None,
+                'account_number': num,
+                'description': f'{label} elimination {run.run_number}',
+                'debit': round(max(0, -bal), 2),
+                'credit': round(max(0, bal), 2),
+            })
+    return {'suggestions': suggestions, 'run_id': run.id}
+
+
+def post_rollup_journal(db, models, run, user_id=None):
+    """Post ownership-weighted rollup summary to parent (memo batch)."""
+    if run.status != 'Open':
+        raise ValueError('Run must be open for rollup')
+    AcctLedger = models['AcctLedger']
+    AcctGLAccount = models['AcctGLAccount']
+    AcctJournalBatch = models['AcctJournalBatch']
+    AcctJournalLine = models['AcctJournalLine']
+    parent = AcctLedger.query.get(run.parent_ledger_id)
+    details = json.loads(run.details_json or '{}') if run.details_json else {}
+    child_ids = details.get('child_ledger_ids') or subsidiary_ledger_ids(AcctLedger, parent.id)
+    omap = ownership_map(models, parent.id, child_ids)
+    ctb = consolidated_trial_balance(db, models, parent.id, include_parent=False, child_ids=child_ids)
+    lines = []
+    for row in ctb.get('rows') or []:
+        if abs(float(row.get('balance') or 0)) < 0.01:
+            continue
+        weighted = 0.0
+        for lid, chunk in (row.get('by_ledger') or {}).items():
+            pct = omap.get(int(lid), 100.0) / 100.0
+            weighted += float(chunk.get('balance') or 0) * pct
+        if abs(weighted) < 0.01:
+            continue
+        acct = AcctGLAccount.query.filter_by(ledger_id=parent.id, account_number=row['account_number']).first()
+        if not acct:
+            continue
+        debit = round(max(0, weighted), 2)
+        credit = round(max(0, -weighted), 2)
+        if debit == 0 and credit == 0:
+            continue
+        lines.append({
+            'account_id': acct.id,
+            'description': f'Consolidation rollup {run.run_number}',
+            'debit': debit,
+            'credit': credit,
+        })
+    if not lines:
+        raise ValueError('No rollup lines to post')
+    batch = AcctJournalBatch(
+        ledger_id=parent.id,
+        batch_number=next_batch_number(AcctJournalBatch, parent.id),
+        source='CON-ROLL',
+        description=f'Consolidation rollup {run.run_number}',
+        batch_date=run.period_end or date.today(),
+        status='Open',
+        created_by_id=user_id,
+    )
+    db.session.add(batch)
+    db.session.flush()
+    for i, ln in enumerate(lines, start=1):
+        db.session.add(AcctJournalLine(
+            batch_id=batch.id,
+            line_number=i,
+            account_id=ln['account_id'],
+            description=ln['description'],
+            debit=ln['debit'],
+            credit=ln['credit'],
+        ))
+    post_journal_batch(db, batch, AcctJournalLine, ledger=parent)
+    run.rollup_batch_id = batch.id
+    db.session.flush()
+    return {'rollup_batch_id': batch.id}
+
+
+def lock_entity_periods(db, models, parent_ledger_id, period_key, *, lock_children=True):
+    from accounting_platform import set_fiscal_period_status, generate_fiscal_periods
+    AcctLedger = models['AcctLedger']
+    AcctFiscalPeriod = models['AcctFiscalPeriod']
+    parent = AcctLedger.query.get(int(parent_ledger_id))
+    if not parent:
+        raise ValueError('Parent not found')
+    fy = int(str(period_key)[:4])
+    ledger_ids = [parent.id]
+    if lock_children:
+        ledger_ids.extend(subsidiary_ledger_ids(AcctLedger, parent.id))
+    locked = []
+    for lid in ledger_ids:
+        if AcctFiscalPeriod.query.filter_by(ledger_id=lid, fiscal_year=fy).count() == 0:
+            generate_fiscal_periods(db, models, lid, fy)
+        p = AcctFiscalPeriod.query.filter_by(ledger_id=lid, period_key=period_key).first()
+        if p:
+            set_fiscal_period_status(db, models, lid, p.id, 'Closed')
+            locked.append({'ledger_id': lid, 'period_key': period_key})
+    return {'locked': locked}

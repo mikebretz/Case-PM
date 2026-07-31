@@ -334,3 +334,147 @@ def post_receipt_batch(db, models, batch, user_id=None):
     batch.posted_at = datetime.utcnow()
     db.session.flush()
     return {'receipt_ids': receipt_ids, 'batch_id': batch.id}
+
+
+def serialize_dunning_rule(r):
+    return {
+        'id': r.id,
+        'days_past_due': r.days_past_due,
+        'letter_code': r.letter_code,
+        'message_template': r.message_template or '',
+    }
+
+
+def upsert_dunning_rule(db, models, ledger_id, body, rule_id=None):
+    AcctDunningRule = models['AcctDunningRule']
+    if rule_id:
+        r = AcctDunningRule.query.filter_by(id=int(rule_id), ledger_id=ledger_id).first()
+        if not r:
+            raise ValueError('Rule not found')
+    else:
+        r = AcctDunningRule(ledger_id=ledger_id)
+        db.session.add(r)
+    r.days_past_due = int(body.get('days_past_due') or r.days_past_due or 30)
+    r.letter_code = (body.get('letter_code') or r.letter_code or 'L1')[:10]
+    if 'message_template' in body:
+        r.message_template = str(body['message_template'])[:2000]
+    db.session.flush()
+    return r
+
+
+def dunning_candidates(db, models, ledger_id):
+    """Customers with open AR past dunning rule thresholds."""
+    AcctDunningRule = models['AcctDunningRule']
+    AcctARDocument = models['AcctARDocument']
+    AcctCustomer = models['AcctCustomer']
+    rules = AcctDunningRule.query.filter_by(ledger_id=ledger_id).order_by(AcctDunningRule.days_past_due).all()
+    if not rules:
+        rules = [type('R', (), {'days_past_due': 30, 'letter_code': 'L1', 'message_template': ''})()]
+    today = date.today()
+    by_customer = {}
+    for d in AcctARDocument.query.filter_by(ledger_id=ledger_id).filter(
+        AcctARDocument.status.in_(['Open', 'Partial'])
+    ).all():
+        if not d.due_date:
+            continue
+        days = (today - d.due_date).days
+        if days <= 0:
+            continue
+        open_amt = float(d.amount or 0) - float(d.amount_paid or 0)
+        if open_amt < 0.01:
+            continue
+        by_customer.setdefault(d.customer_id, {'open': 0.0, 'max_days': 0})
+        by_customer[d.customer_id]['open'] += open_amt
+        by_customer[d.customer_id]['max_days'] = max(by_customer[d.customer_id]['max_days'], days)
+    out = []
+    for cid, agg in by_customer.items():
+        rule = None
+        for ru in rules:
+            if agg['max_days'] >= ru.days_past_due:
+                if rule is None or ru.days_past_due > rule.days_past_due:
+                    rule = ru
+        if not rule:
+            continue
+        c = AcctCustomer.query.get(cid)
+        out.append({
+            'customer_id': cid,
+            'customer_code': c.code if c else '',
+            'customer_name': c.name if c else '',
+            'open_balance': round(agg['open'], 2),
+            'days_past_due': agg['max_days'],
+            'suggested_letter': rule.letter_code,
+        })
+    return {'candidates': out, 'rules_count': len(rules)}
+
+
+def cash_application_workbench(db, models, ledger_id, customer_id):
+    """Open invoices and unapplied receipts for cash application UI."""
+    AcctARDocument = models['AcctARDocument']
+    AcctARReceipt = models['AcctARReceipt']
+    AcctARReceiptApply = models['AcctARReceiptApply']
+    cid = int(customer_id)
+    invoices = []
+    for d in AcctARDocument.query.filter_by(ledger_id=ledger_id, customer_id=cid).filter(
+        AcctARDocument.status.in_(['Open', 'Partial'])
+    ).order_by(AcctARDocument.due_date).all():
+        open_amt = round(float(d.amount or 0) - float(d.amount_paid or 0), 2)
+        if open_amt > 0.01:
+            invoices.append({
+                'ar_document_id': d.id,
+                'document_number': d.document_number,
+                'due_date': d.due_date.isoformat() if d.due_date else None,
+                'open_amount': open_amt,
+            })
+    receipts = []
+    for r in AcctARReceipt.query.filter_by(ledger_id=ledger_id, customer_id=cid, status='Posted').order_by(
+        AcctARReceipt.id.desc(),
+    ).limit(30).all():
+        applied = sum(float(a.amount or 0) for a in AcctARReceiptApply.query.filter_by(receipt_id=r.id).all())
+        unapplied = round(float(r.amount or 0) - applied, 2)
+        if unapplied > 0.01:
+            receipts.append({
+                'receipt_id': r.id,
+                'receipt_number': r.receipt_number,
+                'receipt_date': r.receipt_date.isoformat() if r.receipt_date else None,
+                'unapplied_amount': unapplied,
+            })
+    return {'customer_id': cid, 'open_invoices': invoices, 'unapplied_receipts': receipts}
+
+
+def apply_cash_workbench(db, models, ledger_id, body, user_id=None):
+    """Apply unapplied receipt amounts to selected invoices (existing posted receipt)."""
+    AcctARReceipt = models['AcctARReceipt']
+    AcctARReceiptApply = models['AcctARReceiptApply']
+    AcctARDocument = models['AcctARDocument']
+    receipt_id = int(body['receipt_id'])
+    applications = body.get('applications') or []
+    r = AcctARReceipt.query.filter_by(id=receipt_id, ledger_id=ledger_id).first()
+    if not r:
+        raise ValueError('Receipt not found')
+    applied_total = sum(float(a.amount or 0) for a in AcctARReceiptApply.query.filter_by(receipt_id=r.id).all())
+    unapplied = round(float(r.amount or 0) - applied_total, 2)
+    new_apply = 0.0
+    applied_rows = []
+    for app in applications:
+        doc_id = int(app['ar_document_id'])
+        app_amt = round(float(app.get('amount') or 0), 2)
+        if app_amt <= 0:
+            continue
+        doc = AcctARDocument.query.filter_by(id=doc_id, ledger_id=ledger_id, customer_id=r.customer_id).first()
+        if not doc:
+            raise ValueError(f'Invoice {doc_id} not found')
+        open_amt = round(float(doc.amount or 0) - float(doc.amount_paid or 0), 2)
+        if app_amt > open_amt + 0.01:
+            raise ValueError('Apply amount exceeds open balance')
+        doc.amount_paid = round(float(doc.amount_paid or 0) + app_amt, 2)
+        if doc.amount_paid >= float(doc.amount or 0) - 0.01:
+            doc.status = 'Paid'
+        else:
+            doc.status = 'Partial'
+        db.session.add(AcctARReceiptApply(receipt_id=r.id, ar_document_id=doc_id, amount=app_amt))
+        new_apply += app_amt
+        applied_rows.append({'ar_document_id': doc_id, 'amount': app_amt})
+    if new_apply > unapplied + 0.01:
+        raise ValueError('Apply total exceeds unapplied receipt balance')
+    db.session.flush()
+    return {'receipt_id': r.id, 'applied': applied_rows, 'unapplied_remaining': round(unapplied - new_apply, 2)}

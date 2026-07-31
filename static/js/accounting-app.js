@@ -118,6 +118,14 @@
         } else {
           root.innerHTML = renderPlannedModule(route);
         }
+      }
+      else if (route === 'admin') {
+        if (global.CasePMAcctPlatformUI) {
+          global.CasePMAcctPlatformUI.init({ api, esc, money, switchModule, AD: () => global.CasePMAccountingDialog || {}, projectId });
+          root.innerHTML = await global.CasePMAcctPlatformUI.render();
+        } else {
+          root.innerHTML = renderPlannedModule(route);
+        }
       } else {
         const mod = (catalog?.modules || []).find((m) => m.route === route);
         root.innerHTML = mod ? renderPlannedModule(route, mod) : '<p class="text-zinc-500">Module not found.</p>';
@@ -141,6 +149,9 @@
       }
       if (route === 'consolidation' && global.CasePMAcctConsolidationUI?.bindHandlers) {
         global.CasePMAcctConsolidationUI.bindHandlers();
+      }
+      if (route === 'admin' && global.CasePMAcctPlatformUI?.bindHandlers) {
+        global.CasePMAcctPlatformUI.bindHandlers();
       }
     } catch (e) {
       root.innerHTML = `<p class="text-red-400">${esc(e.message)}</p>`;

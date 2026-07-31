@@ -2317,3 +2317,320 @@ def register_accounting_routes(app, deps):
         except ValueError as exc:
             db.session.rollback()
             return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/platform/fiscal-periods', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_platform_fiscal():
+        from datetime import date as date_cls
+        from accounting_platform import generate_fiscal_periods, list_fiscal_periods, set_fiscal_period_status, write_audit
+        lid = _ledger_id()
+        if request.method == 'GET':
+            fy = request.args.get('fiscal_year', type=int)
+            return jsonify(list_fiscal_periods(models, lid, fiscal_year=fy))
+        body = request.get_json(silent=True) or {}
+        if body.get('action') in ('close', 'open'):
+            try:
+                p = set_fiscal_period_status(db, models, lid, int(body['period_id']), 'Closed' if body['action'] == 'close' else 'Open')
+                write_audit(db, models, lid, user_id=current_user.id, action=f"fiscal_{body['action']}", entity_type='fiscal_period', entity_id=p.id)
+                db.session.commit()
+                return jsonify({'ok': True, 'period': {'id': p.id, 'status': p.status}})
+            except ValueError as exc:
+                db.session.rollback()
+                return jsonify({'error': str(exc)}), 400
+        fy = body.get('fiscal_year') or date_cls.today().year
+        data = generate_fiscal_periods(db, models, lid, fy)
+        write_audit(db, models, lid, user_id=current_user.id, action='fiscal_generate', details={'fiscal_year': fy})
+        db.session.commit()
+        return jsonify(data), 201
+
+    @app.route('/api/accounting/platform/locations', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_platform_locations():
+        from accounting_platform import serialize_location, upsert_location
+        AcctLocation = models['AcctLocation']
+        lid = _ledger_id()
+        if request.method == 'GET':
+            rows = AcctLocation.query.filter_by(ledger_id=lid).order_by(AcctLocation.code).all()
+            return jsonify({'locations': [serialize_location(r) for r in rows]})
+        try:
+            loc = upsert_location(db, models, lid, request.get_json(silent=True) or {})
+            db.session.commit()
+            return jsonify({'location': serialize_location(loc)}), 201
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/platform/gl-security', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_platform_gl_security():
+        from accounting_platform import serialize_gl_security, upsert_gl_account_security
+        AcctGLAccountSecurity = models['AcctGLAccountSecurity']
+        lid = _ledger_id()
+        if request.method == 'GET':
+            rows = AcctGLAccountSecurity.query.filter_by(ledger_id=lid).limit(200).all()
+            return jsonify({'rules': [serialize_gl_security(r) for r in rows]})
+        try:
+            r = upsert_gl_account_security(db, models, lid, request.get_json(silent=True) or {})
+            db.session.commit()
+            return jsonify({'rule': serialize_gl_security(r)}), 201
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/platform/optional-fields', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_platform_optional_fields():
+        from accounting_platform import serialize_optional_field, upsert_optional_field
+        AcctOptionalFieldDef = models['AcctOptionalFieldDef']
+        lid = _ledger_id()
+        entity = request.args.get('entity_type')
+        if request.method == 'GET':
+            q = AcctOptionalFieldDef.query.filter_by(ledger_id=lid)
+            if entity:
+                q = q.filter_by(entity_type=entity)
+            rows = q.order_by(AcctOptionalFieldDef.sort_order).all()
+            return jsonify({'fields': [serialize_optional_field(f) for f in rows]})
+        try:
+            f = upsert_optional_field(db, models, lid, request.get_json(silent=True) or {})
+            db.session.commit()
+            return jsonify({'field': serialize_optional_field(f)}), 201
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/platform/audit-log', methods=['GET'])
+    @login_required
+    def api_acct_platform_audit():
+        from accounting_platform import serialize_audit
+        AcctAuditLog = models['AcctAuditLog']
+        lid = _ledger_id()
+        rows = AcctAuditLog.query.filter_by(ledger_id=lid).order_by(AcctAuditLog.id.desc()).limit(100).all()
+        return jsonify({'entries': [serialize_audit(r) for r in rows]})
+
+    @app.route('/api/accounting/platform/locale', methods=['GET', 'PATCH'])
+    @login_required
+    def api_acct_platform_locale():
+        from accounting_platform import ledger_locale_settings, update_ledger_locale
+        ledger = models['AcctLedger'].query.get(_ledger_id())
+        if request.method == 'GET':
+            return jsonify(ledger_locale_settings(ledger))
+        data = update_ledger_locale(ledger, request.get_json(silent=True) or {})
+        db.session.commit()
+        return jsonify({'ok': True, 'locale': data})
+
+    @app.route('/api/accounting/platform/export/chart', methods=['GET'])
+    @login_required
+    def api_acct_platform_export_chart():
+        from accounting_platform import export_chart_csv
+        from flask import Response
+        csv_text = export_chart_csv(models, _ledger_id())
+        return Response(csv_text, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=chart_of_accounts.csv'})
+
+    @app.route('/api/accounting/platform/import/chart', methods=['POST'])
+    @login_required
+    def api_acct_platform_import_chart():
+        from accounting_platform import import_chart_csv, write_audit
+        from financial_security import require_accounting_role
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        body = request.get_json(silent=True) or {}
+        csv_text = body.get('csv') or ''
+        try:
+            out = import_chart_csv(db, models, _ledger_id(), csv_text)
+            write_audit(db, models, _ledger_id(), user_id=current_user.id, action='import_coa', details=out)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/platform/integrity', methods=['GET'])
+    @login_required
+    def api_acct_platform_integrity():
+        from accounting_platform import data_integrity_check
+        return jsonify(data_integrity_check(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/platform/financial-reporter', methods=['GET'])
+    @login_required
+    def api_acct_platform_financial_reporter():
+        from accounting_platform import financial_reporter_layout
+        rtype = request.args.get('report_type') or 'trial_balance'
+        return jsonify(financial_reporter_layout(models, _ledger_id(), rtype))
+
+    @app.route('/api/accounting/gl/budgets/<int:budget_id>/clone', methods=['POST'])
+    @login_required
+    def api_acct_gl_budget_clone(budget_id):
+        from accounting_gl_extended import clone_budget, serialize_budget
+        try:
+            b = clone_budget(db, models, _ledger_id(), budget_id, request.get_json(silent=True) or {})
+            db.session.commit()
+            return jsonify({'budget': serialize_budget(b)}), 201
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/gl/recurring-journals/run-due', methods=['POST'])
+    @login_required
+    def api_acct_gl_recurring_run_due():
+        from accounting_gl_extended import run_due_recurring_schedules
+        from financial_security import require_accounting_role
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        try:
+            out = run_due_recurring_schedules(db, models, _ledger_id(), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/ap/match-tolerance', methods=['GET', 'PATCH'])
+    @login_required
+    def api_acct_ap_match_tolerance():
+        from accounting_ap_extended import get_match_tolerance, set_match_tolerance
+        lid = _ledger_id()
+        if request.method == 'GET':
+            return jsonify(get_match_tolerance(models, lid))
+        t = set_match_tolerance(db, models, lid, request.get_json(silent=True) or {})
+        db.session.commit()
+        return jsonify({'amount_tolerance': t.amount_tolerance, 'percent_tolerance': t.percent_tolerance})
+
+    @app.route('/api/accounting/ap/invoices/<int:invoice_id>/release-retainage', methods=['POST'])
+    @login_required
+    def api_acct_ap_release_retainage(invoice_id):
+        from accounting_ap_extended import release_retainage
+        body = request.get_json(silent=True) or {}
+        try:
+            out = release_retainage(db, models, _ledger_id(), invoice_id, body.get('amount'), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/ap/1099/efile', methods=['GET'])
+    @login_required
+    def api_acct_ap_1099_efile():
+        from accounting_ap_extended import export_1099_efile
+        from datetime import date as date_cls
+        year = request.args.get('tax_year', type=int) or (date_cls.today().year - 1)
+        return jsonify(export_1099_efile(db, models, _ledger_id(), year))
+
+    @app.route('/api/accounting/ar/dunning/rules', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_ar_dunning_rules():
+        from accounting_ar_extended import serialize_dunning_rule, upsert_dunning_rule
+        AcctDunningRule = models['AcctDunningRule']
+        lid = _ledger_id()
+        if request.method == 'GET':
+            rows = AcctDunningRule.query.filter_by(ledger_id=lid).order_by(AcctDunningRule.days_past_due).all()
+            return jsonify({'rules': [serialize_dunning_rule(r) for r in rows]})
+        r = upsert_dunning_rule(db, models, lid, request.get_json(silent=True) or {})
+        db.session.commit()
+        return jsonify({'rule': serialize_dunning_rule(r)}), 201
+
+    @app.route('/api/accounting/ar/dunning/candidates', methods=['GET'])
+    @login_required
+    def api_acct_ar_dunning_candidates():
+        from accounting_ar_extended import dunning_candidates
+        return jsonify(dunning_candidates(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/ar/cash-application/<int:customer_id>', methods=['GET'])
+    @login_required
+    def api_acct_ar_cash_application(customer_id):
+        from accounting_ar_extended import cash_application_workbench
+        return jsonify(cash_application_workbench(db, models, _ledger_id(), customer_id))
+
+    @app.route('/api/accounting/ar/cash-application/apply', methods=['POST'])
+    @login_required
+    def api_acct_ar_cash_application_apply():
+        from accounting_ar_extended import apply_cash_workbench
+        try:
+            out = apply_cash_workbench(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/consolidation/ownership', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_consolidation_ownership():
+        from accounting_consolidation import list_ownership, upsert_ownership, serialize_ownership
+        parent_id = request.args.get('parent_ledger_id', type=int) or _ledger_id()
+        if request.method == 'GET':
+            return jsonify(list_ownership(models, parent_id))
+        try:
+            row = upsert_ownership(db, models, parent_id, request.get_json(silent=True) or {})
+            db.session.commit()
+            return jsonify({'ownership': serialize_ownership(row)}), 201
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/consolidation/financials', methods=['GET'])
+    @login_required
+    def api_acct_consolidation_financials():
+        from accounting_consolidation import consolidated_financial_statement
+        parent_id = request.args.get('parent_ledger_id', type=int) or _ledger_id()
+        stmt = request.args.get('statement') or 'balance_sheet'
+        as_of = request.args.get('as_of')
+        return jsonify(consolidated_financial_statement(db, models, parent_id, statement=stmt, as_of=as_of))
+
+    @app.route('/api/accounting/consolidation/fx-translate', methods=['GET'])
+    @login_required
+    def api_acct_consolidation_fx():
+        from accounting_consolidation import fx_translate_consolidated_tb
+        parent_id = request.args.get('parent_ledger_id', type=int) or _ledger_id()
+        return jsonify(fx_translate_consolidated_tb(db, models, parent_id, rate_date=request.args.get('rate_date')))
+
+    @app.route('/api/accounting/consolidation/runs/<int:run_id>/suggest-eliminations', methods=['GET'])
+    @login_required
+    def api_acct_consolidation_suggest_elim(run_id):
+        from accounting_consolidation import suggest_auto_eliminations
+        run = models['AcctConsolidationRun'].query.get_or_404(run_id)
+        return jsonify(suggest_auto_eliminations(db, models, run.parent_ledger_id, run))
+
+    @app.route('/api/accounting/consolidation/runs/<int:run_id>/rollup', methods=['POST'])
+    @login_required
+    def api_acct_consolidation_rollup(run_id):
+        from financial_security import require_accounting_role
+        from accounting_consolidation import post_rollup_journal, serialize_consolidation_run
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        run = models['AcctConsolidationRun'].query.get_or_404(run_id)
+        try:
+            out = post_rollup_journal(db, models, run, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out, 'run': serialize_consolidation_run(run)})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/consolidation/lock-period', methods=['POST'])
+    @login_required
+    def api_acct_consolidation_lock_period():
+        from financial_security import require_accounting_role
+        from accounting_consolidation import lock_entity_periods
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        body = request.get_json(silent=True) or {}
+        period_key = body.get('period_key')
+        if not period_key:
+            return jsonify({'error': 'period_key required (YYYY-MM)'}), 400
+        parent_id = body.get('parent_ledger_id') or _ledger_id()
+        try:
+            out = lock_entity_periods(db, models, parent_id, period_key, lock_children=bool(body.get('lock_children', True)))
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400

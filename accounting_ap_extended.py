@@ -98,6 +98,14 @@ def three_way_match(db, models, ledger_id, invoice_id):
     """Match AP invoice to PO receipts (qty/amount tolerance)."""
     AcctAPDocument = models['AcctAPDocument']
     AcctPurchaseOrder = models['AcctPurchaseOrder']
+    AcctAPMatchTolerance = models.get('AcctAPMatchTolerance')
+    tol_amt = 1.0
+    tol_pct = 5.0
+    if AcctAPMatchTolerance:
+        t = AcctAPMatchTolerance.query.filter_by(ledger_id=ledger_id).first()
+        if t:
+            tol_amt = float(t.amount_tolerance or 1.0)
+            tol_pct = float(t.percent_tolerance or 5.0)
     doc = AcctAPDocument.query.filter_by(id=int(invoice_id), ledger_id=ledger_id).first()
     if not doc:
         raise ValueError('Invoice not found')
@@ -122,7 +130,7 @@ def three_way_match(db, models, ledger_id, invoice_id):
         received = float(pl.get('qty_received') or 0)
         if ordered > 0 and received < ordered * 0.99:
             qty_ok = False
-    amount_ok = po_total <= 0 or abs(inv_amt - po_total) <= max(1.0, po_total * 0.05)
+    amount_ok = po_total <= 0 or abs(inv_amt - po_total) <= max(tol_amt, po_total * tol_pct / 100.0)
     matched = qty_ok and amount_ok
     return {
         'matched': matched,
@@ -134,6 +142,7 @@ def three_way_match(db, models, ledger_id, invoice_id):
         'invoice_amount': inv_amt,
         'qty_received_ok': qty_ok,
         'amount_within_tolerance': amount_ok,
+        'tolerance': {'amount': tol_amt, 'percent': tol_pct},
         'lines': po_lines,
     }
 
@@ -275,3 +284,95 @@ def nacha_ach_file(db, models, ledger_id, payment_ids, *, company_name='CASE PM'
     )
     lines.append('9000001' + f'{entry + 2:06d}' + f'{entry:06d}' + f'{total:012d}' + f'{total:012d}' + ' ' * 39)
     return '\n'.join(lines)
+
+
+def get_match_tolerance(models, ledger_id):
+    AcctAPMatchTolerance = models['AcctAPMatchTolerance']
+    t = AcctAPMatchTolerance.query.filter_by(ledger_id=ledger_id).first()
+    if not t:
+        return {'amount_tolerance': 1.0, 'percent_tolerance': 5.0}
+    return {'amount_tolerance': float(t.amount_tolerance or 1), 'percent_tolerance': float(t.percent_tolerance or 5)}
+
+
+def set_match_tolerance(db, models, ledger_id, body):
+    AcctAPMatchTolerance = models['AcctAPMatchTolerance']
+    t = AcctAPMatchTolerance.query.filter_by(ledger_id=ledger_id).first()
+    if not t:
+        t = AcctAPMatchTolerance(ledger_id=ledger_id)
+        db.session.add(t)
+    if 'amount_tolerance' in body:
+        t.amount_tolerance = max(0, float(body['amount_tolerance'] or 0))
+    if 'percent_tolerance' in body:
+        t.percent_tolerance = max(0, float(body['percent_tolerance'] or 0))
+    db.session.flush()
+    return t
+
+
+def release_retainage(db, models, ledger_id, invoice_id, amount, user_id=None):
+    """Release retainage on AP invoice — increases payable amount."""
+    AcctAPDocument = models['AcctAPDocument']
+    doc = AcctAPDocument.query.filter_by(id=int(invoice_id), ledger_id=ledger_id).first()
+    if not doc:
+        raise ValueError('Invoice not found')
+    amt = round(float(amount or 0), 2)
+    retain = float(doc.retainage_amount or 0)
+    if amt <= 0 or amt > retain + 0.01:
+        raise ValueError('Invalid retainage release amount')
+    doc.retainage_amount = round(retain - amt, 2)
+    doc.amount = round(float(doc.amount or 0) + amt, 2)
+    try:
+        meta = json.loads(doc.details_json or '{}') if doc.details_json else {}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        meta = {}
+    meta.setdefault('retainage_releases', []).append({
+        'amount': amt, 'date': date.today().isoformat(), 'user_id': user_id,
+    })
+    doc.details_json = json.dumps(meta)
+    db.session.flush()
+    return {'invoice_id': doc.id, 'released': amt, 'retainage_remaining': doc.retainage_amount}
+
+
+def apply_payment_discount(db, models, payment, discount_amount):
+    """Record early-payment discount on AP payment (reduces cash, posts to discount account)."""
+    from accounting_posting import load_accounting_options, _account_by_number
+    from accounting_persistence import next_batch_number, post_journal_batch
+    AcctGLAccount = models['AcctGLAccount']
+    AcctJournalBatch = models['AcctJournalBatch']
+    AcctJournalLine = models['AcctJournalLine']
+    AcctLedger = models['AcctLedger']
+    disc = round(float(discount_amount or 0), 2)
+    if disc <= 0:
+        raise ValueError('discount_amount required')
+    opts = load_accounting_options()
+    ledger = AcctLedger.query.get(payment.ledger_id)
+    ap_acct = _account_by_number(AcctGLAccount, payment.ledger_id, opts['ap_account'])
+    cash_acct = _account_by_number(AcctGLAccount, payment.ledger_id, opts['cash_account'])
+    disc_acct = _account_by_number(AcctGLAccount, payment.ledger_id, opts.get('purchase_discount_account') or '5090')
+    pay_amt = float(payment.amount or 0)
+    batch = AcctJournalBatch(
+        ledger_id=payment.ledger_id,
+        batch_number=next_batch_number(AcctJournalBatch, payment.ledger_id),
+        source='AP-DISC',
+        description=f'Payment discount {payment.payment_number}'[:300],
+        batch_date=payment.payment_date or date.today(),
+        status='Open',
+    )
+    db.session.add(batch)
+    db.session.flush()
+    db.session.add(AcctJournalLine(batch_id=batch.id, line_number=1, account_id=ap_acct.id, debit=pay_amt, credit=0, description='Payment'))
+    db.session.add(AcctJournalLine(batch_id=batch.id, line_number=2, account_id=disc_acct.id, debit=0, credit=disc, description='Discount'))
+    db.session.add(AcctJournalLine(batch_id=batch.id, line_number=3, account_id=cash_acct.id, debit=0, credit=round(pay_amt - disc, 2), description='Cash'))
+    post_journal_batch(db, batch, AcctJournalLine, ledger=ledger)
+    return {'discount_batch_id': batch.id, 'discount': disc}
+
+
+def export_1099_efile(db, models, ledger_id, tax_year):
+    """IRS-style pipe-delimited export stub for 1099-NEC totals."""
+    data = report_1099(db, models, ledger_id, tax_year)
+    lines = ['T|2025|CasePM|']
+    for i, v in enumerate(data.get('vendors') or [], start=1):
+        lines.append(
+            f'B|{i}|{v.get("tax_id", "")}|{v.get("vendor_name", "")[:40]}|{v.get("payments", 0):.2f}|{v.get("form_type", "NEC")}'
+        )
+    lines.append(f'F|{len(data.get("vendors") or [])}|')
+    return {'tax_year': int(tax_year), 'format': 'pipe_stub', 'content': '\n'.join(lines), 'vendor_count': len(data.get('vendors') or [])}

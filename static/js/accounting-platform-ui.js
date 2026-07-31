@@ -1,0 +1,145 @@
+/**
+ * Platform & administration — fiscal calendar, locations, security, audit, import/export.
+ */
+(function (global) {
+  'use strict';
+
+  let ctx = null;
+
+  function AD() {
+    return global.CasePMAccountingDialog || {};
+  }
+
+  async function render() {
+    const { api, esc } = ctx;
+    const [periods, locations, audit, integrity, locale] = await Promise.all([
+      api('/api/accounting/platform/fiscal-periods'),
+      api('/api/accounting/platform/locations'),
+      api('/api/accounting/platform/audit-log'),
+      api('/api/accounting/platform/integrity'),
+      api('/api/accounting/platform/locale'),
+    ]);
+    const openPeriods = (periods.periods || []).filter((p) => p.status === 'Open').length;
+    return `<div class="space-y-6">
+      <div class="flex flex-wrap justify-between gap-2">
+        <div>
+          <h2 class="text-lg font-semibold text-white">Platform &amp; administration</h2>
+          <p class="text-xs text-zinc-500 mt-1">Fiscal calendar, locations, G/L security, optional fields, audit, and data tools.</p>
+        </div>
+        <div class="flex flex-wrap gap-2 text-xs">
+          <button type="button" id="acctPlatGenFy" class="px-3 py-2 border border-zinc-700 rounded-md text-emerald-400">Generate fiscal year</button>
+          <button type="button" id="acctPlatAddLoc" class="px-3 py-2 border border-zinc-700 rounded-md text-sky-400">+ Location</button>
+          <button type="button" id="acctPlatIntegrity" class="px-3 py-2 border border-zinc-700 rounded-md text-amber-400">Re-run integrity</button>
+          <a href="/api/accounting/platform/export/chart" class="px-3 py-2 border border-zinc-700 rounded-md text-zinc-300 inline-block">Export COA</a>
+        </div>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-3 text-xs">
+        <div class="border border-zinc-700 rounded-lg p-3">
+          <div class="text-zinc-500">Fiscal periods</div>
+          <div class="text-xl text-white">${(periods.periods || []).length}</div>
+          <div class="text-zinc-600">${openPeriods} open</div>
+        </div>
+        <div class="border border-zinc-700 rounded-lg p-3">
+          <div class="text-zinc-500">Locations</div>
+          <div class="text-xl text-white">${(locations.locations || []).length}</div>
+        </div>
+        <div class="border border-zinc-700 rounded-lg p-3 ${integrity.ok ? 'border-emerald-900/40' : 'border-amber-800'}">
+          <div class="text-zinc-500">Data integrity</div>
+          <div class="${integrity.ok ? 'text-emerald-400' : 'text-amber-400'}">${integrity.ok ? 'OK' : `${integrity.issue_count || 0} issue(s)`}</div>
+        </div>
+      </div>
+
+      <div class="grid lg:grid-cols-2 gap-4">
+        <section class="border border-zinc-700 rounded-lg p-3">
+          <h3 class="text-sm text-zinc-400 mb-2">Fiscal calendar</h3>
+          <div class="max-h-48 overflow-y-auto divide-y divide-zinc-800 text-xs">
+            ${(periods.periods || []).slice(0, 12).map((p) => `<div class="py-1 flex justify-between">
+              <span class="font-mono">${esc(p.period_key)}</span>
+              <span class="${p.status === 'Closed' ? 'text-zinc-600' : 'text-emerald-400'}">${esc(p.status)}</span>
+            </div>`).join('') || '<p class="text-zinc-600">Generate a fiscal year to begin.</p>'}
+          </div>
+        </section>
+        <section class="border border-zinc-700 rounded-lg p-3">
+          <h3 class="text-sm text-zinc-400 mb-2">Locale (multi-language beta)</h3>
+          <p class="text-xs text-zinc-500">UI language: <span class="text-zinc-300">${esc(locale.ui_language || 'en')}</span></p>
+          <button type="button" id="acctPlatLocale" class="mt-2 text-xs text-violet-400 bg-transparent border-none cursor-pointer">Edit locale</button>
+        </section>
+      </div>
+
+      <section class="border border-zinc-700 rounded-lg p-3">
+        <h3 class="text-sm text-zinc-400 mb-2">Recent audit log</h3>
+        <div class="text-xs max-h-40 overflow-y-auto space-y-1">
+          ${(audit.entries || []).slice(0, 15).map((e) => `<div class="flex justify-between gap-2 text-zinc-400">
+            <span>${esc(e.action)} · ${esc(e.entity_type || '')}</span>
+            <span class="text-zinc-600">${esc((e.created_at || '').slice(0, 19))}</span>
+          </div>`).join('') || '<p class="text-zinc-600">No entries yet.</p>'}
+        </div>
+      </section>
+    </div>`;
+  }
+
+  function bindHandlers() {
+    const { api, switchModule } = ctx;
+
+    document.getElementById('acctPlatGenFy')?.addEventListener('click', async () => {
+      const y = new Date().getFullYear();
+      const data = await AD().form({
+        title: 'Generate fiscal periods',
+        fields: [{ key: 'fiscal_year', label: 'Fiscal year', defaultValue: String(y), required: true }],
+      });
+      if (!data) return;
+      await api('/api/accounting/platform/fiscal-periods', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fiscal_year: parseInt(data.fiscal_year, 10) }),
+      });
+      switchModule('admin');
+    });
+
+    document.getElementById('acctPlatAddLoc')?.addEventListener('click', async () => {
+      const data = await AD().form({
+        title: 'New location',
+        fields: [
+          { key: 'code', label: 'Code', required: true },
+          { key: 'name', label: 'Name', required: true },
+        ],
+      });
+      if (!data) return;
+      await api('/api/accounting/platform/locations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      switchModule('admin');
+    });
+
+    document.getElementById('acctPlatIntegrity')?.addEventListener('click', () => switchModule('admin'));
+
+    document.getElementById('acctPlatLocale')?.addEventListener('click', async () => {
+      const loc = await api('/api/accounting/platform/locale');
+      const data = await AD().form({
+        title: 'Locale settings',
+        fields: [
+          { key: 'ui_language', label: 'UI language', defaultValue: loc.ui_language || 'en' },
+          { key: 'date_format', label: 'Date format', defaultValue: loc.date_format || 'ISO' },
+        ],
+      });
+      if (!data) return;
+      await api('/api/accounting/platform/locale', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      switchModule('admin');
+    });
+  }
+
+  global.CasePMAcctPlatformUI = {
+    init(c) {
+      ctx = c;
+    },
+    render,
+    bindHandlers,
+  };
+})(typeof window !== 'undefined' ? window : global);

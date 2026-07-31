@@ -40,6 +40,8 @@ def serialize_budget(b, lines=None):
         'id': b.id,
         'name': b.name,
         'fiscal_year': b.fiscal_year,
+        'version_name': getattr(b, 'version_name', None) or 'Original',
+        'scenario': getattr(b, 'scenario', None) or 'Budget',
         'status': b.status,
         'lines': lines or [],
     }
@@ -52,6 +54,8 @@ def create_budget(db, models, ledger_id, body):
         ledger_id=ledger_id,
         name=(body.get('name') or 'Budget')[:80],
         fiscal_year=int(body.get('fiscal_year') or date.today().year),
+        version_name=(body.get('version_name') or 'Original')[:40],
+        scenario=(body.get('scenario') or 'Budget')[:40],
         status='Active',
     )
     db.session.add(b)
@@ -458,3 +462,43 @@ def subledger_control_reconcile(db, models, ledger_id):
             'difference': round(float(gl_ar.get('balance', 0)) - ar_open, 2),
         },
     }
+
+
+def clone_budget(db, models, ledger_id, budget_id, body):
+    """Copy budget lines to a new version/scenario."""
+    AcctGLBudget = models['AcctGLBudget']
+    AcctGLBudgetLine = models['AcctGLBudgetLine']
+    src = AcctGLBudget.query.filter_by(id=int(budget_id), ledger_id=ledger_id).first()
+    if not src:
+        raise ValueError('Budget not found')
+    b = AcctGLBudget(
+        ledger_id=ledger_id,
+        name=(body.get('name') or f'{src.name} copy')[:80],
+        fiscal_year=src.fiscal_year,
+        version_name=(body.get('version_name') or 'Revised')[:40],
+        scenario=(body.get('scenario') or src.scenario or 'Budget')[:40],
+        status='Active',
+    )
+    db.session.add(b)
+    db.session.flush()
+    for ln in AcctGLBudgetLine.query.filter_by(budget_id=src.id).all():
+        db.session.add(AcctGLBudgetLine(
+            budget_id=b.id,
+            account_id=ln.account_id,
+            period_key=ln.period_key,
+            amount=ln.amount,
+        ))
+    db.session.flush()
+    return b
+
+
+def run_due_recurring_schedules(db, models, ledger_id, user_id=None):
+    """Run all recurring GL journals due on or before today."""
+    AcctGLRecurringJournal = models['AcctGLRecurringJournal']
+    today = date.today()
+    out = []
+    rows = AcctGLRecurringJournal.query.filter_by(ledger_id=ledger_id, is_active=True).all()
+    for r in rows:
+        if r.next_run_date and r.next_run_date <= today:
+            out.append(run_recurring_journal(db, models, r, user_id=user_id))
+    return {'runs': out}

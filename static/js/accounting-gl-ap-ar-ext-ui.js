@@ -53,6 +53,7 @@
         <button type="button" id="acctGlBudgetGrid" class="px-2 py-1 border border-zinc-600 rounded text-emerald-300">Budget grid</button>
         <button type="button" id="acctGlFxRate" class="px-2 py-1 border border-zinc-600 rounded text-cyan-400">FX rate</button>
         <button type="button" id="acctGlReval" class="px-2 py-1 border border-zinc-600 rounded text-cyan-300">Run revaluation</button>
+        <button type="button" id="acctGlRunDue" class="px-2 py-1 border border-zinc-600 rounded text-zinc-300">Run due recurring</button>
       </div>
       <p class="text-[11px] text-zinc-600">Subledger tie-out: click the button above to compare control accounts to open A/P and A/R.</p>
       <div id="acctGlSubOut" class="hidden"></div>
@@ -94,6 +95,8 @@
         <button type="button" id="acctAp1099" class="px-2 py-1 border border-zinc-600 rounded text-violet-400">1099 preview</button>
         <button type="button" id="acctApVendorActivity" class="px-2 py-1 border border-zinc-600 rounded text-amber-400">Vendor activity</button>
         <button type="button" id="acctApNacha" class="px-2 py-1 border border-zinc-600 rounded text-sky-300">EFT / NACHA</button>
+        <button type="button" id="acctApMatchTol" class="px-2 py-1 border border-zinc-600 rounded text-zinc-300">Match tolerance</button>
+        <button type="button" id="acctAp1099Efile" class="px-2 py-1 border border-zinc-600 rounded text-violet-300">1099 e-file</button>
       </div>
       <div id="acctApVendorActOut" class="text-xs max-h-40 overflow-auto border border-zinc-800 rounded p-2 hidden"></div>
       <div class="text-xs text-zinc-500">Vendor groups: ${(groups.groups || []).length} · Recurring: ${(recurring.recurring || []).length}</div>
@@ -118,6 +121,8 @@
         <button type="button" id="acctArReceiptBatch" class="px-2 py-1 border border-zinc-600 rounded text-amber-400">+ Receipt batch</button>
         <button type="button" id="acctArDunning" class="px-2 py-1 border border-zinc-600 rounded text-red-400">Dunning (30+ days)</button>
         <button type="button" id="acctArStmtPrint" class="px-2 py-1 border border-zinc-600 rounded text-zinc-300">Print statement</button>
+        <button type="button" id="acctArDunningRules" class="px-2 py-1 border border-zinc-600 rounded text-orange-400">Dunning rules</button>
+        <button type="button" id="acctArCashApp" class="px-2 py-1 border border-zinc-600 rounded text-emerald-300">Cash application</button>
       </div>
       <div class="text-xs text-zinc-500">Customer groups: ${(groups.groups || []).length} · Overdue for dunning: ${(overdue.customers || []).length} · Receipt batches: ${(batches.batches || []).length}</div>
     </section>`;
@@ -336,6 +341,16 @@
         await AD().alert(e.message, 'error');
       }
     });
+
+    document.getElementById('acctGlRunDue')?.addEventListener('click', async () => {
+      try {
+        const r = await api('/api/accounting/gl/recurring-journals/run-due', { method: 'POST' });
+        await AD().alert(`Ran ${(r.runs || []).length} recurring journal(s).`, 'info');
+        switchModule('gl');
+      } catch (e) {
+        await AD().alert(e.message, 'error');
+      }
+    });
   }
 
   function bindApExtras() {
@@ -412,6 +427,32 @@
       a.href = URL.createObjectURL(blob);
       a.download = 'ap-disbursement.ach';
       a.click();
+    });
+
+    document.getElementById('acctApMatchTol')?.addEventListener('click', async () => {
+      const cur = await api('/api/accounting/ap/match-tolerance');
+      const data = await AD().form({
+        title: '3-way match tolerance',
+        fields: [
+          { key: 'amount_tolerance', label: 'Amount ($)', defaultValue: String(cur.amount_tolerance ?? 1) },
+          { key: 'percent_tolerance', label: 'Percent', defaultValue: String(cur.percent_tolerance ?? 5) },
+        ],
+      });
+      if (!data) return;
+      await api('/api/accounting/ap/match-tolerance', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount_tolerance: parseFloat(data.amount_tolerance),
+          percent_tolerance: parseFloat(data.percent_tolerance),
+        }),
+      });
+      switchModule('ap');
+    });
+
+    document.getElementById('acctAp1099Efile')?.addEventListener('click', async () => {
+      const r = await api(`/api/accounting/ap/1099/efile?tax_year=${new Date().getFullYear() - 1}`);
+      await AD().alert(`E-file stub: ${r.vendor_count} vendor(s). Copy from API response if needed.`, 'info');
     });
   }
 
@@ -519,6 +560,59 @@
       });
       if (!pick) return;
       global.open(`/api/accounting/ar/customers/${pick.value}/statement/print`, '_blank');
+    });
+
+    document.getElementById('acctArDunningRules')?.addEventListener('click', async () => {
+      const data = await AD().form({
+        title: 'Dunning rule',
+        fields: [
+          { key: 'days_past_due', label: 'Days past due', defaultValue: '30', required: true },
+          { key: 'letter_code', label: 'Letter code', defaultValue: 'L1' },
+          { key: 'message_template', label: 'Message template (optional)' },
+        ],
+      });
+      if (!data) return;
+      await api('/api/accounting/ar/dunning/rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          days_past_due: parseInt(data.days_past_due, 10),
+          letter_code: data.letter_code,
+          message_template: data.message_template,
+        }),
+      });
+      switchModule('ar');
+    });
+
+    document.getElementById('acctArCashApp')?.addEventListener('click', async () => {
+      const customers = await api('/api/accounting/ar/customers');
+      const list = customers.customers || [];
+      if (!list[0]) {
+        await AD().alert('Add a customer first.', 'warning');
+        return;
+      }
+      const pick = await AD().select({
+        title: 'Cash application',
+        items: list.map((c) => ({ value: String(c.id), label: `${c.code} — ${c.name}` })),
+      });
+      if (!pick) return;
+      const wb = await api(`/api/accounting/ar/cash-application/${pick.value}`);
+      const inv = (wb.open_invoices || [])[0];
+      const rcpt = (wb.unapplied_receipts || [])[0];
+      if (!inv || !rcpt) {
+        await AD().alert('Need an open invoice and unapplied receipt for this customer.', 'warning');
+        return;
+      }
+      const amt = Math.min(inv.open_amount, rcpt.unapplied_amount);
+      await api('/api/accounting/ar/cash-application/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          receipt_id: rcpt.receipt_id,
+          applications: [{ ar_document_id: inv.ar_document_id, amount: amt }],
+        }),
+      });
+      switchModule('ar');
     });
   }
 
