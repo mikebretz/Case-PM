@@ -10,14 +10,37 @@
     return global.CasePMAccountingDialog || {};
   }
 
+  function formatSubledgerTieOut(sub, money) {
+    const ap = sub?.ap || {};
+    const ar = sub?.ar || {};
+    const apOk = Math.abs(ap.difference || 0) < 0.02;
+    const arOk = Math.abs(ar.difference || 0) < 0.02;
+    return `<div class="space-y-2 text-xs text-zinc-300">
+      <p class="text-zinc-500">Compares G/L control accounts to open A/P and A/R subledger balances (Sage-style tie-out).</p>
+      <div class="grid sm:grid-cols-2 gap-2">
+        <div class="border border-zinc-700 rounded p-2 ${apOk ? 'border-emerald-900/50' : 'border-amber-700'}">
+          <div class="text-zinc-400">A/P · acct ${ap.gl_account || '—'}</div>
+          <div>G/L balance: <span class="font-mono">${money(ap.gl_balance)}</span></div>
+          <div>Open subledger: <span class="font-mono">${money(ap.subledger_open)}</span></div>
+          <div class="${apOk ? 'text-emerald-400' : 'text-amber-400'}">${apOk ? 'In balance' : `Difference ${money(ap.difference)}`}</div>
+        </div>
+        <div class="border border-zinc-700 rounded p-2 ${arOk ? 'border-emerald-900/50' : 'border-amber-700'}">
+          <div class="text-zinc-400">A/R · acct ${ar.gl_account || '—'}</div>
+          <div>G/L balance: <span class="font-mono">${money(ar.gl_balance)}</span></div>
+          <div>Open subledger: <span class="font-mono">${money(ar.subledger_open)}</span></div>
+          <div class="${arOk ? 'text-emerald-400' : 'text-amber-400'}">${arOk ? 'In balance' : `Difference ${money(ar.difference)}`}</div>
+        </div>
+      </div>
+    </div>`;
+  }
+
   async function glExtrasHtml() {
-    const { api, esc, money } = ctx;
-    const [budgets, recurring, alloc, ic, sub] = await Promise.all([
+    const { api, esc } = ctx;
+    const [budgets, recurring, alloc, ic] = await Promise.all([
       api('/api/accounting/gl/budgets'),
       api('/api/accounting/gl/recurring-journals'),
       api('/api/accounting/gl/allocations'),
       api('/api/accounting/gl/intercompany'),
-      api('/api/accounting/gl/subledger-reconcile'),
     ]);
     return `<section class="border border-zinc-700 rounded-lg p-4 space-y-4">
       <h3 class="text-sm font-semibold text-white">Advanced G/L</h3>
@@ -31,7 +54,9 @@
         <button type="button" id="acctGlFxRate" class="px-2 py-1 border border-zinc-600 rounded text-cyan-400">FX rate</button>
         <button type="button" id="acctGlReval" class="px-2 py-1 border border-zinc-600 rounded text-cyan-300">Run revaluation</button>
       </div>
-      <div id="acctGlSubOut" class="text-xs font-mono text-zinc-400">${esc(JSON.stringify(sub))}</div>
+      <p class="text-[11px] text-zinc-600">Subledger tie-out: click the button above to compare control accounts to open A/P and A/R.</p>
+      <div id="acctGlSubOut" class="hidden"></div>
+      <div id="acctGlBudgetGridHost" class="mt-2"></div>
       <div class="grid md:grid-cols-3 gap-2 text-xs">
         <div><div class="text-zinc-500 mb-1">Budgets (${(budgets.budgets || []).length})</div>
           ${(budgets.budgets || []).slice(0, 3).map((b) => `<div class="flex justify-between gap-2 text-zinc-300"><span>${esc(b.name)} · FY${b.fiscal_year}</span>
@@ -99,11 +124,14 @@
   }
 
   function bindGlExtras() {
-    const { api, switchModule } = ctx;
+    const { api, switchModule, money } = ctx;
     document.getElementById('acctGlRefreshSub')?.addEventListener('click', async () => {
       const sub = await api('/api/accounting/gl/subledger-reconcile');
       const el = document.getElementById('acctGlSubOut');
-      if (el) el.textContent = JSON.stringify(sub, null, 2);
+      if (el) {
+        el.classList.remove('hidden');
+        el.innerHTML = formatSubledgerTieOut(sub, money);
+      }
     });
     document.getElementById('acctGlNewBudget')?.addEventListener('click', async () => {
       const gl = await api('/api/accounting/gl/accounts');
@@ -249,7 +277,7 @@
       const grid = await api(`/api/accounting/gl/budgets/${budgetId}/grid`);
       const periods = grid.periods || [];
       const rows = (grid.rows || []).slice(0, 20);
-      const host = document.getElementById('acctGlSubOut');
+      const host = document.getElementById('acctGlBudgetGridHost');
       if (!host) return;
       const header = periods.map((p) => `<th class="px-1 text-right">${esc(p)}</th>`).join('');
       host.innerHTML = `<div class="mb-2 text-zinc-300 font-medium">Budget grid: ${esc(grid.budget?.name || '')}</div>
