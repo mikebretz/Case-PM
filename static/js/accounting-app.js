@@ -285,7 +285,10 @@
               <td class="px-3 py-2 text-xs">${esc(v ? `${v.code} — ${v.name}` : `Vendor #${i.vendor_id}`)}</td>
               <td class="px-3 py-2 text-right">${money(i.amount)}</td>
               <td class="px-3 py-2 text-xs">${i.gl_posted ? '<span class="text-emerald-400">Posted</span>' : '<span class="text-zinc-500">Subledger only</span>'}</td>
-              <td class="px-3 py-2 text-right">${!i.gl_posted ? `<button type="button" class="text-violet-400 text-xs acct-ap-post-gl" data-id="${i.id}">Post to G/L</button>` : ''}</td>
+              <td class="px-3 py-2 text-right whitespace-nowrap text-xs">
+                <button type="button" class="text-amber-400 acct-ap-3way mr-2" data-id="${i.id}">3-way</button>
+                ${!i.gl_posted ? `<button type="button" class="text-violet-400 acct-ap-post-gl" data-id="${i.id}">Post to G/L</button>` : ''}
+              </td>
             </tr>`;
           }).join('') || '<tr><td colspan="5" class="p-4 text-zinc-500 text-sm">No open invoices.</td></tr>'}
         </tbody></table>
@@ -764,6 +767,19 @@
         try {
           await api(`/api/accounting/ap/invoices/${btn.getAttribute('data-id')}/post-gl`, { method: 'POST', body: '{}' });
           switchModule('ap');
+        } catch (e) {
+          await AD().alert(e.message, 'error');
+        }
+      });
+    });
+    document.querySelectorAll('.acct-ap-3way').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        try {
+          const m = await api(`/api/accounting/ap/invoices/${btn.getAttribute('data-id')}/three-way-match`);
+          const msg = m.matched
+            ? `Matched PO ${m.po_number || m.purchase_order_id}`
+            : `${m.status}: ${m.message || `PO total ${m.po_total}, invoice ${m.invoice_amount}`}`;
+          await AD().alert(msg, m.matched ? 'success' : 'warning');
         } catch (e) {
           await AD().alert(e.message, 'error');
         }

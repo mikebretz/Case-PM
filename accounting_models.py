@@ -142,6 +142,8 @@ def define_accounting_models(db):
         retainage_amount = db.Column(db.Float, default=0)
         withhold_amount = db.Column(db.Float, default=0)
         gross_amount = db.Column(db.Float, default=0)
+        currency_code = db.Column(db.String(3), default='USD')
+        fx_rate = db.Column(db.Float, default=1.0)
         details_json = db.Column(db.Text)
         created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -173,6 +175,8 @@ def define_accounting_models(db):
         project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
         ship_to_id = db.Column(db.Integer, db.ForeignKey('acct_customer_ship_to.id'), nullable=True)
         parent_document_id = db.Column(db.Integer, db.ForeignKey('acct_ar_document.id'), nullable=True)
+        currency_code = db.Column(db.String(3), default='USD')
+        fx_rate = db.Column(db.Float, default=1.0)
         details_json = db.Column(db.Text)
         created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -591,6 +595,27 @@ def define_accounting_models(db):
         payment_method = db.Column(db.String(20))
         details_json = db.Column(db.Text)
 
+    class AcctCurrencyRate(db.Model):
+        __tablename__ = 'acct_currency_rate'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        currency_code = db.Column(db.String(3), nullable=False)
+        rate_date = db.Column(db.Date, nullable=False)
+        rate_to_functional = db.Column(db.Float, default=1.0)
+        source = db.Column(db.String(40), default='manual')
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class AcctRevaluationRun(db.Model):
+        __tablename__ = 'acct_revaluation_run'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        run_number = db.Column(db.String(30), nullable=False)
+        period_end = db.Column(db.Date)
+        status = db.Column(db.String(20), default='Posted')
+        journal_batch_id = db.Column(db.Integer, db.ForeignKey('acct_journal_batch.id'), nullable=True)
+        details_json = db.Column(db.Text)
+        posted_at = db.Column(db.DateTime, default=datetime.utcnow)
+
     return {
         'AcctLedger': AcctLedger,
         'AcctGLAccount': AcctGLAccount,
@@ -637,4 +662,6 @@ def define_accounting_models(db):
         'AcctPaymentBatchLine': AcctPaymentBatchLine,
         'AcctPayNowLink': AcctPayNowLink,
         'AcctConsolidationRun': AcctConsolidationRun,
+        'AcctCurrencyRate': AcctCurrencyRate,
+        'AcctRevaluationRun': AcctRevaluationRun,
     }

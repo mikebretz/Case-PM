@@ -27,11 +27,15 @@
         <button type="button" id="acctGlNewAlloc" class="px-2 py-1 border border-zinc-600 rounded text-violet-400">+ Allocation template</button>
         <button type="button" id="acctGlNewIc" class="px-2 py-1 border border-zinc-600 rounded text-amber-400">+ Intercompany</button>
         <button type="button" id="acctGlRefreshSub" class="px-2 py-1 border border-zinc-600 rounded text-zinc-300">Subledger tie-out</button>
+        <button type="button" id="acctGlBudgetGrid" class="px-2 py-1 border border-zinc-600 rounded text-emerald-300">Budget grid</button>
+        <button type="button" id="acctGlFxRate" class="px-2 py-1 border border-zinc-600 rounded text-cyan-400">FX rate</button>
+        <button type="button" id="acctGlReval" class="px-2 py-1 border border-zinc-600 rounded text-cyan-300">Run revaluation</button>
       </div>
       <div id="acctGlSubOut" class="text-xs font-mono text-zinc-400">${esc(JSON.stringify(sub))}</div>
       <div class="grid md:grid-cols-3 gap-2 text-xs">
         <div><div class="text-zinc-500 mb-1">Budgets (${(budgets.budgets || []).length})</div>
-          ${(budgets.budgets || []).slice(0, 3).map((b) => `<div class="text-zinc-300">${esc(b.name)} · FY${b.fiscal_year}</div>`).join('') || '<div class="text-zinc-600">None</div>'}
+          ${(budgets.budgets || []).slice(0, 3).map((b) => `<div class="flex justify-between gap-2 text-zinc-300"><span>${esc(b.name)} · FY${b.fiscal_year}</span>
+            <button type="button" class="acct-gl-open-budget text-emerald-400 bg-transparent border-none cursor-pointer" data-id="${b.id}">Grid</button></div>`).join('') || '<div class="text-zinc-600">None</div>'}
         </div>
         <div><div class="text-zinc-500 mb-1">Recurring (${(recurring.recurring || []).length})</div>
           ${(recurring.recurring || []).slice(0, 3).map((r) => `<div class="flex justify-between gap-2"><span>${esc(r.code)}</span>
@@ -63,7 +67,10 @@
         <button type="button" id="acctApVendorGroup" class="px-2 py-1 border border-zinc-600 rounded text-emerald-400">+ Vendor group</button>
         <button type="button" id="acctApRecurring" class="px-2 py-1 border border-zinc-600 rounded text-sky-400">+ Recurring payable</button>
         <button type="button" id="acctAp1099" class="px-2 py-1 border border-zinc-600 rounded text-violet-400">1099 preview</button>
+        <button type="button" id="acctApVendorActivity" class="px-2 py-1 border border-zinc-600 rounded text-amber-400">Vendor activity</button>
+        <button type="button" id="acctApNacha" class="px-2 py-1 border border-zinc-600 rounded text-sky-300">EFT / NACHA</button>
       </div>
+      <div id="acctApVendorActOut" class="text-xs max-h-40 overflow-auto border border-zinc-800 rounded p-2 hidden"></div>
       <div class="text-xs text-zinc-500">Vendor groups: ${(groups.groups || []).length} · Recurring: ${(recurring.recurring || []).length}</div>
       <div class="text-xs text-zinc-400">1099 vendors (YTD): ${(report.vendors || []).length}</div>
       <p class="text-[10px] text-zinc-600">Invoices: use gross + retainage/withhold % on create. Match PO via three-way on open invoice row (API).</p>
@@ -85,6 +92,7 @@
         <button type="button" id="acctArRecurring" class="px-2 py-1 border border-zinc-600 rounded text-violet-400">+ Recurring invoice</button>
         <button type="button" id="acctArReceiptBatch" class="px-2 py-1 border border-zinc-600 rounded text-amber-400">+ Receipt batch</button>
         <button type="button" id="acctArDunning" class="px-2 py-1 border border-zinc-600 rounded text-red-400">Dunning (30+ days)</button>
+        <button type="button" id="acctArStmtPrint" class="px-2 py-1 border border-zinc-600 rounded text-zinc-300">Print statement</button>
       </div>
       <div class="text-xs text-zinc-500">Customer groups: ${(groups.groups || []).length} · Overdue for dunning: ${(overdue.customers || []).length} · Receipt batches: ${(batches.batches || []).length}</div>
     </section>`;
@@ -222,6 +230,84 @@
         switchModule('gl');
       });
     });
+
+    document.getElementById('acctGlBudgetGrid')?.addEventListener('click', async () => {
+      const budgets = await api('/api/accounting/gl/budgets');
+      const b = (budgets.budgets || [])[0];
+      if (!b) {
+        await AD().alert('Create a budget first.', 'warning');
+        return;
+      }
+      openBudgetGrid(b.id);
+    });
+    document.querySelectorAll('.acct-gl-open-budget').forEach((btn) => {
+      btn.addEventListener('click', () => openBudgetGrid(parseInt(btn.getAttribute('data-id'), 10)));
+    });
+
+    async function openBudgetGrid(budgetId) {
+      const { esc, api, switchModule } = ctx;
+      const grid = await api(`/api/accounting/gl/budgets/${budgetId}/grid`);
+      const periods = grid.periods || [];
+      const rows = (grid.rows || []).slice(0, 20);
+      const host = document.getElementById('acctGlSubOut');
+      if (!host) return;
+      const header = periods.map((p) => `<th class="px-1 text-right">${esc(p)}</th>`).join('');
+      host.innerHTML = `<div class="mb-2 text-zinc-300 font-medium">Budget grid: ${esc(grid.budget?.name || '')}</div>
+        <div class="overflow-auto max-h-64"><table class="text-xs w-full"><thead><tr><th>Acct</th>${header}</tr></thead><tbody>
+        ${rows.map((r) => `<tr><td class="font-mono pr-2">${esc(r.account_number)}</td>
+          ${periods.map((p) => `<td class="text-right"><input type="number" step="0.01" class="acct-bud-cell w-14 bg-zinc-900 border border-zinc-700 rounded" data-aid="${r.account_id}" data-pk="${esc(p)}" value="${r.periods[p] || 0}"></td>`).join('')}
+        </tr>`).join('')}
+        </tbody></table></div>
+        <button type="button" id="acctGlSaveBudgetGrid" class="mt-2 text-xs text-emerald-400">Save budget grid</button>`;
+      document.getElementById('acctGlSaveBudgetGrid')?.addEventListener('click', async () => {
+        const cells = [];
+        host.querySelectorAll('.acct-bud-cell').forEach((inp) => {
+          cells.push({
+            account_id: parseInt(inp.getAttribute('data-aid'), 10),
+            period_key: inp.getAttribute('data-pk'),
+            amount: parseFloat(inp.value) || 0,
+          });
+        });
+        await api(`/api/accounting/gl/budgets/${budgetId}/grid`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cells }),
+        });
+        switchModule('gl');
+      });
+    }
+
+    document.getElementById('acctGlFxRate')?.addEventListener('click', async () => {
+      const data = await AD().form({
+        title: 'Exchange rate',
+        fields: [
+          { key: 'currency_code', label: 'Currency', defaultValue: 'EUR' },
+          { key: 'rate_date', label: 'Date', type: 'date', defaultValue: new Date().toISOString().slice(0, 10) },
+          { key: 'rate_to_functional', label: 'Rate to functional currency', defaultValue: '1.08' },
+        ],
+      });
+      if (!data) return;
+      await api('/api/accounting/gl/currency-rates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      switchModule('gl');
+    });
+
+    document.getElementById('acctGlReval')?.addEventListener('click', async () => {
+      if (!await AD().confirm({ title: 'Run revaluation?', message: 'Posts FX adjustment journal.' })) return;
+      try {
+        await api('/api/accounting/gl/revaluation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ period_end: new Date().toISOString().slice(0, 10) }),
+        });
+        switchModule('gl');
+      } catch (e) {
+        await AD().alert(e.message, 'error');
+      }
+    });
   }
 
   function bindApExtras() {
@@ -253,6 +339,51 @@
     document.getElementById('acctAp1099')?.addEventListener('click', async () => {
       const r = await api(`/api/accounting/ap/reports/1099?year=${new Date().getFullYear()}`);
       await AD().alert(`1099 preview: ${(r.vendors || []).length} vendor(s) with payments.`, 'info');
+    });
+
+    document.getElementById('acctApVendorActivity')?.addEventListener('click', async () => {
+      const { esc, money } = ctx;
+      const r = await api('/api/accounting/ap/reports/vendor-activity');
+      const out = document.getElementById('acctApVendorActOut');
+      if (!out) return;
+      out.classList.remove('hidden');
+      out.innerHTML = `<table class="w-full text-xs"><thead><tr><th class="text-left">Vendor</th><th class="text-right">Billed</th><th class="text-right">Paid</th><th class="text-right">Open</th><th></th></tr></thead><tbody>
+        ${(r.vendors || []).map((v) => `<tr class="border-t border-zinc-800"><td>${esc(v.code)} ${esc(v.name)}</td>
+          <td class="text-right">${money(v.billed)}</td><td class="text-right">${money(v.paid)}</td><td class="text-right">${money(v.open)}</td>
+          <td><button type="button" class="acct-ap-vend-det text-sky-400 bg-transparent border-none cursor-pointer" data-id="${v.vendor_id}">Detail</button></td></tr>`).join('')}
+        </tbody></table>`;
+      out.querySelectorAll('.acct-ap-vend-det').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const det = await api(`/api/accounting/ap/vendors/${btn.getAttribute('data-id')}/activity`);
+          await AD().alert(`Invoices: ${(det.invoices || []).length}, Payments: ${(det.payments || []).length}`, 'info');
+        });
+      });
+    });
+
+    document.getElementById('acctApNacha')?.addEventListener('click', async () => {
+      const pays = await api('/api/accounting/ap/payments');
+      const posted = (pays.payments || []).filter((p) => p.status === 'Posted').slice(0, 10);
+      if (!posted.length) {
+        await AD().alert('No posted payments for NACHA export.', 'warning');
+        return;
+      }
+      const ids = posted.map((p) => p.id);
+      const res = await fetch('/api/accounting/ap/payments/nacha', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payment_ids: ids }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        await AD().alert(j.error || res.statusText, 'error');
+        return;
+      }
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'ap-disbursement.ach';
+      a.click();
     });
   }
 
@@ -334,12 +465,32 @@
         return;
       }
       const c = list[0];
-      await api('/api/accounting/ar/dunning/send', {
+      const out = await api('/api/accounting/ar/dunning/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ customer_id: c.customer_id, level: c.suggested_dunning_level }),
       });
+      if (out.mailto) {
+        global.open(out.mailto, '_blank');
+      } else {
+        await AD().alert(out.body || 'Dunning logged (no customer email on file).', 'info');
+      }
       switchModule('ar');
+    });
+
+    document.getElementById('acctArStmtPrint')?.addEventListener('click', async () => {
+      const customers = await api('/api/accounting/ar/customers');
+      const list = customers.customers || [];
+      if (!list[0]) {
+        await AD().alert('Add a customer first.', 'warning');
+        return;
+      }
+      const pick = await AD().select({
+        title: 'Print statement',
+        items: list.map((c) => ({ value: String(c.id), label: `${c.code} — ${c.name}` })),
+      });
+      if (!pick) return;
+      global.open(`/api/accounting/ar/customers/${pick.value}/statement/print`, '_blank');
     });
   }
 

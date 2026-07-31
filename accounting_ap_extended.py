@@ -212,3 +212,66 @@ def void_ap_payment(db, models, payment, reason='', user_id=None):
     payment.voided_at = datetime.utcnow()
     db.session.flush()
     return {'payment_id': payment.id, 'reversal_batch_id': batch.id}
+
+
+def vendor_activity_detail(db, models, ledger_id, vendor_id):
+    from accounting_persistence import serialize_ap_doc
+    AcctVendor = models['AcctVendor']
+    AcctAPDocument = models['AcctAPDocument']
+    AcctAPPayment = models['AcctAPPayment']
+    AcctAPPaymentApply = models['AcctAPPaymentApply']
+    v = AcctVendor.query.filter_by(id=int(vendor_id), ledger_id=ledger_id).first()
+    if not v:
+        raise ValueError('Vendor not found')
+    invoices = [serialize_ap_doc(d) for d in AcctAPDocument.query.filter_by(ledger_id=ledger_id, vendor_id=v.id).order_by(AcctAPDocument.document_date.desc()).limit(100).all()]
+    payments = []
+    for p in AcctAPPayment.query.filter_by(ledger_id=ledger_id, vendor_id=v.id).order_by(AcctAPPayment.id.desc()).limit(50).all():
+        apps = AcctAPPaymentApply.query.filter_by(payment_id=p.id).all()
+        payments.append({
+            'id': p.id,
+            'payment_number': p.payment_number,
+            'payment_date': p.payment_date.isoformat() if p.payment_date else None,
+            'amount': p.amount,
+            'status': p.status,
+            'applications': [{'ap_document_id': a.ap_document_id, 'amount': a.amount} for a in apps],
+        })
+    return {'vendor': serialize_vendor_extended(v), 'invoices': invoices, 'payments': payments}
+
+
+def nacha_ach_file(db, models, ledger_id, payment_ids, *, company_name='CASE PM', company_id='1234567890', dest_routing='021000021', dest_account='123456789'):
+    """Generate simplified NACHA-style ACH credit file for AP payments."""
+    AcctAPPayment = models['AcctAPPayment']
+    AcctVendor = models['AcctVendor']
+    lines = []
+    lines.append(
+        '101' + dest_routing[:9].ljust(9) + company_id[:10].ljust(10)
+        + datetime.utcnow().strftime('%y%m%d%H%M') + '094101' + dest_routing[:8].ljust(8) + company_name[:23].ljust(23)
+    )
+    lines.append(
+        '5200' + company_name[:16].ljust(16) + ' ' * 20 + company_id[:10].ljust(10) + 'PPD' + 'VENDOR PAY'.ljust(10)
+        + datetime.utcnow().strftime('%y%m%d') + datetime.utcnow().strftime('%y%m%d') + '   1' + dest_routing[:8] + '0000001'
+    )
+    entry = 0
+    total = 0
+    for pid in payment_ids:
+        p = AcctAPPayment.query.filter_by(id=int(pid), ledger_id=ledger_id, status='Posted').first()
+        if not p:
+            continue
+        v = AcctVendor.query.get(p.vendor_id)
+        entry += 1
+        cents = int(round(float(p.amount or 0) * 100))
+        total += cents
+        name = (v.name if v else 'Vendor')[:22].ljust(22)
+        trace = (v.code[:15] if v else 'VENDOR').ljust(15)
+        lines.append(
+            '622' + dest_routing[:8] + '0' + dest_account[:17].ljust(17) + f'{cents:010d}'
+            + p.payment_number[:15].ljust(15) + name + '  0' + trace
+        )
+    if entry == 0:
+        raise ValueError('No posted payments selected')
+    lines.append(
+        '820' + f'{entry:06d}' + f'{entry:06d}' + f'{total:012d}' + f'{total:012d}'
+        + company_id[:10].ljust(10) + ' ' * 25 + dest_routing[:8] + '0000001'
+    )
+    lines.append('9000001' + f'{entry + 2:06d}' + f'{entry:06d}' + f'{total:012d}' + f'{total:012d}' + ' ' * 39)
+    return '\n'.join(lines)
