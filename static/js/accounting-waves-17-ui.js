@@ -72,6 +72,7 @@
         <button type="button" id="acctSagePushVendors" class="px-2 py-0.5 border border-zinc-600 rounded text-emerald-400">Push vendors</button>
         <button type="button" id="acctSagePushApLive" class="px-2 py-0.5 border border-zinc-600 rounded text-rose-400">Push AP live</button>
         <button type="button" id="acctSageConflicts" class="px-2 py-0.5 border border-zinc-600 rounded text-sky-400">Vendor conflicts</button>
+        <button type="button" id="acctSageGlConflicts" class="px-2 py-0.5 border border-zinc-600 rounded text-violet-400">G/L conflicts</button>
         <button type="button" id="acctSagePolicyCasepm" class="px-2 py-0.5 border border-zinc-600 rounded">SOR: Case PM</button>
         <button type="button" id="acctSagePolicySage" class="px-2 py-0.5 border border-zinc-600 rounded">SOR: Sage</button>
       </div>
@@ -91,7 +92,19 @@
     });
     document.getElementById('acctSagePushApLive')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/sage/sync/push-open-ap-live', { method: 'POST', body: '{}' });
-      await AD().alert(`Live push attempted for ${r.pushed || 0} document(s).`, 'info');
+      const errN = r.error_count || 0;
+      const errLines = (r.errors || []).slice(0, 5).map((e) => `${e.document_number}: ${e.error || e.mode || 'failed'}`).join('\n');
+      await AD().alert(
+        `Live push: ${r.pushed || 0} document(s).${errN ? ` Errors: ${errN}\n${errLines}` : ''}`,
+        errN ? 'warning' : 'info',
+      );
+    });
+    document.getElementById('acctSageGlConflicts')?.addEventListener('click', async () => {
+      const c = await api('/api/accounting/sage/conflicts/gl');
+      const lines = (c.conflicts || []).slice(0, 15).map(
+        (x) => `${x.account_number}: ${x.type} — local "${x.local_name}" vs sage "${x.sage_name || '—'}"`,
+      ).join('\n');
+      await AD().alert(lines || 'No G/L account conflicts detected.', (c.conflicts || []).length ? 'warning' : 'success');
     });
     document.getElementById('acctSageConflicts')?.addEventListener('click', async () => {
       const c = await api('/api/accounting/sage/conflicts/vendors');

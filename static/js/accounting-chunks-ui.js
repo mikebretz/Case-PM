@@ -41,12 +41,14 @@
         <div class="bg-zinc-900 border border-zinc-700 rounded p-2">Retainage held: <strong>${money(pa.total_retainage)}</strong></div>
         <div class="bg-zinc-900 border border-zinc-700 rounded p-2">A/R vs pay app variance: <strong>${money(panel.variance_billed_vs_ar)}</strong></div>
       </div>
+      ${(panel.variance_detail?.g702_pending_sync || []).length ? `<p class="text-xs text-amber-400">${panel.variance_detail.g702_pending_sync.length} approved G702 period(s) not yet in A/R — use sync below.</p>` : ''}
       <div class="flex flex-wrap gap-2 text-xs">
         <a href="${esc(panel.links?.budget || '#')}" class="text-emerald-400 underline">Budget</a>
         <a href="${esc(panel.links?.pay_apps || '#')}" class="text-emerald-400 underline">Pay applications</a>
         <a href="${esc(panel.links?.commitments || '#')}" class="text-emerald-400 underline">Commitments</a>
       </div>
       <button type="button" id="acctJcG702Sync" class="px-3 py-2 text-sm bg-emerald-800 rounded">Sync approved G702 → A/R</button>
+      <button type="button" id="acctJcG702SyncAll" class="px-3 py-2 text-sm bg-emerald-900 rounded border border-emerald-700">Sync all pending G702</button>
       <button type="button" id="acctJcProgressAr" class="px-3 py-2 text-sm bg-violet-700 rounded">Create A/R from progress billing</button>
     </div>`;
   }
@@ -67,6 +69,12 @@
         body: JSON.stringify({ period: p.period }),
       });
       await AD().alert(r.posted ? `Posted A/R for period ${p.period}.` : JSON.stringify(r), 'success');
+      switchModule('jobcost');
+    });
+    document.getElementById('acctJcG702SyncAll')?.addEventListener('click', async () => {
+      const pid = projectId();
+      const r = await api(`/api/accounting/jobcost/${pid}/g702-sync-all`, { method: 'POST', body: '{}' });
+      await AD().alert(`Posted ${r.posted_count || 0} period(s).${(r.errors || []).length ? ` ${r.errors.length} error(s).` : ''}`, 'success');
       switchModule('jobcost');
     });
     document.getElementById('acctJcProgressAr')?.addEventListener('click', async () => {

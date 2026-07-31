@@ -687,6 +687,14 @@ def run_pay_app_accounting_sync(
         try:
             import app as app_mod
             from accounting_posting import process_construction_event
+            if event_type == 'G702Approved':
+                try:
+                    from accounting_waves_20 import construction_force_post_for_event
+
+                    if construction_force_post_for_event(event_type, pl):
+                        pl['force_builtin_post'] = True
+                except Exception:
+                    pass
             result['builtin_post'] = process_construction_event(
                 event_type,
                 project_id,

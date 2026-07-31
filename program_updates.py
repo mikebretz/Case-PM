@@ -450,6 +450,13 @@ def git_pull_update(actor=''):
         actor=actor,
     )
 
+    try:
+        from accounting_waves_20 import ensure_case_pm_db_untracked
+
+        ensure_case_pm_db_untracked(APP_ROOT)
+    except Exception:
+        pass
+
     code, out, err = _git_run(['pull', 'origin', 'main'], timeout=180)
     if code != 0:
         entry = {

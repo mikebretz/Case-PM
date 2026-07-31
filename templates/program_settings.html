@@ -810,6 +810,13 @@
                         Auto-post approved construction financials to built-in G/L / A/P / A/R
                     </label>
                 </div>
+                <div class="mb-5">
+                    <label class="flex items-center gap-2 text-sm text-zinc-300">
+                        <input type="checkbox" id="acct_g702_post_on_approve" class="rounded border-zinc-600" {% if accounting_defaults.get('g702_post_on_approve', '1') != '0' %}checked{% endif %}>
+                        Post owner G702 to A/R when approved (even if auto-post above is off)
+                    </label>
+                </div>
+                <div id="acctSorSummaryHost" class="mb-5 p-4 border border-zinc-700 rounded-lg text-sm text-zinc-400 hidden"></div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {% for key, label in [
                         ('cash_account', 'Cash account'),
@@ -1005,6 +1012,27 @@
         if (tab === 'workflow' && window.CasePMProgramSettings) CasePMProgramSettings.loadWorkflowForm();
         if (tab === 'integrations' && window.CasePMProgramSettings) CasePMProgramSettings.loadIntegrationsPanel();
         if (tab === 'security' && window.CasePMProgramSettings) CasePMProgramSettings.loadSecurityForm();
+        if (tab === 'accounting') loadAccountingSorSummary();
+    }
+
+    async function loadAccountingSorSummary() {
+        const host = document.getElementById('acctSorSummaryHost');
+        if (!host) return;
+        try {
+            const res = await fetch('/api/accounting/program-settings/sor-summary', { credentials: 'same-origin' });
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.error || 'Failed');
+            host.classList.remove('hidden');
+            const errN = (json.last_ap_push_errors || []).length;
+            host.innerHTML = `<div class="text-zinc-300 font-medium mb-1">Sage hybrid snapshot</div>
+                <div>System of record: <strong class="text-emerald-400">${json.system_of_record || 'casepm'}</strong>
+                · Conflict policy: <strong>${json.conflict_policy || 'casepm_wins'}</strong>
+                · G702→A/R when approved: <strong>${json.g702_post_on_approve ? 'on' : 'off'}</strong></div>
+                <div class="text-xs mt-1">Export queue: ${json.export_queue_size || 0}
+                ${errN ? ` · <span class="text-amber-400">${errN} recent AP push error(s)</span>` : ''}</div>`;
+        } catch (_) {
+            host.classList.add('hidden');
+        }
     }
 
     async function saveDocumentsSettings(e) {
@@ -1047,9 +1075,12 @@
     async function saveAccountingDefaults(e) {
         e.preventDefault();
         const form = document.getElementById('accountingDefaultsForm');
-        const accounting = { auto_post_enabled: document.getElementById('acct_auto_post_enabled')?.checked ? '1' : '0' };
+        const accounting = {
+            auto_post_enabled: document.getElementById('acct_auto_post_enabled')?.checked ? '1' : '0',
+            g702_post_on_approve: document.getElementById('acct_g702_post_on_approve')?.checked ? '1' : '0',
+        };
         form.querySelectorAll('input[name]').forEach((el) => {
-            if (el.id === 'acct_auto_post_enabled') return;
+            if (el.id === 'acct_auto_post_enabled' || el.id === 'acct_g702_post_on_approve') return;
             accounting[el.name] = el.value.trim();
         });
         try {

@@ -3705,7 +3705,13 @@ def register_accounting_routes(app, deps):
     @login_required
     def api_acct_jobcost_panel(project_id):
         from accounting_waves_17 import jobcost_with_pay_apps
-        return jsonify(jobcost_with_pay_apps(db, models, _ledger_id(), project_id))
+        from accounting_waves_20 import jobcost_variance_breakdown
+        base = jobcost_with_pay_apps(db, models, _ledger_id(), project_id)
+        if PayAppProjectState:
+            base['variance_detail'] = jobcost_variance_breakdown(
+                db, models, _ledger_id(), project_id, PayAppProjectState=PayAppProjectState,
+            )
+        return jsonify(base)
 
     @app.route('/api/accounting/ar/progress-billing', methods=['POST'])
     @login_required
@@ -4118,8 +4124,8 @@ def register_accounting_routes(app, deps):
     @app.route('/api/accounting/sage/sync/push-open-ap-live', methods=['POST'])
     @login_required
     def api_acct_sage_push_ap_live():
-        from accounting_waves_19 import sage_push_open_ap_live
-        out = sage_push_open_ap_live(db, models, _ledger_id(), user_id=current_user.id)
+        from accounting_waves_20 import sage_push_open_ap_with_error_log
+        out = sage_push_open_ap_with_error_log(db, models, _ledger_id(), user_id=current_user.id)
         db.session.commit()
         return jsonify({'ok': True, **out})
 
@@ -4217,7 +4223,7 @@ def register_accounting_routes(app, deps):
     @app.route('/api/accounting/reports/designer/columns', methods=['GET'])
     @login_required
     def api_acct_report_columns():
-        from accounting_waves_19 import report_designer_column_catalog
+        from accounting_waves_20 import report_designer_column_catalog
         return jsonify(report_designer_column_catalog())
 
     @app.route('/api/accounting/reports/schedule-alerts', methods=['GET'])
@@ -4226,3 +4232,66 @@ def register_accounting_routes(app, deps):
         ledger = models['AcctLedger'].query.get(_ledger_id())
         from accounting_gl_service import _parse_settings
         return jsonify({'alerts': (_parse_settings(ledger).get('report_schedule_alerts') or [])})
+
+    # --- Wave 10 ---
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/g702-sync-all', methods=['POST'])
+    @login_required
+    def api_acct_g702_sync_all(project_id):
+        from accounting_waves_20 import sync_all_g702_pending_to_ar
+        if not PayAppProjectState:
+            return jsonify({'error': 'Pay app module not available'}), 503
+        try:
+            out = sync_all_g702_pending_to_ar(
+                db, models, _ledger_id(), project_id,
+                user_id=current_user.id, PayAppProjectState=PayAppProjectState, Project=Project,
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/variance', methods=['GET'])
+    @login_required
+    def api_acct_jobcost_variance(project_id):
+        from accounting_waves_20 import jobcost_variance_breakdown
+        if not PayAppProjectState:
+            return jsonify({'error': 'Pay app module not available'}), 503
+        return jsonify(jobcost_variance_breakdown(db, models, _ledger_id(), project_id, PayAppProjectState))
+
+    @app.route('/api/accounting/sage/conflicts/gl', methods=['GET'])
+    @login_required
+    def api_acct_sage_gl_conflicts():
+        from accounting_waves_20 import sage_gl_account_conflict_review
+        return jsonify(sage_gl_account_conflict_review(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/program-settings/sor-summary', methods=['GET'])
+    @login_required
+    def api_acct_sor_summary():
+        from accounting_waves_20 import program_settings_sor_summary
+        return jsonify(program_settings_sor_summary(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/compliance/efile/dashboard', methods=['GET'])
+    @login_required
+    def api_acct_efile_dashboard():
+        from accounting_waves_20 import efile_status_dashboard
+        return jsonify(efile_status_dashboard(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/payroll/certified/<int:project_id>/prevailing-daily', methods=['GET'])
+    @login_required
+    def api_acct_certified_prevailing_daily(project_id):
+        from accounting_waves_20 import certified_payroll_prevailing_daily_log
+        we = request.args.get('week_ending') or date.today().isoformat()
+        return jsonify(certified_payroll_prevailing_daily_log(db, models, _ledger_id(), project_id, we, Project=Project))
+
+    @app.route('/api/accounting/cron/wave10', methods=['POST'])
+    def api_acct_cron_wave10():
+        from accounting_waves_20 import cron_wave10_maintenance
+        secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
+        try:
+            out = cron_wave10_maintenance(db, models, secret)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
