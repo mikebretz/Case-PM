@@ -5586,3 +5586,112 @@ def register_accounting_routes(app, deps):
             return jsonify({'ok': True, **out})
         except PermissionError as exc:
             return jsonify({'error': str(exc)}), 403
+
+    # --- Waves 41–44 ---
+
+    @app.route('/api/accounting/sage/construction/queue', methods=['GET'])
+    @login_required
+    def api_acct_cre_queue_inspect():
+        from accounting_waves_30 import construction_mirror_queue_inspect
+        return jsonify(construction_mirror_queue_inspect(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/sage/construction/queue/retry', methods=['POST'])
+    @login_required
+    def api_acct_cre_queue_retry():
+        from accounting_waves_30 import construction_mirror_queue_retry
+        data = request.get_json(silent=True) or {}
+        out = construction_mirror_queue_retry(db, models, _ledger_id(), int(data.get('index', 0)), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/construction/queue/discard', methods=['POST'])
+    @login_required
+    def api_acct_cre_queue_discard():
+        from accounting_waves_30 import construction_mirror_queue_discard
+        data = request.get_json(silent=True) or {}
+        out = construction_mirror_queue_discard(db, models, _ledger_id(), int(data.get('index', 0)), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/construction/g702-keys/<int:project_id>', methods=['GET'])
+    @login_required
+    def api_acct_g702_keys(project_id):
+        from accounting_waves_30 import g702_ar_external_key_report
+        return jsonify(g702_ar_external_key_report(db, models, _ledger_id(), project_id, PayAppProjectState=PayAppProjectState))
+
+    @app.route('/api/accounting/sage/construction/pco-audit', methods=['GET'])
+    @login_required
+    def api_acct_pco_audit():
+        from accounting_waves_30 import pco_promotion_audit_trail
+        return jsonify(pco_promotion_audit_trail(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/sage/gl/security-sync', methods=['POST'])
+    @login_required
+    def api_acct_sage_gl_sec_v2():
+        from accounting_waves_30 import sage_sync_gl_security_groups_v2
+        out = sage_sync_gl_security_groups_v2(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/consolidation/round-trip', methods=['POST'])
+    @login_required
+    def api_acct_sage_consolidation_v2():
+        from accounting_waves_30 import sage_consolidation_round_trip_v2
+        out = sage_consolidation_round_trip_v2(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/intercompany/routes', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_ic_routes():
+        from accounting_waves_30 import intercompany_routing_map, save_intercompany_routing_map
+        if request.method == 'GET':
+            return jsonify(intercompany_routing_map(db, models, _ledger_id()))
+        data = request.get_json(silent=True) or {}
+        out = save_intercompany_routing_map(db, models, _ledger_id(), data.get('routes') or [], user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/platform/fiscal-unified', methods=['GET'])
+    @login_required
+    def api_acct_fiscal_unified():
+        from accounting_waves_30 import fiscal_periods_unified_view
+        return jsonify(fiscal_periods_unified_view(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/sage/optional-fields', methods=['GET'])
+    @login_required
+    def api_acct_sage_optional_fields():
+        from accounting_waves_30 import list_optional_field_profiles
+        return jsonify(list_optional_field_profiles(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/sage/report-packs', methods=['GET'])
+    @login_required
+    def api_acct_sage_report_packs():
+        from accounting_waves_30 import list_sage_report_packs
+        return jsonify(list_sage_report_packs())
+
+    @app.route('/api/accounting/sage/report-packs/schedule', methods=['POST'])
+    @login_required
+    def api_acct_sage_report_pack_schedule():
+        from accounting_waves_30 import schedule_report_pack
+        data = request.get_json(silent=True) or {}
+        out = schedule_report_pack(db, models, _ledger_id(), data.get('pack_id') or 'month_end_core', user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/ops/runbook', methods=['GET'])
+    @login_required
+    def api_acct_sage_ops_runbook():
+        from accounting_waves_30 import sage_ops_runbook_dashboard
+        return jsonify(sage_ops_runbook_dashboard(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/cron/sage-cre-platform', methods=['POST'])
+    def api_acct_cron_sage_cre_platform():
+        from accounting_waves_30 import cron_waves_41_44_maintenance
+        secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
+        try:
+            out = cron_waves_41_44_maintenance(db, models, secret, Project=Project, PayAppProjectState=PayAppProjectState)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403

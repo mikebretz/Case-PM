@@ -148,3 +148,12 @@ Runs enterprise cron, distribution pull/push parity, FA and PR pulls, fiscal cal
 POST /api/accounting/cron/sage-parity
 X-CasePM-Cron-Secret: your-long-random-secret
 ```
+
+## Sage CRE & platform cron (waves 41–44, optional)
+
+Runs parity cron, CRE queue maintenance, GL security sync, consolidation round-trip, and deploy v6 check:
+
+```http
+POST /api/accounting/cron/sage-cre-platform
+X-CasePM-Cron-Secret: your-long-random-secret
+```
