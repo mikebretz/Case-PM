@@ -77,6 +77,9 @@ def build_company_dashboard(db, models, project_id=None, Project=None, SageSyncE
             'customers': AcctCustomer.query.filter_by(ledger_id=ledger.id).count(),
             'open_batches': AcctJournalBatch.query.filter_by(ledger_id=ledger.id, status='Open').count(),
             'bank_accounts': AcctBankAccount.query.filter_by(ledger_id=ledger.id).count(),
+            **__import__('accounting_parity_wave2', fromlist=['extended_dashboard_kpis']).extended_dashboard_kpis(
+                db, models, ledger.id
+            ),
         },
         'trial_balance_preview': tb[:8],
         'ap_aging_buckets': ap['buckets'],

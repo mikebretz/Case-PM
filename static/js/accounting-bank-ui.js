@@ -86,6 +86,7 @@
           <button type="button" id="acctReconBtn" class="mt-2 px-3 py-2 bg-violet-600 hover:bg-violet-500 rounded text-sm" ${selectedBankId ? '' : 'disabled'}>Mark selected reconciled</button>
         </div>
       </div>
+      ${global.CasePMAcctParityUI ? await global.CasePMAcctParityUI.bankExtrasHtml() : ''}
     </div>`;
   }
 
@@ -200,5 +201,6 @@
     render,
     bindHandlers,
     agingBucketsHtml,
+    _selectedBankId: () => selectedBankId,
   };
 })(window);

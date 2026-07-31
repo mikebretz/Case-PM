@@ -2968,3 +2968,359 @@ def register_accounting_routes(app, deps):
         from accounting_consolidation import indirect_cash_flow_statement
         parent_id = request.args.get('parent_ledger_id', type=int) or _ledger_id()
         return jsonify(indirect_cash_flow_statement(db, models, parent_id, as_of=request.args.get('as_of')))
+
+    # --- Parity wave 2 (broad module gap closure) ---
+
+    @app.route('/api/accounting/bi/kpi-dashboard', methods=['GET'])
+    @login_required
+    def api_acct_bi_kpi():
+        from accounting_parity_wave2 import kpi_dashboard
+        return jsonify(kpi_dashboard(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/bank/distribution-codes', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_bank_dist_codes():
+        from accounting_parity_wave2 import list_distribution_codes, save_distribution_code
+        lid = _ledger_id()
+        if request.method == 'GET':
+            return jsonify({'codes': list_distribution_codes(models, lid)})
+        body = request.get_json(silent=True) or {}
+        try:
+            cid = save_distribution_code(db, models, lid, body, code_id=body.get('id'))
+            db.session.commit()
+            return jsonify({'ok': True, 'id': cid}), 201
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/bank/distribution-apply', methods=['POST'])
+    @login_required
+    def api_acct_bank_dist_apply():
+        from accounting_parity_wave2 import apply_distribution_to_deposit
+        body = request.get_json(silent=True) or {}
+        try:
+            out = apply_distribution_to_deposit(
+                db, models, _ledger_id(), body['bank_account_id'], body['amount'], body['distribution_code'],
+                user_id=current_user.id,
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except (ValueError, KeyError) as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/bank/ofx-import', methods=['POST'])
+    @login_required
+    def api_acct_bank_ofx():
+        from accounting_parity_wave2 import import_bank_ofx
+        body = request.get_json(silent=True) or {}
+        try:
+            out = import_bank_ofx(
+                db, models, _ledger_id(), body['bank_account_id'], body.get('ofx_text') or '',
+                user_id=current_user.id,
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except (ValueError, KeyError) as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/bank/nsf', methods=['POST'])
+    @login_required
+    def api_acct_bank_nsf():
+        from accounting_parity_wave2 import record_nsf
+        try:
+            out = record_nsf(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/tax/groups/<int:group_id>/components', methods=['GET', 'PUT'])
+    @login_required
+    def api_acct_tax_components(group_id):
+        from accounting_parity_wave2 import save_tax_components, tax_group_with_components
+        AcctTaxGroup = models['AcctTaxGroup']
+        tg = AcctTaxGroup.query.filter_by(id=group_id, ledger_id=_ledger_id()).first_or_404()
+        if request.method == 'GET':
+            return jsonify(tax_group_with_components(tg))
+        body = request.get_json(silent=True) or {}
+        try:
+            out = save_tax_components(db, models, _ledger_id(), group_id, body.get('components') or [])
+            db.session.commit()
+            return jsonify(out)
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/tax/filing-prep', methods=['GET'])
+    @login_required
+    def api_acct_tax_filing():
+        from accounting_parity_wave2 import tax_filing_prep
+        return jsonify(tax_filing_prep(db, models, _ledger_id(), request.args.get('period_key')))
+
+    @app.route('/api/accounting/tax/apply-document', methods=['POST'])
+    @login_required
+    def api_acct_tax_apply_doc():
+        from accounting_parity_wave2 import apply_tax_to_document
+        body = request.get_json(silent=True) or {}
+        try:
+            out = apply_tax_to_document(db, models, _ledger_id(), body['doc_type'], body['doc_id'], body['tax_group_code'])
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except (ValueError, KeyError) as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/inventory/lots', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_inventory_lots():
+        from accounting_parity_wave2 import list_lots, receive_lot
+        lid = _ledger_id()
+        if request.method == 'GET':
+            return jsonify({'lots': list_lots(models, lid, request.args.get('item_id', type=int))})
+        body = request.get_json(silent=True) or {}
+        try:
+            out = receive_lot(db, models, lid, body['item_id'], body['qty'], body.get('lot_number'), body.get('serial_number'), body.get('unit_cost', 0))
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except (ValueError, KeyError) as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/po/blanket', methods=['POST'])
+    @login_required
+    def api_acct_po_blanket():
+        from accounting_parity_wave2 import create_blanket_po
+        body = request.get_json(silent=True) or {}
+        try:
+            po = create_blanket_po(db, models, _ledger_id(), body)
+            db.session.commit()
+            return jsonify({'ok': True, 'po_id': po.id, 'po_number': po.po_number}), 201
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/po/<int:po_id>/blanket-release', methods=['POST'])
+    @login_required
+    def api_acct_po_blanket_release(po_id):
+        from accounting_parity_wave2 import release_blanket_po
+        body = request.get_json(silent=True) or {}
+        try:
+            out = release_blanket_po(db, models, _ledger_id(), po_id, body.get('amount'), body.get('lines'))
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/oe/quotes', methods=['POST'])
+    @login_required
+    def api_acct_oe_quotes():
+        from accounting_parity_wave2 import create_quote
+        try:
+            so = create_quote(db, models, _ledger_id(), request.get_json(silent=True) or {})
+            db.session.commit()
+            return jsonify({'ok': True, 'quote_id': so.id, 'order_number': so.order_number}), 201
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/oe/quotes/<int:quote_id>/convert', methods=['POST'])
+    @login_required
+    def api_acct_oe_quote_convert(quote_id):
+        from accounting_parity_wave2 import convert_quote_to_order
+        try:
+            so = convert_quote_to_order(db, models, _ledger_id(), quote_id)
+            db.session.commit()
+            return jsonify({'ok': True, 'order_id': so.id, 'order_number': so.order_number})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/oe/returns', methods=['POST'])
+    @login_required
+    def api_acct_oe_returns():
+        from accounting_parity_wave2 import create_sales_return
+        try:
+            so = create_sales_return(db, models, _ledger_id(), request.get_json(silent=True) or {})
+            db.session.commit()
+            return jsonify({'ok': True, 'return_id': so.id}), 201
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/ar/summary-billing', methods=['POST'])
+    @login_required
+    def api_acct_ar_summary_billing():
+        from accounting_parity_wave2 import summary_billing_invoice
+        body = request.get_json(silent=True) or {}
+        try:
+            out = summary_billing_invoice(db, models, _ledger_id(), body['parent_customer_id'], body.get('child_customer_ids'), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except (ValueError, KeyError) as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/ar/credit-reviews', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_ar_credit_reviews():
+        from accounting_parity_wave2 import credit_review_queue, submit_credit_review, resolve_credit_review
+        lid = _ledger_id()
+        if request.method == 'GET':
+            return jsonify({'reviews': credit_review_queue(db, models, lid)})
+        body = request.get_json(silent=True) or {}
+        if body.get('resolve_review_id'):
+            try:
+                out = resolve_credit_review(db, models, lid, int(body['resolve_review_id']), body, user_id=current_user.id)
+                db.session.commit()
+                return jsonify({'ok': True, **out})
+            except ValueError as exc:
+                db.session.rollback()
+                return jsonify({'error': str(exc)}), 400
+        try:
+            out = submit_credit_review(db, models, lid, body, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out}), 201
+        except (ValueError, KeyError) as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/ar/cash-workbench/<int:customer_id>', methods=['GET'])
+    @login_required
+    def api_acct_ar_cash_workbench(customer_id):
+        from accounting_parity_wave2 import cash_workbench
+        return jsonify(cash_workbench(db, models, _ledger_id(), customer_id))
+
+    @app.route('/api/accounting/ap/match-grid/<int:invoice_id>', methods=['GET'])
+    @login_required
+    def api_acct_ap_match_grid(invoice_id):
+        from accounting_parity_wave2 import match_workbench_grid
+        try:
+            return jsonify(match_workbench_grid(db, models, _ledger_id(), invoice_id))
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/ap/t5018', methods=['GET'])
+    @login_required
+    def api_acct_ap_t5018():
+        from datetime import date as date_cls
+        from accounting_parity_wave2 import export_t5018
+        from flask import Response
+        yr = request.args.get('tax_year', type=int) or date_cls.today().year
+        return Response(export_t5018(db, models, _ledger_id(), yr), mimetype='text/plain')
+
+    @app.route('/api/accounting/ap/1099/fire', methods=['GET'])
+    @login_required
+    def api_acct_ap_1099_fire():
+        from datetime import date as date_cls
+        from accounting_parity_wave2 import export_1099_fire
+        yr = request.args.get('tax_year', type=int) or date_cls.today().year
+        return jsonify(export_1099_fire(db, models, _ledger_id(), yr))
+
+    @app.route('/api/accounting/gl/budgets/<int:budget_id>/submit-approval', methods=['POST'])
+    @login_required
+    def api_acct_gl_budget_submit(budget_id):
+        from accounting_parity_wave2 import budget_approval_submit
+        try:
+            b = budget_approval_submit(db, models, _ledger_id(), budget_id, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, 'budget_id': b.id, 'status': b.status})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/gl/budgets/<int:budget_id>/approve', methods=['POST'])
+    @login_required
+    def api_acct_gl_budget_approve(budget_id):
+        from accounting_parity_wave2 import budget_approval_decide
+        body = request.get_json(silent=True) or {}
+        try:
+            b = budget_approval_decide(db, models, _ledger_id(), budget_id, bool(body.get('approved', True)), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, 'budget_id': b.id, 'status': b.status})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/gl/fiscal-archive/<int:fiscal_year>', methods=['GET'])
+    @login_required
+    def api_acct_gl_fiscal_archive(fiscal_year):
+        from accounting_parity_wave2 import fiscal_archive_snapshot
+        return jsonify(fiscal_archive_snapshot(db, models, _ledger_id(), fiscal_year))
+
+    @app.route('/api/accounting/consolidation/runs/<int:run_id>/auto-eliminations', methods=['POST'])
+    @login_required
+    def api_acct_con_auto_elim(run_id):
+        from accounting_parity_wave2 import auto_suggest_and_post_eliminations
+        parent_id = request.args.get('parent_ledger_id', type=int) or _ledger_id()
+        try:
+            out = auto_suggest_and_post_eliminations(db, models, parent_id, run_id, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/payroll/runs/<int:run_id>/eft-file', methods=['GET'])
+    @login_required
+    def api_acct_payroll_eft(run_id):
+        from accounting_parity_wave2 import payroll_eft_file
+        from flask import Response
+        try:
+            content = payroll_eft_file(db, models, _ledger_id(), run_id)
+            return Response(content, mimetype='text/csv', headers={'Content-Disposition': f'attachment; filename=payroll-eft-{run_id}.csv'})
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/payments/stripe-intent', methods=['POST'])
+    @login_required
+    def api_acct_stripe_intent():
+        from accounting_parity_wave2 import stripe_payment_intent_stub
+        body = request.get_json(silent=True) or {}
+        return jsonify(stripe_payment_intent_stub(body.get('amount', 0), body.get('currency', 'usd'), body.get('metadata')))
+
+    @app.route('/api/accounting/reports/designer', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_report_designer():
+        from accounting_parity_wave2 import report_designer_list, report_designer_save
+        lid = _ledger_id()
+        if request.method == 'GET':
+            return jsonify({'reports': report_designer_list(models, lid)})
+        body = request.get_json(silent=True) or {}
+        rid = report_designer_save(db, models, lid, body, user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, 'id': rid}), 201
+
+    @app.route('/api/accounting/reports/schedule', methods=['POST'])
+    @login_required
+    def api_acct_report_schedule():
+        from accounting_parity_wave2 import schedule_report
+        try:
+            out = schedule_report(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, 'schedule': out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/revenue-recognition', methods=['GET'])
+    @login_required
+    def api_acct_jc_revenue(project_id):
+        from accounting_parity_wave2 import revenue_recognition_schedule
+        return jsonify(revenue_recognition_schedule(db, models, _ledger_id(), project_id))
+
+    @app.route('/api/accounting/assets/depreciate-book', methods=['POST'])
+    @login_required
+    def api_acct_depreciate_book():
+        from accounting_parity_wave2 import run_depreciation_book
+        body = request.get_json(silent=True) or {}
+        try:
+            out = run_depreciation_book(db, models, _ledger_id(), body.get('book', 'GAAP'), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400

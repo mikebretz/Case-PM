@@ -77,7 +77,10 @@
     if (!root) return;
     root.innerHTML = '<p class="text-zinc-500 text-sm">Loading…</p>';
     try {
-      if (route === 'dashboard') root.innerHTML = renderDashboard();
+      if (route === 'dashboard') {
+        root.innerHTML = renderDashboard();
+        if (global.CasePMAcctParityUI?.enhanceDashboard) global.CasePMAcctParityUI.enhanceDashboard(root);
+      }
       else if (route === 'gl') {
         if (global.CasePMAcctGLUI) {
           global.CasePMAcctGLUI.init({ api, esc, money, switchModule, AD: () => global.CasePMAccountingDialog || {}, projectId });
@@ -147,6 +150,9 @@
       }
       if (route === 'bank' && global.CasePMAcctBankUI?.bindHandlers) {
         global.CasePMAcctBankUI.bindHandlers();
+        if (global.CasePMAcctParityUI?.bindBankExtras) {
+          global.CasePMAcctParityUI.bindBankExtras(() => global.CasePMAcctBankUI._selectedBankId?.());
+        }
       }
       if (global.CasePMAcctModulesUI?.bindExtras) global.CasePMAcctModulesUI.bindExtras(route);
       if (route === 'payroll' && global.CasePMAcctPayrollUI?.bindHandlers) {
@@ -546,9 +552,19 @@
       global.CasePMAcctGlApArExt.init({ api, esc, money, switchModule, AD: () => global.CasePMAccountingDialog || {}, projectId });
       const root = document.getElementById('acctArExtRoot');
       if (root) {
-        global.CasePMAcctGlApArExt.arExtrasHtml().then((html) => {
+        global.CasePMAcctGlApArExt.arExtrasHtml().then(async (html) => {
           root.innerHTML = html;
           global.CasePMAcctGlApArExt.bindArExtras();
+          if (global.CasePMAcctParityUI) {
+            root.insertAdjacentHTML('beforeend', await global.CasePMAcctParityUI.renderCreditReviewSection());
+            global.CasePMAcctParityUI.bindCreditReview();
+            const custRes = await api('/api/accounting/ar/customers');
+            const first = (custRes.customers || [])[0];
+            if (first) {
+              root.insertAdjacentHTML('beforeend', await global.CasePMAcctParityUI.renderCashWorkbenchPanel(first.id));
+              global.CasePMAcctParityUI.bindCashWorkbench(first.id);
+            }
+          }
         });
       }
     }

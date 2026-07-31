@@ -314,6 +314,7 @@ def define_accounting_models(db):
         tax_type = db.Column(db.String(20), default='sales')  # sales, use, withholding
         applies_to = db.Column(db.String(10), default='both')  # ap, ar, both
         is_active = db.Column(db.Boolean, default=True)
+        components_json = db.Column(db.Text)
 
     class AcctInventoryItem(db.Model):
         __tablename__ = 'acct_inventory_item'
@@ -325,6 +326,8 @@ def define_accounting_models(db):
         qty_on_hand = db.Column(db.Float, default=0)
         unit_cost = db.Column(db.Float, default=0)
         status = db.Column(db.String(20), default='Active')
+        costing_method = db.Column(db.String(20), default='average')
+        track_lot_serial = db.Column(db.Integer, default=0)
 
     class AcctInventoryTransaction(db.Model):
         __tablename__ = 'acct_inventory_transaction'
@@ -349,6 +352,11 @@ def define_accounting_models(db):
         total_amount = db.Column(db.Float, default=0)
         project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
         lines_json = db.Column(db.Text)
+        po_type = db.Column(db.String(20), default='Standard')
+        blanket_limit = db.Column(db.Float, default=0)
+        drop_ship = db.Column(db.Integer, default=0)
+        releases_json = db.Column(db.Text)
+        parent_po_id = db.Column(db.Integer, db.ForeignKey('acct_purchase_order.id'), nullable=True)
 
     class AcctSalesOrder(db.Model):
         __tablename__ = 'acct_sales_order'
@@ -361,6 +369,7 @@ def define_accounting_models(db):
         total_amount = db.Column(db.Float, default=0)
         project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
         lines_json = db.Column(db.Text)
+        order_type = db.Column(db.String(20), default='Order')
 
     class AcctFixedAsset(db.Model):
         __tablename__ = 'acct_fixed_asset'
@@ -556,6 +565,8 @@ def define_accounting_models(db):
         state_wh_percent = db.Column(db.Float, default=5.0)
         payment_method = db.Column(db.String(20), default='direct_deposit')
         bank_account_last4 = db.Column(db.String(4))
+        routing_number = db.Column(db.String(20))
+        account_number = db.Column(db.String(40))
         created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     class AcctPayrollDeduction(db.Model):
@@ -711,6 +722,47 @@ def define_accounting_models(db):
         details_json = db.Column(db.Text)
         posted_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    class AcctBankDistributionCode(db.Model):
+        __tablename__ = 'acct_bank_distribution_code'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        code = db.Column(db.String(20), nullable=False)
+        name = db.Column(db.String(120))
+        lines_json = db.Column(db.Text)
+        is_active = db.Column(db.Integer, default=1)
+
+    class AcctCreditReview(db.Model):
+        __tablename__ = 'acct_credit_review'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        customer_id = db.Column(db.Integer, db.ForeignKey('acct_customer.id'), nullable=False, index=True)
+        status = db.Column(db.String(20), default='Open')
+        reason = db.Column(db.String(300))
+        requested_limit = db.Column(db.Float, default=0)
+        resolution_notes = db.Column(db.String(500))
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class AcctInventoryLot(db.Model):
+        __tablename__ = 'acct_inventory_lot'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        item_id = db.Column(db.Integer, db.ForeignKey('acct_inventory_item.id'), nullable=False, index=True)
+        lot_number = db.Column(db.String(40), default='DEFAULT')
+        serial_number = db.Column(db.String(80))
+        qty_on_hand = db.Column(db.Float, default=0)
+        unit_cost = db.Column(db.Float, default=0)
+
+    class AcctNSFRecord(db.Model):
+        __tablename__ = 'acct_nsf_record'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        bank_transaction_id = db.Column(db.Integer, db.ForeignKey('acct_bank_transaction.id'), nullable=False)
+        receipt_id = db.Column(db.Integer, db.ForeignKey('acct_ar_receipt.id'), nullable=True)
+        nsf_fee = db.Column(db.Float, default=0)
+        status = db.Column(db.String(20), default='Open')
+        notes = db.Column(db.String(500))
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
     return {
         'AcctLedger': AcctLedger,
         'AcctGLAccount': AcctGLAccount,
@@ -769,4 +821,8 @@ def define_accounting_models(db):
         'AcctWithholdingRule': AcctWithholdingRule,
         'AcctCurrencyRate': AcctCurrencyRate,
         'AcctRevaluationRun': AcctRevaluationRun,
+        'AcctBankDistributionCode': AcctBankDistributionCode,
+        'AcctCreditReview': AcctCreditReview,
+        'AcctInventoryLot': AcctInventoryLot,
+        'AcctNSFRecord': AcctNSFRecord,
     }

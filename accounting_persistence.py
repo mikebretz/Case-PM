@@ -138,6 +138,30 @@ def ensure_accounting_schema(db, models):
         if 'acct_journal_line' in table_names:
             add_column('acct_journal_line', 'location_id', 'INTEGER')
 
+        if 'acct_purchase_order' in table_names:
+            for col, ddl in (
+                ('po_type', "VARCHAR(20) DEFAULT 'Standard'"),
+                ('blanket_limit', 'FLOAT DEFAULT 0'),
+                ('drop_ship', 'INTEGER DEFAULT 0'),
+                ('releases_json', 'TEXT'),
+                ('parent_po_id', 'INTEGER'),
+            ):
+                add_column('acct_purchase_order', col, ddl)
+
+        if 'acct_sales_order' in table_names:
+            add_column('acct_sales_order', 'order_type', "VARCHAR(20) DEFAULT 'Order'")
+
+        if 'acct_inventory_item' in table_names:
+            add_column('acct_inventory_item', 'costing_method', "VARCHAR(20) DEFAULT 'average'")
+            add_column('acct_inventory_item', 'track_lot_serial', 'INTEGER DEFAULT 0')
+
+        if 'acct_tax_group' in table_names:
+            add_column('acct_tax_group', 'components_json', 'TEXT')
+
+        if 'acct_payroll_employee' in table_names:
+            add_column('acct_payroll_employee', 'routing_number', 'VARCHAR(20)')
+            add_column('acct_payroll_employee', 'account_number', 'VARCHAR(40)')
+
         try:
             db.create_all()
             db.session.commit()
