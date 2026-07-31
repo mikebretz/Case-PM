@@ -113,6 +113,9 @@
         <button type="button" id="acctSageBkPull" class="px-2 py-0.5 border border-cyan-900 rounded text-cyan-200">Pull BK</button>
         <button type="button" id="acctSageBkReconEx" class="px-2 py-0.5 border border-cyan-800 rounded text-cyan-300">BK exceptions</button>
         <button type="button" id="acctSageApPayAck" class="px-2 py-0.5 border border-rose-900 rounded text-rose-200">AP payment ack</button>
+        <button type="button" id="acctCrePortfolio" class="px-2 py-0.5 border border-orange-800 rounded text-orange-300">CRE portfolio</button>
+        <button type="button" id="acctDistPoReceipts" class="px-2 py-0.5 border border-lime-900 rounded text-lime-300">Pull PO receipts</button>
+        <button type="button" id="acctThreeWayRpt" class="px-2 py-0.5 border border-amber-900 rounded text-amber-300">3-way report</button>
       </div>
       <ul class="max-h-20 overflow-y-auto">${log}</ul>
     </div>`;
@@ -329,6 +332,18 @@
     document.getElementById('acctSageApPayAck')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/sage/ap/payment-ack', { method: 'POST', body: '{}' });
       await AD().alert(`AP payments updated: ${r.updated || 0}.`, 'info');
+    });
+    document.getElementById('acctCrePortfolio')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/cre/portfolio-variance');
+      await AD().alert(`Portfolio checked: ${(r.projects || []).length} project(s), warnings ${r.warning_count || 0}.`, 'info');
+    });
+    document.getElementById('acctDistPoReceipts')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/distribution/po-receipts/pull', { method: 'POST', body: '{}' });
+      await AD().alert(`PO receipt lines: ${r.lines || 0}.`, 'info');
+    });
+    document.getElementById('acctThreeWayRpt')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/ap/three-way-vendor-report');
+      await AD().alert(`3-way matched ${r.matched || 0}, exceptions ${r.exception_count || 0}.`, 'info');
     });
     document.getElementById('acctSageFlushC')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/sage/construction/flush-queue', { method: 'POST', body: '{}' });

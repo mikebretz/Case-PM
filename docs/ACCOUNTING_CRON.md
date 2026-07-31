@@ -166,3 +166,12 @@ BK pull v2, period-close metadata, reconciliation exception scan, AP payment bat
 POST /api/accounting/cron/sage-bank-cash
 X-CasePM-Cron-Secret: your-long-random-secret
 ```
+
+## Sage CRE & distribution cron (waves 53–60, optional)
+
+Runs bank/cash cron, CRE bridge (53–56), distribution maintenance (57–60), deploy v8:
+
+```http
+POST /api/accounting/cron/sage-cre-distribution
+X-CasePM-Cron-Secret: your-long-random-secret
+```

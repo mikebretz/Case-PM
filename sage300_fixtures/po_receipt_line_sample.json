@@ -1,0 +1,12 @@
+{
+  "@odata.context": "https://example/sage/odata/$metadata#POReceipts",
+  "value": [
+    {
+      "PONumber": "PO-4401",
+      "ReceiptNumber": "RCV-900",
+      "ItemNumber": "MAT-100",
+      "QuantityReceived": 12,
+      "UnitCost": 85.5
+    }
+  ]
+}
