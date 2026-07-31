@@ -3512,6 +3512,16 @@ def register_accounting_routes(app, deps):
             db=db,
             models=models,
         )
+        try:
+            from accounting_waves_21 import log_stripe_webhook_event
+
+            AcctLedger = models['AcctLedger']
+            ledger = AcctLedger.query.order_by(AcctLedger.id).first()
+            if ledger:
+                log_stripe_webhook_event(ledger, payload, out)
+                db.session.commit()
+        except Exception:
+            db.session.rollback()
         if out.get('pay_now'):
             try:
                 db.session.commit()
@@ -4291,6 +4301,169 @@ def register_accounting_routes(app, deps):
         secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
         try:
             out = cron_wave10_maintenance(db, models, secret)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+
+    # --- Wave 11 ---
+
+    def _commitment_models():
+        import app as app_mod
+        return app_mod.Commitment, app_mod.CommitmentAllocation
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/sub-ap-pending', methods=['GET'])
+    @login_required
+    def api_acct_sub_ap_pending(project_id):
+        from accounting_waves_21 import sub_pay_app_pending_ap_sync
+        if not PayAppProjectState:
+            return jsonify({'error': 'Pay app module not available'}), 503
+        return jsonify(sub_pay_app_pending_ap_sync(db, models, _ledger_id(), project_id, PayAppProjectState))
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/sub-ap-sync-all', methods=['POST'])
+    @login_required
+    def api_acct_sub_ap_sync_all(project_id):
+        from accounting_waves_21 import sync_all_sub_pay_apps_pending_to_ap
+        Commitment, _ = _commitment_models()
+        if not PayAppProjectState:
+            return jsonify({'error': 'Pay app module not available'}), 503
+        try:
+            out = sync_all_sub_pay_apps_pending_to_ap(
+                db, models, _ledger_id(), project_id, user_id=current_user.id,
+                PayAppProjectState=PayAppProjectState, Commitment=Commitment,
+                Project=Project, Company=deps.get('Company'),
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/commitments-pending', methods=['GET'])
+    @login_required
+    def api_acct_commitments_pending(project_id):
+        from accounting_waves_21 import commitment_pending_accounting
+        Commitment, _ = _commitment_models()
+        return jsonify(commitment_pending_accounting(db, models, _ledger_id(), project_id, Commitment))
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/commitments-sync-all', methods=['POST'])
+    @login_required
+    def api_acct_commitments_sync_all(project_id):
+        from accounting_waves_21 import sync_all_commitments_pending
+        Commitment, CommitmentAllocation = _commitment_models()
+        try:
+            out = sync_all_commitments_pending(
+                db, models, _ledger_id(), project_id, user_id=current_user.id,
+                Commitment=Commitment, CommitmentAllocation=CommitmentAllocation,
+                Project=Project, Company=deps.get('Company'),
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/commitments/<int:commitment_id>/accounting-sync', methods=['POST'])
+    @login_required
+    def api_acct_commitment_sync(commitment_id):
+        from accounting_waves_21 import sync_commitment_to_accounting
+        Commitment, CommitmentAllocation = _commitment_models()
+        try:
+            out = sync_commitment_to_accounting(
+                db, models, _ledger_id(), commitment_id, user_id=current_user.id,
+                Commitment=Commitment, CommitmentAllocation=CommitmentAllocation,
+                Project=Project, Company=deps.get('Company'),
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/commitments/change-order/post', methods=['POST'])
+    @login_required
+    def api_acct_cco_post():
+        from accounting_waves_21 import post_commitment_change_order
+        Commitment, _ = _commitment_models()
+        try:
+            out = post_commitment_change_order(
+                db, models, _ledger_id(), request.get_json(silent=True) or {},
+                user_id=current_user.id, Commitment=Commitment, Project=Project, Company=deps.get('Company'),
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/wip', methods=['GET'])
+    @login_required
+    def api_acct_jobcost_wip(project_id):
+        from accounting_waves_21 import jobcost_wip_analysis
+        return jsonify(jobcost_wip_analysis(db, models, _ledger_id(), project_id, PayAppProjectState))
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/wip-adjust', methods=['POST'])
+    @login_required
+    def api_acct_jobcost_wip_adjust(project_id):
+        from accounting_waves_21 import post_wip_billing_adjustment
+        body = request.get_json(silent=True) or {}
+        try:
+            out = post_wip_billing_adjustment(
+                db, models, _ledger_id(), project_id, user_id=current_user.id,
+                amount=body.get('amount'),
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/payments/exceptions', methods=['GET'])
+    @login_required
+    def api_acct_payment_exceptions():
+        from accounting_waves_21 import payment_exception_inbox
+        return jsonify(payment_exception_inbox(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/payments/exceptions/reconcile', methods=['POST'])
+    @login_required
+    def api_acct_payment_exceptions_reconcile():
+        from accounting_waves_21 import reconcile_pay_now_exceptions
+        out = reconcile_pay_now_exceptions(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/bank/plaid-auto-import', methods=['POST'])
+    @login_required
+    def api_acct_plaid_auto_import():
+        from accounting_waves_21 import plaid_auto_import_for_ledger
+        try:
+            out = plaid_auto_import_for_ledger(db, models, _ledger_id(), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except (ValueError, KeyError) as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/sage/sync/pull-open-ap', methods=['POST'])
+    @login_required
+    def api_acct_sage_pull_open_ap():
+        from accounting_waves_21 import sage_pull_open_ap
+        out = sage_pull_open_ap(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/exceptions', methods=['GET'])
+    @login_required
+    def api_acct_sage_exceptions():
+        from accounting_waves_21 import sage_hybrid_exception_inbox
+        return jsonify(sage_hybrid_exception_inbox(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/cron/wave11', methods=['POST'])
+    def api_acct_cron_wave11():
+        from accounting_waves_21 import cron_wave11_maintenance
+        secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
+        try:
+            out = cron_wave11_maintenance(db, models, secret)
             db.session.commit()
             return jsonify({'ok': True, **out})
         except PermissionError as exc:

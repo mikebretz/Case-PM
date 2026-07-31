@@ -206,11 +206,16 @@ def process_construction_event(
     force_post = bool(data.get('force_builtin_post'))
     if not force_post:
         try:
-            from accounting_waves_20 import construction_force_post_for_event
+            from accounting_waves_21 import construction_force_post_for_event
 
             force_post = construction_force_post_for_event(event_type, data)
         except Exception:
-            pass
+            try:
+                from accounting_waves_20 import construction_force_post_for_event
+
+                force_post = construction_force_post_for_event(event_type, data)
+            except Exception:
+                pass
     if not opts['auto_post_enabled'] and not force_post:
         return {'posted': False, 'skipped': 'auto_post_disabled'}
 
@@ -386,6 +391,51 @@ def process_construction_event(
             'ap_document_id': ap_doc.id if amount > 0 else None,
             'journal_batch_id': batch.id if batch else None,
         })
+
+    elif event_type == 'CommitmentChangeOrderApproved' and commitment is not None:
+        amount = _float_amount(
+            data.get('delta_amount'), data.get('amount'),
+            getattr(commitment, 'approved_changes', None),
+        )
+        if amount <= 0:
+            return {**result, 'skipped': 'no_amount'}
+        company_id = getattr(commitment, 'company_id', None) or data.get('company_id')
+        vendor = _get_or_create_vendor(db, models, ledger.id, company_id, Company=Company)
+        po_num = (getattr(commitment, 'number', None) or f'CMT-{commitment.id}')[:36]
+        doc_num = f'CCO-{po_num}'[:40]
+        ap_doc = AcctAPDocument(
+            ledger_id=ledger.id,
+            vendor_id=vendor.id,
+            document_number=doc_num,
+            document_type='CommitmentChangeOrder',
+            document_date=date.today(),
+            due_date=date.today() + timedelta(days=30),
+            amount=amount,
+            status='Open',
+            project_id=getattr(commitment, 'project_id', project_id),
+            details_json=json.dumps({'commitment_id': commitment.id, 'event': event_type, 'source_key': idem}),
+        )
+        db.session.add(ap_doc)
+        db.session.flush()
+        exp_num = opts['materials_expense'] if (getattr(commitment, 'commitment_type', '') == 'Purchase Order') else opts['subcontract_expense']
+        exp_acct = _account_by_number(AcctGLAccount, ledger.id, exp_num)
+        ap_acct = _account_by_number(AcctGLAccount, ledger.id, opts['ap_account'])
+        batch = _create_posted_batch(
+            db, models, ledger_id=ledger.id, source='AP',
+            description=f'Commitment change order {po_num}',
+            user_id=user_id,
+            lines=[
+                {'account_id': exp_acct.id, 'debit': amount, 'credit': 0, 'project_id': ap_doc.project_id},
+                {'account_id': ap_acct.id, 'debit': 0, 'credit': amount, 'project_id': ap_doc.project_id},
+            ],
+        )
+        link = AcctPostLink(
+            ledger_id=ledger.id, source_type=event_type, source_key=idem,
+            journal_batch_id=batch.id, ap_document_id=ap_doc.id,
+        )
+        db.session.add(link)
+        result.update({'posted': True, 'ap_document_id': ap_doc.id, 'journal_batch_id': batch.id})
+
     else:
         return {**result, 'skipped': 'unsupported_event'}
 

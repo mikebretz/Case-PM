@@ -59,6 +59,13 @@ def main() -> int:
     except Exception as exc:
         errors.append(f'accounting_waves_20: {exc}')
 
+    print('6d. Wave 21 module import…')
+    try:
+        import accounting_waves_21 as w21  # noqa: F401
+        assert callable(w21.construction_force_post_for_event)
+    except Exception as exc:
+        errors.append(f'accounting_waves_21: {exc}')
+
     print('6c. instance DB must not be tracked…')
     try:
         from accounting_waves_20 import git_tracked_paths_must_not_include_db

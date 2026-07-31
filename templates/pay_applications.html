@@ -511,6 +511,7 @@
                 </label>
                 <button type="button" onclick="pushManualSageSync()" class="mt-2 px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-md">Queue manual Sage sync now</button>
                 <button type="button" onclick="syncG702ToAccountingAr()" class="mt-2 ml-2 px-3 py-1.5 text-xs bg-emerald-900 hover:bg-emerald-800 border border-emerald-700 rounded-md">Sync approved G702 → Accounting A/R</button>
+                <button type="button" onclick="syncSubPayAppsToAccountingAp()" class="mt-2 ml-2 px-3 py-1.5 text-xs bg-amber-900 hover:bg-amber-800 border border-amber-700 rounded-md">Sync approved sub pay apps → A/P</button>
             </div>
         </div>
 
@@ -1919,6 +1920,30 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             );
         } catch (e) {
             showCenteredAlert(e.message || 'Could not sync G702 to A/R.', 'error');
+        }
+    }
+
+    async function syncSubPayAppsToAccountingAp() {
+        const pid = window.activeProjectId || new URLSearchParams(window.location.search).get('project_id');
+        if (!pid) {
+            showCenteredAlert('Select a project first.', 'warning');
+            return;
+        }
+        try {
+            const res = await fetch(`/api/accounting/jobcost/${pid}/sub-ap-sync-all`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: '{}',
+            });
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.error || 'Sync failed');
+            showCenteredAlert(
+                json.posted_count ? `Posted ${json.posted_count} sub pay app(s) to Accounting A/P.` : 'No approved sub pay apps waiting for A/P.',
+                json.posted_count ? 'success' : 'info',
+            );
+        } catch (e) {
+            showCenteredAlert(e.message || 'Could not sync sub pay apps.', 'error');
         }
     }
     function complianceHistoryKey(mainG702Period) {

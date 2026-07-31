@@ -195,6 +195,8 @@ def save_section(name, payload, defaults=None):
 ACCOUNTING_DEFAULT_KEYS = [
     'auto_post_enabled',
     'g702_post_on_approve',
+    'sub_pay_app_post_on_approve',
+    'commitment_post_on_approve',
     'cash_account',
     'ar_account',
     'ap_account',
@@ -211,13 +213,20 @@ ACCOUNTING_DEFAULT_KEYS = [
 def load_accounting_defaults():
     acct = get_section('accounting', {})
     out = {
-        k: (acct.get(k) or '').strip() if k not in ('auto_post_enabled', 'g702_post_on_approve') else acct.get(k, '1')
+        k: (acct.get(k) or '').strip()
+        if k
+        not in ('auto_post_enabled', 'g702_post_on_approve', 'sub_pay_app_post_on_approve', 'commitment_post_on_approve')
+        else acct.get(k, '1')
         for k in ACCOUNTING_DEFAULT_KEYS
     }
     if not str(out.get('auto_post_enabled', '1')).strip():
         out['auto_post_enabled'] = '1'
     if not str(out.get('g702_post_on_approve', '1')).strip():
         out['g702_post_on_approve'] = '1'
+    if not str(out.get('sub_pay_app_post_on_approve', '1')).strip():
+        out['sub_pay_app_post_on_approve'] = '1'
+    if not str(out.get('commitment_post_on_approve', '1')).strip():
+        out['commitment_post_on_approve'] = '1'
     for k, default in (
         ('cash_account', '1000'), ('ar_account', '1100'), ('ap_account', '2000'),
         ('revenue_account', '4000'), ('subcontract_expense', '5100'), ('materials_expense', '5200'),
@@ -232,7 +241,12 @@ def load_accounting_defaults():
 def save_accounting_defaults(form_data):
     payload = {}
     for k in ACCOUNTING_DEFAULT_KEYS:
-        if k in ('auto_post_enabled', 'g702_post_on_approve'):
+        if k in (
+            'auto_post_enabled',
+            'g702_post_on_approve',
+            'sub_pay_app_post_on_approve',
+            'commitment_post_on_approve',
+        ):
             payload[k] = '1' if form_data.get(k) in (True, '1', 'on', 'true') else '0'
         else:
             payload[k] = (form_data.get(k) or '').strip()
