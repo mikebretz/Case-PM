@@ -3931,9 +3931,15 @@ def register_accounting_routes(app, deps):
     @app.route('/api/accounting/compliance/calendar', methods=['GET'])
     @login_required
     def api_acct_compliance_calendar():
-        from accounting_waves_17 import compliance_filing_calendar
+        from accounting_waves_19 import compliance_filing_calendar_enriched
         yr = request.args.get('tax_year', type=int)
-        return jsonify(compliance_filing_calendar(_ledger_id(), yr))
+        return jsonify(compliance_filing_calendar_enriched(db, models, _ledger_id(), yr))
+
+    @app.route('/api/accounting/platform/tiers-abcd', methods=['GET'])
+    @login_required
+    def api_acct_tiers_abcd():
+        from accounting_waves_19 import accounting_tiers_abcd_status
+        return jsonify(accounting_tiers_abcd_status())
 
     @app.route('/api/accounting/compliance/amendment/<form>', methods=['POST'])
     @login_required
