@@ -115,6 +115,7 @@ def sage_mirror_deploy_check_v16() -> dict:
         'scheduling_leveling_v1': True,
         'portal_compliance': True,
         'operations_cron': True,
+        'pm_gap_closure_wave_49': True,
     }
     try:
         import portal_compliance_services  # noqa: F401
