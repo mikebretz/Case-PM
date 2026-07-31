@@ -116,6 +116,10 @@
         <button type="button" id="acctCrePortfolio" class="px-2 py-0.5 border border-orange-800 rounded text-orange-300">CRE portfolio</button>
         <button type="button" id="acctDistPoReceipts" class="px-2 py-0.5 border border-lime-900 rounded text-lime-300">Pull PO receipts</button>
         <button type="button" id="acctThreeWayRpt" class="px-2 py-0.5 border border-amber-900 rounded text-amber-300">3-way report</button>
+        <button type="button" id="acctGlBatchPull" class="px-2 py-0.5 border border-violet-900 rounded text-violet-200">GL batch pull</button>
+        <button type="button" id="acctTaxStackPush" class="px-2 py-0.5 border border-lime-900 rounded text-lime-200">Stacked tax push</button>
+        <button type="button" id="acctFaMultiBook" class="px-2 py-0.5 border border-sky-900 rounded text-sky-200">FA multi-book</button>
+        <button type="button" id="acctCompanyMatrix" class="px-2 py-0.5 border border-indigo-800 rounded text-indigo-300">Company matrix</button>
       </div>
       <ul class="max-h-20 overflow-y-auto">${log}</ul>
     </div>`;
@@ -344,6 +348,22 @@
     document.getElementById('acctThreeWayRpt')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/ap/three-way-vendor-report');
       await AD().alert(`3-way matched ${r.matched || 0}, exceptions ${r.exception_count || 0}.`, 'info');
+    });
+    document.getElementById('acctGlBatchPull')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/gl/pull-batches', { method: 'POST', body: '{}' });
+      await AD().alert(`GL batches matched: ${r.matched || 0}.`, 'info');
+    });
+    document.getElementById('acctTaxStackPush')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/tax/stacked-push', { method: 'POST', body: '{}' });
+      await AD().alert(`Tax push AP ${r.ap?.pushed || 0}, AR ${r.ar?.pushed || 0}.`, 'info');
+    });
+    document.getElementById('acctFaMultiBook')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/assets/multi-book-run', { method: 'POST', body: '{}' });
+      await AD().alert(`FA books run: ${(r.books || []).length}.`, 'success');
+    });
+    document.getElementById('acctCompanyMatrix')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/platform/company-matrix');
+      await AD().alert(`Company matrix: ${(r.companies || []).length} row(s).`, 'info');
     });
     document.getElementById('acctSageFlushC')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/sage/construction/flush-queue', { method: 'POST', body: '{}' });

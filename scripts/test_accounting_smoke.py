@@ -183,6 +183,17 @@ def main() -> int:
     except Exception as exc:
         errors.append(f'accounting_waves_33: {exc}')
 
+    print('6q. Wave 34 cross-module (49, 61, 65, 69)…')
+    try:
+        import accounting_waves_34 as w34  # noqa: F401
+        assert callable(w34.sage_pull_gl_journal_batch_status)
+        assert callable(w34.company_matrix_dashboard)
+        v9 = w34.sage_mirror_deploy_check_v9()
+        if not v9.get('ok'):
+            errors.append(f'sage_mirror_deploy_check_v9: {v9}')
+    except Exception as exc:
+        errors.append(f'accounting_waves_34: {exc}')
+
     print('6c. instance DB must not be tracked…')
     try:
         from accounting_waves_20 import git_tracked_paths_must_not_include_db
