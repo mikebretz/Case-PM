@@ -8,14 +8,14 @@ from __future__ import annotations
 
 PLATFORM_CAPABILITIES = [
     {'id': 'multi_company', 'name': 'Multi-company / multi-entity', 'status': 'live'},
-    {'id': 'multi_currency', 'name': 'Multi-currency & revaluation', 'status': 'beta'},
-    {'id': 'multi_language', 'name': 'Multi-language UI', 'status': 'planned'},
-    {'id': 'multi_location', 'name': 'Multi-location', 'status': 'beta'},
+    {'id': 'multi_currency', 'name': 'Multi-currency & revaluation', 'status': 'live'},
+    {'id': 'multi_language', 'name': 'Multi-language UI', 'status': 'beta'},
+    {'id': 'multi_location', 'name': 'Multi-location', 'status': 'live'},
     {'id': 'security', 'name': 'Role-based security & G/L account security', 'status': 'live'},
-    {'id': 'fiscal_calendar', 'name': 'Fiscal periods & year-end close', 'status': 'beta'},
-    {'id': 'optional_fields', 'name': 'Optional / custom fields', 'status': 'beta'},
+    {'id': 'fiscal_calendar', 'name': 'Fiscal periods & year-end close', 'status': 'live'},
+    {'id': 'optional_fields', 'name': 'Optional / custom fields', 'status': 'live'},
     {'id': 'audit', 'name': 'Audit trail & activity log', 'status': 'live'},
-    {'id': 'import_export', 'name': 'Import / export & data integrity', 'status': 'beta'},
+    {'id': 'import_export', 'name': 'Import / export & data integrity', 'status': 'live'},
     {'id': 'reporting', 'name': 'Financial reporting & dashboards', 'status': 'live'},
 ]
 
@@ -31,9 +31,9 @@ ACCOUNTING_MODULES = [
         'features': [
             'Flexible chart of accounts (multi-segment validation)',
             'Manual, recurring, and allocation journals',
-            'Budget sets and budget vs actual',
+            'Budget versions/scenarios and budget vs actual',
             'Trial balance, account inquiry, subledger tie-out',
-            'Intercompany entries',
+            'Intercompany entries and recurring schedule run-due',
         ],
     },
     {
@@ -48,8 +48,9 @@ ACCOUNTING_MODULES = [
             'Invoice entry, retainage, and withholding',
             'Recurring payables',
             'Payment void and 1099 reporting',
-            '3-way PO matching',
+            '3-way PO matching with configurable tolerances',
             'Aging and vendor activity',
+            'Retainage release and 1099 e-file export',
         ],
     },
     {
@@ -63,8 +64,9 @@ ACCOUNTING_MODULES = [
             'Customer groups and ship-to locations',
             'Invoices, credit/debit memos, statements',
             'Cash application and receipt batches',
-            'Recurring billing and dunning',
+            'Recurring billing and dunning rules',
             'Credit hold enforcement',
+            'Cash application workbench',
         ],
     },
     {
@@ -208,9 +210,27 @@ ACCOUNTING_MODULES = [
         'summary': 'Multi-entity roll-up reporting.',
         'features': [
             'Subsidiary ledger tree',
-            'Consolidated trial balance by account',
+            'Consolidated trial balance and P&amp;L / balance sheet',
+            'Ownership %, FX translation, and rollup journal',
             'Consolidation runs with period end',
-            'Elimination journal entries on parent books',
+            'Auto-suggested and manual elimination entries',
+            'Entity period lock across subsidiaries',
+        ],
+    },
+    {
+        'id': 'admin',
+        'code': 'ADM',
+        'name': 'Platform & Admin',
+        'status': 'live',
+        'route': 'admin',
+        'summary': 'Fiscal calendar, locations, security, audit, import/export.',
+        'features': [
+            'Fiscal period generate and close',
+            'Multi-location master',
+            'G/L account security matrix',
+            'Optional field definitions',
+            'Audit log and integrity checks',
+            'Chart of accounts CSV import/export',
         ],
     },
 ]

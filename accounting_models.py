@@ -227,6 +227,8 @@ def define_accounting_models(db):
         ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
         name = db.Column(db.String(80), nullable=False)
         fiscal_year = db.Column(db.Integer, nullable=False)
+        version_name = db.Column(db.String(40), default='Original')
+        scenario = db.Column(db.String(40), default='Budget')
         status = db.Column(db.String(20), default='Active')
 
     class AcctGLBudgetLine(db.Model):
@@ -595,6 +597,88 @@ def define_accounting_models(db):
         payment_method = db.Column(db.String(20))
         details_json = db.Column(db.Text)
 
+    class AcctFiscalPeriod(db.Model):
+        __tablename__ = 'acct_fiscal_period'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        fiscal_year = db.Column(db.Integer, nullable=False)
+        period_number = db.Column(db.Integer, nullable=False)
+        period_key = db.Column(db.String(7), nullable=False, index=True)
+        start_date = db.Column(db.Date)
+        end_date = db.Column(db.Date)
+        status = db.Column(db.String(20), default='Open')  # Open, Closed
+
+    class AcctLocation(db.Model):
+        __tablename__ = 'acct_location'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        code = db.Column(db.String(20), nullable=False)
+        name = db.Column(db.String(120), nullable=False)
+        status = db.Column(db.String(20), default='Active')
+
+    class AcctGLAccountSecurity(db.Model):
+        __tablename__ = 'acct_gl_account_security'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        account_id = db.Column(db.Integer, db.ForeignKey('acct_gl_account.id'), nullable=False, index=True)
+        user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
+        role_key = db.Column(db.String(40), nullable=True)
+        access_level = db.Column(db.String(20), default='post')  # none, view, post
+
+    class AcctOptionalFieldDef(db.Model):
+        __tablename__ = 'acct_optional_field_def'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        entity_type = db.Column(db.String(30), nullable=False)
+        field_key = db.Column(db.String(40), nullable=False)
+        label = db.Column(db.String(80), nullable=False)
+        field_type = db.Column(db.String(20), default='text')
+        is_required = db.Column(db.Boolean, default=False)
+        sort_order = db.Column(db.Integer, default=0)
+
+    class AcctAuditLog(db.Model):
+        __tablename__ = 'acct_audit_log'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+        action = db.Column(db.String(40), nullable=False)
+        entity_type = db.Column(db.String(40))
+        entity_id = db.Column(db.Integer, nullable=True)
+        details_json = db.Column(db.Text)
+        created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    class AcctLedgerOwnership(db.Model):
+        __tablename__ = 'acct_ledger_ownership'
+        id = db.Column(db.Integer, primary_key=True)
+        parent_ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        child_ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        ownership_percent = db.Column(db.Float, default=100.0)
+        effective_date = db.Column(db.Date)
+
+    class AcctIntercompanyRule(db.Model):
+        __tablename__ = 'acct_intercompany_rule'
+        id = db.Column(db.Integer, primary_key=True)
+        parent_ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        due_from_account_number = db.Column(db.String(40))
+        due_to_account_number = db.Column(db.String(40))
+        auto_eliminate = db.Column(db.Boolean, default=True)
+        description = db.Column(db.String(200))
+
+    class AcctDunningRule(db.Model):
+        __tablename__ = 'acct_dunning_rule'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        days_past_due = db.Column(db.Integer, default=30)
+        letter_code = db.Column(db.String(10), default='L1')
+        message_template = db.Column(db.Text)
+
+    class AcctAPMatchTolerance(db.Model):
+        __tablename__ = 'acct_ap_match_tolerance'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, unique=True)
+        amount_tolerance = db.Column(db.Float, default=1.0)
+        percent_tolerance = db.Column(db.Float, default=5.0)
+
     class AcctCurrencyRate(db.Model):
         __tablename__ = 'acct_currency_rate'
         id = db.Column(db.Integer, primary_key=True)
@@ -662,6 +746,15 @@ def define_accounting_models(db):
         'AcctPaymentBatchLine': AcctPaymentBatchLine,
         'AcctPayNowLink': AcctPayNowLink,
         'AcctConsolidationRun': AcctConsolidationRun,
+        'AcctFiscalPeriod': AcctFiscalPeriod,
+        'AcctLocation': AcctLocation,
+        'AcctGLAccountSecurity': AcctGLAccountSecurity,
+        'AcctOptionalFieldDef': AcctOptionalFieldDef,
+        'AcctAuditLog': AcctAuditLog,
+        'AcctLedgerOwnership': AcctLedgerOwnership,
+        'AcctIntercompanyRule': AcctIntercompanyRule,
+        'AcctDunningRule': AcctDunningRule,
+        'AcctAPMatchTolerance': AcctAPMatchTolerance,
         'AcctCurrencyRate': AcctCurrencyRate,
         'AcctRevaluationRun': AcctRevaluationRun,
     }
