@@ -120,6 +120,9 @@
         <button type="button" id="acctTaxStackPush" class="px-2 py-0.5 border border-lime-900 rounded text-lime-200">Stacked tax push</button>
         <button type="button" id="acctFaMultiBook" class="px-2 py-0.5 border border-sky-900 rounded text-sky-200">FA multi-book</button>
         <button type="button" id="acctCompanyMatrix" class="px-2 py-0.5 border border-indigo-800 rounded text-indigo-300">Company matrix</button>
+        <button type="button" id="acctGlTieout" class="px-2 py-0.5 border border-violet-800 rounded text-violet-300">GL tie-out</button>
+        <button type="button" id="acctFxReval" class="px-2 py-0.5 border border-violet-700 rounded text-violet-200">FX reval</button>
+        <button type="button" id="acctThreeWayHold" class="px-2 py-0.5 border border-amber-800 rounded text-amber-200">3-way auto-hold</button>
       </div>
       <ul class="max-h-20 overflow-y-auto">${log}</ul>
     </div>`;
@@ -364,6 +367,18 @@
     document.getElementById('acctCompanyMatrix')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/platform/company-matrix');
       await AD().alert(`Company matrix: ${(r.companies || []).length} row(s).`, 'info');
+    });
+    document.getElementById('acctGlTieout')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/gl/subledger-tieout');
+      await AD().alert(`Open AP ${r.open_ap_subledger} · AR ${r.open_ar_subledger}`, 'info');
+    });
+    document.getElementById('acctFxReval')?.addEventListener('click', async () => {
+      await api('/api/accounting/sage/fx/revaluation', { method: 'POST', body: '{}' });
+      await AD().alert('FX revaluation round-trip completed.', 'success');
+    });
+    document.getElementById('acctThreeWayHold')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/ap/three-way-auto-hold', { method: 'POST', body: '{}' });
+      await AD().alert(`Auto-held ${r.auto_held || 0} invoice(s).`, 'warning');
     });
     document.getElementById('acctSageFlushC')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/sage/construction/flush-queue', { method: 'POST', body: '{}' });

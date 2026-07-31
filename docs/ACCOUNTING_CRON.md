@@ -184,3 +184,12 @@ GL journal pull/export, stacked tax push, FA multi-book run, company matrix refr
 POST /api/accounting/cron/sage-cross-module
 X-CasePM-Cron-Secret: your-long-random-secret
 ```
+
+## Sage advanced batch cron (waves 50–52, 54–60, 62–64, optional)
+
+GL tie-out/FX, CRE/distribution depth, payroll/tax filing, deploy v10:
+
+```http
+POST /api/accounting/cron/sage-advanced-batch
+X-CasePM-Cron-Secret: your-long-random-secret
+```

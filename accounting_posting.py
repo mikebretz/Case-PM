@@ -116,6 +116,13 @@ def _create_posted_batch(
             reference=ln.get('reference') or '',
         ))
     db.session.flush()
+    try:
+        from accounting_waves_35 import assert_gl_security_before_post
+        assert_gl_security_before_post(db, models, ledger_id, batch, user_id=user_id)
+    except PermissionError:
+        raise
+    except Exception:
+        pass
     post_journal_batch(db, batch, AcctJournalLine, ledger=ledger, models=models, user_id=user_id)
     return batch
 
