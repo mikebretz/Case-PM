@@ -114,6 +114,8 @@ def ensure_accounting_schema(db, models):
                 ('retainage_amount', 'FLOAT DEFAULT 0'),
                 ('withhold_amount', 'FLOAT DEFAULT 0'),
                 ('gross_amount', 'FLOAT DEFAULT 0'),
+                ('currency_code', "VARCHAR(3) DEFAULT 'USD'"),
+                ('fx_rate', 'FLOAT DEFAULT 1'),
             ):
                 add_column('acct_ap_document', col, ddl)
 
@@ -121,6 +123,8 @@ def ensure_accounting_schema(db, models):
             for col, ddl in (
                 ('ship_to_id', 'INTEGER'),
                 ('parent_document_id', 'INTEGER'),
+                ('currency_code', "VARCHAR(3) DEFAULT 'USD'"),
+                ('fx_rate', 'FLOAT DEFAULT 1'),
             ):
                 add_column('acct_ar_document', col, ddl)
 

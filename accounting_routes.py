@@ -383,6 +383,58 @@ def register_accounting_routes(app, deps):
         from accounting_gl_extended import subledger_control_reconcile
         return jsonify(subledger_control_reconcile(db, models, _ledger_id()))
 
+    @app.route('/api/accounting/gl/budgets/<int:budget_id>/grid', methods=['GET', 'PATCH'])
+    @login_required
+    def api_acct_gl_budget_grid(budget_id):
+        from accounting_gl_extended import budget_grid, update_budget_grid
+        lid = _ledger_id()
+        if request.method == 'GET':
+            try:
+                return jsonify(budget_grid(db, models, lid, budget_id))
+            except ValueError as exc:
+                return jsonify({'error': str(exc)}), 400
+        try:
+            data = update_budget_grid(db, models, lid, budget_id, request.get_json(silent=True) or {})
+            db.session.commit()
+            return jsonify(data)
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/gl/currency-rates', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_currency_rates():
+        from accounting_multicurrency import serialize_rate, upsert_currency_rate
+        AcctCurrencyRate = models['AcctCurrencyRate']
+        lid = _ledger_id()
+        if request.method == 'GET':
+            rows = AcctCurrencyRate.query.filter_by(ledger_id=lid).order_by(AcctCurrencyRate.rate_date.desc()).limit(120).all()
+            return jsonify({'rates': [serialize_rate(r) for r in rows]})
+        try:
+            r = upsert_currency_rate(db, models, lid, request.get_json(silent=True) or {})
+            db.session.commit()
+            return jsonify({'rate': serialize_rate(r)}), 201
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/gl/revaluation', methods=['POST'])
+    @login_required
+    def api_acct_revaluation():
+        from accounting_multicurrency import run_revaluation
+        from financial_security import require_accounting_role
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        try:
+            out = run_revaluation(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
     @app.route('/api/accounting/ap/invoices/<int:invoice_id>/post-gl', methods=['POST'])
     @login_required
     def api_acct_ap_invoice_post_gl(invoice_id):
@@ -641,6 +693,49 @@ def register_accounting_routes(app, deps):
             db.session.rollback()
             return jsonify({'error': str(exc)}), 400
 
+    @app.route('/api/accounting/ap/payments/nacha', methods=['POST'])
+    @login_required
+    def api_acct_ap_nacha():
+        from accounting_ap_extended import nacha_ach_file
+        from flask import Response
+        from financial_security import require_accounting_role
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        body = request.get_json(silent=True) or {}
+        try:
+            content = nacha_ach_file(
+                db, models, _ledger_id(),
+                body.get('payment_ids') or [],
+                company_name=body.get('company_name', 'CASE PM'),
+                company_id=body.get('company_id', '1234567890'),
+                dest_routing=body.get('dest_routing', '021000021'),
+                dest_account=body.get('dest_account', '123456789'),
+            )
+            return Response(
+                content,
+                mimetype='text/plain',
+                headers={'Content-Disposition': 'attachment; filename=ap-disbursement.ach'},
+            )
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/ap/reports/vendor-activity', methods=['GET'])
+    @login_required
+    def api_acct_ap_vendor_activity():
+        from accounting_reports import vendor_activity_report
+        return jsonify(vendor_activity_report(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/ap/vendors/<int:vendor_id>/activity', methods=['GET'])
+    @login_required
+    def api_acct_ap_vendor_activity_detail(vendor_id):
+        from accounting_ap_extended import vendor_activity_detail
+        try:
+            return jsonify(vendor_activity_detail(db, models, _ledger_id(), vendor_id))
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
     @app.route('/api/accounting/ar/customers', methods=['GET', 'POST'])
     @login_required
     def api_acct_ar_customers():
@@ -893,19 +988,33 @@ def register_accounting_routes(app, deps):
     @app.route('/api/accounting/ar/dunning/send', methods=['POST'])
     @login_required
     def api_acct_ar_dunning_send():
-        from accounting_ar_extended import record_dunning, serialize_customer_extended
+        from accounting_ar_extended import dunning_email_package
         body = request.get_json(silent=True) or {}
         try:
-            row = record_dunning(
+            out = dunning_email_package(
                 db, models, _ledger_id(),
                 body['customer_id'],
                 body.get('level', 1),
                 body.get('message', ''),
             )
             db.session.commit()
-            return jsonify({'ok': True, 'dunning_id': row.id})
+            return jsonify({'ok': True, **out})
         except (KeyError, ValueError) as exc:
             db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/ar/customers/<int:customer_id>/statement/print', methods=['GET'])
+    @login_required
+    def api_acct_ar_statement_print(customer_id):
+        from accounting_ar_extended import customer_statement, statement_printable_html
+        from flask import Response
+        AcctLedger = models['AcctLedger']
+        try:
+            data = customer_statement(db, models, _ledger_id(), customer_id)
+            ledger = AcctLedger.query.get(_ledger_id())
+            html = statement_printable_html(data, company_name=ledger.name if ledger else 'Case PM')
+            return Response(html, mimetype='text/html')
+        except ValueError as exc:
             return jsonify({'error': str(exc)}), 400
 
     @app.route('/api/accounting/ar/customers/<int:customer_id>/statement', methods=['GET'])

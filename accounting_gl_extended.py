@@ -100,6 +100,63 @@ def budget_vs_actual(db, models, ledger_id, budget_id, *, period_key=None):
     return {'budget': serialize_budget(budget), 'rows': rows}
 
 
+def budget_grid(db, models, ledger_id, budget_id):
+    """Full account × period matrix for UI grid."""
+    AcctGLBudget = models['AcctGLBudget']
+    AcctGLBudgetLine = models['AcctGLBudgetLine']
+    AcctGLAccount = models['AcctGLAccount']
+    budget = AcctGLBudget.query.filter_by(id=budget_id, ledger_id=ledger_id).first()
+    if not budget:
+        raise ValueError('Budget not found')
+    lines = AcctGLBudgetLine.query.filter_by(budget_id=budget.id).all()
+    periods = sorted({ln.period_key for ln in lines})
+    if not periods:
+        fy = budget.fiscal_year
+        periods = [f'{fy}-{m:02d}' for m in range(1, 13)]
+    accounts = {a.id: a for a in AcctGLAccount.query.filter_by(ledger_id=ledger_id).order_by(AcctGLAccount.account_number).all()}
+    cell = {}
+    for ln in lines:
+        cell[(ln.account_id, ln.period_key)] = float(ln.amount or 0)
+    acct_ids = sorted(accounts.keys())
+    rows = []
+    for aid in acct_ids:
+        acct = accounts.get(aid)
+        if not acct:
+            continue
+        period_amounts = {p: round(cell.get((aid, p), 0.0), 2) for p in periods}
+        rows.append({
+            'account_id': aid,
+            'account_number': acct.account_number,
+            'description': acct.description,
+            'periods': period_amounts,
+            'total': round(sum(period_amounts.values()), 2),
+        })
+    return {
+        'budget': serialize_budget(budget),
+        'periods': periods,
+        'rows': rows,
+    }
+
+
+def update_budget_grid(db, models, ledger_id, budget_id, body):
+    AcctGLBudget = models['AcctGLBudget']
+    AcctGLBudgetLine = models['AcctGLBudgetLine']
+    budget = AcctGLBudget.query.filter_by(id=budget_id, ledger_id=ledger_id).first()
+    if not budget:
+        raise ValueError('Budget not found')
+    for cell in body.get('cells') or []:
+        aid = int(cell['account_id'])
+        pk = str(cell['period_key'])[:7]
+        amt = round(float(cell.get('amount') or 0), 2)
+        ln = AcctGLBudgetLine.query.filter_by(budget_id=budget.id, account_id=aid, period_key=pk).first()
+        if ln:
+            ln.amount = amt
+        elif amt != 0:
+            db.session.add(AcctGLBudgetLine(budget_id=budget.id, account_id=aid, period_key=pk, amount=amt))
+    db.session.flush()
+    return budget_grid(db, models, ledger_id, budget_id)
+
+
 def serialize_recurring(r):
     try:
         lines = json.loads(r.lines_json or '[]')

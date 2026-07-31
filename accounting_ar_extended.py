@@ -220,6 +220,57 @@ def customer_statement(db, models, ledger_id, customer_id):
     }
 
 
+def statement_printable_html(statement_data, company_name='Case PM Accounting'):
+    c = statement_data.get('customer') or {}
+    lines = statement_data.get('lines') or []
+    rows = ''.join(
+        f'<tr><td>{ln.get("document_date", "")}</td><td>{ln.get("document_number", "")}</td>'
+        f'<td>{ln.get("document_type", "")}</td><td style="text-align:right">{ln.get("amount", 0):,.2f}</td>'
+        f'<td style="text-align:right">{ln.get("open_amount", 0):,.2f}</td></tr>'
+        for ln in lines
+    )
+    return f'''<!DOCTYPE html><html><head><meta charset="utf-8"><title>Statement — {c.get("name", "")}</title>
+    <style>body{{font-family:system-ui,sans-serif;padding:24px;color:#111}} table{{border-collapse:collapse;width:100%}}
+    th,td{{border:1px solid #ccc;padding:6px 8px;font-size:13px}} th{{background:#f4f4f5}}</style></head><body>
+    <h1>{company_name}</h1><h2>Account statement</h2>
+    <p><strong>{c.get("name", "")}</strong> ({c.get("code", "")})<br>Statement date: {statement_data.get("statement_date", "")}</p>
+    <p>Open balance: <strong>${statement_data.get("open_balance", 0):,.2f}</strong></p>
+    <table><thead><tr><th>Date</th><th>Document</th><th>Type</th><th>Amount</th><th>Open</th></tr></thead>
+    <tbody>{rows or "<tr><td colspan=5>No activity</td></tr>"}</tbody></table>
+    <script>window.onload=function(){{window.print()}}</script></body></html>'''
+
+
+def dunning_email_package(db, models, ledger_id, customer_id, level, message=''):
+    AcctCustomer = models['AcctCustomer']
+    AcctLedger = models['AcctLedger']
+    c = AcctCustomer.query.filter_by(id=int(customer_id), ledger_id=ledger_id).first()
+    if not c:
+        raise ValueError('Customer not found')
+    ledger = AcctLedger.query.get(ledger_id)
+    company = ledger.name if ledger else 'Your company'
+    stmt = customer_statement(db, models, ledger_id, customer_id)
+    open_bal = stmt.get('open_balance', 0)
+    subject = f'Payment reminder — {company} (level {level})'
+    body = message or (
+        f'Dear {c.name},\n\nOur records show an open balance of ${open_bal:,.2f}. '
+        f'Please remit payment or contact us regarding past-due invoices.\n\nThank you,\n{company}'
+    )
+    to = c.email or ''
+    mailto = ''
+    if to:
+        from urllib.parse import quote
+        mailto = f'mailto:{quote(to)}?subject={quote(subject)}&body={quote(body)}'
+    log = record_dunning(db, models, ledger_id, customer_id, level, body[:500])
+    return {
+        'dunning_id': log.id,
+        'to': to,
+        'subject': subject,
+        'body': body,
+        'mailto': mailto,
+        'open_balance': open_bal,
+    }
+
+
 def next_receipt_batch_number(AcctARReceiptBatch, ledger_id):
     n = AcctARReceiptBatch.query.filter_by(ledger_id=ledger_id).count()
     return f'RCPT-B-{datetime.utcnow().strftime("%Y%m")}-{n + 1:04d}'
