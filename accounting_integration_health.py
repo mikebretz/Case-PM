@@ -68,6 +68,13 @@ def construction_integration_health_dashboard(
     score = max(0, score)
     grade = 'A' if score >= 90 else 'B' if score >= 75 else 'C' if score >= 60 else 'D'
 
+    sage_setup = None
+    try:
+        from accounting_waves_44 import sage_unified_setup_health
+        sage_setup = sage_unified_setup_health(db, models, ledger_id)
+    except Exception:
+        pass
+
     return {
         'at': datetime.utcnow().isoformat() + 'Z',
         'ledger_id': ledger_id,
@@ -79,6 +86,7 @@ def construction_integration_health_dashboard(
         'sage_pending': pending,
         'sage_mirror': sage_dash,
         'tieout': tieout,
+        'sage_setup': sage_setup,
         'autopost_flags': {
             k: defaults.get(k)
             for k in (

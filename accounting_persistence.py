@@ -21,6 +21,7 @@ DEFAULT_COA = [
     ('5100', 'Subcontractors', 'expense', 'debit'),
     ('5200', 'Materials', 'expense', 'debit'),
     ('5300', 'Equipment Expense', 'expense', 'debit'),
+    ('5310', 'Labor Burden & Fringe', 'expense', 'debit'),
     ('5400', 'Other Job Costs', 'expense', 'debit'),
     ('6000', 'General & Administrative', 'expense', 'debit'),
 ]

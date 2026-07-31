@@ -200,6 +200,8 @@ ACCOUNTING_DEFAULT_KEYS = [
     'co_post_on_approve',
     'timesheet_post_on_approve',
     'direct_cost_post_on_approve',
+    'labor_burden_percent',
+    'equipment_default_hourly_rate',
     'auto_wip_on_billing_sync',
     'retainage_accounting_enabled',
     'cash_account',
@@ -242,6 +244,10 @@ def load_accounting_defaults():
         out['timesheet_post_on_approve'] = '1'
     if not str(out.get('direct_cost_post_on_approve', '1')).strip():
         out['direct_cost_post_on_approve'] = '1'
+    if not str(out.get('labor_burden_percent', '0')).strip():
+        out['labor_burden_percent'] = '0'
+    if not str(out.get('equipment_default_hourly_rate', '85')).strip():
+        out['equipment_default_hourly_rate'] = '85'
     if not str(out.get('auto_wip_on_billing_sync', '0')).strip():
         out['auto_wip_on_billing_sync'] = '0'
     if not str(out.get('retainage_accounting_enabled', '1')).strip():
