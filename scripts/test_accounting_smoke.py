@@ -165,6 +165,24 @@ def main() -> int:
     except Exception as exc:
         errors.append(f'accounting_waves_31: {exc}')
 
+    print('6o. Wave 32 Sage CRE (53–56)…')
+    try:
+        import accounting_waves_32 as w32  # noqa: F401
+        assert callable(w32.g702_ar_lifecycle_report)
+        assert callable(w32.portfolio_job_variance_v2)
+    except Exception as exc:
+        errors.append(f'accounting_waves_32: {exc}')
+
+    print('6p. Wave 33 Sage distribution (57–60)…')
+    try:
+        import accounting_waves_33 as w33  # noqa: F401
+        assert callable(w33.three_way_match_line_grid)
+        v8 = w33.sage_mirror_deploy_check_v8()
+        if not v8.get('ok'):
+            errors.append(f'sage_mirror_deploy_check_v8: {v8}')
+    except Exception as exc:
+        errors.append(f'accounting_waves_33: {exc}')
+
     print('6c. instance DB must not be tracked…')
     try:
         from accounting_waves_20 import git_tracked_paths_must_not_include_db

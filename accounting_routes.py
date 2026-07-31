@@ -12,6 +12,7 @@ def register_accounting_routes(app, deps):
     Project = deps['Project']
     SageSyncEvent = deps.get('SageSyncEvent')
     PayAppProjectState = deps.get('PayAppProjectState')
+    Commitment = deps.get('Commitment')
 
     models = {k: deps[k] for k in deps if k.startswith('Acct')}
     from datetime import date
@@ -5793,6 +5794,140 @@ def register_accounting_routes(app, deps):
         secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
         try:
             out = cron_waves_45_48_maintenance(db, models, secret, Project=Project)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+
+    # --- Waves 53–60 ---
+
+    @app.route('/api/accounting/cre/g702/lifecycle/<int:project_id>', methods=['GET'])
+    @login_required
+    def api_acct_g702_lifecycle(project_id):
+        from accounting_waves_32 import g702_ar_lifecycle_report
+        return jsonify(g702_ar_lifecycle_report(db, models, _ledger_id(), project_id, PayAppProjectState=PayAppProjectState))
+
+    @app.route('/api/accounting/cre/g702/void-queue', methods=['POST'])
+    @login_required
+    def api_acct_g702_void_queue():
+        from accounting_waves_32 import g702_void_mirror_queue
+        data = request.get_json(silent=True) or {}
+        out = g702_void_mirror_queue(db, models, _ledger_id(), int(data.get('project_id', 0)), data.get('period_number'), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/cre/sub-pay-app/<int:project_id>', methods=['GET'])
+    @login_required
+    def api_acct_sub_pay_bridge(project_id):
+        from accounting_waves_32 import sub_pay_app_ap_bridge_report
+        return jsonify(sub_pay_app_ap_bridge_report(db, models, _ledger_id(), project_id, PayAppProjectState=PayAppProjectState))
+
+    @app.route('/api/accounting/cre/sub-compliance/<int:project_id>', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_sub_compliance(project_id):
+        from accounting_waves_32 import set_sub_compliance_hold, sub_compliance_hold_state
+        if request.method == 'GET':
+            return jsonify(sub_compliance_hold_state(db, models, _ledger_id(), project_id, PayAppProjectState=PayAppProjectState))
+        data = request.get_json(silent=True) or {}
+        out = set_sub_compliance_hold(db, models, _ledger_id(), project_id, data.get('reason', ''), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/cre/pco-audit-full', methods=['GET'])
+    @login_required
+    def api_acct_pco_audit_full():
+        from accounting_waves_32 import pco_bidirectional_audit
+        return jsonify(pco_bidirectional_audit(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/cre/pco-resolve', methods=['POST'])
+    @login_required
+    def api_acct_pco_resolve():
+        from accounting_waves_32 import record_pco_sage_resolution
+        out = record_pco_sage_resolution(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/cre/pj-queue', methods=['GET'])
+    @login_required
+    def api_acct_pj_queue():
+        from accounting_waves_32 import pj_mirror_queue_status
+        return jsonify(pj_mirror_queue_status(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/cre/portfolio-variance', methods=['GET'])
+    @login_required
+    def api_acct_portfolio_variance():
+        from accounting_waves_32 import portfolio_job_variance_v2
+        return jsonify(portfolio_job_variance_v2(db, models, _ledger_id(), Project=Project))
+
+    @app.route('/api/accounting/distribution/po-summary', methods=['GET'])
+    @login_required
+    def api_acct_po_summary():
+        from accounting_waves_33 import po_standing_blanket_summary
+        return jsonify(po_standing_blanket_summary(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/distribution/po-receipts/pull', methods=['POST'])
+    @login_required
+    def api_acct_po_receipts_pull():
+        from accounting_waves_33 import sage_pull_po_receipt_lines
+        out = sage_pull_po_receipt_lines(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/distribution/commitment-sync', methods=['GET'])
+    @login_required
+    def api_acct_commitment_po_sync():
+        from accounting_waves_33 import commitment_po_line_sync_summary
+        return jsonify(commitment_po_line_sync_summary(db, models, _ledger_id(), Commitment=Commitment))
+
+    @app.route('/api/accounting/distribution/ic/serial-lot', methods=['POST'])
+    @login_required
+    def api_acct_ic_serial_lot():
+        from accounting_waves_33 import ic_serial_lot_register
+        data = request.get_json(silent=True) or {}
+        out = ic_serial_lot_register(db, models, _ledger_id(), data.get('item_number', ''), data.get('serials') or [], user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/distribution/ic/refresh', methods=['GET'])
+    @login_required
+    def api_acct_ic_refresh():
+        from accounting_waves_33 import ic_qty_cost_refresh_summary
+        return jsonify(ic_qty_cost_refresh_summary(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/distribution/oe-chain', methods=['GET'])
+    @login_required
+    def api_acct_oe_chain():
+        from accounting_waves_33 import oe_order_chain_status
+        return jsonify(oe_order_chain_status(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/distribution/oe-commission-queue', methods=['POST'])
+    @login_required
+    def api_acct_oe_commission():
+        from accounting_waves_33 import oe_commission_export_queue
+        out = oe_commission_export_queue(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/ap/invoices/<int:invoice_id>/three-way-grid', methods=['GET'])
+    @login_required
+    def api_acct_three_way_grid(invoice_id):
+        from accounting_waves_33 import three_way_match_line_grid
+        return jsonify(three_way_match_line_grid(db, models, _ledger_id(), invoice_id))
+
+    @app.route('/api/accounting/ap/three-way-vendor-report', methods=['GET'])
+    @login_required
+    def api_acct_three_way_vendor():
+        from accounting_waves_33 import three_way_vendor_tolerance_report
+        return jsonify(three_way_vendor_tolerance_report(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/cron/sage-cre-distribution', methods=['POST'])
+    def api_acct_cron_sage_cre_dist():
+        from accounting_waves_33 import cron_waves_53_60_maintenance
+        secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
+        try:
+            out = cron_waves_53_60_maintenance(
+                db, models, secret, Project=Project, PayAppProjectState=PayAppProjectState, Commitment=Commitment,
+            )
             db.session.commit()
             return jsonify({'ok': True, **out})
         except PermissionError as exc:
