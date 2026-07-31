@@ -124,7 +124,7 @@ ACCOUNTING_MODULES = [
         'name': 'Inventory Control',
         'status': 'live',
         'route': 'inventory',
-        'summary': 'Perpetual inventory, locations, serial/lot (roadmap).',
+        'summary': 'Perpetual inventory, locations, serial/lot tracking.',
         'features': ['Item master', 'Receipts & issues', 'Transfers', 'Costing', 'Lot/serial tracking'],
     },
     {
@@ -134,7 +134,7 @@ ACCOUNTING_MODULES = [
         'status': 'live',
         'route': 'oe',
         'summary': 'Quotes, orders, shipments, invoicing.',
-        'features': ['Sales orders', 'Quotes & returns', 'Commissions (roadmap)', 'IC & AR integration'],
+        'features': ['Sales orders', 'Quotes & returns', 'Commissions & accrual', 'IC & AR integration'],
     },
     {
         'id': 'po',

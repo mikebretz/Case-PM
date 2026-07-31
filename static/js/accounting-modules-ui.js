@@ -387,7 +387,36 @@
       const lines = (g.lots || []).slice(0, 40).map((l) =>
         `${l.item_number} · lot ${l.lot_number || '—'} · serial ${l.serial_number || '—'} · qty ${l.qty_on_hand} @ ${l.location_code}`
       ).join('\n');
-      await AD().alert(lines || 'No lot/serial layers yet — receive inventory with lot numbers.', 'info');
+      const receive = await AD().confirm('Receive new lot/serial now?', 'Inventory');
+      if (!receive) {
+        await AD().alert(lines || 'No lot/serial layers yet — receive inventory with lot numbers.', 'info');
+        return;
+      }
+      const items = await api('/api/accounting/inventory/items');
+      const list = items.items || [];
+      const data = await AD().form({
+        title: 'Receive lot / serial',
+        fields: [
+          { key: 'item_id', label: 'Item', type: 'select', options: list.map((i) => ({ value: String(i.id), label: i.item_number })), required: true },
+          { key: 'qty', label: 'Qty', defaultValue: '1', required: true },
+          { key: 'lot_number', label: 'Lot #' },
+          { key: 'serial_number', label: 'Serial #' },
+          { key: 'unit_cost', label: 'Unit cost', defaultValue: '0' },
+        ],
+      });
+      if (!data) return;
+      await api('/api/accounting/inventory/lot-receive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          item_id: parseInt(data.item_id, 10),
+          qty: parseFloat(data.qty),
+          lot_number: data.lot_number,
+          serial_number: data.serial_number,
+          unit_cost: parseFloat(data.unit_cost || 0),
+        }),
+      });
+      switchModule('inventory');
     });
   }
 
@@ -435,7 +464,13 @@
     document.getElementById('acctOeCommissions')?.addEventListener('click', async () => {
       const c = await api('/api/accounting/oe/commissions');
       const lines = (c.orders || []).map((o) => `${o.order_number}: est commission ${o.commission_est}`).join('\n');
-      await AD().alert(`${lines}\n\nTotal est: ${c.total_commission_est}`, 'info');
+      const accrue = await AD().confirm(`Accrue ${c.total_commission_est} to G/L?`, 'Commissions');
+      if (accrue) {
+        await api('/api/accounting/oe/commissions/accrue', { method: 'POST', body: '{}' });
+        await AD().alert('Commission accrual posted.', 'success');
+      } else {
+        await AD().alert(`${lines}\n\nTotal est: ${c.total_commission_est}`, 'info');
+      }
     });
   }
 

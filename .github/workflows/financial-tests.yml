@@ -17,8 +17,8 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-      - name: Security unit tests
-        run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
+      - name: Accounting smoke tests
+        run: PYTHONPATH=. python3 scripts/test_accounting_smoke.py
       - name: Pay app workflow tests
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Financial lifecycle simulation

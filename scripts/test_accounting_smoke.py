@@ -45,6 +45,12 @@ def main() -> int:
     except Exception as exc:
         errors.append(f'accounting_waves_17: {exc}')
 
+    print('5. Wave 18 module import…')
+    try:
+        import accounting_waves_18 as w18  # noqa: F401
+    except Exception as exc:
+        errors.append(f'accounting_waves_18: {exc}')
+
     _report(errors)
     return 1 if errors else 0
 

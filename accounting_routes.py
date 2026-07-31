@@ -36,7 +36,10 @@ def register_accounting_routes(app, deps):
             return None
         if request.method == 'OPTIONS':
             return None
-        exempt = ('/catalog', '/dashboard', '/platform/i18n', '/platform/screen-permissions')
+        exempt = (
+            '/catalog', '/dashboard', '/platform/i18n', '/platform/screen-permissions',
+            '/payments/pay-now/',
+        )
         if any(x in path for x in exempt):
             return None
         try:
@@ -3994,3 +3997,91 @@ def register_accounting_routes(app, deps):
         except ValueError as exc:
             db.session.rollback()
             return jsonify({'error': str(exc)}), 400
+
+    # --- Wave 8: production bridges ---
+
+    @app.route('/pay-now/<token>')
+    def pay_now_page(token):
+        from flask import render_template
+        return render_template('pay_now.html', token=token)
+
+    @app.route('/api/accounting/payments/pay-now/<token>/checkout', methods=['GET'])
+    def api_acct_pay_now_checkout(token):
+        from accounting_waves_18 import pay_now_public_checkout
+        try:
+            return jsonify(pay_now_public_checkout(db, models, token))
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/payments/pay-now/<token>/complete', methods=['POST'])
+    def api_acct_pay_now_complete_public(token):
+        from accounting_waves_18 import pay_now_complete_card
+        body = request.get_json(silent=True) or {}
+        try:
+            out = pay_now_complete_card(db, models, token, body.get('payment_intent_id', ''))
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/sage/sync/flush', methods=['POST'])
+    @login_required
+    def api_acct_sage_flush():
+        from accounting_waves_18 import sage_flush_sync_queues
+        out = sage_flush_sync_queues(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/payroll/wh347/<int:project_id>.pdf', methods=['GET'])
+    @login_required
+    def api_acct_wh347_pdf(project_id):
+        from accounting_waves_18 import payroll_wh347_pdf_bytes
+        from flask import Response
+        we = request.args.get('week_ending') or date.today().isoformat()
+        try:
+            data = payroll_wh347_pdf_bytes(db, models, _ledger_id(), project_id, we)
+            return Response(data, mimetype='application/pdf', headers={
+                'Content-Disposition': f'attachment; filename=wh347-project-{project_id}.pdf',
+            })
+        except Exception as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/inventory/lot-receive', methods=['POST'])
+    @login_required
+    def api_acct_ic_lot_receive():
+        from accounting_waves_18 import inventory_receive_with_lot
+        try:
+            out = inventory_receive_with_lot(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except (ValueError, KeyError) as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/oe/commissions/accrue', methods=['POST'])
+    @login_required
+    def api_acct_oe_commission_accrue():
+        from accounting_waves_18 import post_oe_commission_accrual
+        body = request.get_json(silent=True) or {}
+        try:
+            out = post_oe_commission_accrual(
+                db, models, _ledger_id(), user_id=current_user.id,
+                order_id=body.get('order_id'),
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/cron/run-scheduled-reports', methods=['POST'])
+    def api_acct_cron_scheduled():
+        from accounting_waves_18 import cron_run_scheduled_reports
+        secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
+        try:
+            out = cron_run_scheduled_reports(db, models, secret)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403

@@ -92,14 +92,15 @@
         <h3 class="text-sm text-zinc-400 mb-2">Pay Now links</h3>
         <div class="border border-zinc-700 rounded-lg max-h-48 overflow-y-auto divide-y divide-zinc-800 text-xs">
           ${(links.links || []).map((l) => {
-            const url = `${global.location.origin}/accounting?pay_token=${encodeURIComponent(l.token)}`;
+            const url = `${global.location.origin}/pay-now/${encodeURIComponent(l.token)}`;
             return `<div class="p-2 flex flex-wrap justify-between gap-2 items-center">
               <div>
                 <span class="text-zinc-300">AR #${esc(l.ar_document_id)}</span>
                 <span class="text-zinc-500 ml-2">${money(l.amount)} · ${esc(l.status)}</span>
               </div>
               <div class="flex gap-2 items-center">
-                ${l.status === 'Pending' ? `<button type="button" class="acct-pp-complete text-emerald-400 bg-transparent border-none cursor-pointer" data-token="${esc(l.token)}">Simulate pay</button>` : ''}
+                ${l.status === 'Pending' ? `<a class="text-sky-400" href="/pay-now/${encodeURIComponent(l.token)}" target="_blank" rel="noopener">Open checkout</a>
+                <button type="button" class="acct-pp-complete text-emerald-400 bg-transparent border-none cursor-pointer" data-token="${esc(l.token)}">Simulate pay</button>` : ''}
                 <span class="font-mono text-[10px] text-zinc-600 truncate max-w-xs" title="${esc(url)}">${esc(l.token.slice(0, 12))}…</span>
               </div>
             </div>`;
