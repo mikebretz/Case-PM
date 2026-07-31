@@ -107,6 +107,9 @@
         <button type="button" id="acctSageFaPull" class="px-2 py-0.5 border border-sky-900 rounded text-sky-200">Pull FA</button>
         <button type="button" id="acctSagePrPull" class="px-2 py-0.5 border border-sky-800 rounded text-sky-300">Pull PR employees</button>
         <button type="button" id="acctSageMultiCo" class="px-2 py-0.5 border border-indigo-900 rounded text-indigo-200">Multi-co health</button>
+        <button type="button" id="acctCreQueue" class="px-2 py-0.5 border border-orange-900 rounded text-orange-200">CRE queue</button>
+        <button type="button" id="acctSageOpsRunbook" class="px-2 py-0.5 border border-zinc-500 rounded text-zinc-200">Ops runbook</button>
+        <button type="button" id="acctSageReportPack" class="px-2 py-0.5 border border-violet-900 rounded text-violet-200">Schedule reports</button>
       </div>
       <ul class="max-h-20 overflow-y-auto">${log}</ul>
     </div>`;
@@ -294,6 +297,23 @@
     document.getElementById('acctSageMultiCo')?.addEventListener('click', async () => {
       const h = await api('/api/accounting/sage/platform/multi-company-health');
       await AD().alert(`Avg sync health ${h.average_score || '—'} across ${(h.companies || []).length} company row(s).`, 'info');
+    });
+    document.getElementById('acctCreQueue')?.addEventListener('click', async () => {
+      const q = await api('/api/accounting/sage/construction/queue');
+      await AD().alert(`CRE queue: ${q.queue_size || 0} item(s), ${q.stuck_count || 0} stuck.`, (q.stuck_count || 0) ? 'warning' : 'info');
+    });
+    document.getElementById('acctSageOpsRunbook')?.addEventListener('click', async () => {
+      const d = await api('/api/accounting/sage/ops/runbook');
+      const h = d.health || {};
+      await AD().alert(`Ops runbook — health ${h.grade || '—'} (${h.score ?? '—'}), CRE queue ${d.construction_queue?.queue_size ?? '—'}.`, 'info');
+    });
+    document.getElementById('acctSageReportPack')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/report-packs/schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pack_id: 'month_end_core' }),
+      });
+      await AD().alert(`Scheduled ${(r.scheduled || []).length} report(s) from pack ${r.pack_id || 'month_end_core'}.`, 'success');
     });
     document.getElementById('acctSageFlushC')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/sage/construction/flush-queue', { method: 'POST', body: '{}' });

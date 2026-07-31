@@ -1,0 +1,13 @@
+{
+  "value": [
+    {
+      "type": "G702Approved",
+      "payload": {
+        "project_id": 101,
+        "period_number": 4,
+        "company_code": "CO01"
+      },
+      "at": "2024-08-01T12:00:00Z"
+    }
+  ]
+}
