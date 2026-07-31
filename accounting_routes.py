@@ -3749,7 +3749,7 @@ def register_accounting_routes(app, deps):
 
     @app.route('/api/accounting/po/orders/<int:po_id>/blanket-release', methods=['POST'])
     @login_required
-    def api_acct_po_blanket_release(po_id):
+    def api_acct_po_orders_blanket_release(po_id):
         from accounting_tier14_wave import blanket_po_release
         try:
             out = blanket_po_release(db, models, _ledger_id(), po_id, request.get_json(silent=True) or {}, user_id=current_user.id)
