@@ -4587,3 +4587,149 @@ def register_accounting_routes(app, deps):
     def api_acct_deploy_check():
         from accounting_waves_22 import deploy_accounting_check
         return jsonify(deploy_accounting_check())
+
+    # --- Wave 13 ---
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/retainage', methods=['GET'])
+    @login_required
+    def api_acct_retainage_summary(project_id):
+        from accounting_waves_23 import project_retainage_summary
+        return jsonify(project_retainage_summary(db, models, _ledger_id(), project_id, PayAppProjectState))
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/retainage/hold', methods=['POST'])
+    @login_required
+    def api_acct_retainage_hold(project_id):
+        from accounting_waves_23 import post_owner_retainage_hold
+        data = request.get_json(silent=True) or {}
+        try:
+            out = post_owner_retainage_hold(
+                db, models, _ledger_id(), project_id,
+                float(data.get('amount') or 0),
+                user_id=current_user.id,
+                period=data.get('period'),
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/retainage/release', methods=['POST'])
+    @login_required
+    def api_acct_retainage_release(project_id):
+        from accounting_waves_23 import release_owner_retainage_to_ar
+        data = request.get_json(silent=True) or {}
+        try:
+            out = release_owner_retainage_to_ar(
+                db, models, _ledger_id(), project_id,
+                float(data.get('amount') or 0),
+                int(data.get('customer_id') or 0),
+                user_id=current_user.id,
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/retainage/sync', methods=['POST'])
+    @login_required
+    def api_acct_retainage_sync(project_id):
+        from accounting_waves_23 import sync_owner_retainage_from_pay_apps
+        if not PayAppProjectState:
+            return jsonify({'error': 'Pay applications not available'}), 400
+        try:
+            out = sync_owner_retainage_from_pay_apps(
+                db, models, _ledger_id(), project_id,
+                user_id=current_user.id, PayAppProjectState=PayAppProjectState,
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/cost-code-profit', methods=['GET'])
+    @login_required
+    def api_acct_cost_code_profit(project_id):
+        from accounting_waves_23 import cost_code_profitability_report
+        import app as app_mod
+        Commitment, _ = _commitment_models()
+        return jsonify(cost_code_profitability_report(
+            db, models, _ledger_id(), project_id, app_mod.BudgetProjectState, Commitment=Commitment,
+        ))
+
+    @app.route('/api/accounting/payroll/runs/<int:run_id>/labor-gl', methods=['POST'])
+    @login_required
+    def api_acct_payroll_run_labor_gl(run_id):
+        from accounting_waves_23 import post_payroll_run_labor_to_gl
+        try:
+            out = post_payroll_run_labor_to_gl(db, models, _ledger_id(), run_id, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/bank/<int:bank_account_id>/close-period', methods=['POST'])
+    @login_required
+    def api_acct_bank_close_period(bank_account_id):
+        from accounting_waves_23 import close_bank_statement_period
+        data = request.get_json(silent=True) or {}
+        period_end = data.get('period_end') or date.today().isoformat()
+        try:
+            out = close_bank_statement_period(
+                db, models, _ledger_id(), bank_account_id, period_end,
+                user_id=current_user.id, allow_open=bool(data.get('allow_open')),
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/cash/month-end-checklist', methods=['GET'])
+    @login_required
+    def api_acct_month_end_cash_checklist():
+        from accounting_waves_23 import month_end_cash_checklist
+        return jsonify(month_end_cash_checklist(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/construction/reverse', methods=['POST'])
+    @login_required
+    def api_acct_construction_reverse():
+        from accounting_waves_23 import reverse_construction_post
+        data = request.get_json(silent=True) or {}
+        source_key = (data.get('source_key') or '').strip()
+        if not source_key:
+            return jsonify({'error': 'source_key required'}), 400
+        try:
+            out = reverse_construction_post(
+                db, models, _ledger_id(), source_key,
+                user_id=current_user.id, reason=(data.get('reason') or ''),
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/closeout', methods=['GET'])
+    @login_required
+    def api_acct_project_closeout(project_id):
+        from accounting_waves_23 import project_accounting_closeout_checklist
+        Commitment, _ = _commitment_models()
+        return jsonify(project_accounting_closeout_checklist(
+            db, models, _ledger_id(), project_id,
+            PayAppProjectState=PayAppProjectState, Commitment=Commitment,
+        ))
+
+    @app.route('/api/accounting/cron/wave13', methods=['POST'])
+    def api_acct_cron_wave13():
+        from accounting_waves_23 import cron_wave13_summary_email
+        secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
+        try:
+            out = cron_wave13_summary_email(db, models, secret)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403

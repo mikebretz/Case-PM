@@ -840,6 +840,12 @@
                         Auto-post WIP adjustment after G702 sync when over/under exceeds threshold
                     </label>
                 </div>
+                <div class="mb-5">
+                    <label class="flex items-center gap-2 text-sm text-zinc-300">
+                        <input type="checkbox" id="acct_retainage_accounting_enabled" class="rounded border-zinc-600" {% if accounting_defaults.get('retainage_accounting_enabled', '1') != '0' %}checked{% endif %}>
+                        Apply retainage split on sub pay app → A/P sync
+                    </label>
+                </div>
                 <div id="acctSorSummaryHost" class="mb-5 p-4 border border-zinc-700 rounded-lg text-sm text-zinc-400 hidden"></div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {% for key, label in [
@@ -1106,10 +1112,12 @@
             commitment_post_on_approve: document.getElementById('acct_commitment_post_on_approve')?.checked ? '1' : '0',
             co_post_on_approve: document.getElementById('acct_co_post_on_approve')?.checked ? '1' : '0',
             auto_wip_on_billing_sync: document.getElementById('acct_auto_wip_on_billing_sync')?.checked ? '1' : '0',
+            retainage_accounting_enabled: document.getElementById('acct_retainage_accounting_enabled')?.checked ? '1' : '0',
         };
         form.querySelectorAll('input[name]').forEach((el) => {
             if (['acct_auto_post_enabled', 'acct_g702_post_on_approve', 'acct_sub_pay_app_post_on_approve',
-                'acct_commitment_post_on_approve', 'acct_co_post_on_approve', 'acct_auto_wip_on_billing_sync'].includes(el.id)) return;
+                'acct_commitment_post_on_approve', 'acct_co_post_on_approve', 'acct_auto_wip_on_billing_sync',
+                'acct_retainage_accounting_enabled'].includes(el.id)) return;
             accounting[el.name] = el.value.trim();
         });
         try {

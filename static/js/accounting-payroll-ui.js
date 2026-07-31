@@ -40,6 +40,7 @@
         <div class="flex flex-col gap-1">
           ${r.status === 'Open' ? `<button type="button" class="text-xs text-sky-400 acct-pr-open" data-id="${r.id}">Open</button>` : ''}
           ${r.status === 'Open' ? `<button type="button" class="text-xs text-emerald-400 acct-pr-post" data-id="${r.id}">Post G/L</button>` : ''}
+          ${r.status === 'Posted' ? `<button type="button" class="text-xs text-violet-400 acct-pr-labor-gl" data-id="${r.id}">Job labor G/L</button>` : ''}
         </div>
       </div>`
     ).join('');
@@ -240,6 +241,16 @@
 
     document.getElementById('acctPrPostRun')?.addEventListener('click', () => currentRunId && postRun(currentRunId));
     document.querySelectorAll('.acct-pr-post').forEach((btn) => btn.addEventListener('click', () => postRun(btn.getAttribute('data-id'))));
+    document.querySelectorAll('.acct-pr-labor-gl').forEach((btn) => btn.addEventListener('click', async () => {
+      const id = btn.getAttribute('data-id');
+      try {
+        const out = await api(`/api/accounting/payroll/runs/${id}/labor-gl`, { method: 'POST', body: '{}' });
+        await AD().alert(`Distributed labor to G/L for ${out.posted_count || 0} line(s).`, 'success');
+        switchModule('payroll');
+      } catch (e) {
+        await AD().alert(e.message, 'error');
+      }
+    }));
     document.querySelectorAll('.acct-pr-open').forEach((btn) => btn.addEventListener('click', () => loadRun(btn.getAttribute('data-id'))));
 
     document.getElementById('acctPrW2')?.addEventListener('click', async () => {
