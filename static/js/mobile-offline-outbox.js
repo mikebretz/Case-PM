@@ -1,5 +1,5 @@
 /**
- * Mobile offline outbox — queues daily log ids for server process when back online.
+ * Mobile offline outbox — queues field items; sync only clears after successful server process.
  */
 (function (global) {
   'use strict';
@@ -18,12 +18,17 @@
     });
   }
 
+  function clientId() {
+    return `c-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  }
+
   async function enqueue(item) {
     const db = await openDb();
+    const payload = { ...item, client_id: item.client_id || clientId(), at: Date.now() };
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).add({ ...item, at: Date.now() });
-      tx.oncomplete = () => resolve(true);
+      tx.objectStore(STORE).add(payload);
+      tx.oncomplete = () => resolve(payload);
       tx.onerror = () => reject(tx.error);
     });
   }
@@ -36,19 +41,26 @@
       req.onsuccess = () => resolve(req.result || []);
       req.onerror = () => reject(req.error);
     });
-    if (!items.length) return;
-    await fetch('/api/mobile/offline/sync', {
+    if (!items.length) return { synced: 0 };
+    const syncResp = await fetch('/api/mobile/offline/sync', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items }),
     });
-    await fetch('/api/mobile/offline/process', { method: 'POST', credentials: 'same-origin', body: '{}' });
-    const clearTx = db.transaction(STORE, 'readwrite');
-    clearTx.objectStore(STORE).clear();
+    if (!syncResp.ok) throw new Error('offline sync failed');
+    const procResp = await fetch('/api/mobile/offline/process', { method: 'POST', credentials: 'same-origin', body: '{}' });
+    const proc = await procResp.json().catch(() => ({}));
+    if (!procResp.ok) throw new Error(proc.error || 'offline process failed');
+    const remaining = proc.remaining ?? 0;
+    if (remaining === 0) {
+      const clearTx = db.transaction(STORE, 'readwrite');
+      clearTx.objectStore(STORE).clear();
+    }
+    return { synced: items.length, remaining, processed: proc.processed };
   }
 
-  global.CasePMOfflineOutbox = { enqueue, drainToServer };
+  global.CasePMOfflineOutbox = { enqueue, drainToServer, clientId };
 
   global.addEventListener('online', () => { drainToServer().catch(() => {}); });
   if (global.navigator.onLine) drainToServer().catch(() => {});

@@ -6701,3 +6701,73 @@ def register_accounting_routes(app, deps):
         if not pid:
             return jsonify({'error': 'project_id required'}), 400
         return jsonify(scheduling_resource_leveling_v1(db, app_mod.ScheduleData, int(pid)))
+
+    @app.route('/api/pm/scheduling/cross-project-leveling', methods=['GET'])
+    @login_required
+    def api_pm_scheduling_cross_project():
+        from accounting_waves_49 import scheduling_cross_project_leveling
+        import app as app_mod
+        return jsonify(scheduling_cross_project_leveling(db, app_mod.ScheduleData, Project))
+
+    @app.route('/api/pm/scheduling/resource-pools', methods=['GET', 'POST'])
+    @login_required
+    def api_pm_scheduling_resource_pools():
+        from accounting_waves_49 import scheduling_resource_pools
+        body = request.get_json(silent=True) if request.method == 'POST' else None
+        out = scheduling_resource_pools(db, models, _ledger_id(), body, user_id=current_user.id)
+        if request.method == 'POST':
+            db.session.commit()
+        return jsonify(out)
+
+    @app.route('/api/portal/waiver-library', methods=['GET'])
+    @login_required
+    def api_portal_waiver_library():
+        from accounting_waves_49 import company_waiver_library
+        return jsonify(company_waiver_library(db, PayAppProjectState, Project, Company))
+
+    @app.route('/api/accounting/estimating/sov-alignment/remediate', methods=['POST'])
+    @login_required
+    def api_acct_sov_align_remediate():
+        from accounting_waves_49 import sov_alignment_remediate_budget_to_sov
+        body = request.get_json(silent=True) or {}
+        pid = body.get('project_id') or get_current_project_id()
+        if not pid:
+            return jsonify({'error': 'project_id required'}), 400
+        out = sov_alignment_remediate_budget_to_sov(
+            db, int(pid), BudgetProjectState=BudgetProjectState, PayAppProjectState=PayAppProjectState, user_id=current_user.id,
+        )
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/ap/compliance-preflight', methods=['POST'])
+    @login_required
+    def api_acct_ap_compliance_preflight():
+        from accounting_waves_49 import ap_payment_compliance_preflight
+        body = request.get_json(silent=True) or {}
+        try:
+            out = ap_payment_compliance_preflight(
+                db, models, _ledger_id(), int(body['vendor_id']), body.get('applications') or [],
+                PayAppProjectState=PayAppProjectState, Project=Project, Company=Company, COI=COI,
+                company_id=body.get('company_id'),
+            )
+            return jsonify(out)
+        except (KeyError, ValueError, TypeError) as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/construction/owner-draw-package', methods=['POST'])
+    @login_required
+    def api_acct_owner_draw_package():
+        from accounting_waves_49 import create_owner_draw_package_from_g702
+        import app as app_mod
+        body = request.get_json(silent=True) or {}
+        try:
+            out = create_owner_draw_package_from_g702(
+                db, models, _ledger_id(), int(body['project_id']), body.get('period') or body.get('period_number'),
+                user_id=current_user.id, PayAppProjectState=PayAppProjectState,
+                ClientPortalDrawRequest=app_mod.ClientPortalDrawRequest, Project=Project,
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400

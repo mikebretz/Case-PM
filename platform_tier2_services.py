@@ -371,9 +371,18 @@ def client_portal_extended_feed(db, models, user, project_id):
             'status': s.status, 'due_date': s.due_date.isoformat() if s.due_date else None,
             'selected_option': s.selected_option,
         } for s in ClientPortalSelection.query.filter_by(project_id=pid).order_by(ClientPortalSelection.created_at.desc()).limit(30)]
-        draws = [{
-            'id': d.id, 'title': d.title, 'amount': d.amount, 'period': d.period, 'status': d.status,
-        } for d in ClientPortalDrawRequest.query.filter_by(project_id=pid).limit(20)]
+        draws = []
+        for d in ClientPortalDrawRequest.query.filter_by(project_id=pid).limit(20):
+            pkg = None
+            if d.notes:
+                try:
+                    pkg = json.loads(d.notes)
+                except (TypeError, json.JSONDecodeError):
+                    pkg = None
+            draws.append({
+                'id': d.id, 'title': d.title, 'amount': d.amount, 'period': d.period, 'status': d.status,
+                'package': pkg,
+            })
         payments = [{
             'id': p.id, 'title': p.title, 'amount': p.amount, 'status': p.status, 'method': p.payment_method,
         } for p in ClientPortalPayment.query.filter_by(project_id=pid).limit(20)]

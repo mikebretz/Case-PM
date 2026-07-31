@@ -534,6 +534,20 @@
     }
   }
 
+  async function sovAlignmentRemediate(projectId) {
+    const ok = await estConfirm('Add budget-only cost codes to contractor SOV (amounts from budget)?', {
+      title: 'Align SOV', confirmLabel: 'Remediate',
+    });
+    if (!ok) return;
+    const out = await api('/api/accounting/estimating/sov-alignment/remediate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: projectId }),
+    });
+    await estAlert(`Added ${out.added || 0} SOV line(s).`, 'success');
+    await sovAlignmentReport(projectId);
+  }
+
   async function initPackageModalCsi() {
     if (!global.CasePMCsiCatalog) return;
     const divSel = document.getElementById('estPkgDivision');
@@ -644,6 +658,11 @@
       const pid = state.current?.project_id;
       if (!pid) return estAlert('Select an estimate with a project first.', 'error');
       return sovAlignmentReport(pid).catch(e => estAlert(e.message, 'error'));
+    });
+    document.getElementById('estSovRemediate')?.addEventListener('click', () => {
+      const pid = state.current?.project_id;
+      if (!pid) return estAlert('Select an estimate with a project first.', 'error');
+      return sovAlignmentRemediate(pid).catch(e => estAlert(e.message, 'error'));
     });
 
     const tab = new URLSearchParams(location.search).get('tab');

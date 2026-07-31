@@ -145,6 +145,22 @@ def register_estimate_routes(app, deps):
             'estimate': _load_estimate_detail(est),
         })
 
+    @app.route('/api/estimates/<int:estimate_id>/import-revision', methods=['POST'])
+    @login_required
+    def api_import_estimate_revision(estimate_id):
+        from accounting_waves_49 import import_estimate_revision_csv
+        est = Estimate.query.get_or_404(estimate_id)
+        body = deps['request'].get_json(silent=True) or {}
+        csv_text = body.get('csv') or body.get('csv_text') or ''
+        if not csv_text.strip():
+            return deps['jsonify']({'error': 'csv body required'}), 400
+        out = import_estimate_revision_csv(
+            Estimate, EstimateLine, est.id, csv_text, db,
+            user_id=deps['current_user'].id, replace=bool(body.get('replace')),
+        )
+        db.session.commit()
+        return deps['jsonify']({'ok': True, **out})
+
     @app.route('/api/estimates/<int:estimate_id>/takeoff-preview', methods=['GET'])
     @login_required
     def api_takeoff_preview(estimate_id):

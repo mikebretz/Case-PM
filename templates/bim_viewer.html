@@ -3,25 +3,38 @@
 {% block content %}
 <div class="flex flex-col flex-1 min-h-0 p-4">
   <h1 class="text-xl font-semibold text-white mb-2">BIM coordination</h1>
-  <p class="text-sm text-zinc-400 mb-4">Foundation viewer — register viewpoints and link models from Operations BIM assets.</p>
-  <div id="bimViewerHost" class="flex-1 border border-zinc-700 rounded-lg bg-zinc-900 p-4 text-sm text-zinc-400">Loading…</div>
+  <p class="text-sm text-zinc-400 mb-4">View GLB/GLTF/PDF models from Operations BIM assets. IFC files download until conversion is available.</p>
+  <div id="bimViewerHost" class="flex-1 min-h-[420px] border border-zinc-700 rounded-lg bg-zinc-900 p-4 text-sm text-zinc-400">Loading…</div>
+  <div id="bimAssetList" class="mt-3 text-xs text-zinc-500"></div>
 </div>
+<script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
+<script src="{{ url_for('static', filename='js/operations-bim-viewer.js') }}"></script>
 <script>
 (async function () {
   const params = new URLSearchParams(location.search);
   const projectId = params.get('project_id') || {{ active_project.id if active_project else 'null' }};
   const assetId = params.get('asset_id');
   const host = document.getElementById('bimViewerHost');
+  const list = document.getElementById('bimAssetList');
   try {
-    const st = await fetch('/api/pm/bim/status', { credentials: 'same-origin' }).then((r) => r.json());
+    const st = await fetch('/api/pm/bim/status' + (projectId ? `?project_id=${projectId}` : ''), { credentials: 'same-origin' }).then((r) => r.json());
     let assets = [];
     if (projectId) {
       const a = await fetch(`/api/operations/bim/assets?project_id=${projectId}`, { credentials: 'same-origin' }).then((r) => r.json()).catch(() => ({}));
       assets = a.assets || [];
     }
-    host.innerHTML = `<div class="text-zinc-300 mb-2">Status: ${st.status || '—'} · viewpoints ${st.viewpoint_count || 0}</div>
-      <ul class="list-disc pl-4">${assets.map((x) => `<li><a class="text-emerald-400" href="?project_id=${projectId}&asset_id=${x.id}">${x.filename || x.id}</a></li>`).join('') || '<li>No BIM assets — upload via Operations.</li>'}</ul>
-      ${assetId ? `<p class="mt-4 text-xs">Selected asset #${assetId} — IFC/Forge viewer integration planned; use Documents for file download.</p>` : ''}`;
+    list.innerHTML = `<span class="text-zinc-400">Status: ${st.status || '—'} · assets ${st.bim_asset_count ?? 0} · viewer ${st.viewer || '—'}</span>
+      <ul class="list-disc pl-4 mt-1">${assets.map((x) => `<li><a class="text-emerald-400" href="?project_id=${projectId}&asset_id=${x.id}">${x.filename || x.id}</a></li>`).join('') || '<li>No BIM assets — upload via Operations.</li>'}</ul>`;
+    if (assetId && global.CasePMBimViewer) {
+      const meta = assets.find((x) => String(x.id) === String(assetId)) || {};
+      const ext = (meta.filename || '').split('.').pop() || meta.format || '';
+      const fileUrl = `/api/operations/bim/${assetId}/file`;
+      host.classList.remove('p-4');
+      host.classList.add('p-0', 'overflow-hidden');
+      global.CasePMBimViewer.mount(host, fileUrl, ext, { fill: true });
+    } else {
+      host.innerHTML = '<p class="p-4">Select a model from the list above.</p>';
+    }
   } catch (e) {
     host.textContent = e.message || 'Failed to load BIM status';
   }
