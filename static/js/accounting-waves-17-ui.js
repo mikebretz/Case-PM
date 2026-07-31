@@ -92,6 +92,8 @@
         <button type="button" id="acctSagePullArRcp2" class="px-2 py-0.5 border border-cyan-900 rounded text-cyan-200">Pull AR cash</button>
         <button type="button" id="acctSageSegVal" class="px-2 py-0.5 border border-zinc-600 rounded">Validate segments</button>
         <button type="button" id="acctSageRetry" class="px-2 py-0.5 border border-orange-900 rounded text-orange-200">Retry inbox</button>
+        <button type="button" id="acctSageDrift" class="px-2 py-0.5 border border-pink-900 rounded text-pink-200">Drift dashboard</button>
+        <button type="button" id="acctSageFlushC" class="px-2 py-0.5 border border-zinc-600 rounded">Flush CRE queue</button>
         <button type="button" id="acctSageOps" class="px-2 py-0.5 border border-zinc-600 rounded text-zinc-300">Ops dashboard</button>
         <button type="button" id="acctSagePolicyCasepm" class="px-2 py-0.5 border border-zinc-600 rounded">SOR: Case PM</button>
         <button type="button" id="acctSagePolicySage" class="px-2 py-0.5 border border-zinc-600 rounded">SOR: Sage</button>
@@ -213,6 +215,18 @@
     document.getElementById('acctSageRetry')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/sage/sync/retry-inbox', { method: 'POST', body: '{}' });
       await AD().alert(r.skipped ? `Skipped: ${r.reason}` : 'Retried AP/AR push.', 'info');
+    });
+    document.getElementById('acctSageDrift')?.addEventListener('click', async () => {
+      const d = await api('/api/accounting/sage/drift/dashboard');
+      const inbox = d.inbox || {};
+      await AD().alert(
+        `Open AR ${d.open_ar} · AP ${d.open_ap} · parity warnings ${d.parity_warning_count} · AP push errors ${(inbox.ap_push_errors || []).length}`,
+        'info',
+      );
+    });
+    document.getElementById('acctSageFlushC')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/construction/flush-queue', { method: 'POST', body: '{}' });
+      await AD().alert(`Processed ${r.processed || 0} · errors ${r.errors || 0} · remaining ${r.remaining || 0}`, 'info');
     });
     document.getElementById('acctSageOps')?.addEventListener('click', async () => {
       const d = await api('/api/accounting/sage/mirror/dashboard');
