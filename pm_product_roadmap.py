@@ -58,6 +58,13 @@ PILLARS = [
         'summary': 'IndexedDB outbox with idempotent server process for daily log, timesheet, and photo metadata.',
         'hooks': ['/api/mobile/offline/schema', 'static/js/mobile-offline-outbox.js'],
     },
+    {
+        'id': 'marketing',
+        'title': 'Construction marketing',
+        'status': 'live',
+        'summary': 'Lead pipeline, case studies from projects, DAM, campaigns, reviews, public lead capture.',
+        'hooks': ['/marketing', '/api/marketing/catalog', '/api/public/marketing/leads'],
+    },
 ]
 
 

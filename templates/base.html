@@ -777,6 +777,11 @@
                 </a>
 
 
+                <a href="{{ url_for('marketing_page', project_id=active_project.id) if active_project else url_for('marketing_page') }}" data-nav-module="marketing" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'marketing_page' %}active{% endif %}">
+                    <i class="fa-solid fa-bullhorn w-5"></i>
+                    <span>Marketing</span>
+                </a>
+
                 <a href="{{ url_for('client_portal_page', project_id=active_project.id) if active_project else url_for('client_portal_page') }}" data-nav-module="operations_center" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'client_portal_page' %}active{% endif %}">
                     <i class="fa-solid fa-house-user w-5"></i>
                     <span>Client Portal</span>

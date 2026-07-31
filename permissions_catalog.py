@@ -63,6 +63,14 @@ MODULE_SUBMODULES = {
         ('estimating_leveling', 'Bid Leveling'),
         ('estimating_award', 'Award & Budget'),
     ],
+    'marketing': [
+        ('marketing', 'Marketing hub'),
+        ('marketing_pipeline', 'Leads & pipeline'),
+        ('marketing_portfolio', 'Portfolio & case studies'),
+        ('marketing_campaigns', 'Campaigns'),
+        ('marketing_reputation', 'Reviews & referrals'),
+        ('marketing_assets', 'Visual asset library'),
+    ],
     'safety': [
         ('safety_reports', 'Observations & Incidents'),
         ('safety_training', 'Training & Certifications'),
@@ -137,6 +145,13 @@ MODULE_GROUPS = [
         ],
     },
     {
+        'id': 'marketing',
+        'label': 'Marketing & Business Development',
+        'modules': [
+            ('marketing', 'Marketing'),
+        ],
+    },
+    {
         'id': 'administration',
         'label': 'Administration',
         'modules': [
@@ -164,6 +179,8 @@ FINANCIAL_MODULE_KEYS = frozenset({
     'companies', 'estimating',
     'estimating_summary', 'estimating_worksheet', 'estimating_rfp',
     'estimating_takeoff', 'estimating_leveling', 'estimating_award',
+    'marketing', 'marketing_pipeline', 'marketing_portfolio',
+    'marketing_campaigns', 'marketing_reputation', 'marketing_assets',
 })
 
 # Map legacy display names → module keys
@@ -198,6 +215,7 @@ LEGACY_MODULE_MAP = {
     'Accounting (Sage 300)': 'accounting',
     'Deliveries': 'deliveries',
     'Operations Center': 'operations_center',
+    'Marketing': 'marketing',
     'Inspections': 'inspections',
     'Meeting Minutes': 'meeting_minutes',
     'Notifications': 'notifications',
@@ -212,6 +230,7 @@ WORKFLOW_MODULE_MAP = {
     'RFIs': 'rfis',
     'Budget': 'budget',
     'Accounting': 'accounting',
+    'Marketing': 'marketing',
     'Daily Log': 'daily_log',
     'Safety': 'safety',
     'Documents': 'documents',
@@ -376,6 +395,12 @@ ROLE_TEMPLATES = {
             'program_settings': ('view', 'none'),
             'audit_log': ('view', 'none'),
             'operations_center': ('edit', 'approve_reject'),
+            'marketing': ('edit', 'none'),
+            'marketing_pipeline': ('edit', 'none'),
+            'marketing_portfolio': ('edit', 'none'),
+            'marketing_campaigns': ('edit', 'none'),
+            'marketing_reputation': ('edit', 'none'),
+            'marketing_assets': ('edit', 'none'),
         }),
     },
     'Superintendent': {

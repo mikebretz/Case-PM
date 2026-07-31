@@ -381,6 +381,15 @@ def main() -> int:
     except Exception as exc:
         errors.append(f'startup_guard: {exc}')
 
+    print('8. Marketing module…')
+    try:
+        from marketing_services import marketing_deploy_check
+        mk = marketing_deploy_check()
+        if not mk.get('ok'):
+            errors.append(f'marketing_deploy_check: {mk}')
+    except Exception as exc:
+        errors.append(f'marketing: {exc}')
+
     _report(errors)
     return 1 if errors else 0
 
