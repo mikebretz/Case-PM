@@ -52,6 +52,9 @@
           <button type="button" id="acctPrAddEmp" class="text-xs px-2 py-1 bg-zinc-800 border border-zinc-600 rounded">+ Employee</button>
           <button type="button" id="acctPrAddDed" class="text-xs px-2 py-1 bg-zinc-800 border border-zinc-600 rounded">+ Deduction</button>
           <button type="button" id="acctPrNewRun" class="text-xs px-2 py-1 bg-emerald-700 rounded">+ Pay run</button>
+          <a href="/api/accounting/payroll/form-941?format=csv" class="text-xs px-2 py-1 border border-zinc-600 rounded text-violet-400 inline-block">Form 941 CSV</a>
+          <button type="button" id="acctPrW2" class="text-xs px-2 py-1 border border-zinc-600 rounded text-sky-400">W-2 summary</button>
+          <button type="button" id="acctPrCert" class="text-xs px-2 py-1 border border-zinc-600 rounded text-amber-400">WH-347 certified</button>
         </div>
       </div>
       <p class="text-xs text-zinc-500">Employees, withholding, deductions, and pay runs post to G/L with <strong class="text-zinc-400">job cost labor</strong> by project. Map accounts under Program Settings → Accounting.</p>
@@ -237,6 +240,18 @@
     document.getElementById('acctPrPostRun')?.addEventListener('click', () => currentRunId && postRun(currentRunId));
     document.querySelectorAll('.acct-pr-post').forEach((btn) => btn.addEventListener('click', () => postRun(btn.getAttribute('data-id'))));
     document.querySelectorAll('.acct-pr-open').forEach((btn) => btn.addEventListener('click', () => loadRun(btn.getAttribute('data-id'))));
+
+    document.getElementById('acctPrW2')?.addEventListener('click', async () => {
+      const y = new Date().getFullYear();
+      const w = await api(`/api/accounting/payroll/w2-summary?tax_year=${y}`);
+      await AD().alert(`${(w.employees || []).length} employee(s) on W-2 summary for ${y}.`, 'info');
+    });
+
+    document.getElementById('acctPrCert')?.addEventListener('click', async () => {
+      const pid = projectId();
+      if (!pid) return AD().alert('Select a project for certified payroll.', 'warning');
+      global.open(`/api/accounting/payroll/certified/${pid}?week_ending=${new Date().toISOString().slice(0, 10)}`, '_blank');
+    });
   }
 
   global.CasePMAcctPayrollUI = { render, bindHandlers, loadRun };
