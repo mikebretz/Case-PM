@@ -97,6 +97,11 @@
         <button type="button" id="acctSageOps" class="px-2 py-0.5 border border-zinc-600 rounded text-zinc-300">Ops dashboard</button>
         <button type="button" id="acctSagePolicyCasepm" class="px-2 py-0.5 border border-zinc-600 rounded">SOR: Case PM</button>
         <button type="button" id="acctSagePolicySage" class="px-2 py-0.5 border border-zinc-600 rounded">SOR: Sage</button>
+        <button type="button" id="acctSageProfilePack" class="px-2 py-0.5 border border-teal-900 rounded text-teal-200">Apply CRE pack</button>
+        <button type="button" id="acctSageSyncHealth" class="px-2 py-0.5 border border-teal-800 rounded text-teal-300">Sync health</button>
+        <button type="button" id="acctSageDriftPanel" class="px-2 py-0.5 border border-pink-800 rounded text-pink-300">Drift panel</button>
+        <button type="button" id="acctSageReadOnly" class="px-2 py-0.5 border border-red-900 rounded text-red-300">Sage read-only</button>
+        <button type="button" id="acctMonthCloseWiz" class="px-2 py-0.5 border border-amber-700 rounded text-amber-200">Month-close wizard</button>
       </div>
       <ul class="max-h-20 overflow-y-auto">${log}</ul>
     </div>`;
@@ -223,6 +228,47 @@
         `Open AR ${d.open_ar} · AP ${d.open_ap} · parity warnings ${d.parity_warning_count} · AP push errors ${(inbox.ap_push_errors || []).length}`,
         'info',
       );
+    });
+    document.getElementById('acctSageProfilePack')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/profile-packs/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pack_id: 'sage300_cre_2024' }),
+      });
+      await AD().alert(`Profile pack applied: ${r.pack_id || 'sage300_cre_2024'}.`, 'success');
+    });
+    document.getElementById('acctSageSyncHealth')?.addEventListener('click', async () => {
+      const h = await api('/api/accounting/sage/sync-health');
+      await AD().alert(`Sage sync health: ${h.grade} (${h.score}/100).`, h.score >= 75 ? 'success' : 'warning');
+    });
+    document.getElementById('acctSageDriftPanel')?.addEventListener('click', async () => {
+      const p = await api('/api/accounting/sage/drift/panel');
+      const health = p.health || {};
+      const dash = p.dashboard || {};
+      await AD().alert(
+        `Health ${health.grade || '—'} (${health.score ?? '—'}) · open AR ${dash.open_ar} · AP ${dash.open_ap} · CRE queue ${(p.construction_queue || []).length}`,
+        'info',
+      );
+    });
+    document.getElementById('acctSageReadOnly')?.addEventListener('click', async () => {
+      const cur = await api('/api/accounting/sage/read-only');
+      const enable = !cur.enabled;
+      const ok = await AD().confirm(
+        enable ? 'Enable Sage read-only mode? Local GL posting will be blocked.' : 'Disable Sage read-only mode?',
+        'Read-only',
+      );
+      if (!ok) return;
+      await api('/api/accounting/sage/read-only', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: enable }),
+      });
+      await AD().alert(enable ? 'Read-only mode ON.' : 'Read-only mode OFF.', enable ? 'warning' : 'success');
+    });
+    document.getElementById('acctMonthCloseWiz')?.addEventListener('click', async () => {
+      const w = await api('/api/accounting/cash/month-close-wizard');
+      const lines = (w.steps || []).map((s) => `${s.done ? '✓' : '○'} ${s.label}`).join('\n');
+      await AD().alert(`${w.ready ? 'Ready to close.' : 'Not ready.'}\n${lines}`, w.ready ? 'success' : 'warning');
     });
     document.getElementById('acctSageFlushC')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/sage/construction/flush-queue', { method: 'POST', body: '{}' });

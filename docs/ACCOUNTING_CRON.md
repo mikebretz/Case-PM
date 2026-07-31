@@ -130,3 +130,12 @@ Pull v2, AP payment batches, drift alerts, construction queue flush, deploy v3 c
 POST /api/accounting/cron/sage-production
 X-CasePM-Cron-Secret: your-long-random-secret
 ```
+
+## Sage enterprise cron (waves 33–36, optional)
+
+Runs waves 29–32 maintenance, weekly drift digest (when health &lt; 90), WH-347 project scan, and refreshes sync health scores:
+
+```http
+POST /api/accounting/cron/sage-enterprise
+X-CasePM-Cron-Secret: your-long-random-secret
+```
