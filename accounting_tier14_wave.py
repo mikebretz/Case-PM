@@ -148,6 +148,12 @@ def run_scheduled_reports_with_email(db, models, ledger_id: int, user_id=None) -
                 except Exception as exc:
                     status = f'email_failed:{exc}'
             ran.append({**s, 'last_run': datetime.utcnow().isoformat() + 'Z', 'status': status})
+            try:
+                from accounting_waves_19 import record_schedule_run_alert
+                if status.startswith('email_failed') or status.startswith('error'):
+                    record_schedule_run_alert(ledger, s.get('id'), status, status)
+            except Exception:
+                pass
         except Exception as exc:
             ran.append({**s, 'last_run': datetime.utcnow().isoformat() + 'Z', 'status': f'error:{exc}'})
     settings['scheduled_reports'] = schedules

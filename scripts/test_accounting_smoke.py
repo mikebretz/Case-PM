@@ -45,11 +45,21 @@ def main() -> int:
     except Exception as exc:
         errors.append(f'accounting_waves_17: {exc}')
 
-    print('5. Wave 18 module import…')
+    print('6. Wave 19 module import…')
     try:
-        import accounting_waves_18 as w18  # noqa: F401
+        import accounting_waves_19 as w19  # noqa: F401
+        w19.report_designer_column_catalog()
     except Exception as exc:
-        errors.append(f'accounting_waves_18: {exc}')
+        errors.append(f'accounting_waves_19: {exc}')
+
+    print('7. Startup guard…')
+    try:
+        from accounting_waves_19 import accounting_startup_guard
+        g = accounting_startup_guard()
+        if not g.get('ok'):
+            errors.append(f'startup_guard: {g.get("errors")}')
+    except Exception as exc:
+        errors.append(f'startup_guard: {exc}')
 
     _report(errors)
     return 1 if errors else 0

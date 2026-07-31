@@ -327,9 +327,11 @@
 
     document.getElementById('acctReportDesigner')?.addEventListener('click', async () => {
       const layouts = await api('/api/accounting/reports/designer/layouts');
+      const colsResp = await api('/api/accounting/reports/designer/columns');
+      const catalog = colsResp[currentReportType()] || colsResp.trial_balance || [];
       const name = await AD().prompt('Layout name:', 'Trial balance columns', 'Report designer');
       if (!name) return;
-      const cols = await AD().prompt('Columns (comma-separated)', 'account_number,description,balance', 'Columns');
+      const cols = await AD().prompt('Columns (comma-separated)', catalog.join(','), 'Columns');
       const rtype = currentReportType();
       const saved = await api('/api/accounting/reports/designer/layouts', {
         method: 'POST',

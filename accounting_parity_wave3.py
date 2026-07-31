@@ -289,19 +289,9 @@ def auditor_package(db, models, parent_ledger_id: int, as_of: str = None) -> dic
 
 
 def run_due_scheduled_reports(db, models, ledger_id: int, user_id=None):
-    from accounting_parity_wave2 import _ledger_settings, _save_ledger_settings
+    from accounting_tier14_wave import run_scheduled_reports_with_email
 
-    ledger = models['AcctLedger'].query.get(ledger_id)
-    settings = _ledger_settings(ledger)
-    schedules = settings.get('scheduled_reports') or []
-    ran = []
-    for s in schedules[-10:]:
-        ran.append({**s, 'last_run': datetime.utcnow().isoformat() + 'Z', 'status': 'emailed_stub'})
-    settings['scheduled_reports'] = schedules
-    settings['last_report_scheduler_run'] = datetime.utcnow().isoformat() + 'Z'
-    _save_ledger_settings(ledger, settings)
-    write_audit(db, models, ledger_id, user_id=user_id, action='scheduled_reports_run', details={'count': len(ran)})
-    return {'ran': len(ran), 'schedules': ran}
+    return run_scheduled_reports_with_email(db, models, ledger_id, user_id=user_id)
 
 
 def ap_match_line_grid_enriched(db, models, ledger_id: int, invoice_id: int) -> dict:

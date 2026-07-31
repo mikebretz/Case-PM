@@ -11,6 +11,7 @@ def register_accounting_routes(app, deps):
     get_current_project_id = deps['get_current_project_id']
     Project = deps['Project']
     SageSyncEvent = deps.get('SageSyncEvent')
+    PayAppProjectState = deps.get('PayAppProjectState')
 
     models = {k: deps[k] for k in deps if k.startswith('Acct')}
     from datetime import date
@@ -3690,10 +3691,10 @@ def register_accounting_routes(app, deps):
     @app.route('/api/accounting/payroll/garnishment', methods=['POST'])
     @login_required
     def api_acct_payroll_garnishment():
-        from accounting_all_chunks import garnishment_stub_deduction
+        from accounting_waves_19 import create_garnishment_order
         body = request.get_json(silent=True) or {}
         try:
-            out = garnishment_stub_deduction(db, models, _ledger_id(), body['employee_id'], body['amount'], body.get('case_number', 'CASE'))
+            out = create_garnishment_order(db, models, _ledger_id(), body, user_id=current_user.id)
             db.session.commit()
             return jsonify({'ok': True, **out})
         except (ValueError, KeyError) as exc:
@@ -4085,3 +4086,143 @@ def register_accounting_routes(app, deps):
             return jsonify({'ok': True, **out})
         except PermissionError as exc:
             return jsonify({'error': str(exc)}), 403
+
+    # --- Wave 9: tiers A–D ---
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/g702-pending', methods=['GET'])
+    @login_required
+    def api_acct_g702_pending(project_id):
+        from accounting_waves_19 import g702_pending_ar_sync
+        if not PayAppProjectState:
+            return jsonify({'error': 'Pay app module not available'}), 503
+        return jsonify(g702_pending_ar_sync(db, models, _ledger_id(), project_id, PayAppProjectState))
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/g702-sync', methods=['POST'])
+    @login_required
+    def api_acct_g702_sync(project_id):
+        from accounting_waves_19 import sync_g702_period_to_ar
+        body = request.get_json(silent=True) or {}
+        if not PayAppProjectState:
+            return jsonify({'error': 'Pay app module not available'}), 503
+        try:
+            out = sync_g702_period_to_ar(
+                db, models, _ledger_id(), project_id, body.get('period') or body.get('period_number'),
+                user_id=current_user.id, PayAppProjectState=PayAppProjectState, Project=Project,
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/sage/sync/push-open-ap-live', methods=['POST'])
+    @login_required
+    def api_acct_sage_push_ap_live():
+        from accounting_waves_19 import sage_push_open_ap_live
+        out = sage_push_open_ap_live(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/conflicts/vendors', methods=['GET'])
+    @login_required
+    def api_acct_sage_conflicts():
+        from accounting_waves_19 import sage_vendor_conflict_review
+        return jsonify(sage_vendor_conflict_review(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/sage/conflicts/resolve', methods=['POST'])
+    @login_required
+    def api_acct_sage_conflict_resolve():
+        from accounting_waves_19 import resolve_sage_vendor_conflict
+        try:
+            out = resolve_sage_vendor_conflict(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/integrations/stripe-banner', methods=['GET'])
+    @login_required
+    def api_acct_stripe_banner():
+        from accounting_waves_19 import stripe_readiness_banner
+        ledger = models['AcctLedger'].query.get(_ledger_id())
+        return jsonify(stripe_readiness_banner(ledger))
+
+    @app.route('/api/accounting/compliance/efile/transmit', methods=['POST'])
+    @login_required
+    def api_acct_efile_transmit():
+        from accounting_waves_19 import efile_transmit
+        out = efile_transmit(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/compliance/efile/log', methods=['GET'])
+    @login_required
+    def api_acct_efile_log():
+        from accounting_waves_19 import efile_transmit_log
+        return jsonify(efile_transmit_log(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/compliance/efile/retry/<entry_id>', methods=['POST'])
+    @login_required
+    def api_acct_efile_retry(entry_id):
+        from accounting_waves_19 import efile_retry
+        out = efile_retry(db, models, _ledger_id(), entry_id, user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/compliance/mark-filed', methods=['POST'])
+    @login_required
+    def api_acct_compliance_mark_filed():
+        from accounting_waves_19 import compliance_mark_filed
+        body = request.get_json(silent=True) or {}
+        try:
+            out = compliance_mark_filed(db, models, _ledger_id(), body['deadline_id'], user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except KeyError as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/compliance/reminders', methods=['POST'])
+    @login_required
+    def api_acct_compliance_reminders():
+        from accounting_waves_19 import compliance_send_reminders
+        body = request.get_json(silent=True) or {}
+        try:
+            out = compliance_send_reminders(db, models, _ledger_id(), body.get('email', ''), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/payroll/certified/<int:project_id>/prevailing', methods=['GET'])
+    @login_required
+    def api_acct_certified_prevailing(project_id):
+        from accounting_waves_19 import certified_payroll_with_prevailing
+        we = request.args.get('week_ending') or date.today().isoformat()
+        return jsonify(certified_payroll_with_prevailing(db, models, _ledger_id(), project_id, we, Project=Project))
+
+    @app.route('/api/accounting/ar/write-off', methods=['POST'])
+    @login_required
+    def api_acct_ar_write_off():
+        from accounting_waves_19 import post_ar_write_off, WRITE_OFF_REASONS
+        body = request.get_json(silent=True) or {}
+        try:
+            out = post_ar_write_off(db, models, _ledger_id(), body, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, 'reasons': list(WRITE_OFF_REASONS), **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/reports/designer/columns', methods=['GET'])
+    @login_required
+    def api_acct_report_columns():
+        from accounting_waves_19 import report_designer_column_catalog
+        return jsonify(report_designer_column_catalog())
+
+    @app.route('/api/accounting/reports/schedule-alerts', methods=['GET'])
+    @login_required
+    def api_acct_schedule_alerts():
+        ledger = models['AcctLedger'].query.get(_ledger_id())
+        from accounting_gl_service import _parse_settings
+        return jsonify({'alerts': (_parse_settings(ledger).get('report_schedule_alerts') or [])})
