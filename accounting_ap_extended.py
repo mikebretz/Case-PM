@@ -367,15 +367,18 @@ def apply_payment_discount(db, models, payment, discount_amount, user_id=None):
 
 
 def export_1099_efile(db, models, ledger_id, tax_year):
-    """IRS-style pipe-delimited export stub for 1099-NEC totals."""
+    """IRS FIRE–style transmission file plus JSON summary."""
+    from accounting_gl_ap_ar_complete import export_1099_fire_transmission
+
+    content = export_1099_fire_transmission(db, models, ledger_id, tax_year)
     data = report_1099(db, models, ledger_id, tax_year)
-    lines = ['T|2025|CasePM|']
-    for i, v in enumerate(data.get('vendors') or [], start=1):
-        lines.append(
-            f'B|{i}|{v.get("tax_id", "")}|{v.get("vendor_name", "")[:40]}|{v.get("payments", 0):.2f}|{v.get("form_type", "NEC")}'
-        )
-    lines.append(f'F|{len(data.get("vendors") or [])}|')
-    return {'tax_year': int(tax_year), 'format': 'pipe_stub', 'content': '\n'.join(lines), 'vendor_count': len(data.get('vendors') or [])}
+    return {
+        'tax_year': int(tax_year),
+        'format': 'fire_fixed_width',
+        'content': content,
+        'vendor_count': len(data.get('vendors') or []),
+        'vendors': data.get('vendors') or [],
+    }
 
 
 def report_1099_printable_html(db, models, ledger_id, tax_year):

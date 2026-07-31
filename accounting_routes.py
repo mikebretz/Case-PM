@@ -2575,6 +2575,67 @@ def register_accounting_routes(app, deps):
             db.session.rollback()
             return jsonify({'error': str(exc)}), 400
 
+    @app.route('/api/accounting/ap/recurring-payables/run-due', methods=['POST'])
+    @login_required
+    def api_acct_ap_recurring_run_due():
+        from accounting_gl_ap_ar_complete import run_due_recurring_payables
+        try:
+            out = run_due_recurring_payables(db, models, _ledger_id(), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/ar/recurring-invoices/run-due', methods=['POST'])
+    @login_required
+    def api_acct_ar_recurring_run_due():
+        from accounting_gl_ap_ar_complete import run_due_recurring_ar_invoices
+        try:
+            out = run_due_recurring_ar_invoices(db, models, _ledger_id(), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/ap/1099/fire/file', methods=['GET'])
+    @login_required
+    def api_acct_ap_1099_fire_file():
+        from datetime import date as date_cls
+        from accounting_gl_ap_ar_complete import export_1099_fire_transmission
+        from flask import Response
+        yr = request.args.get('tax_year', type=int) or (date_cls.today().year - 1)
+        content = export_1099_fire_transmission(db, models, _ledger_id(), yr)
+        return Response(
+            content,
+            mimetype='text/plain',
+            headers={'Content-Disposition': f'attachment; filename=1099-fire-{yr}.txt'},
+        )
+
+    @app.route('/api/accounting/gl/subledger-reconcile/suggestion', methods=['GET'])
+    @login_required
+    def api_acct_gl_subledger_suggestion():
+        from accounting_gl_ap_ar_complete import subledger_reconcile_suggestion
+        return jsonify(subledger_reconcile_suggestion(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/gl/subledger-reconcile/post', methods=['POST'])
+    @login_required
+    def api_acct_gl_subledger_post():
+        from financial_security import require_accounting_role
+        from accounting_gl_ap_ar_complete import post_subledger_adjustment
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        try:
+            out = post_subledger_adjustment(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
     @app.route('/api/accounting/ap/1099/efile', methods=['GET'])
     @login_required
     def api_acct_ap_1099_efile():
@@ -3256,9 +3317,9 @@ def register_accounting_routes(app, deps):
     @app.route('/api/accounting/ap/match-grid/<int:invoice_id>', methods=['GET'])
     @login_required
     def api_acct_ap_match_grid(invoice_id):
-        from accounting_parity_wave2 import match_workbench_grid
+        from accounting_gl_ap_ar_complete import build_match_line_grid
         try:
-            return jsonify(match_workbench_grid(db, models, _ledger_id(), invoice_id))
+            return jsonify(build_match_line_grid(db, models, _ledger_id(), invoice_id))
         except ValueError as exc:
             return jsonify({'error': str(exc)}), 400
 
