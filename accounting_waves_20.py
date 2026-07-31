@@ -254,8 +254,6 @@ def compliance_cron_reminders(db, models, ledger_id: int) -> dict:
     email = (email or '').strip()
     if not email:
         return {'sent': False, 'due_count': len(due), 'reason': 'no_admin_email'}
-    from accounting_waves_19 import compliance_send_reminders
-
     out = compliance_send_reminders(db, models, ledger_id, email, user_id=None)
     return {'sent': bool(out.get('smtp_sent')), 'due_count': len(due), **out}
 
