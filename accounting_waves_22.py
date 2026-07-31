@@ -536,9 +536,9 @@ def deploy_accounting_check(app_root: str | None = None) -> dict:
     except Exception as exc:
         results.append({'check': 'sage_mirror', 'ok': False, 'detail': str(exc)})
     try:
-        from accounting_waves_25 import sage_run_paces_deploy_check
-        paces = sage_run_paces_deploy_check()
-        results.append({'check': 'sage_paces', 'ok': paces.get('ok'), 'detail': str(paces)[:500]})
+        from accounting_waves_26 import sage_mirror_deploy_check_v2
+        mirror = sage_mirror_deploy_check_v2()
+        results.append({'check': 'sage_mirror_v2', 'ok': mirror.get('ok'), 'detail': str(mirror)[:600]})
     except Exception as exc:
-        results.append({'check': 'sage_paces', 'ok': False, 'detail': str(exc)})
+        results.append({'check': 'sage_mirror_v2', 'ok': False, 'detail': str(exc)})
     return {'ok': all(r['ok'] for r in results), 'results': results}

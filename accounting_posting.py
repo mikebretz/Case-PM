@@ -244,6 +244,14 @@ def process_construction_event(
     if _existing_link(AcctPostLink, ledger.id, idem):
         return {'posted': False, 'skipped': 'already_posted', 'source_key': idem}
 
+    try:
+        from accounting_waves_26 import assert_construction_auto_post_allowed
+        assert_construction_auto_post_allowed(db, models, ledger.id, event_type, data)
+    except PermissionError:
+        raise
+    except Exception:
+        pass
+
     project = Project.query.get(int(project_id)) if Project and project_id else None
     result = {'posted': False, 'source_key': idem, 'event_type': event_type}
 
@@ -472,6 +480,16 @@ def process_construction_event(
 
     else:
         return {**result, 'skipped': 'unsupported_event'}
+
+    if result.get('posted'):
+        try:
+            from accounting_waves_26 import after_construction_post_mirror
+            after_construction_post_mirror(
+                db, models, ledger.id, event_type, int(project_id) if project_id else 0,
+                data, result, user_id=user_id,
+            )
+        except Exception:
+            pass
 
     db.session.flush()
     return result
