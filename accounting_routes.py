@@ -5166,8 +5166,8 @@ def register_accounting_routes(app, deps):
     @app.route('/api/accounting/sage/payroll/push-run/<int:run_id>', methods=['POST'])
     @login_required
     def api_acct_sage_pr_push(run_id):
-        from accounting_waves_26 import sage_push_payroll_run_stub
-        out = sage_push_payroll_run_stub(db, models, _ledger_id(), run_id, user_id=current_user.id)
+        from accounting_waves_29 import sage_push_payroll_run_live
+        out = sage_push_payroll_run_live(db, models, _ledger_id(), run_id, user_id=current_user.id)
         db.session.commit()
         return jsonify({'ok': True, **out})
 
@@ -5470,6 +5470,118 @@ def register_accounting_routes(app, deps):
         secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
         try:
             out = cron_waves_33_36_maintenance(db, models, secret, Project=Project)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+
+    # --- Waves 37–40 ---
+
+    @app.route('/api/accounting/sage/tax/push-batch', methods=['POST'])
+    @login_required
+    def api_acct_sage_tax_push_batch():
+        from accounting_waves_29 import sage_push_document_tax_batch
+        data = request.get_json(silent=True) or {}
+        out = sage_push_document_tax_batch(
+            db, models, _ledger_id(),
+            data.get('document_type', 'ap'),
+            user_id=current_user.id,
+            limit=int(data.get('limit') or 20),
+        )
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/tax/sync-document', methods=['POST'])
+    @login_required
+    def api_acct_sage_tax_sync_doc():
+        from accounting_waves_29 import sage_sync_document_tax_before_push
+        data = request.get_json(silent=True) or {}
+        out = sage_sync_document_tax_before_push(
+            db, models, _ledger_id(),
+            data.get('document_type', 'ap'),
+            int(data.get('document_id') or 0),
+            user_id=current_user.id,
+        )
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/compliance/filing-bundle/full', methods=['GET'])
+    @login_required
+    def api_acct_filing_bundle_full():
+        from accounting_waves_29 import filing_bundle_with_transmit_log
+        yr = request.args.get('tax_year', type=int) or date.today().year
+        return jsonify(filing_bundle_with_transmit_log(db, models, _ledger_id(), yr, user_id=current_user.id))
+
+    @app.route('/api/accounting/sage/distribution/pull-po', methods=['POST'])
+    @login_required
+    def api_acct_sage_pull_po():
+        from accounting_waves_29 import sage_pull_po_statuses
+        out = sage_pull_po_statuses(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/distribution/pull-ic-oe', methods=['POST'])
+    @login_required
+    def api_acct_sage_pull_ic_oe():
+        from accounting_waves_29 import sage_pull_distribution_inventory_status
+        out = sage_pull_distribution_inventory_status(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/distribution/three-way-summary', methods=['GET'])
+    @login_required
+    def api_acct_sage_three_way_summary():
+        from accounting_waves_29 import po_three_way_sage_summary
+        return jsonify(po_three_way_sage_summary(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/sage/fa/pull', methods=['POST'])
+    @login_required
+    def api_acct_sage_fa_pull():
+        from accounting_waves_29 import sage_pull_fa_assets
+        out = sage_pull_fa_assets(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/fa/dashboard', methods=['GET'])
+    @login_required
+    def api_acct_sage_fa_dashboard():
+        from accounting_waves_29 import fa_mirror_dashboard
+        return jsonify(fa_mirror_dashboard(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/sage/fa/variance', methods=['GET'])
+    @login_required
+    def api_acct_sage_fa_variance():
+        from accounting_waves_29 import sage_fa_depreciation_variance
+        return jsonify(sage_fa_depreciation_variance(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/sage/pr/pull-employees', methods=['POST'])
+    @login_required
+    def api_acct_sage_pr_pull():
+        from accounting_waves_29 import sage_pull_pr_employees
+        out = sage_pull_pr_employees(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/platform/fiscal-calendar', methods=['POST'])
+    @login_required
+    def api_acct_sage_fiscal_calendar():
+        from accounting_waves_29 import sage_pull_fiscal_calendar
+        out = sage_pull_fiscal_calendar(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/platform/multi-company-health', methods=['GET'])
+    @login_required
+    def api_acct_sage_multi_co_health():
+        from accounting_waves_29 import consolidated_multi_company_health
+        return jsonify(consolidated_multi_company_health(db, models))
+
+    @app.route('/api/accounting/cron/sage-parity', methods=['POST'])
+    def api_acct_cron_sage_parity():
+        from accounting_waves_29 import cron_waves_37_40_maintenance
+        secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
+        try:
+            out = cron_waves_37_40_maintenance(db, models, secret, Project=Project)
             db.session.commit()
             return jsonify({'ok': True, **out})
         except PermissionError as exc:

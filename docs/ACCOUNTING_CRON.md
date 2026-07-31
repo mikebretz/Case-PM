@@ -139,3 +139,12 @@ Runs waves 29–32 maintenance, weekly drift digest (when health &lt; 90), WH-34
 POST /api/accounting/cron/sage-enterprise
 X-CasePM-Cron-Secret: your-long-random-secret
 ```
+
+## Sage parity cron (waves 37–40, optional)
+
+Runs enterprise cron, distribution pull/push parity, FA and PR pulls, fiscal calendar sync, and multi-company health rollup:
+
+```http
+POST /api/accounting/cron/sage-parity
+X-CasePM-Cron-Secret: your-long-random-secret
+```
