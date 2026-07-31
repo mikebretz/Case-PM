@@ -108,7 +108,7 @@
         <button type="button" id="acctApMatchBench" class="px-2 py-1 border border-zinc-600 rounded text-amber-300">Match workbench</button>
         <button type="button" id="acctApWithhold" class="px-2 py-1 border border-zinc-600 rounded text-red-300">Withholding rules</button>
       </div>
-      <div id="acctApVendorActOut" class="text-xs max-h-40 overflow-auto border border-zinc-800 rounded p-2 hidden"></div>
+      <div id="acctApMatchBenchHost" class="text-xs max-h-48 overflow-auto border border-zinc-800 rounded p-2 hidden"></div>
       <div class="text-xs text-zinc-500">Vendor groups: ${(groups.groups || []).length} · Recurring: ${(recurring.recurring || []).length}</div>
       <div class="text-xs text-zinc-400">1099 vendors (YTD): ${(report.vendors || []).length}</div>
       <p class="text-[10px] text-zinc-600">Invoices: use gross + retainage/withhold % on create. Match PO via three-way on open invoice row (API).</p>
@@ -482,8 +482,16 @@
     });
 
     document.getElementById('acctApMatchBench')?.addEventListener('click', async () => {
+      const { esc } = ctx;
       const wb = await api('/api/accounting/ap/match-workbench');
-      await AD().alert(`${(wb.exceptions || []).length} match exception(s) of ${(wb.all || []).length} invoice(s).`, 'info');
+      const host = document.getElementById('acctApMatchBenchHost');
+      if (!host) return;
+      host.classList.remove('hidden');
+      const ex = wb.exceptions || [];
+      host.innerHTML = `<table class="w-full text-xs"><thead><tr><th>Invoice</th><th>Vendor</th><th>Status</th><th>Amount</th></tr></thead><tbody>
+        ${ex.map((r) => `<tr class="border-t border-zinc-800"><td>${esc(r.document_number)}</td><td>${esc(r.vendor_code)}</td>
+        <td class="text-amber-400">${esc(r.status)}</td><td>${r.invoice_amount}</td></tr>`).join('') || '<tr><td colspan=4>No exceptions</td></tr>'}
+        </tbody></table>`;
     });
 
     document.getElementById('acctApWithhold')?.addEventListener('click', async () => {
@@ -639,26 +647,32 @@
         await AD().alert('Add a customer first.', 'warning');
         return;
       }
-      const pick = await AD().select({
-        title: 'Cash application',
-        items: list.map((c) => ({ value: String(c.id), label: `${c.code} — ${c.name}` })),
+      const pick = await AD().form({
+        title: 'Cash application workbench',
+        fields: [
+          { key: 'customer_id', label: 'Customer', type: 'select', required: true, options: list.map((c) => ({ value: String(c.id), label: `${c.code} — ${c.name}` })) },
+          { key: 'write_off', label: 'Write-off amount (optional)', defaultValue: '0' },
+        ],
       });
       if (!pick) return;
-      const wb = await api(`/api/accounting/ar/cash-application/${pick.value}`);
+      const wb = await api(`/api/accounting/ar/cash-application/${pick.customer_id}`);
       const inv = (wb.open_invoices || [])[0];
       const rcpt = (wb.unapplied_receipts || [])[0];
       if (!inv || !rcpt) {
         await AD().alert('Need an open invoice and unapplied receipt for this customer.', 'warning');
         return;
       }
-      const amt = Math.min(inv.open_amount, rcpt.unapplied_amount);
-      await api('/api/accounting/ar/cash-application/apply', {
+      const wo = parseFloat(pick.write_off) || 0;
+      const applyAmt = Math.min(inv.open_amount, rcpt.unapplied_amount);
+      const body = {
+        receipt_id: rcpt.receipt_id,
+        applications: [{ ar_document_id: inv.ar_document_id, amount: applyAmt }],
+        write_offs: wo > 0 ? [{ ar_document_id: inv.ar_document_id, amount: wo }] : [],
+      };
+      await api('/api/accounting/ar/cash-application/advanced', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          receipt_id: rcpt.receipt_id,
-          applications: [{ ar_document_id: inv.ar_document_id, amount: amt }],
-        }),
+        body: JSON.stringify(body),
       });
       switchModule('ar');
     });

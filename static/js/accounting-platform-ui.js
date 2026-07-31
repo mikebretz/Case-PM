@@ -35,6 +35,10 @@
           <button type="button" id="acctPlatAddLoc" class="px-3 py-2 border border-zinc-700 rounded-md text-sky-400">+ Location</button>
           <button type="button" id="acctPlatIntegrity" class="px-3 py-2 border border-zinc-700 rounded-md text-amber-400">Re-run integrity</button>
           <a href="/api/accounting/platform/export/chart" class="px-3 py-2 border border-zinc-700 rounded-md text-zinc-300 inline-block">Export COA</a>
+          <button type="button" id="acctPlatImportJe" class="px-3 py-2 border border-zinc-700 rounded-md text-zinc-300">Import journals</button>
+          <button type="button" id="acctPlatReopen" class="px-3 py-2 border border-zinc-700 rounded-md text-amber-300">Reopen FY</button>
+          <button type="button" id="acctPlatRemediate" class="px-3 py-2 border border-zinc-700 rounded-md text-red-300">Remediate</button>
+          <button type="button" id="acctPlatSchedule" class="px-3 py-2 border border-zinc-700 rounded-md text-violet-300">Posting schedule</button>
         </div>
       </div>
 
@@ -148,6 +152,41 @@
         body: JSON.stringify({ csv: data.csv }),
       });
       switchModule('admin');
+    });
+
+    document.getElementById('acctPlatImportJe')?.addEventListener('click', async () => {
+      const data = await AD().form({
+        title: 'Import journal CSV',
+        fields: [{ key: 'csv', label: 'account_number,debit,credit,description,batch_key', type: 'textarea', required: true }],
+      });
+      if (!data) return;
+      await api('/api/accounting/platform/import/journals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csv: data.csv }),
+      });
+      switchModule('admin');
+    });
+
+    document.getElementById('acctPlatReopen')?.addEventListener('click', async () => {
+      const y = new Date().getFullYear();
+      await api('/api/accounting/platform/year-end-reopen', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fiscal_year: y }),
+      });
+      switchModule('admin');
+    });
+
+    document.getElementById('acctPlatRemediate')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/platform/integrity/remediate', { method: 'POST' });
+      await AD().alert(`Removed ${(r.removed_empty_batches || []).length} empty batch(es).`, 'info');
+      switchModule('admin');
+    });
+
+    document.getElementById('acctPlatSchedule')?.addEventListener('click', async () => {
+      const s = await api('/api/accounting/platform/posting-schedule');
+      await AD().alert(`Due: GL ${s.gl_recurring_due}, AP ${s.ap_recurring_due}, AR ${s.ar_recurring_due}`, 'info');
     });
 
     document.getElementById('acctPlatLocale')?.addEventListener('click', async () => {
