@@ -44,7 +44,7 @@
       </div>
       ${(panel.variance_detail?.g702_pending_sync || []).length ? `<p class="text-xs text-amber-400">${panel.variance_detail.g702_pending_sync.length} approved G702 period(s) not yet in A/R — use sync below.</p>` : ''}
       ${(wip.sub_ap_pending || []).length ? `<p class="text-xs text-amber-400">${wip.sub_ap_pending.length} approved sub pay app(s) not yet in A/P.</p>` : ''}
-      <div class="text-xs text-zinc-400 border border-zinc-800 rounded p-2">WIP: ${wip.status || '—'} · over/under billing <strong>${money(wip.over_under_billing)}</strong> · ${wip.percent_complete || 0}% complete</div>
+      <div class="text-xs text-zinc-400 border border-zinc-800 rounded p-2">WIP: ${wip.status || '—'} · contract ${money(wip.contract_value)} · ${wip.completion_method || ''} · ${wip.percent_complete || 0}% · over/under <strong>${money(wip.over_under_billing)}</strong></div>
       <div class="flex flex-wrap gap-2 text-xs">
         <a href="${esc(panel.links?.budget || '#')}" class="text-emerald-400 underline">Budget</a>
         <a href="${esc(panel.links?.pay_apps || '#')}" class="text-emerald-400 underline">Pay applications</a>
@@ -55,6 +55,7 @@
       <button type="button" id="acctJcSubApSyncAll" class="px-3 py-2 text-sm bg-amber-900 rounded border border-amber-700">Sync all sub pay apps → A/P</button>
       <button type="button" id="acctJcCmtSyncAll" class="px-3 py-2 text-sm bg-sky-900 rounded border border-sky-700">Sync commitments → accounting</button>
       <button type="button" id="acctJcWipAdjust" class="px-3 py-2 text-sm bg-violet-900 rounded border border-violet-700">Post WIP billing adjustment</button>
+      <button type="button" id="acctJcCoSyncAll" class="px-3 py-2 text-sm bg-sky-800 rounded border border-sky-700">Sync approved COs → accounting</button>
       <button type="button" id="acctJcProgressAr" class="px-3 py-2 text-sm bg-violet-700 rounded">Create A/R from progress billing</button>
     </div>`;
   }
@@ -101,6 +102,12 @@
       if (!ok) return;
       const r = await api(`/api/accounting/jobcost/${pid}/wip-adjust`, { method: 'POST', body: '{}' });
       await AD().alert(`WIP batch #${r.journal_batch_id} posted (${r.amount}).`, 'success');
+      switchModule('jobcost');
+    });
+    document.getElementById('acctJcCoSyncAll')?.addEventListener('click', async () => {
+      const pid = projectId();
+      const r = await api(`/api/accounting/jobcost/${pid}/co-sync-all`, { method: 'POST', body: '{}' });
+      await AD().alert(`Posted ${r.posted_count || 0} change order(s).`, 'success');
       switchModule('jobcost');
     });
     document.getElementById('acctJcProgressAr')?.addEventListener('click', async () => {

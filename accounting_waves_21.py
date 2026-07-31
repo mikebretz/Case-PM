@@ -39,8 +39,9 @@ def construction_force_post_for_event(event_type: str, payload: dict | None) -> 
         'commitment_post_on_approve',
     ):
         return True
+    if event_type == 'ChangeOrderApproved' and _accounting_flag('co_post_on_approve'):
+        return True
     return False
-
 
 # --- 1: Sub pay apps → A/P ---
 
@@ -270,32 +271,14 @@ def post_commitment_change_order(
 
 # --- 3: WIP & revenue ---
 
-def jobcost_wip_analysis(db, models, ledger_id: int, project_id: int, PayAppProjectState=None) -> dict:
-    from accounting_parity_wave2 import revenue_recognition_schedule
-    from accounting_waves_20 import jobcost_variance_breakdown
+def jobcost_wip_analysis(db, models, ledger_id: int, project_id: int, PayAppProjectState=None, **kwargs):
+    from accounting_waves_22 import contractual_wip_analysis
 
-    rev = revenue_recognition_schedule(db, models, ledger_id, int(project_id))
-    var = jobcost_variance_breakdown(db, models, ledger_id, project_id, PayAppProjectState)
-    earned = float(rev.get('revenue_to_recognize') or 0)
-    billed_ar = float(var.get('billed_ar') or 0)
-    pay_app_billed = float(var.get('pay_app_total_billed') or 0)
-    over_under = round(billed_ar - earned, 2)
-    threshold = float((_ledger_settings(models['AcctLedger'].query.get(ledger_id)) or {}).get('wip_alert_threshold') or 5000)
-    return {
-        'project_id': int(project_id),
-        'percent_complete': rev.get('percent_complete'),
-        'earned_revenue_est': earned,
-        'billed_ar': billed_ar,
-        'pay_app_billed': pay_app_billed,
-        'over_under_billing': over_under,
-        'status': 'overbilled' if over_under > threshold else ('underbilled' if over_under < -threshold else 'ok'),
-        'wip_alert_threshold': threshold,
-        'g702_pending': var.get('g702_pending_sync') or [],
-        'sub_ap_pending': (
-            sub_pay_app_pending_ap_sync(db, models, ledger_id, project_id, PayAppProjectState).get('pending')
-            if PayAppProjectState else []
-        ),
-    }
+    return contractual_wip_analysis(
+        db, models, ledger_id, project_id,
+        PayAppProjectState=PayAppProjectState,
+        **kwargs,
+    )
 
 
 def post_wip_billing_adjustment(db, models, ledger_id: int, project_id: int, user_id=None, *, amount: float | None = None) -> dict:

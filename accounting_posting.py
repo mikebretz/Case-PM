@@ -436,6 +436,33 @@ def process_construction_event(
         db.session.add(link)
         result.update({'posted': True, 'ap_document_id': ap_doc.id, 'journal_batch_id': batch.id})
 
+    elif event_type == 'ChangeOrderApproved':
+        amount = _float_amount(data.get('amount'), data.get('total'))
+        if amount <= 0:
+            return {**result, 'skipped': 'no_amount'}
+        wip_acct = _account_by_number(AcctGLAccount, ledger.id, '1150') or _account_by_number(
+            AcctGLAccount, ledger.id, opts['revenue_account'],
+        )
+        defer = _account_by_number(AcctGLAccount, ledger.id, '2200') or _account_by_number(
+            AcctGLAccount, ledger.id, opts['payroll_liability'],
+        )
+        co_num = (data.get('co_number') or data.get('number') or 'CO')[:30]
+        batch = _create_posted_batch(
+            db, models, ledger_id=ledger.id, source='CO',
+            description=f'Owner change order {co_num} — contract value',
+            user_id=user_id,
+            lines=[
+                {'account_id': wip_acct.id, 'debit': amount, 'credit': 0, 'project_id': project_id},
+                {'account_id': defer.id, 'debit': 0, 'credit': amount, 'project_id': project_id},
+            ],
+        )
+        link = AcctPostLink(
+            ledger_id=ledger.id, source_type=event_type, source_key=idem,
+            journal_batch_id=batch.id,
+        )
+        db.session.add(link)
+        result.update({'posted': True, 'journal_batch_id': batch.id})
+
     else:
         return {**result, 'skipped': 'unsupported_event'}
 

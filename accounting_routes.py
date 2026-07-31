@@ -4125,8 +4125,15 @@ def register_accounting_routes(app, deps):
                 db, models, _ledger_id(), project_id, body.get('period') or body.get('period_number'),
                 user_id=current_user.id, PayAppProjectState=PayAppProjectState, Project=Project,
             )
+            wip = None
+            if out.get('posted'):
+                try:
+                    from accounting_waves_22 import maybe_auto_wip_adjustment
+                    wip = maybe_auto_wip_adjustment(db, models, _ledger_id(), project_id, user_id=current_user.id)
+                except Exception:
+                    wip = None
             db.session.commit()
-            return jsonify({'ok': True, **out})
+            return jsonify({'ok': True, 'wip_auto': wip, **out})
         except ValueError as exc:
             db.session.rollback()
             return jsonify({'error': str(exc)}), 400
@@ -4399,8 +4406,16 @@ def register_accounting_routes(app, deps):
     @app.route('/api/accounting/jobcost/<int:project_id>/wip', methods=['GET'])
     @login_required
     def api_acct_jobcost_wip(project_id):
-        from accounting_waves_21 import jobcost_wip_analysis
-        return jsonify(jobcost_wip_analysis(db, models, _ledger_id(), project_id, PayAppProjectState))
+        from accounting_waves_22 import contractual_wip_analysis
+        import app as app_mod
+        return jsonify(contractual_wip_analysis(
+            db, models, _ledger_id(), project_id,
+            Project=Project,
+            ChangeOrder=app_mod.ChangeOrder,
+            ChangeOrderAllocation=app_mod.ChangeOrderAllocation,
+            BudgetProjectState=app_mod.BudgetProjectState,
+            PayAppProjectState=PayAppProjectState,
+        ))
 
     @app.route('/api/accounting/jobcost/<int:project_id>/wip-adjust', methods=['POST'])
     @login_required
@@ -4468,3 +4483,107 @@ def register_accounting_routes(app, deps):
             return jsonify({'ok': True, **out})
         except PermissionError as exc:
             return jsonify({'error': str(exc)}), 403
+
+    # --- Wave 12 ---
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/co-pending', methods=['GET'])
+    @login_required
+    def api_acct_co_pending(project_id):
+        from accounting_waves_22 import change_order_pending_accounting
+        import app as app_mod
+        return jsonify(change_order_pending_accounting(db, models, _ledger_id(), project_id, app_mod.ChangeOrder))
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/co-sync-all', methods=['POST'])
+    @login_required
+    def api_acct_co_sync_all(project_id):
+        from accounting_waves_22 import sync_all_change_orders_pending
+        import app as app_mod
+        try:
+            out = sync_all_change_orders_pending(
+                db, models, _ledger_id(), project_id, user_id=current_user.id,
+                ChangeOrder=app_mod.ChangeOrder, ChangeOrderAllocation=app_mod.ChangeOrderAllocation, Project=Project,
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/budget-variance', methods=['GET'])
+    @login_required
+    def api_acct_budget_variance(project_id):
+        from accounting_waves_22 import budget_cost_gl_variance
+        import app as app_mod
+        return jsonify(budget_cost_gl_variance(db, models, _ledger_id(), project_id, app_mod.BudgetProjectState))
+
+    @app.route('/api/accounting/bank/<int:bank_account_id>/reconciliation', methods=['GET'])
+    @login_required
+    def api_acct_bank_rec_workspace(bank_account_id):
+        from accounting_waves_22 import bank_reconciliation_workspace
+        return jsonify(bank_reconciliation_workspace(db, models, _ledger_id(), bank_account_id))
+
+    @app.route('/api/accounting/bank/<int:bank_account_id>/auto-match-apply', methods=['POST'])
+    @login_required
+    def api_acct_bank_auto_match_apply(bank_account_id):
+        from accounting_waves_22 import apply_bank_auto_matches
+        out = apply_bank_auto_matches(db, models, _ledger_id(), bank_account_id, user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/payments/pay-now-deposit-hints', methods=['GET'])
+    @login_required
+    def api_acct_pay_now_hints():
+        from accounting_waves_22 import pay_now_deposit_hints
+        return jsonify(pay_now_deposit_hints(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/compliance/year-end-package', methods=['GET'])
+    @login_required
+    def api_acct_year_end_package():
+        from accounting_waves_22 import year_end_tax_package
+        yr = request.args.get('tax_year', type=int) or date.today().year
+        return jsonify(year_end_tax_package(db, models, _ledger_id(), yr))
+
+    @app.route('/api/accounting/compliance/941-validate', methods=['GET'])
+    @login_required
+    def api_acct_941_validate():
+        from accounting_waves_22 import validate_941_quarters
+        yr = request.args.get('tax_year', type=int) or date.today().year
+        return jsonify(validate_941_quarters(db, models, _ledger_id(), yr))
+
+    @app.route('/api/accounting/payroll/prevailing-compare/<int:project_id>', methods=['GET'])
+    @login_required
+    def api_acct_prevailing_compare(project_id):
+        from accounting_waves_22 import prevailing_wage_compare_report
+        we = request.args.get('week_ending') or date.today().isoformat()
+        return jsonify(prevailing_wage_compare_report(db, models, _ledger_id(), project_id, we, Project=Project))
+
+    @app.route('/api/accounting/sage/sync/pull-open-ar', methods=['POST'])
+    @login_required
+    def api_acct_sage_pull_open_ar():
+        from accounting_waves_22 import sage_pull_open_ar
+        out = sage_pull_open_ar(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/ops-dashboard', methods=['GET'])
+    @login_required
+    def api_acct_sage_ops():
+        from accounting_waves_22 import sage_ops_dashboard
+        return jsonify(sage_ops_dashboard(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/cron/wave12', methods=['POST'])
+    def api_acct_cron_wave12():
+        from accounting_waves_22 import cron_wave12_maintenance
+        secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
+        try:
+            out = cron_wave12_maintenance(db, models, secret)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+
+    @app.route('/api/accounting/deploy-check', methods=['GET'])
+    @login_required
+    def api_acct_deploy_check():
+        from accounting_waves_22 import deploy_accounting_check
+        return jsonify(deploy_accounting_check())

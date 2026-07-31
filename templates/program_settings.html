@@ -828,6 +828,18 @@
                         Post approved commitments to accounting when approved (even if auto-post above is off)
                     </label>
                 </div>
+                <div class="mb-5">
+                    <label class="flex items-center gap-2 text-sm text-zinc-300">
+                        <input type="checkbox" id="acct_co_post_on_approve" class="rounded border-zinc-600" {% if accounting_defaults.get('co_post_on_approve', '1') != '0' %}checked{% endif %}>
+                        Post approved owner change orders to accounting when approved
+                    </label>
+                </div>
+                <div class="mb-5">
+                    <label class="flex items-center gap-2 text-sm text-zinc-300">
+                        <input type="checkbox" id="acct_auto_wip_on_billing_sync" class="rounded border-zinc-600" {% if accounting_defaults.get('auto_wip_on_billing_sync', '0') != '0' %}checked{% endif %}>
+                        Auto-post WIP adjustment after G702 sync when over/under exceeds threshold
+                    </label>
+                </div>
                 <div id="acctSorSummaryHost" class="mb-5 p-4 border border-zinc-700 rounded-lg text-sm text-zinc-400 hidden"></div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {% for key, label in [
@@ -1092,10 +1104,12 @@
             g702_post_on_approve: document.getElementById('acct_g702_post_on_approve')?.checked ? '1' : '0',
             sub_pay_app_post_on_approve: document.getElementById('acct_sub_pay_app_post_on_approve')?.checked ? '1' : '0',
             commitment_post_on_approve: document.getElementById('acct_commitment_post_on_approve')?.checked ? '1' : '0',
+            co_post_on_approve: document.getElementById('acct_co_post_on_approve')?.checked ? '1' : '0',
+            auto_wip_on_billing_sync: document.getElementById('acct_auto_wip_on_billing_sync')?.checked ? '1' : '0',
         };
         form.querySelectorAll('input[name]').forEach((el) => {
-            if (el.id === 'acct_auto_post_enabled' || el.id === 'acct_g702_post_on_approve'
-                || el.id === 'acct_sub_pay_app_post_on_approve' || el.id === 'acct_commitment_post_on_approve') return;
+            if (['acct_auto_post_enabled', 'acct_g702_post_on_approve', 'acct_sub_pay_app_post_on_approve',
+                'acct_commitment_post_on_approve', 'acct_co_post_on_approve', 'acct_auto_wip_on_billing_sync'].includes(el.id)) return;
             accounting[el.name] = el.value.trim();
         });
         try {

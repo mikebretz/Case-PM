@@ -75,6 +75,8 @@
         <button type="button" id="acctSageGlConflicts" class="px-2 py-0.5 border border-zinc-600 rounded text-violet-400">G/L conflicts</button>
         <button type="button" id="acctSagePullAp" class="px-2 py-0.5 border border-zinc-600 rounded text-cyan-400">Pull open AP</button>
         <button type="button" id="acctSageInbox" class="px-2 py-0.5 border border-zinc-600 rounded text-orange-400">Exception inbox</button>
+        <button type="button" id="acctSagePullAr" class="px-2 py-0.5 border border-zinc-600 rounded text-emerald-300">Pull open AR</button>
+        <button type="button" id="acctSageOps" class="px-2 py-0.5 border border-zinc-600 rounded text-zinc-300">Ops dashboard</button>
         <button type="button" id="acctSagePolicyCasepm" class="px-2 py-0.5 border border-zinc-600 rounded">SOR: Case PM</button>
         <button type="button" id="acctSagePolicySage" class="px-2 py-0.5 border border-zinc-600 rounded">SOR: Sage</button>
       </div>
@@ -121,6 +123,14 @@
         `Export queue: ${box.export_queue_size || 0}`,
       ].join('\n');
       await AD().alert(lines, 'info');
+    });
+    document.getElementById('acctSagePullAr')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/sync/pull-open-ar', { method: 'POST', body: '{}' });
+      await AD().alert(`Imported ${r.created || 0} AR invoice(s).`, 'info');
+    });
+    document.getElementById('acctSageOps')?.addEventListener('click', async () => {
+      const d = await api('/api/accounting/sage/ops-dashboard');
+      await AD().alert(`Queues: export ${d.export_queue_size || 0}, push ${d.push_queue_size || 0}. AP errors: ${(d.ap_push_errors || []).length}`, 'info');
     });
     document.getElementById('acctSageConflicts')?.addEventListener('click', async () => {
       const c = await api('/api/accounting/sage/conflicts/vendors');
