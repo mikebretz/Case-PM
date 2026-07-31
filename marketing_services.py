@@ -92,7 +92,15 @@ def upsert_lead(db, MarketingLead, body: dict, *, user_id=None, lead_id: int | N
         row.title = (body.get('contact_name') or body.get('company_name') or 'New lead')[:300]
     row.updated_at = datetime.utcnow()
     db.session.flush()
-    return lead_to_dict(row)
+    out = lead_to_dict(row)
+    try:
+        from marketing_pillars import load_marketing_settings
+        from marketing_integrations import push_lead_to_crm
+        if load_marketing_settings().get('crm_auto_push'):
+            push_lead_to_crm(out)
+    except Exception:
+        pass
+    return out
 
 
 def move_lead_stage(db, MarketingLead, lead_id: int, stage: str, *, user_id=None) -> dict:
@@ -548,7 +556,7 @@ def marketing_module_catalog() -> dict:
             {'id': 'collateral', 'title': 'Proposal & collateral tools', 'status': 'live'},
             {'id': 'web_leads', 'title': 'Website & lead capture', 'status': 'live'},
             {'id': 'analytics', 'title': 'Marketing ROI dashboards', 'status': 'live'},
-            {'id': 'integrations', 'title': 'Houzz / Dodge / CRM integrations', 'status': 'planned'},
+            {'id': 'integrations', 'title': 'Houzz / Dodge / CRM integrations', 'status': 'live'},
         ],
         'doc': 'docs/MARKETING_MODULE.md',
     }
@@ -565,6 +573,10 @@ def marketing_deploy_check() -> dict:
         pillar = pillars_deploy_check()
         if not pillar.get('ok'):
             return pillar
+        from marketing_gaps import gaps_deploy_check
+        gap = gaps_deploy_check()
+        if not gap.get('ok'):
+            return gap
         return {'ok': True}
     except Exception as exc:
         return {'ok': False, 'error': str(exc)[:200]}

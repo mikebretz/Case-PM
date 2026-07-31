@@ -705,7 +705,7 @@ def marketing_analytics_full(db, models) -> dict:
     proposal_views = sum(int(p.view_count or 0) for p in MarketingProposal.query.all())
     active_projects = Project.query.filter_by(status='Active').count() if Project else 0
     cpl = round(spend / leads, 2) if leads and spend else None
-    return {
+    base = {
         **pipe,
         'marketing_spend_total': round(spend, 2),
         'cost_per_lead': cpl,
@@ -719,32 +719,33 @@ def marketing_analytics_full(db, models) -> dict:
         'active_projects': active_projects,
         'roi_note': 'Attributed revenue uses won lead values; connect spend entries for CPL.',
     }
+    try:
+        from marketing_gaps import enrich_analytics_profit
+        base = enrich_analytics_profit(db, models, base)
+    except Exception:
+        pass
+    return base
 
 
 def enrich_client_portal_feed(db, models, base: dict, project_id: int | None) -> dict:
     if not project_id:
         return base
-    MarketingReviewRequest = models['MarketingReviewRequest']
-    MarketingCaseStudy = models['MarketingCaseStudy']
-    pid = int(project_id)
-    reviews = MarketingReviewRequest.query.filter_by(project_id=pid).order_by(MarketingReviewRequest.id.desc()).limit(5).all()
-    base['marketing'] = {
-        'review_requests': [{
-            'id': r.id,
-            'status': r.status,
-            'platform': r.platform,
-            'public_url': f'/public/marketing/review/{r.access_token}' if r.access_token else None,
-        } for r in reviews],
-        'published_case_studies': [
-            {'id': c.id, 'title': c.title, 'slug': c.slug}
-            for c in MarketingCaseStudy.query.filter_by(project_id=pid, status='published').limit(5)
-        ],
-        'warranty_note': 'Post-project manuals and warranties remain in Documents; share via Client Portal approvals.',
-    }
+    try:
+        from marketing_gaps import build_portal_marketing_pack
+        base['marketing'] = build_portal_marketing_pack(db, models, int(project_id))
+    except Exception:
+        MarketingReviewRequest = models['MarketingReviewRequest']
+        MarketingCaseStudy = models['MarketingCaseStudy']
+        pid = int(project_id)
+        base['marketing'] = {
+            'review_requests': [],
+            'published_case_studies': list(MarketingCaseStudy.query.filter_by(project_id=pid, status='published').limit(5)),
+        }
     return base
 
 
 def public_review_form(db, MarketingReviewRequest, token: str) -> dict | None:
+    from marketing_gaps import review_platform_links
     row = MarketingReviewRequest.query.filter_by(access_token=token).first()
     if not row:
         return None
@@ -753,6 +754,7 @@ def public_review_form(db, MarketingReviewRequest, token: str) -> dict | None:
         'platform': row.platform,
         'status': row.status,
         'referral_incentive': row.referral_incentive,
+        'platform_links': review_platform_links(load_marketing_settings(), row.platform),
     }
 
 
@@ -784,19 +786,35 @@ def load_marketing_settings() -> dict:
         m = {}
     return {
         'google_business_profile_url': m.get('google_business_profile_url') or '',
+        'google_place_id': m.get('google_place_id') or '',
+        'houzz_profile_url': m.get('houzz_profile_url') or '',
+        'facebook_page_url': m.get('facebook_page_url') or '',
         'review_syndication_enabled': bool(m.get('review_syndication_enabled')),
         'public_base_url': m.get('public_base_url') or os.environ.get('CASEPM_PUBLIC_BASE_URL') or '',
         'sms_configured': bool(os.environ.get('CASEPM_TWILIO_ACCOUNT_SID') or os.environ.get('CASEPM_SMS_WEBHOOK_URL')),
+        'crm_auto_push': bool(m.get('crm_auto_push')),
+        'company_nap_json': m.get('company_nap_json') or '{}',
+        'dodge_webhook_enabled': bool(m.get('dodge_webhook_enabled')),
+        'constructconnect_webhook_enabled': bool(m.get('constructconnect_webhook_enabled')),
     }
 
 
 def save_marketing_settings(payload: dict) -> dict:
     from program_settings_persistence import load_program_settings, save_program_settings
     ps = load_program_settings() or {}
+    prev = ps.get('marketing') or {}
     ps['marketing'] = {
-        'google_business_profile_url': (payload.get('google_business_profile_url') or '')[:500],
-        'review_syndication_enabled': bool(payload.get('review_syndication_enabled')),
-        'public_base_url': (payload.get('public_base_url') or '')[:300],
+        **prev,
+        'google_business_profile_url': (payload.get('google_business_profile_url') or prev.get('google_business_profile_url') or '')[:500],
+        'google_place_id': (payload.get('google_place_id') or prev.get('google_place_id') or '')[:120],
+        'houzz_profile_url': (payload.get('houzz_profile_url') or prev.get('houzz_profile_url') or '')[:500],
+        'facebook_page_url': (payload.get('facebook_page_url') or prev.get('facebook_page_url') or '')[:500],
+        'review_syndication_enabled': bool(payload.get('review_syndication_enabled', prev.get('review_syndication_enabled'))),
+        'public_base_url': (payload.get('public_base_url') or prev.get('public_base_url') or '')[:300],
+        'crm_auto_push': bool(payload.get('crm_auto_push', prev.get('crm_auto_push'))),
+        'company_nap_json': payload.get('company_nap_json') if payload.get('company_nap_json') is not None else prev.get('company_nap_json', '{}'),
+        'dodge_webhook_enabled': bool(payload.get('dodge_webhook_enabled', prev.get('dodge_webhook_enabled'))),
+        'constructconnect_webhook_enabled': bool(payload.get('constructconnect_webhook_enabled', prev.get('constructconnect_webhook_enabled'))),
     }
     save_program_settings(ps)
     return load_marketing_settings()

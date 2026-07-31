@@ -163,6 +163,9 @@ def define_marketing_models(db):
         incentive_value = db.Column(db.Float, default=0)
         status = db.Column(db.String(30), default='pending')
         notes = db.Column(db.Text)
+        incentive_code = db.Column(db.String(40))
+        issued_at = db.Column(db.DateTime)
+        redeemed_at = db.Column(db.DateTime)
         created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     class MarketingProposal(db.Model):
@@ -179,6 +182,7 @@ def define_marketing_models(db):
         last_viewed_at = db.Column(db.DateTime)
         signed_at = db.Column(db.DateTime)
         esign_envelope_id = db.Column(db.String(120))
+        pdf_path = db.Column(db.String(400))
         engagement_json = db.Column(db.Text)
         created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
         created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -230,6 +234,28 @@ def define_marketing_models(db):
         body_text = db.Column(db.Text)
         segment_json = db.Column(db.Text)
 
+    class MarketingBrandKit(db.Model):
+        __tablename__ = 'marketing_brand_kit'
+        id = db.Column(db.Integer, primary_key=True)
+        name = db.Column(db.String(120), default='Default')
+        is_default = db.Column(db.Boolean, default=True)
+        logo_url = db.Column(db.String(500))
+        colors_json = db.Column(db.Text)
+        fonts_json = db.Column(db.Text)
+        header_html = db.Column(db.Text)
+        footer_html = db.Column(db.Text)
+        updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    class MarketingPortalPack(db.Model):
+        __tablename__ = 'marketing_portal_pack'
+        id = db.Column(db.Integer, primary_key=True)
+        project_id = db.Column(db.Integer, db.ForeignKey('project.id'), unique=True, nullable=False, index=True)
+        warranty_doc_ids_json = db.Column(db.Text)
+        manual_doc_ids_json = db.Column(db.Text)
+        share_testimonials_ok = db.Column(db.Boolean, default=True)
+        branding_json = db.Column(db.Text)
+        updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
     return {
         'MarketingLead': MarketingLead,
         'MarketingCaseStudy': MarketingCaseStudy,
@@ -245,4 +271,6 @@ def define_marketing_models(db):
         'MarketingLandingPage': MarketingLandingPage,
         'MarketingSpend': MarketingSpend,
         'MarketingCampaignTemplate': MarketingCampaignTemplate,
+        'MarketingBrandKit': MarketingBrandKit,
+        'MarketingPortalPack': MarketingPortalPack,
     }

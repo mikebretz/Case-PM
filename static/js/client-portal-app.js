@@ -84,14 +84,32 @@
     renderSimpleList('cpItems', feed.portal_items || [], 'No published updates.', i => `
       <div class="cp-row"><div class="font-medium">${esc(i.title)}</div><div class="text-xs text-zinc-500">${esc(i.status)}</div></div>`);
     const mk = feed.marketing || {};
-    renderSimpleList('cpMarketing', mk.review_requests || [], 'No review requests.', r => `
-      <div class="cp-row"><div class="flex-1"><div class="font-medium">Review (${esc(r.platform)})</div>
-      <div class="text-xs text-zinc-500">${esc(r.status)}</div></div>
-      ${r.public_url ? `<a class="text-xs text-sky-400" href="${esc(r.public_url)}" target="_blank">Open form</a>` : ''}</div>`);
-    if ((mk.published_case_studies || []).length) {
-      document.getElementById('cpMarketing').innerHTML += mk.published_case_studies.map(c =>
-        `<div class="cp-row"><a class="text-sky-400" href="/public/marketing/case-study/${esc(c.slug)}" target="_blank">${esc(c.title)}</a></div>`,
-      ).join('');
+    const mhost = document.getElementById('cpMarketing');
+    if (mhost) {
+      let html = '';
+      (mk.progress_photos || []).slice(0, 8).forEach(p => {
+        html += `<div class="cp-row"><img src="${esc(p.url)}" alt="" style="max-width:120px;border-radius:6px"/><span class="text-xs text-zinc-500">${esc(p.caption || '')}</span></div>`;
+      });
+      (mk.warranties || []).forEach(w => {
+        html += `<div class="cp-row"><a class="text-sky-400" href="${esc(w.url)}">Warranty: ${esc(w.name)}</a></div>`;
+      });
+      (mk.manuals || []).forEach(m => {
+        html += `<div class="cp-row"><a class="text-sky-400" href="${esc(m.url)}">Manual: ${esc(m.name)}</a></div>`;
+      });
+      (mk.review_requests || []).forEach(r => {
+        html += `<div class="cp-row"><div class="flex-1"><div class="font-medium">Review (${esc(r.platform)})</div>
+        <div class="text-xs text-zinc-500">${esc(r.status)}</div></div>
+        ${r.public_url ? `<a class="text-xs text-emerald-400" href="${esc(r.public_url)}" target="_blank">Feedback form</a>` : ''}</div>`;
+        if (r.platform_links) {
+          Object.entries(r.platform_links).forEach(([k, url]) => {
+            if (url) html += `<div class="cp-row text-xs"><a class="text-sky-400" target="_blank" href="${esc(url)}">Review on ${esc(k)}</a></div>`;
+          });
+        }
+      });
+      (mk.published_case_studies || []).forEach(c => {
+        html += `<div class="cp-row"><a class="text-sky-400" target="_blank" href="${esc(c.public_url || '/public/marketing/case-study/' + c.slug)}">${esc(c.title)}</a></div>`;
+      });
+      mhost.innerHTML = html || '<div class="p-6 text-zinc-500 text-center">No marketing items yet.</div>';
     }
   }
 

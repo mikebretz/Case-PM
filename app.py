@@ -3819,6 +3819,19 @@ def update_project_status(project_id):
         project.status = status
         project.updated_at = datetime.utcnow()
         db.session.commit()
+        try:
+            from marketing_pillars import run_project_automation
+            _m = {k: globals()[k] for k in (
+                'MarketingLead', 'MarketingCaseStudy', 'MarketingCampaign', 'MarketingReviewRequest',
+                'MarketingAsset', 'MarketingCollateralTemplate', 'MarketingCampaignRecipient',
+                'MarketingAutomationRule', 'MarketingReferral', 'MarketingProposal', 'MarketingContentBlock',
+                'MarketingLandingPage', 'MarketingSpend', 'MarketingCampaignTemplate', 'MarketingBrandKit',
+                'MarketingPortalPack', 'Estimate', 'EstimateLine', 'Project',
+            ) if k in globals()}
+            run_project_automation(db, _m, Project, project_id=project.id, user_id=current_user.id)
+            db.session.commit()
+        except Exception:
+            pass
     return jsonify({'ok': True, 'status': project.status})
 
 
@@ -18601,6 +18614,8 @@ register_marketing_routes(app, {
     'get_active_project': get_active_project,
     'Project': Project,
     'Photo': Photo,
+    'Document': Document,
+    'OperationsBimAsset': OperationsBimAsset,
     'Estimate': Estimate,
     'EstimateLine': EstimateLine,
     'BidPackage': BidPackage,
