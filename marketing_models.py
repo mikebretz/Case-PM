@@ -35,6 +35,7 @@ def define_marketing_models(db):
         campaign_id = db.Column(db.Integer, db.ForeignKey('marketing_campaign.id'), nullable=True)
         landing_page_id = db.Column(db.Integer, nullable=True)
         attribution_json = db.Column(db.Text)
+        construction_market = db.Column(db.String(40), index=True)
         notes = db.Column(db.Text)
         metadata_json = db.Column(db.Text)
         created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))

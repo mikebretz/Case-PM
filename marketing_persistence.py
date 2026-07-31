@@ -21,6 +21,7 @@ def ensure_marketing_schema(db):
         'campaign_id': 'INTEGER',
         'landing_page_id': 'INTEGER',
         'attribution_json': 'TEXT',
+        'construction_market': 'VARCHAR(40)',
     })
     _add_columns('marketing_case_study', {
         'gallery_json': 'TEXT',

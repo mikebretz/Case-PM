@@ -796,6 +796,8 @@ def load_marketing_settings() -> dict:
         'company_nap_json': m.get('company_nap_json') or '{}',
         'dodge_webhook_enabled': bool(m.get('dodge_webhook_enabled')),
         'constructconnect_webhook_enabled': bool(m.get('constructconnect_webhook_enabled')),
+        'primary_construction_market': (m.get('primary_construction_market') or 'commercial')[:40],
+        'secondary_construction_markets': m.get('secondary_construction_markets') or [],
     }
 
 
@@ -815,6 +817,10 @@ def save_marketing_settings(payload: dict) -> dict:
         'company_nap_json': payload.get('company_nap_json') if payload.get('company_nap_json') is not None else prev.get('company_nap_json', '{}'),
         'dodge_webhook_enabled': bool(payload.get('dodge_webhook_enabled', prev.get('dodge_webhook_enabled'))),
         'constructconnect_webhook_enabled': bool(payload.get('constructconnect_webhook_enabled', prev.get('constructconnect_webhook_enabled'))),
+        'primary_construction_market': (payload.get('primary_construction_market') or prev.get('primary_construction_market') or 'commercial')[:40],
+        'secondary_construction_markets': payload.get('secondary_construction_markets')
+        if payload.get('secondary_construction_markets') is not None
+        else prev.get('secondary_construction_markets') or [],
     }
     save_program_settings(ps)
     return load_marketing_settings()

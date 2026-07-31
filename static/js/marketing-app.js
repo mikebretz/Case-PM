@@ -180,10 +180,41 @@
     if (hint) hint.textContent = `${origin}/public/marketing/case-study/<slug>`;
   }
 
+  let leads = [];
+  let stagesMeta = [];
+  let marketCatalog = [];
+
+  async function loadMarketProfile() {
+    const cat = await api('/api/marketing/construction-markets');
+    marketCatalog = cat.markets || [];
+    const schemeRes = await api('/api/marketing/market-scheme');
+    const primary = schemeRes.resolved?.primary || 'commercial';
+    const sel = document.getElementById('mkPrimaryMarket');
+    if (sel) {
+      sel.innerHTML = marketCatalog.map(m => `<option value="${m.id}" ${m.id === primary ? 'selected' : ''}>${esc(m.label)}</option>`).join('');
+    }
+    const host = document.getElementById('mkSchemeSummary');
+    if (host && schemeRes.scheme) {
+      const s = schemeRes.scheme;
+      host.innerHTML = `<strong>${esc(s.headline)}</strong> — ${esc(s.summary)}
+        <div class="mt-2 text-zinc-500">Sources: ${esc((s.recommended_lead_sources || []).join(', '))}
+        · Content: ${esc((s.content_pillars || []).join(', '))}</div>`;
+    }
+  }
+
   async function loadAll() {
+    await loadMarketProfile();
     await Promise.all([loadDashboard(), loadLeads(), loadCaseStudies(), loadCampaigns(), loadReviews(), loadAssets()]);
     setupCapture();
   }
+
+  document.getElementById('mkApplyMarket')?.addEventListener('click', async () => {
+    const primary = document.getElementById('mkPrimaryMarket')?.value;
+    if (!primary) return;
+    await api('/api/marketing/market-scheme/apply', { method: 'POST', body: JSON.stringify({ primary_construction_market: primary }) });
+    await loadMarketProfile();
+    loadCampaigns();
+  });
 
   document.querySelectorAll('.mk-tab').forEach(t => t.addEventListener('click', () => showTab(t.dataset.tab)));
   document.getElementById('mkRefresh')?.addEventListener('click', loadAll);
