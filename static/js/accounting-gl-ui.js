@@ -53,8 +53,14 @@
 
   async function openJournalEditor(batchId) {
     const { api, esc, money, switchModule, AD } = ctx;
-    const acctRes = await api('/api/accounting/gl/accounts');
+    const [acctRes, locRes] = await Promise.all([
+      api('/api/accounting/gl/accounts'),
+      api('/api/accounting/platform/locations').catch(() => ({ locations: [] })),
+    ]);
     const accounts = acctRes.accounts || [];
+    const locations = locRes.locations || [];
+    const locOpts = (selected) => `<option value="">—</option>${locations.map((l) =>
+      `<option value="${l.id}"${String(selected) === String(l.id) ? ' selected' : ''}>${esc(l.code)}</option>`).join('')}`;
     let batch = {
       description: '',
       batch_date: todayIso(),
@@ -73,14 +79,19 @@
       }
     }
 
-    const renderLines = () => (batch.lines || []).map((ln, idx) => `
+    const renderLines = () => (batch.lines || []).map((ln, idx) => {
+      const segVal = Array.isArray(ln.segments) ? ln.segments.join('-') : (ln.segments || '');
+      return `
       <tr class="border-t border-zinc-800 acct-je-line" data-idx="${idx}">
         <td class="p-1"><select class="acct-je-acct w-full bg-zinc-800 border border-zinc-700 rounded px-1 py-1 text-xs">${accountOptions(accounts, ln.account_id)}</select></td>
+        <td class="p-1"><input type="text" class="acct-je-seg w-full bg-zinc-800 border border-zinc-700 rounded px-1 py-1 text-xs font-mono" value="${esc(segVal)}" placeholder="seg-seg-seg" title="Segments"></td>
+        <td class="p-1"><select class="acct-je-loc w-full bg-zinc-800 border border-zinc-700 rounded px-1 py-1 text-xs">${locOpts(ln.location_id)}</select></td>
         <td class="p-1"><input type="text" class="acct-je-desc w-full bg-zinc-800 border border-zinc-700 rounded px-1 py-1 text-xs" value="${esc(ln.description || '')}"></td>
         <td class="p-1 w-24"><input type="number" step="0.01" class="acct-je-debit w-full bg-zinc-800 border border-zinc-700 rounded px-1 py-1 text-xs text-right" value="${ln.debit || ''}"></td>
         <td class="p-1 w-24"><input type="number" step="0.01" class="acct-je-credit w-full bg-zinc-800 border border-zinc-700 rounded px-1 py-1 text-xs text-right" value="${ln.credit || ''}"></td>
         <td class="p-1 w-8"><button type="button" class="acct-je-rm text-red-400 text-xs" title="Remove line">×</button></td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
 
     const body = `
       <div class="space-y-3 text-sm">
@@ -95,7 +106,8 @@
           <input type="text" id="acctJeDesc" class="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm" value="${esc(batch.description || '')}" placeholder="Journal entry description"></div>
         <div class="overflow-x-auto border border-zinc-700 rounded-lg">
           <table class="w-full text-xs"><thead class="bg-zinc-800 text-zinc-400"><tr>
-            <th class="text-left p-2">Account</th><th class="text-left p-2">Line description</th><th class="text-right p-2">Debit</th><th class="text-right p-2">Credit</th><th></th>
+            <th class="text-left p-2">Account</th><th class="text-left p-2">Segments</th><th class="text-left p-2">Location</th>
+            <th class="text-left p-2">Line description</th><th class="text-right p-2">Debit</th><th class="text-right p-2">Credit</th><th></th>
           </tr></thead><tbody id="acctJeLines">${renderLines()}</tbody></table>
         </div>
         <button type="button" id="acctJeAddLine" class="text-xs text-emerald-400">+ Add line</button>
@@ -144,6 +156,8 @@
       tr.dataset.idx = String(idx);
       tr.innerHTML = `
         <td class="p-1"><select class="acct-je-acct w-full bg-zinc-800 border border-zinc-700 rounded px-1 py-1 text-xs">${accountOptions(accounts, accounts[0]?.id)}</select></td>
+        <td class="p-1"><input type="text" class="acct-je-seg w-full bg-zinc-800 border border-zinc-700 rounded px-1 py-1 text-xs font-mono" placeholder="seg-seg-seg"></td>
+        <td class="p-1"><select class="acct-je-loc w-full bg-zinc-800 border border-zinc-700 rounded px-1 py-1 text-xs">${locOpts()}</select></td>
         <td class="p-1"><input type="text" class="acct-je-desc w-full bg-zinc-800 border border-zinc-700 rounded px-1 py-1 text-xs"></td>
         <td class="p-1 w-24"><input type="number" step="0.01" class="acct-je-debit w-full bg-zinc-800 border border-zinc-700 rounded px-1 py-1 text-xs text-right"></td>
         <td class="p-1 w-24"><input type="number" step="0.01" class="acct-je-credit w-full bg-zinc-800 border border-zinc-700 rounded px-1 py-1 text-xs text-right"></td>
@@ -157,11 +171,16 @@
     dialog.querySelector('[data-act="save"]')?.addEventListener('click', async () => {
       const lines = [];
       tbody.querySelectorAll('.acct-je-line').forEach((row) => {
+        const segRaw = row.querySelector('.acct-je-seg')?.value?.trim() || '';
+        const segs = segRaw ? segRaw.replace('.', '-').split('-').map((s) => s.trim()).filter(Boolean) : null;
+        const loc = row.querySelector('.acct-je-loc')?.value;
         lines.push({
           account_id: parseInt(row.querySelector('.acct-je-acct')?.value, 10),
           description: row.querySelector('.acct-je-desc')?.value?.trim() || '',
           debit: parseFloat(row.querySelector('.acct-je-debit')?.value || 0) || 0,
           credit: parseFloat(row.querySelector('.acct-je-credit')?.value || 0) || 0,
+          location_id: loc ? parseInt(loc, 10) : null,
+          segments: segs,
         });
       });
       const payload = {

@@ -899,6 +899,7 @@ def register_accounting_routes(app, deps):
     @login_required
     def api_acct_ar_customer_profile(customer_id):
         from accounting_ar_extended import serialize_customer_extended
+        from accounting_enforcement import merge_optional_fields, optional_fields_from_entity
         c = models['AcctCustomer'].query.filter_by(id=customer_id, ledger_id=_ledger_id()).first_or_404()
         body = request.get_json(silent=True) or {}
         if 'customer_group_id' in body:
@@ -907,8 +908,12 @@ def register_accounting_routes(app, deps):
             c.credit_hold = bool(body['credit_hold'])
         if 'national_account_code' in body:
             c.national_account_code = str(body['national_account_code'])[:40]
+        if 'optional_fields' in body:
+            c.details_json = merge_optional_fields(c.details_json, 'customer', body['optional_fields'], models, _ledger_id())
         db.session.commit()
-        return jsonify({'customer': serialize_customer_extended(c)})
+        out = serialize_customer_extended(c)
+        out['optional_fields'] = optional_fields_from_entity(c)
+        return jsonify({'customer': out})
 
     @app.route('/api/accounting/ar/customers/<int:customer_id>/ship-tos', methods=['GET', 'POST'])
     @login_required
@@ -1614,6 +1619,7 @@ def register_accounting_routes(app, deps):
                 payment_method=body.get('payment_method') or 'Check',
                 bank_account_id=body.get('bank_account_id'),
                 user_id=current_user.id,
+                discount_amount=body.get('discount_amount'),
             )
             db.session.commit()
             p = out['payment']
@@ -2843,3 +2849,122 @@ def register_accounting_routes(app, deps):
         out = run_automated_dunning(db, models, _ledger_id(), user_id=current_user.id)
         db.session.commit()
         return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/platform/import/journals', methods=['POST'])
+    @login_required
+    def api_acct_import_journals():
+        from accounting_core_gaps import import_journal_csv
+        from financial_security import require_accounting_role
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        body = request.get_json(silent=True) or {}
+        out = import_journal_csv(db, models, _ledger_id(), body.get('csv') or '', user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/platform/import/open-ap', methods=['POST'])
+    @login_required
+    def api_acct_import_open_ap():
+        from accounting_core_gaps import import_open_ap_csv
+        body = request.get_json(silent=True) or {}
+        out = import_open_ap_csv(db, models, _ledger_id(), body.get('csv') or '')
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/platform/import/open-ar', methods=['POST'])
+    @login_required
+    def api_acct_import_open_ar():
+        from accounting_core_gaps import import_open_ar_csv
+        body = request.get_json(silent=True) or {}
+        out = import_open_ar_csv(db, models, _ledger_id(), body.get('csv') or '')
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/platform/year-end-reopen', methods=['POST'])
+    @login_required
+    def api_acct_year_end_reopen():
+        from accounting_core_gaps import year_end_reopen
+        from financial_security import require_accounting_role
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        body = request.get_json(silent=True) or {}
+        out = year_end_reopen(db, models, _ledger_id(), body.get('fiscal_year'), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/platform/integrity/remediate', methods=['POST'])
+    @login_required
+    def api_acct_integrity_remediate():
+        from accounting_core_gaps import integrity_remediate
+        out = integrity_remediate(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/platform/posting-schedule', methods=['GET'])
+    @login_required
+    def api_acct_posting_schedule():
+        from accounting_core_gaps import posting_schedule_dashboard
+        return jsonify(posting_schedule_dashboard(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/platform/report-layouts', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_report_layouts():
+        from accounting_core_gaps import list_report_layouts, save_report_layout
+        lid = _ledger_id()
+        if request.method == 'GET':
+            return jsonify(list_report_layouts(models, lid))
+        row = save_report_layout(db, models, lid, request.get_json(silent=True) or {}, user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'layout': {'id': row.id, 'name': row.name, 'report_type': row.report_type}}), 201
+
+    @app.route('/api/accounting/platform/screen-permissions', methods=['GET', 'PATCH'])
+    @login_required
+    def api_acct_screen_permissions():
+        from accounting_core_gaps import screen_permissions, update_screen_permissions
+        ledger = models['AcctLedger'].query.get(_ledger_id())
+        if request.method == 'GET':
+            return jsonify(screen_permissions(ledger))
+        perms = update_screen_permissions(ledger, request.get_json(silent=True) or {})
+        db.session.commit()
+        return jsonify({'ok': True, 'permissions': perms})
+
+    @app.route('/api/accounting/gl/budgets/<int:budget_id>/lock', methods=['POST'])
+    @login_required
+    def api_acct_gl_budget_lock(budget_id):
+        from accounting_core_gaps import lock_budget
+        body = request.get_json(silent=True) or {}
+        b = lock_budget(db, models, _ledger_id(), budget_id, locked=bool(body.get('locked', True)))
+        db.session.commit()
+        return jsonify({'budget_id': b.id, 'status': b.status})
+
+    @app.route('/api/accounting/ar/dunning/letter/<int:customer_id>', methods=['GET'])
+    @login_required
+    def api_acct_ar_dunning_letter(customer_id):
+        from accounting_core_gaps import dunning_letter_html
+        from flask import Response
+        level = request.args.get('level', type=int) or 1
+        html = dunning_letter_html(db, models, _ledger_id(), customer_id, level=level)
+        return Response(html, mimetype='text/html')
+
+    @app.route('/api/accounting/ar/cash-application/advanced', methods=['POST'])
+    @login_required
+    def api_acct_ar_cash_advanced():
+        from accounting_ar_extended import apply_cash_workbench_advanced
+        try:
+            out = apply_cash_workbench_advanced(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/consolidation/cash-flow-ui', methods=['GET'])
+    @login_required
+    def api_acct_consolidation_cf_ui():
+        from accounting_consolidation import indirect_cash_flow_statement
+        parent_id = request.args.get('parent_ledger_id', type=int) or _ledger_id()
+        return jsonify(indirect_cash_flow_statement(db, models, parent_id, as_of=request.args.get('as_of')))

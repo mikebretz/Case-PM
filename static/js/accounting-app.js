@@ -38,6 +38,17 @@
     return 'status-planned';
   }
 
+  let i18nStrings = {};
+
+  function moduleLabel(m) {
+    const map = {
+      gl: 'gl_title', ap: 'ap_title', ar: 'ar_title',
+      consolidation: 'consolidation_title', admin: 'platform_title',
+    };
+    const key = map[m.route || m.id];
+    return (key && i18nStrings[key]) || m.name;
+  }
+
   function buildNav() {
     const mods = [{ id: 'dashboard', name: 'Dashboard', route: 'dashboard', status: 'live' }];
     (catalog?.modules || []).forEach((m) => mods.push(m));
@@ -46,13 +57,13 @@
     const html = mods.map((m) => {
       const route = m.route || m.id;
       return `<button type="button" class="acct-nav-btn ${activeModule === route ? 'active' : ''}" data-route="${esc(route)}">
-        <span class="${statusClass(m.status)} mr-1">●</span>${esc(m.name)}
+        <span class="${statusClass(m.status)} mr-1">●</span>${esc(moduleLabel(m))}
       </button>`;
     }).join('');
     if (nav) nav.innerHTML = html;
     if (mob) mob.innerHTML = mods.map((m) => {
       const route = m.route || m.id;
-      return `<button type="button" class="acct-nav-btn whitespace-nowrap px-3 ${activeModule === route ? 'active' : ''}" data-route="${esc(route)}">${esc(m.name)}</button>`;
+      return `<button type="button" class="acct-nav-btn whitespace-nowrap px-3 ${activeModule === route ? 'active' : ''}" data-route="${esc(route)}">${esc(moduleLabel(m))}</button>`;
     }).join('');
     document.querySelectorAll('.acct-nav-btn').forEach((btn) => {
       btn.addEventListener('click', () => switchModule(btn.getAttribute('data-route')));
@@ -1089,6 +1100,12 @@
       api('/api/accounting/catalog'),
       api(`/api/accounting/dashboard${q}`),
     ]);
+    try {
+      const i18n = await api('/api/accounting/platform/i18n');
+      i18nStrings = i18n.strings || {};
+    } catch (e) {
+      i18nStrings = {};
+    }
     const badge = document.getElementById('acctLedgerBadge');
     if (badge && dashboard.ledger) {
       badge.textContent = `${dashboard.ledger.code} · ${dashboard.ledger.base_currency}`;

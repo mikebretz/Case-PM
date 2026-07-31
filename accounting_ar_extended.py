@@ -480,6 +480,35 @@ def apply_cash_workbench(db, models, ledger_id, body, user_id=None):
     return {'receipt_id': r.id, 'applied': applied_rows, 'unapplied_remaining': round(unapplied - new_apply, 2)}
 
 
+def apply_cash_workbench_advanced(db, models, ledger_id, body, user_id=None):
+    """Multi-invoice apply with optional write-offs (credit memo stub)."""
+    AcctARDocument = models['AcctARDocument']
+    receipt_id = int(body['receipt_id'])
+    applications = body.get('applications') or []
+    write_offs = body.get('write_offs') or []
+    out = apply_cash_workbench(db, models, ledger_id, {'receipt_id': receipt_id, 'applications': applications}, user_id=user_id)
+    for wo in write_offs:
+        doc_id = int(wo['ar_document_id'])
+        amt = round(float(wo.get('amount') or 0), 2)
+        if amt <= 0:
+            continue
+        doc = AcctARDocument.query.filter_by(id=doc_id, ledger_id=ledger_id).first()
+        if not doc:
+            continue
+        doc.amount = round(float(doc.amount or 0) - amt, 2)
+        if doc.amount <= 0.01:
+            doc.status = 'Paid'
+        try:
+            meta = json.loads(doc.details_json or '{}') if doc.details_json else {}
+        except (TypeError, ValueError, json.JSONDecodeError):
+            meta = {}
+        meta.setdefault('write_offs', []).append({'amount': amt, 'date': date.today().isoformat()})
+        doc.details_json = json.dumps(meta)
+    db.session.flush()
+    out['write_offs_applied'] = len(write_offs)
+    return out
+
+
 def send_dunning_smtp(db, models, ledger_id, customer_id, level, message=''):
     pkg = dunning_email_package(db, models, ledger_id, customer_id, level, message)
     from email_notifications import send_workflow_email

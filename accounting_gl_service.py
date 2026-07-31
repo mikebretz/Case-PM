@@ -85,7 +85,7 @@ def batch_lines_payload(AcctJournalLine, AcctGLAccount, batch_id):
             'project_id': ln.project_id,
             'reference': ln.reference,
             'location_id': getattr(ln, 'location_id', None),
-            'segments': json.loads(ln.segments_json) if ln.segments_json else None,
+            'segments': (json.loads(ln.segments_json).get('segments') if ln.segments_json else None),
         })
     return out
 
@@ -144,6 +144,13 @@ def replace_batch_lines(db, AcctJournalLine, batch_id, lines):
     AcctJournalLine.query.filter_by(batch_id=batch_id).delete()
     db.session.flush()
     for i, ln in enumerate(lines or [], start=1):
+        segs = ln.get('segments')
+        if isinstance(segs, list):
+            segs_json = json.dumps({'segments': segs})
+        elif ln.get('segments_json'):
+            segs_json = ln.get('segments_json') if isinstance(ln.get('segments_json'), str) else json.dumps(ln.get('segments_json'))
+        else:
+            segs_json = None
         db.session.add(AcctJournalLine(
             batch_id=batch_id,
             line_number=i,
@@ -153,6 +160,8 @@ def replace_batch_lines(db, AcctJournalLine, batch_id, lines):
             credit=float(ln.get('credit') or 0),
             project_id=ln.get('project_id'),
             reference=(ln.get('reference') or '')[:80],
+            location_id=int(ln['location_id']) if ln.get('location_id') else None,
+            segments_json=segs_json,
         ))
 
 

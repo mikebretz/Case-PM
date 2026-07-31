@@ -12,13 +12,14 @@
 
   async function render() {
     const { api, esc, money } = ctx;
-    const [tree, runs, ctb, ownership, finBs, finPl] = await Promise.all([
+    const [tree, runs, ctb, ownership, finBs, finPl, cf] = await Promise.all([
       api('/api/accounting/consolidation/ledgers'),
       api('/api/accounting/consolidation/runs'),
       api('/api/accounting/consolidation/trial-balance'),
       api('/api/accounting/consolidation/ownership'),
       api('/api/accounting/consolidation/financials?statement=balance_sheet'),
       api('/api/accounting/consolidation/financials?statement=income_statement'),
+      api('/api/accounting/consolidation/cash-flow-ui'),
     ]);
     const rows = (ctb.rows || []).filter((r) => Math.abs(r.debit) > 0.01 || Math.abs(r.credit) > 0.01);
 
@@ -47,6 +48,7 @@
           <button type="button" id="acctConLockPeriod" class="text-xs px-3 py-2 border border-zinc-700 rounded-md text-amber-400">Lock period</button>
           <button type="button" id="acctConNci" class="text-xs px-3 py-2 border border-zinc-700 rounded-md text-sky-400">NCI</button>
           <button type="button" id="acctConFxPost" class="text-xs px-3 py-2 border border-zinc-700 rounded-md text-cyan-400">Post FX CTA</button>
+          <button type="button" id="acctConIcRules" class="text-xs px-3 py-2 border border-zinc-700 rounded-md text-zinc-300">IC rules</button>
         </div>
       </div>
 
@@ -85,11 +87,24 @@
           </div>
         </div>
         <div>
+          <h3 class="text-sm text-zinc-400 mb-2">Consolidated cash flow (indirect)</h3>
+          <p class="text-xs text-cyan-400">Net change: ${money(cf.net_change_cash)}</p>
+          <div class="border border-zinc-700 rounded-lg text-xs p-2 text-zinc-500 max-h-24 overflow-y-auto">
+            ${(cf.sections || []).map((s) => `<div>${esc(s.section)}: ${money(s.subtotal)}</div>`).join('')}
+          </div>
+        </div>
+      </div>
+
+      <div class="grid lg:grid-cols-2 gap-4 mt-4">
+        <div>
           <h3 class="text-sm text-zinc-400 mb-2">Consolidated P&amp;L</h3>
           <p class="text-xs text-emerald-400">Net: ${money((finPl.totals || {}).net_income)}</p>
           <div class="border border-zinc-700 rounded-lg max-h-32 overflow-y-auto text-xs p-2 text-zinc-500">
             ${(finPl.rows || []).slice(0, 8).map((r) => `<div class="flex justify-between"><span class="font-mono">${esc(r.account_number)}</span><span>${money(r.balance)}</span></div>`).join('') || 'No P&amp;L activity'}
           </div>
+        </div>
+        <div id="acctConIcReconHost" class="text-xs text-zinc-500 border border-zinc-700 rounded-lg p-2">
+          <button type="button" id="acctConIcReconBtn" class="text-sky-400 bg-transparent border-none cursor-pointer">Load IC reconciliation</button>
         </div>
       </div>
 
@@ -186,6 +201,34 @@
         body: JSON.stringify({ rate_date: new Date().toISOString().slice(0, 10) }),
       });
       switchModule('consolidation');
+    });
+
+    document.getElementById('acctConIcRules')?.addEventListener('click', async () => {
+      const data = await AD().form({
+        title: 'Intercompany elimination rule',
+        fields: [
+          { key: 'due_from_account_number', label: 'Due from acct', defaultValue: '1500' },
+          { key: 'due_to_account_number', label: 'Due to acct', defaultValue: '2500' },
+          { key: 'description', label: 'Description', defaultValue: 'IC pair' },
+        ],
+      });
+      if (!data) return;
+      await api('/api/accounting/consolidation/ic-rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...data, auto_eliminate: true }),
+      });
+      switchModule('consolidation');
+    });
+
+    document.getElementById('acctConIcReconBtn')?.addEventListener('click', async () => {
+      const { esc } = ctx;
+      const r = await api('/api/accounting/consolidation/ic-reconciliation');
+      const host = document.getElementById('acctConIcReconHost');
+      if (!host) return;
+      host.innerHTML = `<h3 class="text-sm text-zinc-400 mb-1">IC reconciliation</h3>
+        ${(r.pairs || []).map((p) => `<div class="flex justify-between py-0.5"><span>${esc(p.child_code)}</span>
+          <span class="${Math.abs(p.difference) < 0.02 ? 'text-emerald-400' : 'text-amber-400'}">${p.difference}</span></div>`).join('') || 'No subsidiaries'}`;
     });
 
     document.querySelectorAll('.acct-con-suggest').forEach((btn) => {

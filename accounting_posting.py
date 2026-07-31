@@ -398,6 +398,7 @@ def create_ap_payment(
     payment_batch_id=None,
     check_number=None,
     payment_date=None,
+    discount_amount=0,
 ):
     """Pay vendor invoices: Dr AP, Cr Cash; update invoice paid amounts."""
     opts = load_accounting_options()
@@ -452,14 +453,23 @@ def create_ap_payment(
 
     ap_acct = _account_by_number(AcctGLAccount, ledger.id, opts['ap_account'])
     cash_acct = _account_by_number(AcctGLAccount, ledger.id, opts['cash_account'])
+    disc = round(float(discount_amount or 0), 2)
+    if disc > amount:
+        disc = amount
+    cash_paid = round(amount - disc, 2)
+    je_lines = [{'account_id': ap_acct.id, 'debit': amount, 'credit': 0}]
+    if disc > 0.01:
+        try:
+            disc_acct = _account_by_number(AcctGLAccount, ledger.id, opts.get('purchase_discount_account') or '5090')
+        except ValueError:
+            disc_acct = ap_acct
+        je_lines.append({'account_id': disc_acct.id, 'debit': 0, 'credit': disc})
+    je_lines.append({'account_id': cash_acct.id, 'debit': 0, 'credit': cash_paid})
     batch = _create_posted_batch(
         db, models, ledger_id=ledger.id, source='AP-PAY',
         description=f'AP Payment {pay_num}',
         user_id=user_id,
-        lines=[
-            {'account_id': ap_acct.id, 'debit': amount, 'credit': 0},
-            {'account_id': cash_acct.id, 'debit': 0, 'credit': amount},
-        ],
+        lines=je_lines,
     )
     payment.journal_batch_id = batch.id
 
