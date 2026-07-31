@@ -1,0 +1,13 @@
+{
+  "@odata.context": "https://example/sage/odata/$metadata#ARReceiptBatches",
+  "value": [
+    {
+      "BatchNumber": "RCP-2024-001",
+      "ReceiptNumber": "RCP-2024-001",
+      "CustomerNumber": "CUST01",
+      "AmountPaid": 1250.5,
+      "InvoiceNumber": "INV-1001",
+      "DocumentDate": "2024-06-15"
+    }
+  ]
+}

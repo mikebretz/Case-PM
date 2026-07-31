@@ -86,6 +86,13 @@ def _create_posted_batch(
         raise
     except Exception:
         pass
+    try:
+        from accounting_waves_28 import assert_not_sage_read_only
+        assert_not_sage_read_only(db, models, ledger_id)
+    except PermissionError:
+        raise
+    except Exception:
+        pass
     batch = AcctJournalBatch(
         ledger_id=ledger_id,
         batch_number=next_batch_number(AcctJournalBatch, ledger_id),

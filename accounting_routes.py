@@ -5345,3 +5345,132 @@ def register_accounting_routes(app, deps):
             return jsonify({'ok': True, **out})
         except PermissionError as exc:
             return jsonify({'error': str(exc)}), 403
+
+    # --- Waves 33–36 ---
+
+    @app.route('/api/accounting/sage/profile-packs', methods=['GET'])
+    @login_required
+    def api_acct_sage_profile_packs():
+        from accounting_waves_28 import list_sage_profile_packs
+        return jsonify(list_sage_profile_packs())
+
+    @app.route('/api/accounting/sage/profile-packs/apply', methods=['POST'])
+    @login_required
+    def api_acct_sage_profile_pack_apply():
+        from accounting_waves_28 import apply_profile_pack
+        data = request.get_json(silent=True) or {}
+        pack_id = (data.get('pack_id') or 'sage300_cre_2024').strip()
+        out = apply_profile_pack(db, models, _ledger_id(), pack_id, user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/push-dry-run', methods=['POST'])
+    @login_required
+    def api_acct_sage_dry_run():
+        from accounting_waves_28 import sage_push_dry_run
+        data = request.get_json(silent=True) or {}
+        out = sage_push_dry_run(db, models, _ledger_id(), data.get('document_type', 'ar'), int(data.get('document_id') or 0))
+        return jsonify(out)
+
+    @app.route('/api/accounting/sage/sync-health', methods=['GET'])
+    @login_required
+    def api_acct_sage_sync_health():
+        from accounting_waves_28 import sage_sync_health_score
+        return jsonify(sage_sync_health_score(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/sage/runbook', methods=['GET'])
+    @login_required
+    def api_acct_sage_runbook():
+        from accounting_waves_28 import sage_admin_runbook
+        return jsonify(sage_admin_runbook(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/sage/drift/panel', methods=['GET'])
+    @login_required
+    def api_acct_sage_drift_panel():
+        from accounting_waves_28 import sage_drift_panel_payload
+        return jsonify(sage_drift_panel_payload(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/sage/merge/compare', methods=['GET'])
+    @login_required
+    def api_acct_sage_merge_compare():
+        from accounting_waves_28 import sage_merge_compare
+        return jsonify(sage_merge_compare(
+            db, models, _ledger_id(),
+            request.args.get('entity_type', 'vendor'),
+            request.args.get('code', ''),
+        ))
+
+    @app.route('/api/accounting/sage/audit-export', methods=['GET'])
+    @login_required
+    def api_acct_sage_audit_export():
+        from accounting_waves_28 import sage_sync_audit_export
+        return jsonify(sage_sync_audit_export(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/sage/payroll/banner', methods=['GET'])
+    @login_required
+    def api_acct_sage_payroll_banner():
+        from accounting_waves_28 import sage_payroll_banner_state
+        return jsonify(sage_payroll_banner_state(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/compliance/filing-bundle/download', methods=['GET'])
+    @login_required
+    def api_acct_filing_download():
+        from accounting_waves_28 import filing_bundle_download
+        yr = request.args.get('tax_year', type=int) or date.today().year
+        return jsonify(filing_bundle_download(db, models, _ledger_id(), yr, user_id=current_user.id))
+
+    @app.route('/api/accounting/documents/<doc_type>/<int:doc_id>/line-tax', methods=['POST'])
+    @login_required
+    def api_acct_line_tax(doc_type, doc_id):
+        from accounting_waves_28 import set_document_line_tax
+        data = request.get_json(silent=True) or {}
+        out = set_document_line_tax(db, models, _ledger_id(), doc_type, doc_id, data.get('lines') or [], user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/platform/ledger-by-company', methods=['GET'])
+    @login_required
+    def api_acct_ledger_by_co():
+        from accounting_waves_28 import resolve_ledger_for_company
+        return jsonify(resolve_ledger_for_company(db, models, request.args.get('company_code', '')))
+
+    @app.route('/api/accounting/documents/open', methods=['GET'])
+    @login_required
+    def api_acct_open_docs_paged():
+        from accounting_waves_28 import paginated_open_documents
+        return jsonify(paginated_open_documents(
+            db, models, _ledger_id(),
+            request.args.get('type', 'ar'),
+            request.args.get('offset', 0, type=int),
+            request.args.get('limit', 50, type=int),
+        ))
+
+    @app.route('/api/accounting/cash/month-close-wizard', methods=['GET'])
+    @login_required
+    def api_acct_month_close_wizard():
+        from accounting_waves_28 import month_close_wizard_state
+        return jsonify(month_close_wizard_state(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/sage/read-only', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_sage_read_only():
+        from accounting_waves_28 import save_sage_read_only_mode
+        if request.method == 'GET':
+            from accounting_waves_24 import _ledger_settings
+            ledger = models['AcctLedger'].query.get(_ledger_id())
+            return jsonify({'enabled': _ledger_settings(ledger).get('sage_read_only_mode') == '1'})
+        data = request.get_json(silent=True) or {}
+        out = save_sage_read_only_mode(db, models, _ledger_id(), bool(data.get('enabled')), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/cron/sage-enterprise', methods=['POST'])
+    def api_acct_cron_sage_enterprise():
+        from accounting_waves_28 import cron_waves_33_36_maintenance
+        secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
+        try:
+            out = cron_waves_33_36_maintenance(db, models, secret, Project=Project)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
