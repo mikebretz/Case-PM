@@ -73,6 +73,8 @@
         <button type="button" id="acctSagePushApLive" class="px-2 py-0.5 border border-zinc-600 rounded text-rose-400">Push AP live</button>
         <button type="button" id="acctSageConflicts" class="px-2 py-0.5 border border-zinc-600 rounded text-sky-400">Vendor conflicts</button>
         <button type="button" id="acctSageGlConflicts" class="px-2 py-0.5 border border-zinc-600 rounded text-violet-400">G/L conflicts</button>
+        <button type="button" id="acctSagePullAp" class="px-2 py-0.5 border border-zinc-600 rounded text-cyan-400">Pull open AP</button>
+        <button type="button" id="acctSageInbox" class="px-2 py-0.5 border border-zinc-600 rounded text-orange-400">Exception inbox</button>
         <button type="button" id="acctSagePolicyCasepm" class="px-2 py-0.5 border border-zinc-600 rounded">SOR: Case PM</button>
         <button type="button" id="acctSagePolicySage" class="px-2 py-0.5 border border-zinc-600 rounded">SOR: Sage</button>
       </div>
@@ -105,6 +107,20 @@
         (x) => `${x.account_number}: ${x.type} — local "${x.local_name}" vs sage "${x.sage_name || '—'}"`,
       ).join('\n');
       await AD().alert(lines || 'No G/L account conflicts detected.', (c.conflicts || []).length ? 'warning' : 'success');
+    });
+    document.getElementById('acctSagePullAp')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/sync/pull-open-ap', { method: 'POST', body: '{}' });
+      await AD().alert(`Imported ${r.created || 0} open AP invoice(s) from Sage (${r.skipped || 0} skipped).`, 'info');
+    });
+    document.getElementById('acctSageInbox')?.addEventListener('click', async () => {
+      const box = await api('/api/accounting/sage/exceptions');
+      const lines = [
+        `Vendor conflicts: ${(box.vendor_conflicts || []).length}`,
+        `G/L conflicts: ${(box.gl_conflicts || []).length}`,
+        `AP push errors: ${(box.ap_push_errors || []).length}`,
+        `Export queue: ${box.export_queue_size || 0}`,
+      ].join('\n');
+      await AD().alert(lines, 'info');
     });
     document.getElementById('acctSageConflicts')?.addEventListener('click', async () => {
       const c = await api('/api/accounting/sage/conflicts/vendors');

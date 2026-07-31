@@ -689,7 +689,15 @@ def run_pay_app_accounting_sync(
             from accounting_posting import process_construction_event
             if event_type == 'G702Approved':
                 try:
-                    from accounting_waves_20 import construction_force_post_for_event
+                    from accounting_waves_21 import construction_force_post_for_event
+
+                    if construction_force_post_for_event(event_type, pl):
+                        pl['force_builtin_post'] = True
+                except Exception:
+                    pass
+            elif event_type == 'SubPayAppApproved':
+                try:
+                    from accounting_waves_21 import construction_force_post_for_event
 
                     if construction_force_post_for_event(event_type, pl):
                         pl['force_builtin_post'] = True

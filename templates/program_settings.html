@@ -816,6 +816,18 @@
                         Post owner G702 to A/R when approved (even if auto-post above is off)
                     </label>
                 </div>
+                <div class="mb-5">
+                    <label class="flex items-center gap-2 text-sm text-zinc-300">
+                        <input type="checkbox" id="acct_sub_pay_app_post_on_approve" class="rounded border-zinc-600" {% if accounting_defaults.get('sub_pay_app_post_on_approve', '1') != '0' %}checked{% endif %}>
+                        Post approved sub pay apps to A/P when approved (even if auto-post above is off)
+                    </label>
+                </div>
+                <div class="mb-5">
+                    <label class="flex items-center gap-2 text-sm text-zinc-300">
+                        <input type="checkbox" id="acct_commitment_post_on_approve" class="rounded border-zinc-600" {% if accounting_defaults.get('commitment_post_on_approve', '1') != '0' %}checked{% endif %}>
+                        Post approved commitments to accounting when approved (even if auto-post above is off)
+                    </label>
+                </div>
                 <div id="acctSorSummaryHost" class="mb-5 p-4 border border-zinc-700 rounded-lg text-sm text-zinc-400 hidden"></div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {% for key, label in [
@@ -1078,9 +1090,12 @@
         const accounting = {
             auto_post_enabled: document.getElementById('acct_auto_post_enabled')?.checked ? '1' : '0',
             g702_post_on_approve: document.getElementById('acct_g702_post_on_approve')?.checked ? '1' : '0',
+            sub_pay_app_post_on_approve: document.getElementById('acct_sub_pay_app_post_on_approve')?.checked ? '1' : '0',
+            commitment_post_on_approve: document.getElementById('acct_commitment_post_on_approve')?.checked ? '1' : '0',
         };
         form.querySelectorAll('input[name]').forEach((el) => {
-            if (el.id === 'acct_auto_post_enabled' || el.id === 'acct_g702_post_on_approve') return;
+            if (el.id === 'acct_auto_post_enabled' || el.id === 'acct_g702_post_on_approve'
+                || el.id === 'acct_sub_pay_app_post_on_approve' || el.id === 'acct_commitment_post_on_approve') return;
             accounting[el.name] = el.value.trim();
         });
         try {

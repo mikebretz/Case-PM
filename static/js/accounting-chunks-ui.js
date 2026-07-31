@@ -26,6 +26,7 @@
       return `<p class="text-zinc-500 text-sm">Select a project in Case PM to view job cost accounting.</p>`;
     }
     const panel = await api(`/api/accounting/jobcost/${pid}/panel`);
+    const wip = await api(`/api/accounting/jobcost/${pid}/wip`).catch(() => ({}));
     const rev = panel.revenue_recognition || {};
     const pa = panel.pay_applications || {};
     return `<div class="space-y-4">
@@ -42,6 +43,8 @@
         <div class="bg-zinc-900 border border-zinc-700 rounded p-2">A/R vs pay app variance: <strong>${money(panel.variance_billed_vs_ar)}</strong></div>
       </div>
       ${(panel.variance_detail?.g702_pending_sync || []).length ? `<p class="text-xs text-amber-400">${panel.variance_detail.g702_pending_sync.length} approved G702 period(s) not yet in A/R — use sync below.</p>` : ''}
+      ${(wip.sub_ap_pending || []).length ? `<p class="text-xs text-amber-400">${wip.sub_ap_pending.length} approved sub pay app(s) not yet in A/P.</p>` : ''}
+      <div class="text-xs text-zinc-400 border border-zinc-800 rounded p-2">WIP: ${wip.status || '—'} · over/under billing <strong>${money(wip.over_under_billing)}</strong> · ${wip.percent_complete || 0}% complete</div>
       <div class="flex flex-wrap gap-2 text-xs">
         <a href="${esc(panel.links?.budget || '#')}" class="text-emerald-400 underline">Budget</a>
         <a href="${esc(panel.links?.pay_apps || '#')}" class="text-emerald-400 underline">Pay applications</a>
@@ -49,6 +52,9 @@
       </div>
       <button type="button" id="acctJcG702Sync" class="px-3 py-2 text-sm bg-emerald-800 rounded">Sync approved G702 → A/R</button>
       <button type="button" id="acctJcG702SyncAll" class="px-3 py-2 text-sm bg-emerald-900 rounded border border-emerald-700">Sync all pending G702</button>
+      <button type="button" id="acctJcSubApSyncAll" class="px-3 py-2 text-sm bg-amber-900 rounded border border-amber-700">Sync all sub pay apps → A/P</button>
+      <button type="button" id="acctJcCmtSyncAll" class="px-3 py-2 text-sm bg-sky-900 rounded border border-sky-700">Sync commitments → accounting</button>
+      <button type="button" id="acctJcWipAdjust" class="px-3 py-2 text-sm bg-violet-900 rounded border border-violet-700">Post WIP billing adjustment</button>
       <button type="button" id="acctJcProgressAr" class="px-3 py-2 text-sm bg-violet-700 rounded">Create A/R from progress billing</button>
     </div>`;
   }
@@ -75,6 +81,26 @@
       const pid = projectId();
       const r = await api(`/api/accounting/jobcost/${pid}/g702-sync-all`, { method: 'POST', body: '{}' });
       await AD().alert(`Posted ${r.posted_count || 0} period(s).${(r.errors || []).length ? ` ${r.errors.length} error(s).` : ''}`, 'success');
+      switchModule('jobcost');
+    });
+    document.getElementById('acctJcSubApSyncAll')?.addEventListener('click', async () => {
+      const pid = projectId();
+      const r = await api(`/api/accounting/jobcost/${pid}/sub-ap-sync-all`, { method: 'POST', body: '{}' });
+      await AD().alert(`Posted ${r.posted_count || 0} sub pay app(s) to A/P.`, 'success');
+      switchModule('jobcost');
+    });
+    document.getElementById('acctJcCmtSyncAll')?.addEventListener('click', async () => {
+      const pid = projectId();
+      const r = await api(`/api/accounting/jobcost/${pid}/commitments-sync-all`, { method: 'POST', body: '{}' });
+      await AD().alert(`Posted ${r.posted_count || 0} commitment(s).`, 'success');
+      switchModule('jobcost');
+    });
+    document.getElementById('acctJcWipAdjust')?.addEventListener('click', async () => {
+      const pid = projectId();
+      const ok = await AD().confirm('Post a WIP journal entry from the current over/under billing analysis?', 'WIP');
+      if (!ok) return;
+      const r = await api(`/api/accounting/jobcost/${pid}/wip-adjust`, { method: 'POST', body: '{}' });
+      await AD().alert(`WIP batch #${r.journal_batch_id} posted (${r.amount}).`, 'success');
       switchModule('jobcost');
     });
     document.getElementById('acctJcProgressAr')?.addEventListener('click', async () => {

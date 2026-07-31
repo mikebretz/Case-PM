@@ -40,6 +40,8 @@
           <button type="button" id="acctPpNewBatch" class="text-xs px-3 py-2 bg-violet-600 hover:bg-violet-500 rounded-md text-white">+ Payment batch</button>
           <button type="button" id="acctPpPayNow" class="text-xs px-3 py-2 border border-emerald-700 rounded-md text-emerald-400">+ Pay Now link</button>
           <button type="button" id="acctPpStripeTest" class="text-xs px-3 py-2 border border-violet-700 rounded-md text-violet-400">Stripe test intent</button>
+          <button type="button" id="acctPpPlaidImport" class="text-xs px-3 py-2 border border-cyan-700 rounded-md text-cyan-400">Plaid import (7d)</button>
+          <button type="button" id="acctPpExceptions" class="text-xs px-3 py-2 border border-red-800 rounded-md text-red-300">Payment exceptions</button>
         </div>
       </div>
 
@@ -273,6 +275,22 @@
         body: JSON.stringify({ amount: 100, currency: 'usd', metadata: { test: true } }),
       });
       await AD().alert(`Test intent: ${out.client_secret}`, 'info');
+    });
+    document.getElementById('acctPpPlaidImport')?.addEventListener('click', async () => {
+      const out = await api('/api/accounting/bank/plaid-auto-import', { method: 'POST', body: '{}' });
+      await AD().alert(out.skipped ? `Skipped: ${out.skipped}` : `Imported ${out.imported || out.count || 0} transaction(s).`, 'info');
+      switchModule('payments');
+    });
+    document.getElementById('acctPpExceptions')?.addEventListener('click', async () => {
+      const box = await api('/api/accounting/payments/exceptions');
+      const n = (box.exceptions || []).length;
+      const retry = n ? await AD().confirm(`${n} exception(s). Retry Pay Now captures now?`, 'Payments') : false;
+      if (retry) {
+        const r = await api('/api/accounting/payments/exceptions/reconcile', { method: 'POST', body: '{}' });
+        await AD().alert(`Fixed ${r.fixed || 0}; ${r.remaining || 0} remaining.`, 'info');
+      } else {
+        await AD().alert(n ? `${n} payment exception(s) on file.` : 'No payment exceptions.', 'info');
+      }
     });
   }
 

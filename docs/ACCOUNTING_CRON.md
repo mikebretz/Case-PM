@@ -59,3 +59,12 @@ X-CasePM-Cron-Secret: your-long-random-secret
 ```
 
 Set **admin notification email** under Program Settings → Email so failure and compliance digests have a recipient.
+
+## Wave 11 maintenance (optional)
+
+Runs wave 10 maintenance, Sage queue flush, Plaid auto-import (7 days), and scheduled reports:
+
+```http
+POST /api/accounting/cron/wave11
+X-CasePM-Cron-Secret: your-long-random-secret
+```

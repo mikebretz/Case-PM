@@ -700,6 +700,10 @@ def queue_commitment_sage_event(
     payload = build_commitment_sage_payload(commitment, allocations, extra)
     if event_type == 'CommitmentApproved':
         payload['idempotency_key'] = f'CommitmentApproved:{commitment.id}'
+        from program_settings_persistence import load_accounting_defaults
+
+        if str(load_accounting_defaults().get('commitment_post_on_approve', '1')) != '0':
+            payload['force_builtin_post'] = True
         try:
             import app as app_mod
             from accounting_posting import process_construction_event
