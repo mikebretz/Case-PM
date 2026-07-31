@@ -27,6 +27,8 @@
     }
     const panel = await api(`/api/accounting/jobcost/${pid}/panel`);
     const wip = await api(`/api/accounting/jobcost/${pid}/wip`).catch(() => ({}));
+    const retainage = await api(`/api/accounting/jobcost/${pid}/retainage`).catch(() => ({}));
+    const closeout = await api(`/api/accounting/jobcost/${pid}/closeout`).catch(() => ({}));
     const rev = panel.revenue_recognition || {};
     const pa = panel.pay_applications || {};
     return `<div class="space-y-4">
@@ -57,6 +59,23 @@
       <button type="button" id="acctJcWipAdjust" class="px-3 py-2 text-sm bg-violet-900 rounded border border-violet-700">Post WIP billing adjustment</button>
       <button type="button" id="acctJcCoSyncAll" class="px-3 py-2 text-sm bg-sky-800 rounded border border-sky-700">Sync approved COs → accounting</button>
       <button type="button" id="acctJcProgressAr" class="px-3 py-2 text-sm bg-violet-700 rounded">Create A/R from progress billing</button>
+      <div class="border border-zinc-700 rounded p-3 space-y-2">
+        <h3 class="text-sm text-zinc-300">Retainage &amp; closeout (Wave 13)</h3>
+        <div class="text-xs text-zinc-400 grid md:grid-cols-3 gap-2">
+          <span>Owner (pay apps): <strong>${money(retainage.owner_retainage_pay_apps)}</strong></span>
+          <span>Sub (pay apps): <strong>${money(retainage.sub_retainage_pay_apps)}</strong></span>
+          <span>A/P retainage: <strong>${money(retainage.ap_retainage_held)}</strong></span>
+        </div>
+        <div class="flex flex-wrap gap-2 text-xs">
+          <button type="button" id="acctJcRetSync" class="px-2 py-1 bg-emerald-900 rounded border border-emerald-700">Sync owner retainage holds</button>
+          <button type="button" id="acctJcRetRelease" class="px-2 py-1 bg-violet-900 rounded border border-violet-700">Release retainage → A/R</button>
+          <button type="button" id="acctJcCostCodeCsv" class="px-2 py-1 bg-zinc-800 rounded border border-zinc-600">Cost-code profitability CSV</button>
+          <button type="button" id="acctJcCloseout" class="px-2 py-1 bg-amber-900 rounded border border-amber-700">Accounting closeout checklist</button>
+          <button type="button" id="acctJcReversePost" class="px-2 py-1 bg-red-950 rounded border border-red-800 text-red-300">Reverse construction post</button>
+        </div>
+        ${(closeout.items || []).length ? `<ul class="text-xs list-disc pl-4 text-amber-300">${(closeout.items || []).map((i) => `<li>${esc(i.label)}</li>`).join('')}</ul>` : ''}
+        ${closeout.ready_to_close ? '<p class="text-xs text-emerald-400">No blocking closeout warnings.</p>' : ''}
+      </div>
     </div>`;
   }
 
@@ -121,6 +140,58 @@
         body: JSON.stringify({ customer_id: parseInt(cust, 10), amount: parseFloat(amt), project_id: pid }),
       });
       switchModule('ar');
+    });
+    document.getElementById('acctJcRetSync')?.addEventListener('click', async () => {
+      const pid = projectId();
+      const r = await api(`/api/accounting/jobcost/${pid}/retainage/sync`, { method: 'POST', body: '{}' });
+      await AD().alert(`Posted ${r.posted_count || 0} retainage hold(s).`, 'success');
+      switchModule('jobcost');
+    });
+    document.getElementById('acctJcRetRelease')?.addEventListener('click', async () => {
+      const pid = projectId();
+      const cust = await AD().prompt('Customer id for retainage release invoice:', '', 'Retainage');
+      const amt = await AD().prompt('Release amount:', '', 'Retainage');
+      if (!cust || !amt) return;
+      const r = await api(`/api/accounting/jobcost/${pid}/retainage/release`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customer_id: parseInt(cust, 10), amount: parseFloat(amt) }),
+      });
+      await AD().alert(`A/R document #${r.ar_document_id} for ${amt}.`, 'success');
+      switchModule('ar');
+    });
+    document.getElementById('acctJcCostCodeCsv')?.addEventListener('click', async () => {
+      const pid = projectId();
+      const data = await api(`/api/accounting/jobcost/${pid}/cost-code-profit`);
+      const rows = data.rows || [];
+      const header = 'cost_code,budget_revised,committed,budget_actual,variance_budget_vs_actual,variance_committed_vs_actual';
+      const body = rows.map((r) => [r.cost_code, r.budget_revised, r.committed, r.budget_actual, r.variance_budget_vs_actual, r.variance_committed_vs_actual].join(',')).join('\n');
+      const blob = new Blob([`${header}\n${body}`], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `cost-code-profit-p${pid}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+    document.getElementById('acctJcCloseout')?.addEventListener('click', async () => {
+      const pid = projectId();
+      const c = await api(`/api/accounting/jobcost/${pid}/closeout`);
+      const lines = (c.items || []).map((i) => `• ${i.label}`).join('\n') || 'No open items.';
+      await AD().alert(`${c.ready_to_close ? 'Ready to close.\n' : 'Review before close.\n'}${lines}`, c.ready_to_close ? 'success' : 'warning');
+    });
+    document.getElementById('acctJcReversePost')?.addEventListener('click', async () => {
+      const key = await AD().prompt('Construction post source_key (from AcctPostLink):', '', 'Reverse');
+      if (!key) return;
+      const reason = await AD().prompt('Reason (optional):', '', 'Reverse');
+      const ok = await AD().confirm(`Reverse construction post "${key}"?`, 'Reverse');
+      if (!ok) return;
+      const r = await api('/api/accounting/construction/reverse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_key: key, reason: reason || '' }),
+      });
+      await AD().alert(`Reversal batches: ${(r.reversal_batches || []).join(', ') || 'none'}`, 'success');
+      switchModule('jobcost');
     });
   }
 

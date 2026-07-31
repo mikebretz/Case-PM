@@ -83,3 +83,12 @@ Post-deploy check (authenticated API or script):
 ```bash
 PYTHONPATH=. python3 scripts/deploy_accounting_check.py
 ```
+
+## Wave 13 maintenance (optional)
+
+Same secret as wave 12. Runs wave 12 maintenance (wave 11 → wave 10 chain); per-project retainage, closeout, and month-end cash workflows use the authenticated APIs:
+
+```http
+POST /api/accounting/cron/wave13
+X-CasePM-Cron-Secret: your-long-random-secret
+```

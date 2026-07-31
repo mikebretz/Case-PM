@@ -43,6 +43,7 @@
           <button type="button" id="acctPpPlaidImport" class="text-xs px-3 py-2 border border-cyan-700 rounded-md text-cyan-400">Plaid import (7d)</button>
           <button type="button" id="acctPpExceptions" class="text-xs px-3 py-2 border border-red-800 rounded-md text-red-300">Payment exceptions</button>
           <button type="button" id="acctPpYearEnd" class="text-xs px-3 py-2 border border-violet-800 rounded-md text-violet-300">Year-end tax pkg</button>
+          <button type="button" id="acctPpMonthEnd" class="text-xs px-3 py-2 border border-cyan-800 rounded-md text-cyan-300">Month-end cash checklist</button>
         </div>
       </div>
 
@@ -301,6 +302,43 @@
         `Year-end ${yr}: W-2 rows ${(pkg.w2?.employees || []).length}. 941 validation issues: ${issues}`,
         issues ? 'warning' : 'success',
       );
+    });
+    document.getElementById('acctPpMonthEnd')?.addEventListener('click', async () => {
+      const chk = await api('/api/accounting/cash/month-end-checklist');
+      const banks = await api('/api/accounting/bank/accounts').catch(() => ({ accounts: [] }));
+      const pick = await AD().form({
+        title: 'Close bank statement period',
+        fields: [
+          {
+            key: 'bank_account_id',
+            label: 'Bank account',
+            type: 'select',
+            required: true,
+            options: (banks.accounts || []).map((b) => ({ value: String(b.id), label: `${b.code} — ${b.name}` })),
+          },
+          { key: 'period_end', label: 'Period end date', type: 'date', defaultValue: new Date().toISOString().slice(0, 10) },
+          { key: 'allow_open', label: 'Allow unreconciled items', type: 'checkbox', defaultValue: false },
+        ],
+      });
+      if (!pick) {
+        const msg = `Banks: ${chk.bank_accounts} · Open AR ${chk.open_ar_documents} · Open AP ${chk.open_ap_documents} · Stripe hints ${chk.stripe_settlements?.hint_count || 0}`;
+        await AD().alert(msg, 'info');
+        return;
+      }
+      try {
+        const out = await api(`/api/accounting/bank/${pick.bank_account_id}/close-period`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            period_end: pick.period_end,
+            allow_open: !!pick.allow_open,
+          }),
+        });
+        await AD().alert(`Period closed through ${out.period_end}. Open tx: ${out.open_remaining}.`, 'success');
+      } catch (e) {
+        await AD().alert(e.message, 'error');
+      }
+      switchModule('payments');
     });
   }
 

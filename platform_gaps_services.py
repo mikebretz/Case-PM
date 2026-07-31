@@ -214,6 +214,20 @@ def post_timesheet_to_job_cost(db, row, BudgetProjectState, SageSyncEvent, Proje
     row.amount = labor_cost
     db.session.flush()
 
+    if labor_cost > 0 and row.project_id:
+        try:
+            import app as app_mod
+            from accounting_persistence import get_or_create_default_ledger
+            from accounting_waves_23 import post_timesheet_labor_to_gl
+
+            ledger = get_or_create_default_ledger(db, app_mod._acct_models['AcctLedger'])
+            post_timesheet_labor_to_gl(
+                db, app_mod._acct_models, ledger.id, int(row.project_id), labor_cost, user_id=user_id,
+                timesheet_ref=f'Timesheet #{row.number or row.id}',
+            )
+        except Exception:
+            pass
+
     if SageSyncEvent and Project:
         from sage_service import create_and_process_sage_event
         create_and_process_sage_event(

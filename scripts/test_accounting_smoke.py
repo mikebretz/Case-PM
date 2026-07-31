@@ -73,6 +73,14 @@ def main() -> int:
     except Exception as exc:
         errors.append(f'accounting_waves_22: {exc}')
 
+    print('6f. Wave 23 module import…')
+    try:
+        import accounting_waves_23 as w23  # noqa: F401
+        assert callable(w23.project_retainage_summary)
+        assert callable(w23.month_end_cash_checklist)
+    except Exception as exc:
+        errors.append(f'accounting_waves_23: {exc}')
+
     print('6c. instance DB must not be tracked…')
     try:
         from accounting_waves_20 import git_tracked_paths_must_not_include_db

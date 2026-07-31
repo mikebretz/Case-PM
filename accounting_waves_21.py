@@ -139,6 +139,16 @@ def sync_sub_pay_app_to_ap(
         Company=Company,
     )
     write_audit(db, models, ledger_id, user_id=user_id, action='sub_pay_app_ap_sync', details={'company': company_id, 'period': period_number, **out})
+    if out.get('posted') and out.get('ap_document_id'):
+        try:
+            from accounting_waves_23 import apply_sub_pay_app_retainage_split
+            from pay_app_persistence import get_pay_app_state
+
+            _, st = get_pay_app_state(PayAppProjectState, int(project_id))
+            pct = float((st or {}).get('payAppRetainagePercent') or 10)
+            out['retainage'] = apply_sub_pay_app_retainage_split(db, models, ledger_id, out['ap_document_id'], total, pct)
+        except Exception:
+            pass
     return out
 
 
