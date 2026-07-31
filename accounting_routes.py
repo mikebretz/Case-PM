@@ -6115,3 +6115,106 @@ def register_accounting_routes(app, deps):
             return jsonify({'ok': True, **out})
         except PermissionError as exc:
             return jsonify({'error': str(exc)}), 403
+
+    # --- Waves 66–68: JC/FA, POC retainage, WIP GL ---
+
+    @app.route('/api/accounting/jc/cip-fa/preview/<int:project_id>', methods=['GET'])
+    @login_required
+    def api_acct_jc_cip_fa_preview(project_id):
+        from accounting_waves_38 import jc_cip_fa_capitalization_preview
+        return jsonify(jc_cip_fa_capitalization_preview(db, models, _ledger_id(), project_id, Project=Project))
+
+    @app.route('/api/accounting/jc/cip-fa/capitalize/<int:project_id>', methods=['POST'])
+    @login_required
+    def api_acct_jc_cip_fa_cap(project_id):
+        from accounting_waves_38 import jc_capitalize_cip_to_fixed_asset
+        body = request.get_json(silent=True) or {}
+        out = jc_capitalize_cip_to_fixed_asset(
+            db, models, _ledger_id(), project_id, body.get('amount', 0),
+            description=body.get('description'), user_id=current_user.id, Project=Project,
+        )
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/jc/fa-transfers', methods=['GET'])
+    @login_required
+    def api_acct_jc_fa_transfers():
+        from accounting_waves_38 import project_fa_transfer_report
+        pid = request.args.get('project_id', type=int)
+        return jsonify(project_fa_transfer_report(db, models, _ledger_id(), project_id=pid))
+
+    @app.route('/api/accounting/revenue/method/<int:project_id>', methods=['POST'])
+    @login_required
+    def api_acct_revenue_method(project_id):
+        from accounting_waves_38 import save_project_revenue_method
+        body = request.get_json(silent=True) or {}
+        out = save_project_revenue_method(
+            db, models, _ledger_id(), project_id, body.get('method', 'poc_cost'), user_id=current_user.id,
+        )
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/revenue/report/<int:project_id>', methods=['GET'])
+    @login_required
+    def api_acct_revenue_report(project_id):
+        from accounting_waves_38 import project_revenue_recognition_report
+        return jsonify(project_revenue_recognition_report(
+            db, models, _ledger_id(), project_id, Project=Project, PayAppProjectState=PayAppProjectState,
+        ))
+
+    @app.route('/api/accounting/retainage/auto-candidates', methods=['GET'])
+    @login_required
+    def api_acct_retainage_auto_candidates():
+        from accounting_waves_38 import automated_retainage_release_candidates
+        return jsonify(automated_retainage_release_candidates(
+            db, models, _ledger_id(), Project=Project, PayAppProjectState=PayAppProjectState,
+        ))
+
+    @app.route('/api/accounting/retainage/auto-release/<int:project_id>', methods=['POST'])
+    @login_required
+    def api_acct_retainage_auto_release(project_id):
+        from accounting_waves_38 import run_automated_retainage_release
+        body = request.get_json(silent=True) or {}
+        out = run_automated_retainage_release(
+            db, models, _ledger_id(), project_id,
+            customer_id=body.get('customer_id'), amount=body.get('amount'),
+            push_sage=body.get('push_sage', True), user_id=current_user.id,
+            PayAppProjectState=PayAppProjectState, Project=Project,
+        )
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/wip/auto-je/<int:project_id>', methods=['POST'])
+    @login_required
+    def api_acct_wip_auto_je(project_id):
+        from accounting_waves_38 import wip_auto_je_with_sor_guard
+        out = wip_auto_je_with_sor_guard(db, models, _ledger_id(), project_id, user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/wip-gl/push', methods=['POST'])
+    @login_required
+    def api_acct_sage_wip_gl_push():
+        from accounting_waves_38 import sage_push_wip_gl_batches
+        out = sage_push_wip_gl_batches(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/jc/month-close-gate', methods=['GET'])
+    @login_required
+    def api_acct_jc_month_close_gate():
+        from accounting_waves_38 import jc_financial_month_close_gate
+        return jsonify(jc_financial_month_close_gate(db, models, _ledger_id(), Project=Project))
+
+    @app.route('/api/accounting/cron/sage-jc-financial', methods=['POST'])
+    def api_acct_cron_sage_jc_financial():
+        from accounting_waves_38 import cron_sage_jc_financial_batch
+        secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
+        try:
+            out = cron_sage_jc_financial_batch(
+                db, models, secret, Project=Project, PayAppProjectState=PayAppProjectState, Commitment=Commitment,
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
