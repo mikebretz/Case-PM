@@ -222,6 +222,10 @@ def update_screen_permissions(ledger, body):
     from accounting_gl_service import _parse_settings
     import json as _json
     settings = _parse_settings(ledger)
+    if isinstance(body.get('permissions'), dict) and body['permissions']:
+        settings['screen_permissions'] = body['permissions']
+        ledger.settings_json = _json.dumps(settings)
+        return settings['screen_permissions']
     perms = settings.get('screen_permissions') or {}
     role = (body.get('role_key') or 'accounting_user')[:40]
     screen = (body.get('screen') or 'gl')[:40]
