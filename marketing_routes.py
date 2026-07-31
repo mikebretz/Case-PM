@@ -501,13 +501,54 @@ def register_marketing_routes(app, deps):
         db.session.commit()
         return jsonify(out)
 
+    @app.route('/api/marketing/construction-markets')
+    @login_required
+    def api_marketing_construction_markets():
+        from marketing_construction_markets import construction_markets_catalog
+        return jsonify(construction_markets_catalog())
+
+    @app.route('/api/marketing/market-scheme')
+    @login_required
+    def api_marketing_market_scheme():
+        from marketing_construction_markets import marketing_scheme_payload
+        from marketing_pillars import load_marketing_settings
+        return jsonify(marketing_scheme_payload(load_marketing_settings()))
+
+    @app.route('/api/marketing/market-scheme/apply', methods=['POST'])
+    @login_required
+    def api_marketing_market_scheme_apply():
+        from marketing_construction_markets import apply_construction_market_scheme
+        from marketing_pillars import load_marketing_settings, save_marketing_settings
+        body = request.get_json(silent=True) or {}
+        primary = body.get('primary_construction_market') or load_marketing_settings().get('primary_construction_market')
+        secondary = body.get('secondary_construction_markets') or []
+        save_marketing_settings({
+            'primary_construction_market': primary,
+            'secondary_construction_markets': secondary,
+        })
+        out = apply_construction_market_scheme(db, models(), primary, secondary=secondary)
+        db.session.commit()
+        return jsonify(out)
+
     @app.route('/api/marketing/settings', methods=['GET', 'PUT'])
     @login_required
     def api_marketing_settings():
         from marketing_pillars import load_marketing_settings, save_marketing_settings
         if request.method == 'GET':
-            return jsonify(load_marketing_settings())
-        return jsonify(save_marketing_settings(request.get_json(silent=True) or {}))
+            from marketing_construction_markets import marketing_scheme_payload
+            settings = load_marketing_settings()
+            return jsonify({'settings': settings, 'scheme': marketing_scheme_payload(settings)})
+        body = request.get_json(silent=True) or {}
+        saved = save_marketing_settings(body)
+        if body.get('apply_market_scheme'):
+            from marketing_construction_markets import apply_construction_market_scheme
+            apply_construction_market_scheme(
+                db, models(),
+                saved.get('primary_construction_market') or 'commercial',
+                secondary=saved.get('secondary_construction_markets') or [],
+            )
+            db.session.commit()
+        return jsonify({'settings': saved})
 
     @app.route('/api/marketing/testimonials/widget')
     @login_required

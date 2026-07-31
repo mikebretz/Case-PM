@@ -55,6 +55,10 @@ Also runs on **project status change** (automation rules). Manual: `POST /api/ma
 
 Dashboard includes `won_job_attribution`, `estimated_gross_margin`, and portfolio vs delivery metrics.
 
+## Construction market profiles
+
+Choose a primary market (residential, commercial, government, etc.) so templates and messaging match your work. See [MARKETING_CONSTRUCTION_MARKETS.md](MARKETING_CONSTRUCTION_MARKETS.md).
+
 ## Deploy check
 
 ```bash

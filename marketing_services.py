@@ -37,6 +37,7 @@ def lead_to_dict(row) -> dict:
         'probability': row.probability,
         'estimated_value': row.estimated_value,
         'project_type': row.project_type,
+        'construction_market': getattr(row, 'construction_market', None),
         'location_city': row.location_city,
         'location_state': row.location_state,
         'project_id': row.project_id,
@@ -68,7 +69,7 @@ def upsert_lead(db, MarketingLead, body: dict, *, user_id=None, lead_id: int | N
         db.session.add(row)
     for field in (
         'title', 'contact_name', 'email', 'phone', 'company_name', 'notes',
-        'project_type', 'location_city', 'location_state',
+        'project_type', 'location_city', 'location_state', 'construction_market',
     ):
         if field in body:
             setattr(row, field, (body.get(field) or '')[:300] if field != 'notes' else body.get(field))
@@ -88,6 +89,20 @@ def upsert_lead(db, MarketingLead, body: dict, *, user_id=None, lead_id: int | N
         row.estimate_id = int(body['estimate_id']) if body.get('estimate_id') else None
     if 'metadata' in body:
         row.metadata_json = json.dumps(body['metadata'] or {})
+    if 'construction_market' in body and body.get('construction_market'):
+        row.construction_market = str(body['construction_market'])[:40]
+    elif not lead_id:
+        try:
+            from marketing_construction_markets import default_lead_fields_for_market
+            from marketing_pillars import load_marketing_settings
+            defaults = default_lead_fields_for_market(load_marketing_settings())
+            row.construction_market = defaults.get('construction_market')
+            if 'source' not in body and defaults.get('source') in MARKETING_LEAD_SOURCES:
+                row.source = defaults['source']
+            if not row.project_type and defaults.get('project_type'):
+                row.project_type = defaults['project_type'][:80]
+        except Exception:
+            pass
     if not row.title:
         row.title = (body.get('contact_name') or body.get('company_name') or 'New lead')[:300]
     row.updated_at = datetime.utcnow()
@@ -544,8 +559,10 @@ def seed_collateral_templates(db, MarketingCollateralTemplate) -> dict:
 
 def marketing_module_catalog() -> dict:
     """Maps research pillars to implementation status."""
+    from marketing_construction_markets import construction_markets_catalog
     return {
         'product': 'Case PM Marketing',
+        'construction_markets': construction_markets_catalog(),
         'pillars': [
             {'id': 'portfolio', 'title': 'Project portfolio & case studies', 'status': 'live'},
             {'id': 'pipeline', 'title': 'Lead & opportunity pipeline', 'status': 'live'},
@@ -577,6 +594,8 @@ def marketing_deploy_check() -> dict:
         gap = gaps_deploy_check()
         if not gap.get('ok'):
             return gap
+        from marketing_construction_markets import construction_markets_catalog
+        assert construction_markets_catalog().get('markets')
         return {'ok': True}
     except Exception as exc:
         return {'ok': False, 'error': str(exc)[:200]}
