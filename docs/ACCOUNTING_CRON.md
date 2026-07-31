@@ -157,3 +157,12 @@ Runs parity cron, CRE queue maintenance, GL security sync, consolidation round-t
 POST /api/accounting/cron/sage-cre-platform
 X-CasePM-Cron-Secret: your-long-random-secret
 ```
+
+## Sage bank & cash cron (waves 45–48, optional)
+
+BK pull v2, period-close metadata, reconciliation exception scan, AP payment batch ack, deploy v7:
+
+```http
+POST /api/accounting/cron/sage-bank-cash
+X-CasePM-Cron-Secret: your-long-random-secret
+```

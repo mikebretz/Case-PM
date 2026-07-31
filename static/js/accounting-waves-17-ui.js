@@ -110,6 +110,9 @@
         <button type="button" id="acctCreQueue" class="px-2 py-0.5 border border-orange-900 rounded text-orange-200">CRE queue</button>
         <button type="button" id="acctSageOpsRunbook" class="px-2 py-0.5 border border-zinc-500 rounded text-zinc-200">Ops runbook</button>
         <button type="button" id="acctSageReportPack" class="px-2 py-0.5 border border-violet-900 rounded text-violet-200">Schedule reports</button>
+        <button type="button" id="acctSageBkPull" class="px-2 py-0.5 border border-cyan-900 rounded text-cyan-200">Pull BK</button>
+        <button type="button" id="acctSageBkReconEx" class="px-2 py-0.5 border border-cyan-800 rounded text-cyan-300">BK exceptions</button>
+        <button type="button" id="acctSageApPayAck" class="px-2 py-0.5 border border-rose-900 rounded text-rose-200">AP payment ack</button>
       </div>
       <ul class="max-h-20 overflow-y-auto">${log}</ul>
     </div>`;
@@ -314,6 +317,18 @@
         body: JSON.stringify({ pack_id: 'month_end_core' }),
       });
       await AD().alert(`Scheduled ${(r.scheduled || []).length} report(s) from pack ${r.pack_id || 'month_end_core'}.`, 'success');
+    });
+    document.getElementById('acctSageBkPull')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/bk/pull', { method: 'POST', body: '{}' });
+      await AD().alert(`BK imported: ${r.imported || 0} (${r.version || 1}).`, 'info');
+    });
+    document.getElementById('acctSageBkReconEx')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/bank/sage-recon/exceptions');
+      await AD().alert(`BK reconciliation exceptions: ${r.count || 0}.`, (r.count || 0) ? 'warning' : 'success');
+    });
+    document.getElementById('acctSageApPayAck')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/ap/payment-ack', { method: 'POST', body: '{}' });
+      await AD().alert(`AP payments updated: ${r.updated || 0}.`, 'info');
     });
     document.getElementById('acctSageFlushC')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/sage/construction/flush-queue', { method: 'POST', body: '{}' });
