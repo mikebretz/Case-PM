@@ -121,6 +121,10 @@ def sage_mirror_deploy_check_v16() -> dict:
         assert callable(sage_cutover_checklist)
         assert callable(sage_parity_matrix)
         assert callable(scheduling_resource_leveling_v1)
+        from accounting_waves_49 import pm_accounting_gap_closure_deploy_check, operations_finalize_run
+
+        checks['pm_gap_closure_wave_49'] = bool(pm_accounting_gap_closure_deploy_check().get('ok'))
+        assert callable(operations_finalize_run)
     except Exception:
         checks = {k: False for k in checks}
     ok = base.get('ok') and all(checks.values())

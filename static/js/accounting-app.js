@@ -738,6 +738,17 @@
       const bankId = (banks.accounts || [])[0]?.id;
       const payAmt = parseFloat(data.amt);
       const disc = parseFloat(data.discount || 0) || 0;
+      const apps = [{ ap_document_id: inv.id, amount: payAmt + disc }];
+      const pre = await api('/api/accounting/ap/compliance-preflight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vendor_id: inv.vendor_id, applications: apps }),
+      });
+      if (!pre.ok) {
+        const msg = (pre.holds || []).map((h) => h.reason || JSON.stringify(h)).join('\n');
+        const cont = await AD().confirm(`Compliance hold:\n${msg}\n\nPost payment anyway?`, 'AP compliance');
+        if (!cont) return;
+      }
       await api('/api/accounting/ap/payments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

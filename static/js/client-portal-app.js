@@ -65,10 +65,15 @@
       await api(`/api/client-portal/selections/${btn.dataset.id}/choose`, { method: 'POST', body: JSON.stringify({ option: opt }) });
       load();
     }));
-    renderSimpleList('cpDraws', feed.draw_requests || [], 'No draw requests.', d => `
-      <div class="cp-row"><div class="flex-1"><div class="font-medium">${esc(d.title)}</div>
-      <div class="text-xs text-zinc-500">$${Number(d.amount||0).toLocaleString()} · ${esc(d.status)}</div></div>
-      <button type="button" class="text-xs text-emerald-400 cp-draw" data-id="${d.id}">Approve</button></div>`);
+    renderSimpleList('cpDraws', feed.draw_requests || [], 'No draw requests.', d => {
+      const docs = (d.package?.documents || []).map((doc) =>
+        `<a href="${esc(doc.path)}" class="text-xs text-sky-400 block">${esc(doc.label)}</a>`,
+      ).join('');
+      return `<div class="cp-row"><div class="flex-1"><div class="font-medium">${esc(d.title)}</div>
+      <div class="text-xs text-zinc-500">$${Number(d.amount||0).toLocaleString()} · ${esc(d.period || '')} · ${esc(d.status)}</div>
+      ${docs}</div>
+      <button type="button" class="text-xs text-emerald-400 cp-draw" data-id="${d.id}">Approve</button></div>`;
+    });
     document.querySelectorAll('.cp-draw').forEach(btn => btn.addEventListener('click', async () => {
       await api(`/api/client-portal/draws/${btn.dataset.id}/respond`, { method: 'POST', body: JSON.stringify({ decision: 'Approved' }) });
       load();

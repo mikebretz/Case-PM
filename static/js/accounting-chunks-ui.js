@@ -306,6 +306,9 @@
         <button type="button" id="acctCsPlaybook" class="px-3 py-2 text-sm bg-violet-900 rounded">Run cutover playbook</button>
         <button type="button" id="acctCsEmailDigest" class="px-3 py-2 text-sm bg-sky-900 rounded">Email go-live digest</button>
         <button type="button" id="acctCsGapFix" class="px-3 py-2 text-sm bg-amber-900 rounded">Auto-fix top parity gaps</button>
+        <button type="button" id="acctCsFinalize" class="px-3 py-2 text-sm bg-emerald-950 rounded">Finalize ops</button>
+        <button type="button" id="acctCsOwnerDraw" class="px-3 py-2 text-sm bg-sky-950 rounded">Owner draw package</button>
+        <button type="button" id="acctCsWaiverLib" class="px-3 py-2 text-sm bg-zinc-800 rounded">Waiver library</button>
         <button type="button" id="acctCsRefresh" class="px-3 py-2 text-sm bg-zinc-800 rounded">Refresh</button>
       </div>
       <div class="border border-zinc-700 rounded p-3">
@@ -368,6 +371,35 @@
       });
       await AD().alert('Auto-fix batch finished.', 'success');
       switchModule('construction-sync');
+    });
+    document.getElementById('acctCsFinalize')?.addEventListener('click', async () => {
+      const ok = await AD().confirm('Apply CRE auto-post (if off), refresh cutover, auto-fix parity gaps, and flush construction queue?', 'Finalize');
+      if (!ok) return;
+      const out = await api('/api/accounting/platform/finalize-ops', { method: 'POST', body: '{}' });
+      const st = out.status || {};
+      await AD().alert(
+        st.ready_for_daily_ops ? 'Ops finalized — ready for daily use.' : `Finalize complete with ${st.hole_count || 0} item(s) to review.`,
+        st.ready_for_daily_ops ? 'success' : 'info',
+      );
+      switchModule('construction-sync');
+    });
+    document.getElementById('acctCsOwnerDraw')?.addEventListener('click', async () => {
+      const pid = projectId();
+      const period = await AD().prompt('G702 period number for owner draw package:', '', 'Owner draw');
+      if (period == null || !String(period).trim()) return;
+      const out = await api('/api/accounting/construction/owner-draw-package', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: pid, period_number: String(period).trim() }),
+      });
+      await AD().alert(`Draw request #${out.draw_request_id} created for client portal.`, 'success');
+    });
+    document.getElementById('acctCsWaiverLib')?.addEventListener('click', async () => {
+      const lib = await api('/api/portal/waiver-library');
+      const lines = (lib.companies || []).filter((c) => c.waiver_count).slice(0, 12).map(
+        (c) => `${c.name}: ${c.waiver_count} waiver(s)`,
+      );
+      await AD().alert(lines.join('\n') || 'No waivers indexed yet.', 'info');
     });
     document.getElementById('acctCsRefresh')?.addEventListener('click', () => switchModule('construction-sync'));
   }

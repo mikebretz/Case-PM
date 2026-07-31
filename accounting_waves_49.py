@@ -447,6 +447,97 @@ def bim_coordination_status_live(db, models, ledger_id: int, *, OperationsBimAss
     return base
 
 
+def efile_compliance_readiness(db, models, ledger_id: int) -> dict:
+    """Checklist for e-file workflow (transmit log + env; not agency filing)."""
+    import os
+
+    from accounting_waves_20 import efile_status_dashboard
+
+    dash = efile_status_dashboard(db, models, ledger_id)
+    msgs = []
+    if not (os.environ.get('STRIPE_WEBHOOK_SECRET') or '').strip():
+        msgs.append('Optional: STRIPE_WEBHOOK_SECRET for Pay Now settlement automation.')
+    smtp_hint = 'Configure SMTP in Program Settings for compliance reminder emails.'
+    return {
+        'ok': True,
+        'transmit_log_count': dash.get('transmit_log_count'),
+        'filed_deadlines': dash.get('filed_deadlines'),
+        'disclaimer': dash.get('disclaimer'),
+        'hints': msgs + [smtp_hint],
+        'agency_filing': 'external',
+        'note': 'Use transmit log + CPA/agency portal for actual IRS/state submission.',
+    }
+
+
+def operations_finalize_status(db, models, ledger_id: int, *, Project=None, PayAppProjectState=None) -> dict:
+    """Read-only snapshot of remaining ops steps for this ledger."""
+    import os
+
+    from accounting_integration_health import construction_integration_health_dashboard
+    from accounting_waves_47 import sage_cutover_checklist
+    from program_settings_persistence import load_accounting_defaults, load_program_settings
+
+    cutover = sage_cutover_checklist(db, models, ledger_id)
+    health = construction_integration_health_dashboard(
+        db, models, ledger_id, Project=Project, PayAppProjectState=PayAppProjectState,
+    )
+    acct = load_accounting_defaults()
+    prog = load_program_settings()
+    admin_email = ((prog.get('email') or {}).get('admin_notification_email') or '').strip()
+    holes = []
+    if acct.get('auto_post_enabled') != '1':
+        holes.append({'code': 'cre_autopost_off', 'severity': 'warning', 'fix': 'POST /api/accounting/platform/apply-cre-autopost-profile'})
+    if not (os.environ.get('CASEPM_CRON_SECRET') or '').strip():
+        holes.append({'code': 'cron_secret_missing', 'severity': 'warning', 'fix': 'Set CASEPM_CRON_SECRET on server'})
+    if not admin_email:
+        holes.append({'code': 'admin_email_missing', 'severity': 'info', 'fix': 'Program Settings → admin notification email'})
+    for step in cutover.get('steps') or []:
+        if not step.get('ok'):
+            holes.append({'code': f"cutover_{step.get('id')}", 'severity': 'warning', 'label': step.get('label')})
+    for issue in health.get('issues') or []:
+        holes.append({'code': issue.get('code'), 'severity': issue.get('severity', 'info'), 'detail': issue})
+    return {
+        'cutover_ready': cutover.get('ready'),
+        'health_grade': health.get('grade'),
+        'health_score': health.get('score'),
+        'holes': holes,
+        'hole_count': len(holes),
+        'ready_for_daily_ops': cutover.get('ready') and (health.get('score') or 0) >= 75 and not any(
+            h.get('severity') == 'error' for h in holes
+        ),
+    }
+
+
+def operations_finalize_run(
+    db, models, ledger_id: int, *, user_id=None, Project=None, PayAppProjectState=None, auto_fix: bool = True,
+) -> dict:
+    """One-shot server-side finalize: CRE profile, refresh cutover/parity, optional auto-fix + queue flush."""
+    from accounting_integration_health import apply_cre_autopost_profile
+    from accounting_waves_27 import flush_construction_mirror_queue
+    from accounting_waves_47 import sage_cutover_checklist, sage_parity_matrix
+    from accounting_waves_48 import sage_parity_gap_auto_fix_top
+    from program_settings_persistence import load_accounting_defaults
+
+    steps = []
+    acct = load_accounting_defaults()
+    if acct.get('auto_post_enabled') != '1':
+        steps.append({'step': 'cre_autopost', 'out': apply_cre_autopost_profile(user_id=user_id)})
+    steps.append({'step': 'parity_matrix', 'out': sage_parity_matrix(db, models, ledger_id)})
+    if auto_fix:
+        steps.append({'step': 'parity_auto_fix', 'out': sage_parity_gap_auto_fix_top(
+            db, models, ledger_id, user_id=user_id, limit=5, Project=Project,
+        )})
+        steps.append({'step': 'construction_flush', 'out': flush_construction_mirror_queue(db, models, ledger_id, user_id=user_id)})
+    cutover = sage_cutover_checklist(db, models, ledger_id)
+    steps.append({'step': 'cutover', 'out': cutover})
+    status = operations_finalize_status(db, models, ledger_id, Project=Project, PayAppProjectState=PayAppProjectState)
+    write_audit(db, models, ledger_id, user_id=user_id, action='operations_finalize', details={
+        'ready': status.get('ready_for_daily_ops'),
+        'hole_count': status.get('hole_count'),
+    })
+    return {'steps': steps, 'status': status, 'cutover_ready': cutover.get('ready')}
+
+
 def pm_accounting_gap_closure_deploy_check() -> dict:
     checks = {}
     try:
@@ -457,6 +548,9 @@ def pm_accounting_gap_closure_deploy_check() -> dict:
         assert callable(import_estimate_revision_csv)
         assert callable(create_owner_draw_package_from_g702)
         assert callable(ap_payment_compliance_preflight)
+        assert callable(operations_finalize_run)
+        assert callable(operations_finalize_status)
+        assert callable(efile_compliance_readiness)
         checks['wave_49'] = True
     except Exception as exc:
         checks['wave_49'] = str(exc)[:120]

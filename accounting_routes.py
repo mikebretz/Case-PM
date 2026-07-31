@@ -6771,3 +6771,25 @@ def register_accounting_routes(app, deps):
         except ValueError as exc:
             db.session.rollback()
             return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/platform/finalize-ops', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_finalize_ops():
+        from accounting_waves_49 import operations_finalize_run, operations_finalize_status
+        if request.method == 'GET':
+            return jsonify(operations_finalize_status(
+                db, models, _ledger_id(), Project=Project, PayAppProjectState=PayAppProjectState,
+            ))
+        body = request.get_json(silent=True) or {}
+        out = operations_finalize_run(
+            db, models, _ledger_id(), user_id=current_user.id,
+            Project=Project, PayAppProjectState=PayAppProjectState, auto_fix=body.get('auto_fix', True),
+        )
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/compliance/efile/readiness', methods=['GET'])
+    @login_required
+    def api_acct_finalize_efile_readiness():
+        from accounting_waves_49 import efile_compliance_readiness
+        return jsonify(efile_compliance_readiness(db, models, _ledger_id()))

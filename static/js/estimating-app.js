@@ -664,6 +664,18 @@
       if (!pid) return estAlert('Select an estimate with a project first.', 'error');
       return sovAlignmentRemediate(pid).catch(e => estAlert(e.message, 'error'));
     });
+    document.getElementById('estImportRevision')?.addEventListener('click', async () => {
+      if (!state.current?.id) return estAlert('Select an estimate first.', 'error');
+      const csv = document.getElementById('estRevisionCsv')?.value || '';
+      if (!csv.trim()) return estAlert('Paste CSV into the box.', 'warning');
+      const out = await api(`/api/estimates/${state.current.id}/import-revision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csv, replace: document.getElementById('estRevisionReplace')?.checked }),
+      });
+      await estAlert(`Imported ${out.lines_created || 0} line(s).`, 'success');
+      await loadCurrent();
+    });
 
     const tab = new URLSearchParams(location.search).get('tab');
     if (tab) setTab(tab);

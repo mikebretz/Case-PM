@@ -342,6 +342,7 @@ def sage_mirror_deploy_check_v15() -> dict:
         'portal_compliance': True,
         'mobile_offline': True,
         'bim_foundation': True,
+        'pm_gap_closure': True,
     }
     try:
         assert callable(field_silent_auto_post_daily_log)
@@ -349,6 +350,10 @@ def sage_mirror_deploy_check_v15() -> dict:
         assert callable(sage_go_live_alert_bundle)
         assert callable(mobile_offline_schema)
         assert callable(bim_register_viewpoint)
+        from accounting_waves_49 import mobile_offline_process_queue_v2
+
+        assert callable(mobile_offline_process_queue_v2)
+        checks['pm_gap_closure'] = True
     except Exception:
         checks = {k: False for k in checks}
     ok = base.get('ok') and all(checks.values())
