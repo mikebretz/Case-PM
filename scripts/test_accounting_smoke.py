@@ -91,6 +91,14 @@ def main() -> int:
     except Exception as exc:
         errors.append(f'accounting_waves_24: {exc}')
 
+    print('6h. Wave 25 Sage mirror (20–24)…')
+    try:
+        import accounting_waves_25 as w25  # noqa: F401
+        assert callable(w25.sage_push_open_ap_idempotent)
+        assert callable(w25.sage_year_end_variance_report)
+    except Exception as exc:
+        errors.append(f'accounting_waves_25: {exc}')
+
     print('6c. instance DB must not be tracked…')
     try:
         from accounting_waves_20 import git_tracked_paths_must_not_include_db

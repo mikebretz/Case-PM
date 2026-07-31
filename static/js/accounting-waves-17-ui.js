@@ -85,6 +85,10 @@
         <button type="button" id="acctSagePullBanks" class="px-2 py-0.5 border border-zinc-600 rounded">Pull banks</button>
         <button type="button" id="acctSagePullTax" class="px-2 py-0.5 border border-zinc-600 rounded">Pull tax groups</button>
         <button type="button" id="acctSageDistQueue" class="px-2 py-0.5 border border-zinc-600 rounded">Queue PO export</button>
+        <button type="button" id="acctSagePushArRcp" class="px-2 py-0.5 border border-emerald-800 rounded text-emerald-200">Push AR receipts</button>
+        <button type="button" id="acctSagePortfolio" class="px-2 py-0.5 border border-indigo-800 rounded text-indigo-200">Portfolio reconcile</button>
+        <button type="button" id="acctSageDistEx" class="px-2 py-0.5 border border-amber-900 rounded text-amber-200">Dist exceptions</button>
+        <button type="button" id="acctSageYearVar" class="px-2 py-0.5 border border-violet-900 rounded text-violet-200">Year-end variance</button>
         <button type="button" id="acctSageOps" class="px-2 py-0.5 border border-zinc-600 rounded text-zinc-300">Ops dashboard</button>
         <button type="button" id="acctSagePolicyCasepm" class="px-2 py-0.5 border border-zinc-600 rounded">SOR: Case PM</button>
         <button type="button" id="acctSagePolicySage" class="px-2 py-0.5 border border-zinc-600 rounded">SOR: Sage</button>
@@ -175,6 +179,23 @@
     document.getElementById('acctSageDistQueue')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/sage/distribution/queue-export', { method: 'POST', body: '{}' });
       await AD().alert(`Queued ${r.queued || 0} PO(s). Queue size ${r.queue_size || 0}.`, 'info');
+    });
+    document.getElementById('acctSagePushArRcp')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/sync/push-ar-receipts', { method: 'POST', body: '{}' });
+      await AD().alert(`AR receipts processed: ${r.processed || 0}.`, 'info');
+    });
+    document.getElementById('acctSagePortfolio')?.addEventListener('click', async () => {
+      const d = await api('/api/accounting/sage/portfolio/dashboard');
+      await AD().alert(`${d.warning_count || 0} project(s) with Sage variance warnings (of ${(d.projects || []).length} checked).`, 'info');
+    });
+    document.getElementById('acctSageDistEx')?.addEventListener('click', async () => {
+      const d = await api('/api/accounting/sage/distribution/exceptions');
+      await AD().alert(`Distribution errors: ${(d.distribution_errors || []).length}. Queue: ${d.distribution_queue_size || 0}.`, 'info');
+    });
+    document.getElementById('acctSageYearVar')?.addEventListener('click', async () => {
+      const yr = new Date().getFullYear();
+      const v = await api(`/api/accounting/sage/compliance/year-end-variance?tax_year=${yr}`);
+      await AD().alert(`Year ${yr}: W-2 rows ${v.w2_rows}. Sage sync issues ${v.sage_sync_issues}. Ready: ${v.ready ? 'yes' : 'review'}.`, v.ready ? 'success' : 'warning');
     });
     document.getElementById('acctSageOps')?.addEventListener('click', async () => {
       const d = await api('/api/accounting/sage/mirror/dashboard');

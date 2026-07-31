@@ -23,8 +23,8 @@ SAGE_MIRROR_CAPABILITIES = {
     'po': {'pull': False, 'push': True, 'notes': 'Open PO export queue'},
     'ic': {'pull': False, 'push': True, 'notes': 'IC adjustment export queue'},
     'oe': {'pull': False, 'push': True, 'notes': 'OE shipment export queue'},
-    'fa': {'pull': False, 'push': False, 'notes': 'Planned'},
-    'pr': {'pull': False, 'push': False, 'notes': 'Timesheet bridge only'},
+    'fa': {'pull': False, 'push': True, 'notes': 'FA depreciation export queue'},
+    'pr': {'pull': False, 'push': True, 'notes': 'Payroll SoR policy; PR push optional'},
 }
 
 

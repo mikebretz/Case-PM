@@ -4141,8 +4141,8 @@ def register_accounting_routes(app, deps):
     @app.route('/api/accounting/sage/sync/push-open-ap-live', methods=['POST'])
     @login_required
     def api_acct_sage_push_ap_live():
-        from accounting_waves_20 import sage_push_open_ap_with_error_log
-        out = sage_push_open_ap_with_error_log(db, models, _ledger_id(), user_id=current_user.id)
+        from accounting_waves_25 import sage_push_open_ap_idempotent
+        out = sage_push_open_ap_idempotent(db, models, _ledger_id(), user_id=current_user.id)
         db.session.commit()
         return jsonify({'ok': True, **out})
 
@@ -4886,6 +4886,170 @@ def register_accounting_routes(app, deps):
         secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
         try:
             out = cron_sage_mirror_maintenance(db, models, secret)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+
+    # --- Waves 20–24 Sage mirror depth ---
+
+    @app.route('/api/accounting/sage/sync/push-ar-receipts', methods=['POST'])
+    @login_required
+    def api_acct_sage_push_ar_receipts():
+        from accounting_waves_25 import sage_push_ar_receipt_batches
+        try:
+            out = sage_push_ar_receipt_batches(db, models, _ledger_id(), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 403
+
+    @app.route('/api/accounting/sage/sync/push-open-ar-idempotent', methods=['POST'])
+    @login_required
+    def api_acct_sage_push_ar_idempotent():
+        from accounting_waves_25 import sage_push_open_ar_idempotent
+        try:
+            out = sage_push_open_ar_idempotent(db, models, _ledger_id(), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 403
+
+    @app.route('/api/accounting/sage/segment-map', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_sage_segment_map():
+        from accounting_waves_25 import save_gl_segment_map
+        ledger = models['AcctLedger'].query.get(_ledger_id())
+        from accounting_waves_24 import _ledger_settings
+        if request.method == 'GET':
+            return jsonify({'segment_map': (_ledger_settings(ledger).get('sage_gl_segment_map') or {})})
+        out = save_gl_segment_map(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/distribution/push-po', methods=['POST'])
+    @login_required
+    def api_acct_sage_push_po():
+        from accounting_waves_25 import sage_push_po_receipts_live
+        out = sage_push_po_receipts_live(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/distribution/push-ic', methods=['POST'])
+    @login_required
+    def api_acct_sage_push_ic():
+        from accounting_waves_25 import sage_push_ic_transactions
+        out = sage_push_ic_transactions(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/distribution/push-oe', methods=['POST'])
+    @login_required
+    def api_acct_sage_push_oe():
+        from accounting_waves_25 import sage_push_oe_shipments
+        out = sage_push_oe_shipments(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/distribution/pull-ic', methods=['POST'])
+    @login_required
+    def api_acct_sage_pull_ic():
+        from accounting_waves_25 import sage_pull_ic_snapshot
+        out = sage_pull_ic_snapshot(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/distribution/exceptions', methods=['GET'])
+    @login_required
+    def api_acct_sage_dist_exceptions():
+        from accounting_waves_25 import sage_distribution_exception_inbox
+        return jsonify(sage_distribution_exception_inbox(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/sage/portfolio/dashboard', methods=['GET'])
+    @login_required
+    def api_acct_sage_portfolio():
+        from accounting_waves_25 import sage_portfolio_ops_dashboard
+        return jsonify(sage_portfolio_ops_dashboard(db, models, _ledger_id(), Project=Project))
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/sage-resolve', methods=['POST'])
+    @login_required
+    def api_acct_sage_job_resolve(project_id):
+        from accounting_waves_25 import sage_resolve_job_actual_conflicts
+        data = request.get_json(silent=True) or {}
+        out = sage_resolve_job_actual_conflicts(
+            db, models, _ledger_id(), project_id,
+            strategy=(data.get('strategy') or 'casepm'),
+            user_id=current_user.id, Project=Project,
+        )
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/platform/fx-rates', methods=['POST'])
+    @login_required
+    def api_acct_sage_fx():
+        from accounting_waves_25 import sage_sync_fx_rates
+        out = sage_sync_fx_rates(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/platform/consolidation-export', methods=['POST'])
+    @login_required
+    def api_acct_sage_consolidation():
+        from accounting_waves_25 import sage_export_consolidation_eliminations
+        try:
+            out = sage_export_consolidation_eliminations(db, models, _ledger_id(), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/sage/platform/fa-queue', methods=['POST'])
+    @login_required
+    def api_acct_sage_fa_queue():
+        from accounting_waves_25 import sage_queue_fa_depreciation
+        out = sage_queue_fa_depreciation(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/payroll/sor-policy', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_sage_payroll_sor():
+        from accounting_waves_25 import save_payroll_sor_policy
+        from accounting_waves_24 import _ledger_settings
+        ledger = models['AcctLedger'].query.get(_ledger_id())
+        if request.method == 'GET':
+            s = _ledger_settings(ledger)
+            return jsonify({
+                'payroll_system_of_record': s.get('payroll_system_of_record') or 'casepm',
+                'sage_pr_push_enabled': s.get('sage_pr_push_enabled') == '1',
+            })
+        out = save_payroll_sor_policy(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/compliance/1099-reconcile', methods=['GET'])
+    @login_required
+    def api_acct_sage_1099_reconcile():
+        from accounting_waves_25 import sage_1099_vendor_reconcile
+        yr = request.args.get('tax_year', type=int) or date.today().year
+        return jsonify(sage_1099_vendor_reconcile(db, models, _ledger_id(), yr))
+
+    @app.route('/api/accounting/sage/compliance/year-end-variance', methods=['GET'])
+    @login_required
+    def api_acct_sage_year_end_var():
+        from accounting_waves_25 import sage_year_end_variance_report
+        yr = request.args.get('tax_year', type=int) or date.today().year
+        return jsonify(sage_year_end_variance_report(db, models, _ledger_id(), yr))
+
+    @app.route('/api/accounting/cron/sage-mirror-full', methods=['POST'])
+    def api_acct_cron_sage_mirror_full():
+        from accounting_waves_25 import cron_waves_20_24_maintenance
+        secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
+        try:
+            out = cron_waves_20_24_maintenance(db, models, secret, Project=Project)
             db.session.commit()
             return jsonify({'ok': True, **out})
         except PermissionError as exc:

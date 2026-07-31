@@ -103,3 +103,12 @@ X-CasePM-Cron-Secret: your-long-random-secret
 ```
 
 Use **Accounting → Integrations** mirror buttons for customer/AR/AP payment/G/L push, bank/tax pull, CRE job reconcile, and module coverage report (`/api/accounting/sage/mirror/coverage`).
+
+## Sage mirror full maintenance (waves 20–24, optional)
+
+Runs wave 14–19 mirror cron, portfolio job reconcile, and optional Sage paces when `SAGE_API_URL` is set:
+
+```http
+POST /api/accounting/cron/sage-mirror-full
+X-CasePM-Cron-Secret: your-long-random-secret
+```
