@@ -1,0 +1,12 @@
+{
+  "@odata.context": "https://example/sage/odata/$metadata#ARInvoices",
+  "value": [
+    {
+      "CustomerNumber": "CUST01",
+      "InvoiceNumber": "AR-5001",
+      "InvoiceDate": "2024-07-10",
+      "InvoiceAmount": 8750.0,
+      "TaxGroup": "STAX"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "@odata.context": "https://example/sage/odata/$metadata#APInvoices",
+  "value": [
+    {
+      "VendorNumber": "VEND01",
+      "InvoiceNumber": "AP-9001",
+      "InvoiceDate": "2024-07-01",
+      "InvoiceAmount": 4200.0,
+      "TaxGroup": "STAX",
+      "Description": "Materials"
+    }
+  ]
+}

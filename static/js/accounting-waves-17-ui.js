@@ -102,6 +102,11 @@
         <button type="button" id="acctSageDriftPanel" class="px-2 py-0.5 border border-pink-800 rounded text-pink-300">Drift panel</button>
         <button type="button" id="acctSageReadOnly" class="px-2 py-0.5 border border-red-900 rounded text-red-300">Sage read-only</button>
         <button type="button" id="acctMonthCloseWiz" class="px-2 py-0.5 border border-amber-700 rounded text-amber-200">Month-close wizard</button>
+        <button type="button" id="acctSageTaxPush" class="px-2 py-0.5 border border-lime-900 rounded text-lime-200">Push line tax</button>
+        <button type="button" id="acctSagePullPo" class="px-2 py-0.5 border border-lime-800 rounded text-lime-300">Pull PO status</button>
+        <button type="button" id="acctSageFaPull" class="px-2 py-0.5 border border-sky-900 rounded text-sky-200">Pull FA</button>
+        <button type="button" id="acctSagePrPull" class="px-2 py-0.5 border border-sky-800 rounded text-sky-300">Pull PR employees</button>
+        <button type="button" id="acctSageMultiCo" class="px-2 py-0.5 border border-indigo-900 rounded text-indigo-200">Multi-co health</button>
       </div>
       <ul class="max-h-20 overflow-y-auto">${log}</ul>
     </div>`;
@@ -269,6 +274,26 @@
       const w = await api('/api/accounting/cash/month-close-wizard');
       const lines = (w.steps || []).map((s) => `${s.done ? '✓' : '○'} ${s.label}`).join('\n');
       await AD().alert(`${w.ready ? 'Ready to close.' : 'Not ready.'}\n${lines}`, w.ready ? 'success' : 'warning');
+    });
+    document.getElementById('acctSageTaxPush')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/tax/push-batch', { method: 'POST', body: JSON.stringify({ document_type: 'ap' }) });
+      await AD().alert(`Tax push: ${r.pushed || 0} posted, ${r.errors || 0} errors.`, (r.errors || 0) ? 'warning' : 'success');
+    });
+    document.getElementById('acctSagePullPo')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/distribution/pull-po', { method: 'POST', body: '{}' });
+      await AD().alert(`PO statuses updated: ${r.updated || 0}.`, 'info');
+    });
+    document.getElementById('acctSageFaPull')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/fa/pull', { method: 'POST', body: '{}' });
+      await AD().alert(`FA pull — created ${r.created || 0}, updated ${r.updated || 0}.`, 'info');
+    });
+    document.getElementById('acctSagePrPull')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/pr/pull-employees', { method: 'POST', body: '{}' });
+      await AD().alert(`PR employees cached: ${r.imported || 0}.`, 'info');
+    });
+    document.getElementById('acctSageMultiCo')?.addEventListener('click', async () => {
+      const h = await api('/api/accounting/sage/platform/multi-company-health');
+      await AD().alert(`Avg sync health ${h.average_score || '—'} across ${(h.companies || []).length} company row(s).`, 'info');
     });
     document.getElementById('acctSageFlushC')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/sage/construction/flush-queue', { method: 'POST', body: '{}' });
