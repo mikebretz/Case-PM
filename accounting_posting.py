@@ -78,6 +78,14 @@ def _create_posted_batch(
 ):
     AcctJournalBatch = models['AcctJournalBatch']
     AcctJournalLine = models['AcctJournalLine']
+    ledger = models['AcctLedger'].query.get(ledger_id)
+    try:
+        from accounting_waves_25 import enforce_fiscal_lock_for_post
+        enforce_fiscal_lock_for_post(db, models, ledger_id, date.today())
+    except PermissionError:
+        raise
+    except Exception:
+        pass
     batch = AcctJournalBatch(
         ledger_id=ledger_id,
         batch_number=next_batch_number(AcctJournalBatch, ledger_id),
@@ -101,7 +109,6 @@ def _create_posted_batch(
             reference=ln.get('reference') or '',
         ))
     db.session.flush()
-    ledger = models['AcctLedger'].query.get(ledger_id)
     post_journal_batch(db, batch, AcctJournalLine, ledger=ledger, models=models, user_id=user_id)
     return batch
 

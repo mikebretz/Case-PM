@@ -149,6 +149,15 @@ def sync_sub_pay_app_to_ap(
             out['retainage'] = apply_sub_pay_app_retainage_split(db, models, ledger_id, out['ap_document_id'], total, pct)
         except Exception:
             pass
+        try:
+            from accounting_waves_25 import sage_queue_construction_mirror_event
+            sage_queue_construction_mirror_event(
+                db, models, ledger_id, 'SubPayAppApproved',
+                {'project_id': project_id, 'ap_document_id': out.get('ap_document_id'), 'amount': total},
+                user_id=user_id,
+            )
+        except Exception:
+            pass
     return out
 
 
