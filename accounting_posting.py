@@ -492,6 +492,59 @@ def process_construction_event(
         db.session.add(link)
         result.update({'posted': True, 'journal_batch_id': batch.id})
 
+    elif event_type == 'TimesheetPosted':
+        amount = _float_amount(data.get('amount'), data.get('labor_cost'))
+        if amount <= 0 or not project_id:
+            return {**result, 'skipped': 'no_amount_or_project'}
+        ref = (data.get('timesheet_ref') or data.get('timesheet_id') or 'Timesheet')[:60]
+        labor_acct = _account_by_number(AcctGLAccount, ledger.id, opts['labor_expense'])
+        clearing = _account_by_number(AcctGLAccount, ledger.id, opts['payroll_liability'])
+        batch = _create_posted_batch(
+            db, models, ledger_id=ledger.id, source='PAYROLL',
+            description=f'Timesheet {ref} — project {project_id}',
+            user_id=user_id,
+            lines=[
+                {'account_id': labor_acct.id, 'debit': amount, 'credit': 0, 'project_id': project_id},
+                {'account_id': clearing.id, 'debit': 0, 'credit': amount, 'project_id': project_id},
+            ],
+        )
+        link = AcctPostLink(
+            ledger_id=ledger.id, source_type=event_type, source_key=idem,
+            journal_batch_id=batch.id,
+        )
+        db.session.add(link)
+        result.update({'posted': True, 'journal_batch_id': batch.id})
+
+    elif event_type == 'DirectCostPosted':
+        amount = _float_amount(data.get('amount'))
+        if amount <= 0 or not project_id:
+            return {**result, 'skipped': 'no_amount_or_project'}
+        cost_type = (data.get('cost_type') or 'Other').lower()
+        if 'sub' in cost_type:
+            exp_num = opts['subcontract_expense']
+        elif 'labor' in cost_type:
+            exp_num = opts['labor_expense']
+        else:
+            exp_num = opts['materials_expense']
+        exp_acct = _account_by_number(AcctGLAccount, ledger.id, exp_num)
+        ap_acct = _account_by_number(AcctGLAccount, ledger.id, opts['ap_account'])
+        ref = (data.get('direct_cost_id') or data.get('cost_code') or 'DC')[:40]
+        batch = _create_posted_batch(
+            db, models, ledger_id=ledger.id, source='AP',
+            description=f'Direct cost {ref} — project {project_id}',
+            user_id=user_id,
+            lines=[
+                {'account_id': exp_acct.id, 'debit': amount, 'credit': 0, 'project_id': project_id},
+                {'account_id': ap_acct.id, 'debit': 0, 'credit': amount, 'project_id': project_id},
+            ],
+        )
+        link = AcctPostLink(
+            ledger_id=ledger.id, source_type=event_type, source_key=idem,
+            journal_batch_id=batch.id,
+        )
+        db.session.add(link)
+        result.update({'posted': True, 'journal_batch_id': batch.id})
+
     else:
         return {**result, 'skipped': 'unsupported_event'}
 

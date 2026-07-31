@@ -198,6 +198,8 @@ ACCOUNTING_DEFAULT_KEYS = [
     'sub_pay_app_post_on_approve',
     'commitment_post_on_approve',
     'co_post_on_approve',
+    'timesheet_post_on_approve',
+    'direct_cost_post_on_approve',
     'auto_wip_on_billing_sync',
     'retainage_accounting_enabled',
     'cash_account',
@@ -221,7 +223,7 @@ def load_accounting_defaults():
         not in (
             'auto_post_enabled', 'g702_post_on_approve', 'sub_pay_app_post_on_approve',
             'commitment_post_on_approve', 'co_post_on_approve', 'auto_wip_on_billing_sync',
-            'retainage_accounting_enabled',
+            'retainage_accounting_enabled', 'timesheet_post_on_approve', 'direct_cost_post_on_approve',
         )
         else acct.get(k, '1')
         for k in ACCOUNTING_DEFAULT_KEYS
@@ -236,6 +238,10 @@ def load_accounting_defaults():
         out['commitment_post_on_approve'] = '1'
     if not str(out.get('co_post_on_approve', '1')).strip():
         out['co_post_on_approve'] = '1'
+    if not str(out.get('timesheet_post_on_approve', '1')).strip():
+        out['timesheet_post_on_approve'] = '1'
+    if not str(out.get('direct_cost_post_on_approve', '1')).strip():
+        out['direct_cost_post_on_approve'] = '1'
     if not str(out.get('auto_wip_on_billing_sync', '0')).strip():
         out['auto_wip_on_billing_sync'] = '0'
     if not str(out.get('retainage_accounting_enabled', '1')).strip():
@@ -262,6 +268,8 @@ def save_accounting_defaults(form_data):
             'co_post_on_approve',
             'auto_wip_on_billing_sync',
             'retainage_accounting_enabled',
+            'timesheet_post_on_approve',
+            'direct_cost_post_on_approve',
         ):
             payload[k] = '1' if form_data.get(k) in (True, '1', 'on', 'true') else '0'
         else:

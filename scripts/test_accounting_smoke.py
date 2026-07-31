@@ -239,6 +239,25 @@ def main() -> int:
     except Exception as exc:
         errors.append(f'accounting_waves_39_42: {exc}')
 
+    print('6u. Construction integration (health, idempotency)…')
+    try:
+        import accounting_integration_health as aih  # noqa: F401
+        assert callable(aih.construction_integration_health_dashboard)
+        assert callable(aih.apply_cre_autopost_profile)
+        import subprocess
+        proc = subprocess.run(
+            [sys.executable, 'scripts/test_accounting_construction_idempotency.py'],
+            cwd='.',
+            env={**dict(__import__('os').environ), 'PYTHONPATH': '.'},
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if proc.returncode != 0:
+            errors.append(f'construction_idempotency: {proc.stdout}\n{proc.stderr}')
+    except Exception as exc:
+        errors.append(f'construction_integration: {exc}')
+
     print('6c. instance DB must not be tracked…')
     try:
         from accounting_waves_20 import git_tracked_paths_must_not_include_db

@@ -6327,3 +6327,25 @@ def register_accounting_routes(app, deps):
             return jsonify({'ok': True, **out})
         except PermissionError as exc:
             return jsonify({'error': str(exc)}), 403
+
+    @app.route('/api/accounting/integration/health', methods=['GET'])
+    @login_required
+    def api_acct_integration_health():
+        from accounting_integration_health import construction_integration_health_dashboard
+        pid = request.args.get('project_id', type=int)
+        return jsonify(construction_integration_health_dashboard(
+            db, models, _ledger_id(), project_id=pid, Project=Project, PayAppProjectState=PayAppProjectState,
+        ))
+
+    @app.route('/api/accounting/platform/apply-cre-autopost-profile', methods=['POST'])
+    @login_required
+    def api_acct_apply_cre_autopost():
+        from accounting_integration_health import apply_cre_autopost_profile
+        out = apply_cre_autopost_profile(user_id=current_user.id)
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/platform/cre-autopost-docs', methods=['GET'])
+    @login_required
+    def api_acct_cre_autopost_docs():
+        from accounting_integration_health import cre_autopost_profile_documentation
+        return jsonify(cre_autopost_profile_documentation())

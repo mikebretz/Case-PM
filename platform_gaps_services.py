@@ -214,19 +214,30 @@ def post_timesheet_to_job_cost(db, row, BudgetProjectState, SageSyncEvent, Proje
     row.amount = labor_cost
     db.session.flush()
 
-    if labor_cost > 0 and row.project_id:
-        try:
-            import app as app_mod
-            from accounting_persistence import get_or_create_default_ledger
-            from accounting_waves_23 import post_timesheet_labor_to_gl
+    import app as app_mod
+    from accounting_posting import process_construction_event
 
-            ledger = get_or_create_default_ledger(db, app_mod._acct_models['AcctLedger'])
-            post_timesheet_labor_to_gl(
-                db, app_mod._acct_models, ledger.id, int(row.project_id), labor_cost, user_id=user_id,
-                timesheet_ref=f'Timesheet #{row.number or row.id}',
-            )
-        except Exception:
-            pass
+    gl_out = process_construction_event(
+        'TimesheetPosted',
+        int(row.project_id),
+        {
+            'amount': labor_cost,
+            'labor_cost': labor_cost,
+            'cost_code': cost_code,
+            'timesheet_id': row.id,
+            'timesheet_ref': f'Timesheet #{row.number or row.id}',
+            'idempotency_key': f'timesheet-{row.id}',
+            'force_builtin_post': True,
+        },
+        db=db,
+        models=app_mod._acct_models,
+        user_id=user_id,
+        Project=Project,
+    )
+    if not gl_out.get('posted') and gl_out.get('skipped') not in ('already_posted',):
+        raise ValueError(
+            f'Accounting G/L post failed for timesheet: {gl_out.get("skipped") or gl_out}',
+        )
 
     if SageSyncEvent and Project:
         from sage_service import create_and_process_sage_event
@@ -262,6 +273,31 @@ def post_direct_cost_to_job_cost(db, row, BudgetProjectState, SageSyncEvent, Pro
     )
     row.status = 'Posted'
     db.session.flush()
+
+    import app as app_mod
+    from accounting_posting import process_construction_event
+
+    gl_out = process_construction_event(
+        'DirectCostPosted',
+        int(row.project_id),
+        {
+            'amount': amount,
+            'cost_code': cost_code,
+            'cost_type': cost_type,
+            'direct_cost_id': row.id,
+            'idempotency_key': f'direct-cost-{row.id}',
+            'force_builtin_post': True,
+        },
+        db=db,
+        models=app_mod._acct_models,
+        user_id=user_id,
+        Project=Project,
+    )
+    if not gl_out.get('posted') and gl_out.get('skipped') not in ('already_posted',):
+        raise ValueError(
+            f'Accounting G/L post failed for direct cost: {gl_out.get("skipped") or gl_out}',
+        )
+
     if SageSyncEvent and Project:
         from sage_service import create_and_process_sage_event
         create_and_process_sage_event(

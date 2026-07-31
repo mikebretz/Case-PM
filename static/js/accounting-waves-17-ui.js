@@ -130,6 +130,8 @@
         <button type="button" id="acctBiKpi" class="px-2 py-0.5 border border-cyan-900 rounded text-cyan-200">BI KPI</button>
         <button type="button" id="acctGoLive" class="px-2 py-0.5 border border-rose-900 rounded text-rose-200">Go-live</button>
         <button type="button" id="acctRoadmap96" class="px-2 py-0.5 border border-zinc-500 rounded text-zinc-200">Roadmap 96</button>
+        <button type="button" id="acctIntegrationHealth" class="px-2 py-0.5 border border-emerald-900 rounded text-emerald-200">Integration health</button>
+        <button type="button" id="acctCreAutopost" class="px-2 py-0.5 border border-emerald-800 rounded text-emerald-300">Apply CRE auto-post</button>
       </div>
       <ul class="max-h-20 overflow-y-auto">${log}</ul>
     </div>`;
@@ -417,6 +419,17 @@
       const r = await api('/api/accounting/roadmap/status');
       const w = r.waves_70_96 || {};
       await AD().alert(`Roadmap through 96: ${r.complete_through_96 ? 'complete' : 'pending'} (${w.implemented || 0}/${w.total || 27} waves 70–96).`, r.complete_through_96 ? 'success' : 'info');
+    });
+    document.getElementById('acctIntegrationHealth')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/integration/health');
+      const issues = (r.issues || []).map((i) => i.code).join(', ') || 'none';
+      await AD().alert(`Integration health ${r.grade || '—'} (${r.score ?? '—'}) · issues: ${issues}`, (r.score || 0) >= 75 ? 'success' : 'warning');
+    });
+    document.getElementById('acctCreAutopost')?.addEventListener('click', async () => {
+      const ok = await AD().confirm('Apply recommended CRE auto-post flags for all construction events?', 'CRE profile');
+      if (!ok) return;
+      await api('/api/accounting/platform/apply-cre-autopost-profile', { method: 'POST', body: '{}' });
+      await AD().alert('CRE auto-post profile applied. See docs/ACCOUNTING_CRE_AUTOPOST.md.', 'success');
     });
     document.getElementById('acctSageFlushC')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/sage/construction/flush-queue', { method: 'POST', body: '{}' });
