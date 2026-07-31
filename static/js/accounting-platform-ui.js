@@ -176,6 +176,8 @@
         </section>
       </div>
 
+      <div id="acctPlatIntegrations" class="mt-2"></div>
+
       <section class="border border-zinc-700 rounded-lg p-3">
         <h3 class="text-sm text-zinc-400 mb-2">Field-level audit (recent)</h3>
         <div class="text-xs mb-3">${auditFieldHtml}</div>

@@ -3398,9 +3398,12 @@ def register_accounting_routes(app, deps):
     @app.route('/api/accounting/payments/stripe-intent', methods=['POST'])
     @login_required
     def api_acct_stripe_intent():
-        from accounting_parity_wave2 import stripe_payment_intent_stub
+        from accounting_tier14_wave import create_stripe_payment_intent
         body = request.get_json(silent=True) or {}
-        return jsonify(stripe_payment_intent_stub(body.get('amount', 0), body.get('currency', 'usd'), body.get('metadata')))
+        try:
+            return jsonify(create_stripe_payment_intent(body.get('amount', 0), body.get('currency', 'usd'), body.get('metadata')))
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
 
     @app.route('/api/accounting/reports/designer', methods=['GET', 'POST'])
     @login_required
@@ -3490,8 +3493,8 @@ def register_accounting_routes(app, deps):
     @app.route('/api/accounting/payments/stripe-webhook', methods=['POST'])
     @login_required
     def api_acct_stripe_webhook():
-        from accounting_parity_wave3 import stripe_webhook_stub
-        return jsonify(stripe_webhook_stub(request.get_json(silent=True) or {}))
+        from accounting_tier14_wave import handle_stripe_webhook
+        return jsonify(handle_stripe_webhook(request.get_json(silent=True) or {}, request.headers.get('Stripe-Signature', '')))
 
     @app.route('/api/accounting/payments/stripe-capture', methods=['POST'])
     @login_required
@@ -3531,10 +3534,12 @@ def register_accounting_routes(app, deps):
     @login_required
     def api_acct_bank_plaid():
         from accounting_parity_wave3 import import_plaid_transactions
+        from accounting_tier14_wave import plaid_sandbox_or_live_transactions
         body = request.get_json(silent=True) or {}
         try:
+            txns = plaid_sandbox_or_live_transactions(body)
             out = import_plaid_transactions(
-                db, models, _ledger_id(), body['bank_account_id'], body.get('transactions') or [], user_id=current_user.id,
+                db, models, _ledger_id(), body['bank_account_id'], txns, user_id=current_user.id,
             )
             db.session.commit()
             return jsonify({'ok': True, **out})
@@ -3558,8 +3563,8 @@ def register_accounting_routes(app, deps):
     @app.route('/api/accounting/reports/run-scheduled', methods=['POST'])
     @login_required
     def api_acct_reports_run_scheduled():
-        from accounting_parity_wave3 import run_due_scheduled_reports
-        out = run_due_scheduled_reports(db, models, _ledger_id(), user_id=current_user.id)
+        from accounting_tier14_wave import run_scheduled_reports_with_email
+        out = run_scheduled_reports_with_email(db, models, _ledger_id(), user_id=current_user.id)
         db.session.commit()
         return jsonify({'ok': True, **out})
 
@@ -3685,3 +3690,113 @@ def register_accounting_routes(app, deps):
         except (ValueError, KeyError) as exc:
             db.session.rollback()
             return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/integrations/status', methods=['GET'])
+    @login_required
+    def api_acct_integrations_status():
+        import os
+        from accounting_all_chunks import stripe_runtime_config
+        from accounting_tier14_wave import sage_integration_status
+        ledger = models['AcctLedger'].query.get(_ledger_id())
+        return jsonify({
+            'stripe': stripe_runtime_config(ledger),
+            'plaid': {
+                'configured': bool(os.environ.get('PLAID_CLIENT_ID') and os.environ.get('PLAID_SECRET')),
+                'sandbox_import': True,
+            },
+            'sage': sage_integration_status(),
+        })
+
+    @app.route('/api/accounting/compliance/w2-efile/<int:tax_year>', methods=['GET'])
+    @login_required
+    def api_acct_w2_efile(tax_year):
+        from accounting_tier14_wave import export_w2_efile_package
+        from flask import Response
+        return Response(
+            export_w2_efile_package(db, models, _ledger_id(), tax_year),
+            mimetype='text/plain',
+            headers={'Content-Disposition': f'attachment; filename=w2-efile-{tax_year}.txt'},
+        )
+
+    @app.route('/api/accounting/compliance/941-efile', methods=['GET'])
+    @login_required
+    def api_acct_941_efile():
+        from accounting_tier14_wave import export_941_efile_package
+        from flask import Response
+        q = request.args.get('quarter', type=int) or 1
+        y = request.args.get('year', type=int) or date.today().year
+        return Response(
+            export_941_efile_package(db, models, _ledger_id(), q, y),
+            mimetype='text/plain',
+            headers={'Content-Disposition': f'attachment; filename=941-{y}-Q{q}.txt'},
+        )
+
+    @app.route('/api/accounting/compliance/1099/transmit-log', methods=['POST'])
+    @login_required
+    def api_acct_1099_transmit_log():
+        from accounting_tier14_wave import log_1099_transmit
+        body = request.get_json(silent=True) or {}
+        yr = body.get('tax_year') or (date.today().year - 1)
+        out = log_1099_transmit(db, models, _ledger_id(), int(yr), user_id=current_user.id)
+        db.session.commit()
+        return jsonify(out)
+
+    @app.route('/api/accounting/po/orders/<int:po_id>/line-grid', methods=['GET'])
+    @login_required
+    def api_acct_po_line_grid(po_id):
+        from accounting_tier14_wave import po_line_receipt_grid
+        return jsonify(po_line_receipt_grid(db, models, _ledger_id(), po_id))
+
+    @app.route('/api/accounting/po/orders/<int:po_id>/blanket-release', methods=['POST'])
+    @login_required
+    def api_acct_po_blanket_release(po_id):
+        from accounting_tier14_wave import blanket_po_release
+        try:
+            out = blanket_po_release(db, models, _ledger_id(), po_id, request.get_json(silent=True) or {}, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/oe/orders/<int:order_id>/fulfillment-grid', methods=['GET'])
+    @login_required
+    def api_acct_oe_fulfillment_grid(order_id):
+        from accounting_tier14_wave import oe_fulfillment_grid
+        return jsonify(oe_fulfillment_grid(db, models, _ledger_id(), order_id))
+
+    @app.route('/api/accounting/inventory/transfer', methods=['POST'])
+    @login_required
+    def api_acct_ic_transfer():
+        from accounting_tier14_wave import inventory_location_transfer
+        try:
+            out = inventory_location_transfer(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except (ValueError, KeyError) as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/sage/sync/vendors', methods=['POST'])
+    @login_required
+    def api_acct_sage_pull_vendors():
+        from accounting_tier14_wave import sage_pull_vendors
+        out = sage_pull_vendors(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/sync/gl-accounts', methods=['POST'])
+    @login_required
+    def api_acct_sage_pull_gl():
+        from accounting_tier14_wave import sage_pull_gl_accounts
+        out = sage_pull_gl_accounts(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/sync/queue-batches', methods=['POST'])
+    @login_required
+    def api_acct_sage_queue_batches():
+        from accounting_tier14_wave import sage_queue_open_batches
+        out = sage_queue_open_batches(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})

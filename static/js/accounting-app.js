@@ -201,6 +201,10 @@
       if (route === 'admin' && global.CasePMAcctPlatformUI?.bindHandlers) {
         global.CasePMAcctPlatformUI.bindHandlers();
       }
+      if (route === 'admin' && global.CasePMAcctTierUI) {
+        global.CasePMAcctTierUI.init({ api, esc, money, switchModule, AD: () => global.CasePMAccountingDialog || {}, projectId });
+        global.CasePMAcctTierUI.mountAdminIntegrations();
+      }
     } catch (e) {
       root.innerHTML = `<p class="text-red-400">${esc(e.message)}</p>`;
     }

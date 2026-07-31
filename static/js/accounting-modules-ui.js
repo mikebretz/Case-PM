@@ -125,6 +125,7 @@
         <h2 class="text-lg font-semibold text-white">Inventory Control</h2>
         <button type="button" id="acctAddItem" class="text-xs text-emerald-400">+ Item</button>
         <button type="button" id="acctIcFifo" class="text-xs text-violet-400 ml-2">FIFO issue</button>
+        <button type="button" id="acctIcTransfer" class="text-xs text-sky-400 ml-2">Location transfer</button>
       </div>
       <p class="text-xs text-zinc-500">Perpetual inventory · PO receipts and manual adjustments post to quantity on hand.</p>
       <div class="text-sm bg-zinc-800 border border-zinc-700 rounded p-2 inline-block">Extended value: <strong>${money(ext)}</strong></div>
@@ -163,6 +164,7 @@
           <div><span class="font-mono text-emerald-400">${esc(o.po_number)}</span> <span class="text-xs text-zinc-500">${esc(o.status)}</span>
             <div class="text-xs text-zinc-400">${esc(o.vendor_name || 'No vendor')} · ${money(o.total_amount)}</div></div>
           <button type="button" class="text-xs text-sky-400 acct-po-receive" data-id="${o.id}">Receive</button>
+          <button type="button" class="text-xs text-zinc-400 acct-po-grid ml-1" data-id="${o.id}">Lines</button>
           <button type="button" class="text-xs text-amber-400 acct-po-voucher ml-1" data-id="${o.id}">AP voucher</button>
         </div>
         <ul class="mt-2">${lines || '<li class="text-xs text-zinc-600">No lines — edit PO to add material lines.</li>'}</ul>
@@ -171,6 +173,7 @@
     return `<div class="space-y-4">
       <h2 class="text-lg font-semibold text-white">Purchase Orders</h2>
       <button type="button" id="acctAddPO" class="text-xs text-emerald-400">+ Purchase order</button>
+      <button type="button" id="acctPoBlanket" class="text-xs text-violet-400 ml-2">Blanket release</button>
       <div id="acctPOList">${cards || '<p class="text-zinc-500 text-sm">No POs.</p>'}</div>
       <datalist id="acctVendorList">${vopts}</datalist>
     </div>`;
@@ -186,6 +189,7 @@
       const actions = [];
       if (o.status !== 'Invoiced') {
         actions.push(`<button type="button" class="text-xs text-sky-400 acct-oe-ship" data-id="${o.id}">Ship</button>`);
+        actions.push(`<button type="button" class="text-xs text-zinc-400 acct-oe-grid" data-id="${o.id}">Fulfillment</button>`);
         actions.push(`<button type="button" class="text-xs text-violet-400 acct-oe-cogs" data-id="${o.id}">Ship + COGS</button>`);
         actions.push(`<button type="button" class="text-xs text-emerald-400 acct-oe-invoice" data-id="${o.id}">Invoice A/R</button>`);
       }
@@ -282,6 +286,72 @@
         }
       });
     });
+    document.querySelectorAll('.acct-po-grid').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const g = await api(`/api/accounting/po/orders/${btn.getAttribute('data-id')}/line-grid`);
+        const lines = (g.lines || []).map((ln) => `Line ${ln.line_index}: ${ln.description || ''} — open qty ${ln.qty_open}`).join('\n');
+        await AD().alert(lines || 'No lines', 'info');
+      });
+    });
+    document.getElementById('acctPoBlanket')?.addEventListener('click', async () => {
+      const orders = await api('/api/accounting/po/orders');
+      const list = orders.orders || [];
+      if (!list[0]) {
+        await AD().alert('Create a PO first.', 'warning');
+        return;
+      }
+      const pick = await AD().select({
+        title: 'Blanket PO',
+        items: list.map((o) => ({ value: String(o.id), label: `${o.po_number} — ${o.status}` })),
+      });
+      if (!pick) return;
+      const data = await AD().form({
+        title: 'Release line',
+        fields: [
+          { key: 'description', label: 'Description', required: true },
+          { key: 'qty', label: 'Qty', defaultValue: '1' },
+          { key: 'unit_price', label: 'Unit price', defaultValue: '100' },
+        ],
+      });
+      if (!data) return;
+      await api(`/api/accounting/po/orders/${pick.value}/blanket-release`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lines: [{ description: data.description, qty: parseFloat(data.qty), unit_price: parseFloat(data.unit_price) }] }),
+      });
+      switchModule('po');
+    });
+  }
+
+  function bindInventoryExtras() {
+    const { api, switchModule } = helpers();
+    const AD = () => global.CasePMAccountingDialog || {};
+    document.getElementById('acctIcTransfer')?.addEventListener('click', async () => {
+      const items = await api('/api/accounting/inventory/items');
+      const list = items.items || [];
+      if (!list[0]) return;
+      const data = await AD().form({
+        title: 'Inventory location transfer',
+        fields: [
+          { key: 'item_id', label: 'Item', type: 'select', options: list.map((i) => ({ value: String(i.id), label: i.item_number })), required: true },
+          { key: 'qty', label: 'Quantity', defaultValue: '1', required: true },
+          { key: 'from_location_code', label: 'From', defaultValue: 'MAIN' },
+          { key: 'to_location_code', label: 'To', defaultValue: 'SITE' },
+        ],
+      });
+      if (!data) return;
+      await api('/api/accounting/inventory/transfer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          item_id: parseInt(data.item_id, 10),
+          qty: parseFloat(data.qty),
+          from_location_code: data.from_location_code,
+          to_location_code: data.to_location_code,
+        }),
+      });
+      switchModule('inventory');
+    });
   }
 
   function bindOEExtras() {
@@ -318,6 +388,13 @@
         }
       });
     });
+    document.querySelectorAll('.acct-oe-grid').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const g = await api(`/api/accounting/oe/orders/${btn.getAttribute('data-id')}/fulfillment-grid`);
+        const lines = (g.lines || []).map((ln) => `Line ${ln.line_index}: open ship ${ln.qty_open} · comm ${ln.commission_percent}%`).join('\n');
+        await AD().alert(lines || 'No lines', 'info');
+      });
+    });
   }
 
   global.CasePMAcctModulesUI = {
@@ -331,6 +408,7 @@
       if (route === 'assets') bindAssetExtras();
       if (route === 'po') bindPOExtras();
       if (route === 'oe') bindOEExtras();
+      if (route === 'inventory') bindInventoryExtras();
     },
   };
 })(window);
