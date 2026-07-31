@@ -29,6 +29,27 @@ def register_accounting_routes(app, deps):
         seed_chart_of_accounts(db, models['AcctLedger'], models['AcctGLAccount'], ledger)
         return ledger.id
 
+    @app.before_request
+    def _accounting_screen_guard():
+        path = request.path or ''
+        if not path.startswith('/api/accounting/'):
+            return None
+        if request.method == 'OPTIONS':
+            return None
+        exempt = ('/catalog', '/dashboard', '/platform/i18n', '/platform/screen-permissions')
+        if any(x in path for x in exempt):
+            return None
+        try:
+            from accounting_enforcement import screen_access_for_request
+            lid = _ledger_id()
+            ledger = models['AcctLedger'].query.get(lid)
+            screen_access_for_request(ledger, path, request.method)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        except Exception:
+            return None
+        return None
+
     @app.route('/accounting')
     @login_required
     def accounting_page():
@@ -41,7 +62,7 @@ def register_accounting_routes(app, deps):
     @login_required
     def api_accounting_catalog():
         from accounting_module_service import get_catalog
-        return jsonify(get_catalog())
+        return jsonify(get_catalog(db, models))
 
     @app.route('/api/accounting/dashboard', methods=['GET'])
     @login_required
@@ -3451,4 +3472,118 @@ def register_accounting_routes(app, deps):
         try:
             return jsonify(ap_match_line_grid_enriched(db, models, _ledger_id(), invoice_id))
         except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    # --- All priority chunks (core 5 + bank + distribution + payroll + construction) ---
+
+    @app.route('/api/accounting/consolidation/auditor-package/download', methods=['GET'])
+    @login_required
+    def api_acct_auditor_download():
+        from accounting_all_chunks import download_auditor_package_bytes
+        from flask import Response
+        parent = request.args.get('parent_ledger_id', type=int) or _ledger_id()
+        data = download_auditor_package_bytes(db, models, parent, as_of=request.args.get('as_of'))
+        return Response(data, mimetype='application/zip', headers={
+            'Content-Disposition': 'attachment; filename=auditor-package.zip',
+        })
+
+    @app.route('/api/accounting/payments/stripe-config', methods=['GET'])
+    @login_required
+    def api_acct_stripe_config():
+        from accounting_all_chunks import stripe_runtime_config
+        ledger = models['AcctLedger'].query.get(_ledger_id())
+        return jsonify(stripe_runtime_config(ledger))
+
+    @app.route('/api/accounting/bank/auto-match', methods=['GET'])
+    @login_required
+    def api_acct_bank_auto_match():
+        from accounting_all_chunks import bank_auto_match_suggestions
+        bid = request.args.get('bank_account_id', type=int)
+        if not bid:
+            return jsonify({'error': 'bank_account_id required'}), 400
+        return jsonify(bank_auto_match_suggestions(db, models, _ledger_id(), bid))
+
+    @app.route('/api/accounting/payments/batches/<int:batch_id>/positive-pay', methods=['GET'])
+    @login_required
+    def api_acct_positive_pay(batch_id):
+        from accounting_all_chunks import positive_pay_export
+        from flask import Response
+        return Response(positive_pay_export(db, models, _ledger_id(), batch_id), mimetype='text/plain')
+
+    @app.route('/api/accounting/inventory/items/<int:item_id>/costing', methods=['PATCH'])
+    @login_required
+    def api_acct_item_costing(item_id):
+        from accounting_all_chunks import set_item_costing
+        body = request.get_json(silent=True) or {}
+        try:
+            out = set_item_costing(db, models, _ledger_id(), item_id, body.get('costing_method'))
+            db.session.commit()
+            return jsonify(out)
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/po/orders/<int:po_id>/create-ap-invoice', methods=['POST'])
+    @login_required
+    def api_acct_po_ap_invoice(po_id):
+        from accounting_all_chunks import po_receive_create_ap_invoice
+        try:
+            out = po_receive_create_ap_invoice(db, models, _ledger_id(), po_id, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/oe/orders/<int:order_id>/ship-cogs', methods=['POST'])
+    @login_required
+    def api_acct_oe_ship_cogs(order_id):
+        from accounting_all_chunks import oe_ship_post_cogs
+        try:
+            out = oe_ship_post_cogs(db, models, _ledger_id(), order_id, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/payroll/tax-package/<int:tax_year>', methods=['GET'])
+    @login_required
+    def api_acct_payroll_tax_pkg(tax_year):
+        from accounting_all_chunks import payroll_tax_package
+        return jsonify(payroll_tax_package(db, models, _ledger_id(), tax_year))
+
+    @app.route('/api/accounting/payroll/garnishment', methods=['POST'])
+    @login_required
+    def api_acct_payroll_garnishment():
+        from accounting_all_chunks import garnishment_stub_deduction
+        body = request.get_json(silent=True) or {}
+        try:
+            out = garnishment_stub_deduction(db, models, _ledger_id(), body['employee_id'], body['amount'], body.get('case_number', 'CASE'))
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except (ValueError, KeyError) as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/jobcost/<int:project_id>/panel', methods=['GET'])
+    @login_required
+    def api_acct_jobcost_panel(project_id):
+        from accounting_all_chunks import jobcost_accounting_panel
+        return jsonify(jobcost_accounting_panel(db, models, _ledger_id(), project_id))
+
+    @app.route('/api/accounting/ar/progress-billing', methods=['POST'])
+    @login_required
+    def api_acct_ar_progress():
+        from accounting_all_chunks import apply_progress_billing_to_ar
+        body = request.get_json(silent=True) or {}
+        try:
+            out = apply_progress_billing_to_ar(
+                db, models, _ledger_id(), body['customer_id'], body['amount'],
+                body.get('project_id'), body.get('document_number'), user_id=current_user.id,
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except (ValueError, KeyError) as exc:
+            db.session.rollback()
             return jsonify({'error': str(exc)}), 400

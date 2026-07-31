@@ -55,6 +55,7 @@
           <a href="/api/accounting/payroll/form-941?format=csv" class="text-xs px-2 py-1 border border-zinc-600 rounded text-violet-400 inline-block">Form 941 CSV</a>
           <button type="button" id="acctPrW2" class="text-xs px-2 py-1 border border-zinc-600 rounded text-sky-400">W-2 summary</button>
           <button type="button" id="acctPrCert" class="text-xs px-2 py-1 border border-zinc-600 rounded text-amber-400">WH-347 certified</button>
+          <button type="button" id="acctPrTaxPkg" class="text-xs px-2 py-1 border border-zinc-600 rounded text-violet-400">Annual tax package</button>
         </div>
       </div>
       <p class="text-xs text-zinc-500">Employees, withholding, deductions, and pay runs post to G/L with <strong class="text-zinc-400">job cost labor</strong> by project. Map accounts under Program Settings → Accounting.</p>

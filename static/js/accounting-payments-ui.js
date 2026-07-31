@@ -53,6 +53,10 @@
           <div class="text-zinc-500">Open AP for batches</div>
           <div class="text-white font-medium">${openAp.length} invoice(s)</div>
         </div>
+        <div class="p-3 rounded-lg border border-zinc-700 bg-zinc-900/50 md:col-span-1">
+          <div class="text-zinc-500">Card processing</div>
+          <div id="acctPpStripeStatus" class="text-white font-medium text-xs">Loading…</div>
+        </div>
       </div>
 
       <div>

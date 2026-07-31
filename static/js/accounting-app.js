@@ -104,7 +104,13 @@
       else if (route === 'po') root.innerHTML = global.CasePMAcctModulesUI ? await global.CasePMAcctModulesUI.renderPO() : await renderPO();
       else if (route === 'oe') root.innerHTML = global.CasePMAcctModulesUI ? await global.CasePMAcctModulesUI.renderOE() : await renderOE();
       else if (route === 'assets') root.innerHTML = global.CasePMAcctModulesUI ? await global.CasePMAcctModulesUI.renderAssets() : await renderAssets();
-      else if (route === 'jobcost') root.innerHTML = renderJobCost();
+      else if (route === 'jobcost') {
+        if (global.CasePMAcctChunksUI) {
+          root.innerHTML = await global.CasePMAcctChunksUI.renderJobCostPanel();
+        } else {
+          root.innerHTML = renderJobCost();
+        }
+      }
       else if (route === 'reports') {
         if (global.CasePMAccountingReports) {
           root.innerHTML = await global.CasePMAccountingReports.render();
@@ -164,8 +170,14 @@
       if (route === 'payments' && global.CasePMAcctPaymentsUI?.bindHandlers) {
         global.CasePMAcctPaymentsUI.bindHandlers();
       }
-      if (route === 'consolidation' && global.CasePMAcctConsolidationUI?.bindHandlers) {
-        global.CasePMAcctConsolidationUI.bindHandlers();
+      if (route === 'jobcost' && global.CasePMAcctChunksUI?.bindJobCostPanel) {
+        global.CasePMAcctChunksUI.bindJobCostPanel();
+      }
+      if (route === 'payments' && global.CasePMAcctChunksUI?.enhancePaymentsStripe) {
+        global.CasePMAcctChunksUI.enhancePaymentsStripe();
+      }
+      if (global.CasePMAcctChunksUI?.bindDistributionExtras) {
+        global.CasePMAcctChunksUI.bindDistributionExtras(route);
       }
       if (route === 'admin' && global.CasePMAcctPlatformUI?.bindHandlers) {
         global.CasePMAcctPlatformUI.bindHandlers();
@@ -1126,6 +1138,9 @@
       api('/api/accounting/catalog'),
       api(`/api/accounting/dashboard${q}`),
     ]);
+    if (global.CasePMAcctChunksUI?.filterNavByScreens) {
+      catalog = global.CasePMAcctChunksUI.filterNavByScreens(catalog);
+    }
     try {
       const i18n = await api('/api/accounting/platform/i18n');
       i18nStrings = i18n.strings || {};

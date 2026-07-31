@@ -124,6 +124,7 @@
       <div class="flex justify-between items-center">
         <h2 class="text-lg font-semibold text-white">Inventory Control</h2>
         <button type="button" id="acctAddItem" class="text-xs text-emerald-400">+ Item</button>
+        <button type="button" id="acctIcFifo" class="text-xs text-violet-400 ml-2">FIFO issue</button>
       </div>
       <p class="text-xs text-zinc-500">Perpetual inventory · PO receipts and manual adjustments post to quantity on hand.</p>
       <div class="text-sm bg-zinc-800 border border-zinc-700 rounded p-2 inline-block">Extended value: <strong>${money(ext)}</strong></div>
@@ -162,6 +163,7 @@
           <div><span class="font-mono text-emerald-400">${esc(o.po_number)}</span> <span class="text-xs text-zinc-500">${esc(o.status)}</span>
             <div class="text-xs text-zinc-400">${esc(o.vendor_name || 'No vendor')} · ${money(o.total_amount)}</div></div>
           <button type="button" class="text-xs text-sky-400 acct-po-receive" data-id="${o.id}">Receive</button>
+          <button type="button" class="text-xs text-amber-400 acct-po-voucher ml-1" data-id="${o.id}">AP voucher</button>
         </div>
         <ul class="mt-2">${lines || '<li class="text-xs text-zinc-600">No lines — edit PO to add material lines.</li>'}</ul>
       </div>`;
@@ -184,6 +186,7 @@
       const actions = [];
       if (o.status !== 'Invoiced') {
         actions.push(`<button type="button" class="text-xs text-sky-400 acct-oe-ship" data-id="${o.id}">Ship</button>`);
+        actions.push(`<button type="button" class="text-xs text-violet-400 acct-oe-cogs" data-id="${o.id}">Ship + COGS</button>`);
         actions.push(`<button type="button" class="text-xs text-emerald-400 acct-oe-invoice" data-id="${o.id}">Invoice A/R</button>`);
       }
       return `<div class="border border-zinc-700 rounded-lg p-3 mb-2">

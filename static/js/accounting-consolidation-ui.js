@@ -51,6 +51,7 @@
           <button type="button" id="acctConIcRules" class="text-xs px-3 py-2 border border-zinc-700 rounded-md text-zinc-300">IC rules</button>
           <button type="button" id="acctConAutoElim" class="text-xs px-3 py-2 border border-emerald-800 rounded-md text-emerald-400">Auto elim (latest run)</button>
           <button type="button" id="acctConAuditor" class="text-xs px-3 py-2 border border-zinc-700 rounded-md text-zinc-300">Auditor package</button>
+          <a href="/api/accounting/consolidation/auditor-package/download" class="text-xs px-3 py-2 border border-zinc-700 rounded-md text-zinc-300 inline-block">Download ZIP</a>
         </div>
       </div>
 

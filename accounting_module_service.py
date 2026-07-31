@@ -15,8 +15,14 @@ def _models(deps):
     return {k: deps[k] for k in deps if k.startswith('Acct')}
 
 
-def get_catalog():
-    return catalog_for_api()
+def get_catalog(db=None, models=None):
+    data = catalog_for_api()
+    if db and models:
+        from accounting_persistence import get_or_create_default_ledger
+        from accounting_all_chunks import allowed_screens_for_ledger
+        ledger = get_or_create_default_ledger(db, models['AcctLedger'])
+        data['allowed_screens'] = allowed_screens_for_ledger(ledger)
+    return data
 
 
 def build_company_dashboard(db, models, project_id=None, Project=None, SageSyncEvent=None):
