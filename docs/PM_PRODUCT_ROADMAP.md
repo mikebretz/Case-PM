@@ -30,3 +30,6 @@ This document tracks major PM capabilities agreed with stakeholders. Built-in **
 ## API
 
 - `GET /api/pm/roadmap/status` — JSON snapshot of pillar status and integration hooks.
+- `GET /api/accounting/construction/pending-dashboard` — pending G702, sub AP, commitments, COs.
+- `POST /api/accounting/construction/sync-all-pending` — one-click sync for active project.
+- `GET /api/accounting/sage/go-live-alerts` — Sage go-live readiness snapshot.

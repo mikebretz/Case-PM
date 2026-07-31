@@ -220,3 +220,12 @@ PJ reconcile v2, Sage fiscal calendar pull, unified setup health:
 POST /api/accounting/cron/pm-sage-depth
 X-CasePM-Cron-Secret: your-long-random-secret
 ```
+
+## Sage go-live alert snapshot (wave 46, optional)
+
+Refreshes integration health + Sage setup alerts stored on the ledger (`GET /api/accounting/sage/go-live-alerts` for interactive use):
+
+```http
+POST /api/accounting/cron/go-live-alerts
+X-CasePM-Cron-Secret: your-long-random-secret
+```

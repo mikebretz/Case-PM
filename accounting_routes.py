@@ -17,6 +17,7 @@ def register_accounting_routes(app, deps):
     BudgetProjectState = deps.get('BudgetProjectState')
     Company = deps.get('Company')
     COI = deps.get('COI')
+    ChangeOrder = deps.get('ChangeOrder')
 
     models = {k: deps[k] for k in deps if k.startswith('Acct')}
     from datetime import date
@@ -6493,6 +6494,7 @@ def register_accounting_routes(app, deps):
             'direct_cost_post_on_approve': d.get('direct_cost_post_on_approve', '1'),
             'auto_post_equipment_on_daily_log': d.get('auto_post_equipment_on_daily_log', '0'),
             'auto_post_delivery_on_delivered': d.get('auto_post_delivery_on_delivered', '0'),
+            'field_auto_post_silent': d.get('field_auto_post_silent', '0'),
         })
 
     @app.route('/api/accounting/sage/pj/cost-code-reconcile', methods=['GET'])
@@ -6528,3 +6530,66 @@ def register_accounting_routes(app, deps):
         )
         db.session.commit()
         return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/construction/pending-dashboard', methods=['GET'])
+    @login_required
+    def api_acct_construction_pending_dashboard():
+        from accounting_waves_46 import construction_pending_dashboard
+        pid = request.args.get('project_id', type=int) or get_current_project_id()
+        if not pid:
+            return jsonify({'error': 'project_id required'}), 400
+        return jsonify(construction_pending_dashboard(
+            db, models, _ledger_id(), int(pid),
+            PayAppProjectState=PayAppProjectState, Commitment=Commitment, ChangeOrder=ChangeOrder,
+        ))
+
+    @app.route('/api/accounting/construction/sync-all-pending', methods=['POST'])
+    @login_required
+    def api_acct_construction_sync_all_pending():
+        from accounting_waves_46 import sync_all_pending_construction
+        body = request.get_json(silent=True) or {}
+        pid = body.get('project_id') or get_current_project_id()
+        if not pid:
+            return jsonify({'error': 'project_id required'}), 400
+        out = sync_all_pending_construction(
+            db, models, _ledger_id(), int(pid), user_id=current_user.id,
+            PayAppProjectState=PayAppProjectState, Commitment=Commitment,
+            CommitmentAllocation=CommitmentAllocation, Project=Project, Company=Company,
+            ChangeOrder=ChangeOrder,
+        )
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/go-live-alerts', methods=['GET'])
+    @login_required
+    def api_acct_sage_go_live_alerts():
+        from accounting_waves_46 import sage_go_live_alert_bundle
+        return jsonify(sage_go_live_alert_bundle(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/estimating/<int:estimate_id>/auto-pipeline', methods=['POST'])
+    @login_required
+    def api_acct_estimate_auto_pipeline(estimate_id):
+        from accounting_waves_46 import estimate_budget_automation_pipeline
+        import app as app_mod
+        body = request.get_json(silent=True) or {}
+        out = estimate_budget_automation_pipeline(
+            db, models, _ledger_id(), estimate_id, user_id=current_user.id,
+            Estimate=app_mod.Estimate, EstimateLine=app_mod.EstimateLine,
+            BidPackage=app_mod.BidPackage, BidInvitation=app_mod.BidInvitation,
+            BudgetProjectState=BudgetProjectState,
+            EstimateBudgetMapping=getattr(app_mod, 'EstimateBudgetMapping', None),
+            Project=Project, push_accounting=body.get('push_accounting', True),
+        )
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/cron/go-live-alerts', methods=['POST'])
+    def api_acct_cron_go_live_alerts():
+        from accounting_waves_46 import cron_go_live_alerts_maintenance
+        secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
+        try:
+            out = cron_go_live_alerts_maintenance(db, models, secret)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403

@@ -135,6 +135,8 @@
         <button type="button" id="acctSageSetup" class="px-2 py-0.5 border border-indigo-900 rounded text-indigo-200">Sage setup</button>
         <button type="button" id="acctPjReconcile" class="px-2 py-0.5 border border-indigo-800 rounded text-indigo-300">PJ reconcile</button>
         <button type="button" id="acctPjCostCode" class="px-2 py-0.5 border border-indigo-700 rounded text-indigo-200">PJ cost codes</button>
+        <button type="button" id="acctPendingConstruction" class="px-2 py-0.5 border border-amber-900 rounded text-amber-200">Pending posts</button>
+        <button type="button" id="acctSageGoLive" class="px-2 py-0.5 border border-rose-800 rounded text-rose-200">Sage go-live</button>
       </div>
       <ul class="max-h-20 overflow-y-auto">${log}</ul>
     </div>`;
@@ -458,6 +460,29 @@
         `Cost codes (${(r.lines || []).length}) · GL total ${r.gl_job_cost_total}\n${lines || 'No lines'}`,
         'info',
       );
+    });
+    document.getElementById('acctPendingConstruction')?.addEventListener('click', async () => {
+      const pid = ctx.projectId || (typeof getCurrentProjectId === 'function' ? getCurrentProjectId() : null);
+      if (!pid) {
+        await AD().alert('Select an active project first.', 'warning');
+        return;
+      }
+      const r = await api(`/api/accounting/construction/pending-dashboard?project_id=${pid}`);
+      const summary = (r.sections || []).map((s) => `${s.label}: ${s.count}`).join('\n') || 'Nothing pending';
+      const sync = await AD().confirm(`Pending: ${r.total_pending || 0}\n${summary}\n\nSync all now?`, 'Construction');
+      if (sync) {
+        await api('/api/accounting/construction/sync-all-pending', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project_id: pid }),
+        });
+        await AD().alert('Sync requested — refresh pending if needed.', 'success');
+      }
+    });
+    document.getElementById('acctSageGoLive')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/go-live-alerts');
+      const lines = (r.alerts || []).map((a) => `${a.severity}: ${a.code}`).join('\n') || 'No alerts';
+      await AD().alert(`Health ${r.health?.grade || '—'} (${r.health?.score ?? '—'})\n${lines}`, (r.alert_count || 0) ? 'warning' : 'success');
     });
     document.getElementById('acctSageFlushC')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/sage/construction/flush-queue', { method: 'POST', body: '{}' });

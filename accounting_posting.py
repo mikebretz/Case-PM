@@ -213,6 +213,34 @@ def _float_amount(*vals):
     return 0.0
 
 
+def _construction_line_reference(data, project_id=None, event_type=None):
+    """Cost code (or event label) stored on journal line reference for JC reconcile."""
+    cc = (data.get('cost_code') or '').strip()
+    if not cc:
+        for alloc in data.get('allocations') or []:
+            if isinstance(alloc, dict):
+                c = (alloc.get('cost_code') or '').strip()
+                if c:
+                    cc = c
+                    break
+    if cc:
+        return cc[:40]
+    if event_type == 'G702Approved':
+        p = data.get('period_number') or data.get('periodNumber') or ''
+        return f'AR-{p}'[:40] if p else 'CONTRACT-REV'
+    if event_type == 'SubPayAppApproved':
+        return '01-5000'
+    if event_type == 'ChangeOrderApproved':
+        return (data.get('co_number') or data.get('number') or 'CO')[:40]
+    if event_type == 'TimesheetPosted':
+        return (data.get('cost_code') or '01-5000')[:40]
+    if event_type == 'DirectCostPosted':
+        return (data.get('cost_code') or 'DC')[:40]
+    if event_type in ('CommitmentApproved', 'CommitmentChangeOrderApproved'):
+        return '01-5100'
+    return f'P{project_id}'[:40] if project_id else 'JC'
+
+
 def process_construction_event(
     event_type,
     project_id,
@@ -275,6 +303,7 @@ def process_construction_event(
 
     project = Project.query.get(int(project_id)) if Project and project_id else None
     result = {'posted': False, 'source_key': idem, 'event_type': event_type}
+    jc_ref = _construction_line_reference(data, project_id, event_type)
 
     if event_type == 'G702Approved':
         amount = _float_amount(
@@ -307,8 +336,8 @@ def process_construction_event(
             description=f'Owner billing G702 period {period}',
             user_id=user_id,
             lines=[
-                {'account_id': ar_acct.id, 'debit': amount, 'credit': 0, 'project_id': project_id, 'reference': doc_num},
-                {'account_id': rev_acct.id, 'debit': 0, 'credit': amount, 'project_id': project_id, 'reference': doc_num},
+                {'account_id': ar_acct.id, 'debit': amount, 'credit': 0, 'project_id': project_id, 'reference': jc_ref},
+                {'account_id': rev_acct.id, 'debit': 0, 'credit': amount, 'project_id': project_id, 'reference': jc_ref},
             ],
         )
         link = AcctPostLink(
@@ -350,8 +379,8 @@ def process_construction_event(
             description=f'Subcontractor pay app company {company_id} period {period}',
             user_id=user_id,
             lines=[
-                {'account_id': exp_acct.id, 'debit': amount, 'credit': 0, 'project_id': project_id},
-                {'account_id': ap_acct.id, 'debit': 0, 'credit': amount, 'project_id': project_id},
+                {'account_id': exp_acct.id, 'debit': amount, 'credit': 0, 'project_id': project_id, 'reference': jc_ref},
+                {'account_id': ap_acct.id, 'debit': 0, 'credit': amount, 'project_id': project_id, 'reference': jc_ref},
             ],
         )
         link = AcctPostLink(
@@ -391,8 +420,8 @@ def process_construction_event(
                 description=f'Commitment {po_num} approved — encumbrance',
                 user_id=user_id,
                 lines=[
-                    {'account_id': exp_acct.id, 'debit': amount, 'credit': 0, 'project_id': po.project_id},
-                    {'account_id': ap_acct.id, 'debit': 0, 'credit': amount, 'project_id': po.project_id},
+                    {'account_id': exp_acct.id, 'debit': amount, 'credit': 0, 'project_id': po.project_id, 'reference': jc_ref},
+                    {'account_id': ap_acct.id, 'debit': 0, 'credit': amount, 'project_id': po.project_id, 'reference': jc_ref},
                 ],
             )
             ap_doc = AcctAPDocument(
@@ -461,8 +490,8 @@ def process_construction_event(
             description=f'Commitment change order {po_num}',
             user_id=user_id,
             lines=[
-                {'account_id': exp_acct.id, 'debit': amount, 'credit': 0, 'project_id': ap_doc.project_id},
-                {'account_id': ap_acct.id, 'debit': 0, 'credit': amount, 'project_id': ap_doc.project_id},
+                {'account_id': exp_acct.id, 'debit': amount, 'credit': 0, 'project_id': ap_doc.project_id, 'reference': jc_ref},
+                {'account_id': ap_acct.id, 'debit': 0, 'credit': amount, 'project_id': ap_doc.project_id, 'reference': jc_ref},
             ],
         )
         link = AcctPostLink(
@@ -488,8 +517,8 @@ def process_construction_event(
             description=f'Owner change order {co_num} — contract value',
             user_id=user_id,
             lines=[
-                {'account_id': wip_acct.id, 'debit': amount, 'credit': 0, 'project_id': project_id},
-                {'account_id': defer.id, 'debit': 0, 'credit': amount, 'project_id': project_id},
+                {'account_id': wip_acct.id, 'debit': amount, 'credit': 0, 'project_id': project_id, 'reference': jc_ref},
+                {'account_id': defer.id, 'debit': 0, 'credit': amount, 'project_id': project_id, 'reference': jc_ref},
             ],
         )
         link = AcctPostLink(
@@ -511,8 +540,8 @@ def process_construction_event(
             description=f'Timesheet {ref} — project {project_id}',
             user_id=user_id,
             lines=[
-                {'account_id': labor_acct.id, 'debit': amount, 'credit': 0, 'project_id': project_id},
-                {'account_id': clearing.id, 'debit': 0, 'credit': amount, 'project_id': project_id},
+                {'account_id': labor_acct.id, 'debit': amount, 'credit': 0, 'project_id': project_id, 'reference': jc_ref},
+                {'account_id': clearing.id, 'debit': 0, 'credit': amount, 'project_id': project_id, 'reference': jc_ref},
             ],
         )
         link = AcctPostLink(
@@ -541,8 +570,8 @@ def process_construction_event(
             description=f'Direct cost {ref} — project {project_id}',
             user_id=user_id,
             lines=[
-                {'account_id': exp_acct.id, 'debit': amount, 'credit': 0, 'project_id': project_id},
-                {'account_id': ap_acct.id, 'debit': 0, 'credit': amount, 'project_id': project_id},
+                {'account_id': exp_acct.id, 'debit': amount, 'credit': 0, 'project_id': project_id, 'reference': jc_ref},
+                {'account_id': ap_acct.id, 'debit': 0, 'credit': amount, 'project_id': project_id, 'reference': jc_ref},
             ],
         )
         link = AcctPostLink(

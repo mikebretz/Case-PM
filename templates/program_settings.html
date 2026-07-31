@@ -866,8 +866,8 @@
                 </div>
                 <div class="mb-5">
                     <label class="flex items-center gap-2 text-sm text-zinc-300">
-                        <input type="checkbox" id="acct_auto_post_delivery_on_delivered" class="rounded border-zinc-600" {% if accounting_defaults.get('auto_post_delivery_on_delivered', '0') != '0' %}checked{% endif %}>
-                        Prompt to post materials receipt when a delivery is marked Delivered
+                        <input type="checkbox" id="acct_field_auto_post_silent" class="rounded border-zinc-600" {% if accounting_defaults.get('field_auto_post_silent', '0') != '0' %}checked{% endif %}>
+                        Silent server auto-post (no prompt) when equipment/delivery auto-post flags are on
                     </label>
                 </div>
                 <div class="mb-5">
@@ -1199,6 +1199,7 @@
             direct_cost_post_on_approve: document.getElementById('acct_direct_cost_post_on_approve')?.checked ? '1' : '0',
             auto_post_equipment_on_daily_log: document.getElementById('acct_auto_post_equipment_on_daily_log')?.checked ? '1' : '0',
             auto_post_delivery_on_delivered: document.getElementById('acct_auto_post_delivery_on_delivered')?.checked ? '1' : '0',
+            field_auto_post_silent: document.getElementById('acct_field_auto_post_silent')?.checked ? '1' : '0',
             commitment_po_one_step_on_approve: document.getElementById('acct_commitment_po_one_step')?.checked ? '1' : '0',
             commitment_po_queue_sage_distribution: document.getElementById('acct_commitment_po_queue_sage')?.checked ? '1' : '0',
             ap_require_valid_coi: document.getElementById('acct_ap_require_valid_coi')?.checked ? '1' : '0',
@@ -1212,6 +1213,7 @@
                 'acct_retainage_accounting_enabled', 'acct_timesheet_post_on_approve', 'acct_direct_cost_post_on_approve',
                 'acct_auto_post_equipment_on_daily_log', 'acct_auto_post_delivery_on_delivered',
                 'acct_commitment_po_one_step', 'acct_commitment_po_queue_sage', 'acct_ap_require_valid_coi',
+                'acct_field_auto_post_silent',
             ].includes(el.id)) return;
             accounting[el.name] = el.value.trim();
         });
