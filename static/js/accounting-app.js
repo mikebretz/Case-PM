@@ -304,10 +304,9 @@
           ).join('') || '<div class="p-3 text-zinc-500 text-xs">No payments yet.</div>'}
         </div>
       </div>
+      <div id="acctApExtRoot"></div>
     </div>`;
   }
-
-  async function renderAR() {
     const [customers, invoices, receipts, aging] = await Promise.all([
       api('/api/accounting/ar/customers'),
       api('/api/accounting/ar/invoices'),
@@ -362,6 +361,7 @@
           ${(receipts.receipts || []).map((r) => `<div class="px-3 py-2 border-t border-zinc-800 text-xs">${esc(r.receipt_number)} ${money(r.amount)}</div>`).join('') || '<div class="p-3 text-zinc-500 text-xs">No receipts.</div>'}
         </div>
       </div>
+      <div id="acctArExtRoot"></div>
     </div>`;
   }
 
@@ -505,6 +505,26 @@
   }
 
   function bindPanelHandlers(route) {
+    if (route === 'ap' && global.CasePMAcctGlApArExt) {
+      global.CasePMAcctGlApArExt.init({ api, esc, money, switchModule, AD: () => global.CasePMAccountingDialog || {}, projectId });
+      const root = document.getElementById('acctApExtRoot');
+      if (root) {
+        global.CasePMAcctGlApArExt.apExtrasHtml().then((html) => {
+          root.innerHTML = html;
+          global.CasePMAcctGlApArExt.bindApExtras();
+        });
+      }
+    }
+    if (route === 'ar' && global.CasePMAcctGlApArExt) {
+      global.CasePMAcctGlApArExt.init({ api, esc, money, switchModule, AD: () => global.CasePMAccountingDialog || {}, projectId });
+      const root = document.getElementById('acctArExtRoot');
+      if (root) {
+        global.CasePMAcctGlApArExt.arExtrasHtml().then((html) => {
+          root.innerHTML = html;
+          global.CasePMAcctGlApArExt.bindArExtras();
+        });
+      }
+    }
     document.querySelectorAll('[data-acct-dash]').forEach((btn) => {
       btn.addEventListener('click', () => switchModule(btn.getAttribute('data-acct-dash')));
     });

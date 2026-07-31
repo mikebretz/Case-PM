@@ -86,6 +86,46 @@ def ensure_accounting_schema(db, models):
         if 'acct_ap_payment' in table_names:
             add_column('acct_ap_payment', 'payment_batch_id', 'INTEGER')
             add_column('acct_ap_payment', 'check_number', 'VARCHAR(20)')
+            add_column('acct_ap_payment', 'void_reason', 'VARCHAR(200)')
+            add_column('acct_ap_payment', 'voided_at', 'DATETIME')
+
+        vendor_cols = (
+            ('vendor_group_id', 'INTEGER'),
+            ('tax_id', 'VARCHAR(30)'),
+            ('is_1099', 'INTEGER DEFAULT 0'),
+            ('form_1099_type', "VARCHAR(10) DEFAULT 'NEC'"),
+            ('default_withhold_percent', 'FLOAT DEFAULT 0'),
+        )
+        if 'acct_vendor' in table_names:
+            for col, ddl in vendor_cols:
+                add_column('acct_vendor', col, ddl)
+
+        if 'acct_customer' in table_names:
+            for col, ddl in (
+                ('customer_group_id', 'INTEGER'),
+                ('credit_hold', 'INTEGER DEFAULT 0'),
+                ('national_account_code', 'VARCHAR(40)'),
+            ):
+                add_column('acct_customer', col, ddl)
+
+        if 'acct_ap_document' in table_names:
+            for col, ddl in (
+                ('purchase_order_id', 'INTEGER'),
+                ('retainage_amount', 'FLOAT DEFAULT 0'),
+                ('withhold_amount', 'FLOAT DEFAULT 0'),
+                ('gross_amount', 'FLOAT DEFAULT 0'),
+            ):
+                add_column('acct_ap_document', col, ddl)
+
+        if 'acct_ar_document' in table_names:
+            for col, ddl in (
+                ('ship_to_id', 'INTEGER'),
+                ('parent_document_id', 'INTEGER'),
+            ):
+                add_column('acct_ar_document', col, ddl)
+
+        if 'acct_journal_line' in table_names:
+            add_column('acct_journal_line', 'segments_json', 'TEXT')
 
         try:
             db.create_all()
@@ -204,6 +244,10 @@ def serialize_ap_doc(d):
         'amount_paid': d.amount_paid,
         'status': d.status,
         'project_id': d.project_id,
+        'purchase_order_id': getattr(d, 'purchase_order_id', None),
+        'retainage_amount': float(getattr(d, 'retainage_amount', 0) or 0),
+        'withhold_amount': float(getattr(d, 'withhold_amount', 0) or 0),
+        'gross_amount': float(getattr(d, 'gross_amount', 0) or d.amount or 0),
         'gl_posted': bool(meta.get('journal_batch_id')),
         'journal_batch_id': meta.get('journal_batch_id'),
     }
@@ -221,6 +265,9 @@ def serialize_ar_doc(d):
         'amount_paid': d.amount_paid,
         'status': d.status,
         'project_id': d.project_id,
+        'document_type': d.document_type,
+        'ship_to_id': getattr(d, 'ship_to_id', None),
+        'parent_document_id': getattr(d, 'parent_document_id', None),
         'gl_posted': bool(meta.get('journal_batch_id')),
         'journal_batch_id': meta.get('journal_batch_id'),
     }
