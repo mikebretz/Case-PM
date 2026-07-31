@@ -6582,3 +6582,14 @@ def register_accounting_routes(app, deps):
         )
         db.session.commit()
         return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/cron/go-live-alerts', methods=['POST'])
+    def api_acct_cron_go_live_alerts():
+        from accounting_waves_46 import cron_go_live_alerts_maintenance
+        secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
+        try:
+            out = cron_go_live_alerts_maintenance(db, models, secret)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
