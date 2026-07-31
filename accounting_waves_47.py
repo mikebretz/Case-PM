@@ -80,20 +80,9 @@ def sage_parity_matrix(db, models, ledger_id: int) -> dict:
 
 
 def scheduling_resource_leveling_v1(db, ScheduleData, project_id: int, *, overload_threshold: int = 5) -> dict:
-    from accounting_waves_46 import scheduling_resource_summary
+    from accounting_waves_49 import scheduling_resource_leveling_v2
 
-    base = scheduling_resource_summary(db, ScheduleData, int(project_id))
-    suggestions = []
-    for bucket in base.get('resource_buckets') or []:
-        n = int(bucket.get('task_count') or 0)
-        if n >= overload_threshold:
-            suggestions.append({
-                'resource': bucket.get('name'),
-                'task_count': n,
-                'action': 'level_split',
-                'detail': f'Split or stagger {n} tasks assigned to "{bucket.get("name")}"',
-            })
-    return {**base, 'leveling_status': 'v1_heuristic', 'overload_threshold': overload_threshold, 'leveling_suggestions': suggestions}
+    return scheduling_resource_leveling_v2(db, ScheduleData, int(project_id), overload_threshold=overload_threshold)
 
 
 def cron_operations_bundle(db, models, secret: str) -> dict:

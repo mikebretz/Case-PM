@@ -221,12 +221,18 @@ def scheduling_resource_summary(db, ScheduleData, project_id: int) -> dict:
         'task_count': len(tasks),
         'resource_buckets': [{'name': k, 'task_count': v} for k, v in sorted(crews.items(), key=lambda x: -x[1])[:20]],
         'equipment_task_hours_hint': round(equipment_hours, 2),
-        'leveling_status': 'foundation',
-        'note': 'Resource pools and cross-project leveling are roadmap — this is a read-only snapshot.',
+        'leveling_status': 'v2_calendar',
+        'note': 'Use GET /api/pm/scheduling/leveling and /api/pm/scheduling/cross-project-leveling for portfolio view.',
     }
 
 
-def portal_compliance_library(db, Company, COI, *, limit: int = 100) -> dict:
+def portal_compliance_library(db, Company, COI, *, PayAppProjectState=None, Project=None) -> dict:
+    from accounting_waves_49 import portal_compliance_library_enhanced
+
+    return portal_compliance_library_enhanced(db, Company, COI, PayAppProjectState=PayAppProjectState, Project=Project)
+
+
+def _portal_compliance_library_legacy(db, Company, COI, *, limit: int = 100) -> dict:
     from datetime import date
 
     today = date.today()
@@ -276,27 +282,23 @@ def mobile_offline_enqueue(db, models, ledger_id: int, items: list, *, user_id=N
 
 
 def mobile_offline_process_queue(db, models, ledger_id: int, *, user_id=None, DailyLog=None, EquipmentEntry=None, Project=None) -> dict:
-    ledger = models['AcctLedger'].query.get(ledger_id)
-    settings = _ledger_settings(ledger)
-    q = list(settings.get('mobile_offline_queue') or [])
-    processed = []
-    remaining = []
-    for item in q:
-        kind = item.get('kind')
-        if kind == 'daily_log' and item.get('daily_log_id'):
-            out = field_silent_auto_post_daily_log(
-                db, models, ledger_id, int(item['daily_log_id']), user_id=user_id,
-                EquipmentEntry=EquipmentEntry, DailyLog=DailyLog, Project=Project,
-            )
-            processed.append({'item': item, 'result': out})
-        else:
-            remaining.append(item)
-    settings['mobile_offline_queue'] = remaining
-    _save_ledger_settings(ledger, settings)
-    return {'processed': len(processed), 'remaining': len(remaining), 'details': processed[:20]}
+    from accounting_waves_49 import mobile_offline_process_queue_v2
+
+    return mobile_offline_process_queue_v2(
+        db, models, ledger_id, user_id=user_id,
+        DailyLog=DailyLog, EquipmentEntry=EquipmentEntry, Project=Project,
+    )
 
 
-def bim_coordination_status(db, models, ledger_id: int) -> dict:
+def bim_coordination_status(db, models, ledger_id: int, *, OperationsBimAsset=None, project_id: int | None = None) -> dict:
+    from accounting_waves_49 import bim_coordination_status_live
+
+    return bim_coordination_status_live(
+        db, models, ledger_id, OperationsBimAsset=OperationsBimAsset, project_id=project_id,
+    )
+
+
+def _bim_coordination_status_legacy(db, models, ledger_id: int) -> dict:
     ledger = models['AcctLedger'].query.get(ledger_id)
     settings = _ledger_settings(ledger)
     reg = settings.get('bim_viewpoints') or []

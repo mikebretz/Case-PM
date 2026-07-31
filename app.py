@@ -18607,7 +18607,7 @@ def api_pm_scheduling_resource_summary():
 @login_required
 def api_portal_compliance_library():
     from accounting_waves_46 import portal_compliance_library
-    return jsonify(portal_compliance_library(db, Company, COI))
+    return jsonify(portal_compliance_library(db, Company, COI, PayAppProjectState=PayAppProjectState, Project=Project))
 
 
 @app.route('/api/mobile/offline/schema', methods=['GET'])
@@ -18648,8 +18648,13 @@ def api_mobile_offline_process():
 def api_pm_bim_status():
     from accounting_persistence import get_or_create_default_ledger
     from accounting_waves_46 import bim_coordination_status
+    import app as app_mod
     ledger = get_or_create_default_ledger(db, _acct_models['AcctLedger'])
-    return jsonify(bim_coordination_status(db, _acct_models, ledger.id))
+    pid = request.args.get('project_id', type=int)
+    return jsonify(bim_coordination_status(
+        db, _acct_models, ledger.id,
+        OperationsBimAsset=app_mod.OperationsBimAsset, project_id=pid,
+    ))
 
 
 @app.route('/api/pm/bim/viewpoints', methods=['POST'])

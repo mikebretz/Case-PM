@@ -328,6 +328,10 @@ def sage_mirror_deploy_check_v17() -> dict:
 
         tiers = accounting_tiers_abcd_status()
         checks['accounting_tiers_abcd'] = bool(tiers.get('ok'))
+        from accounting_waves_49 import pm_accounting_gap_closure_deploy_check
+
+        gap = pm_accounting_gap_closure_deploy_check()
+        checks['pm_gap_closure_wave_49'] = bool(gap.get('ok'))
         import os as _os
         pack = _os.path.join(_os.path.dirname(__file__), 'scripts', 'test_accounting_construction_integration_pack.py')
         checks['construction_integration_pack'] = _os.path.isfile(pack)

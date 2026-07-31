@@ -55,6 +55,15 @@ def main() -> int:
     except Exception as exc:
         errors.append(f'accounting_waves_19: {exc}')
 
+    print('6i2. Wave 49 PM + accounting gap closure…')
+    try:
+        import accounting_waves_49 as w49  # noqa: F401
+        chk = w49.pm_accounting_gap_closure_deploy_check()
+        if not chk.get('ok'):
+            errors.append(f'pm_gap_closure: {chk.get("checks")}')
+    except Exception as exc:
+        errors.append(f'accounting_waves_49: {exc}')
+
     print('6b. Wave 20 module import…')
     try:
         import accounting_waves_20 as w20  # noqa: F401
