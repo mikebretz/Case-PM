@@ -220,6 +220,25 @@ def main() -> int:
     except Exception as exc:
         errors.append(f'accounting_waves_38: {exc}')
 
+    print('6t. Waves 39–42 (62 complete, 70–96)…')
+    try:
+        import accounting_waves_39 as w39  # noqa: F401
+        import accounting_waves_40 as w40  # noqa: F401
+        import accounting_waves_41 as w41  # noqa: F401
+        import accounting_waves_42 as w42  # noqa: F401
+        from accounting_wave_registry import roadmap_waves_through_96_status
+
+        assert callable(w39.intercompany_settlement_round_trip)
+        assert callable(w42.go_live_checklist_signoff)
+        road = roadmap_waves_through_96_status()
+        if not road.get('complete_through_96'):
+            errors.append(f'roadmap_through_96: {road}')
+        v12 = w42.sage_mirror_deploy_check_v12()
+        if not v12.get('ok'):
+            errors.append(f'sage_mirror_deploy_check_v12: {v12}')
+    except Exception as exc:
+        errors.append(f'accounting_waves_39_42: {exc}')
+
     print('6c. instance DB must not be tracked…')
     try:
         from accounting_waves_20 import git_tracked_paths_must_not_include_db

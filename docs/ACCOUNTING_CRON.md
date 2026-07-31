@@ -202,3 +202,12 @@ JC/CIP→FA maintenance, POC retainage scan, WIP GL push to Sage, advanced batch
 POST /api/accounting/cron/sage-jc-financial
 X-CasePM-Cron-Secret: your-long-random-secret
 ```
+
+## Sage roadmap final cron (waves 62 complete, 70–96, optional)
+
+Runs JC financial batch, waves 70–96 maintenance (KPI, optional fields, error retry, go-live checks), deploy v12:
+
+```http
+POST /api/accounting/cron/sage-roadmap-final
+X-CasePM-Cron-Secret: your-long-random-secret
+```
