@@ -57,6 +57,7 @@ def define_accounting_models(db):
         project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
         reference = db.Column(db.String(80))
         segments_json = db.Column(db.Text)
+        location_id = db.Column(db.Integer, db.ForeignKey('acct_location.id'), nullable=True, index=True)
 
     class AcctVendor(db.Model):
         __tablename__ = 'acct_vendor'
@@ -679,6 +680,16 @@ def define_accounting_models(db):
         amount_tolerance = db.Column(db.Float, default=1.0)
         percent_tolerance = db.Column(db.Float, default=5.0)
 
+    class AcctWithholdingRule(db.Model):
+        __tablename__ = 'acct_withholding_rule'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        name = db.Column(db.String(80), nullable=False)
+        vendor_group_id = db.Column(db.Integer, db.ForeignKey('acct_vendor_group.id'), nullable=True)
+        withhold_percent = db.Column(db.Float, default=0)
+        threshold_amount = db.Column(db.Float, default=0)
+        is_active = db.Column(db.Boolean, default=True)
+
     class AcctCurrencyRate(db.Model):
         __tablename__ = 'acct_currency_rate'
         id = db.Column(db.Integer, primary_key=True)
@@ -755,6 +766,7 @@ def define_accounting_models(db):
         'AcctIntercompanyRule': AcctIntercompanyRule,
         'AcctDunningRule': AcctDunningRule,
         'AcctAPMatchTolerance': AcctAPMatchTolerance,
+        'AcctWithholdingRule': AcctWithholdingRule,
         'AcctCurrencyRate': AcctCurrencyRate,
         'AcctRevaluationRun': AcctRevaluationRun,
     }

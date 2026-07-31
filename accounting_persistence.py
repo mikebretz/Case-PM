@@ -135,6 +135,9 @@ def ensure_accounting_schema(db, models):
             add_column('acct_gl_budget', 'version_name', "VARCHAR(40) DEFAULT 'Original'")
             add_column('acct_gl_budget', 'scenario', "VARCHAR(40) DEFAULT 'Budget'")
 
+        if 'acct_journal_line' in table_names:
+            add_column('acct_journal_line', 'location_id', 'INTEGER')
+
         try:
             db.create_all()
             db.session.commit()
@@ -364,7 +367,7 @@ def next_batch_number(AcctJournalBatch, ledger_id):
     return f'JB-{datetime.utcnow().strftime("%Y%m")}-{count + 1:04d}'
 
 
-def post_journal_batch(db, batch, AcctJournalLine, *, ledger=None):
+def post_journal_batch(db, batch, AcctJournalLine, *, ledger=None, models=None, user_id=None, role_key=None):
     lines = AcctJournalLine.query.filter_by(batch_id=batch.id).all()
     if not lines:
         raise ValueError('Batch has no lines')
@@ -375,6 +378,9 @@ def post_journal_batch(db, batch, AcctJournalLine, *, ledger=None):
     if ledger is not None and batch.batch_date:
         from accounting_gl_service import assert_period_open
         assert_period_open(ledger, batch.batch_date)
+    if models is not None:
+        from accounting_enforcement import enforce_gl_security_on_batch
+        enforce_gl_security_on_batch(models, batch.ledger_id, batch, user_id=user_id, role_key=role_key)
     batch.status = 'Posted'
     batch.posted_at = datetime.utcnow()
     db.session.flush()

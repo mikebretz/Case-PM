@@ -478,3 +478,25 @@ def apply_cash_workbench(db, models, ledger_id, body, user_id=None):
         raise ValueError('Apply total exceeds unapplied receipt balance')
     db.session.flush()
     return {'receipt_id': r.id, 'applied': applied_rows, 'unapplied_remaining': round(unapplied - new_apply, 2)}
+
+
+def send_dunning_smtp(db, models, ledger_id, customer_id, level, message=''):
+    pkg = dunning_email_package(db, models, ledger_id, customer_id, level, message)
+    from email_notifications import send_workflow_email
+    to = pkg.get('to')
+    sent = False
+    if to:
+        html = f'<p>{pkg.get("body", "").replace(chr(10), "<br>")}</p>'
+        sent = send_workflow_email(to, pkg.get('subject', 'Payment reminder'), html, pkg.get('body'))
+    return {**pkg, 'smtp_sent': sent}
+
+
+def run_automated_dunning(db, models, ledger_id, user_id=None):
+    from accounting_platform import write_audit
+    cand = dunning_candidates(db, models, ledger_id)
+    results = []
+    for c in cand.get('candidates') or []:
+        out = send_dunning_smtp(db, models, ledger_id, c['customer_id'], int(str(c.get('suggested_letter', '1')).replace('L', '') or 1))
+        results.append({'customer_id': c['customer_id'], 'smtp_sent': out.get('smtp_sent'), 'dunning_id': out.get('dunning_id')})
+    write_audit(db, models, ledger_id, user_id=user_id, action='dunning_auto_run', details={'count': len(results)})
+    return {'processed': len(results), 'results': results}

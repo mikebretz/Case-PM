@@ -9,7 +9,7 @@ from __future__ import annotations
 PLATFORM_CAPABILITIES = [
     {'id': 'multi_company', 'name': 'Multi-company / multi-entity', 'status': 'live'},
     {'id': 'multi_currency', 'name': 'Multi-currency & revaluation', 'status': 'live'},
-    {'id': 'multi_language', 'name': 'Multi-language UI', 'status': 'beta'},
+    {'id': 'multi_language', 'name': 'Multi-language UI', 'status': 'live'},
     {'id': 'multi_location', 'name': 'Multi-location', 'status': 'live'},
     {'id': 'security', 'name': 'Role-based security & G/L account security', 'status': 'live'},
     {'id': 'fiscal_calendar', 'name': 'Fiscal periods & year-end close', 'status': 'live'},

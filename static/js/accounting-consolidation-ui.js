@@ -45,6 +45,8 @@
           <button type="button" id="acctConNewRun" class="text-xs px-3 py-2 bg-violet-600 hover:bg-violet-500 rounded-md text-white">+ Consolidation run</button>
           <button type="button" id="acctConRefreshTb" class="text-xs px-3 py-2 border border-zinc-700 rounded-md text-zinc-300">Refresh roll-up</button>
           <button type="button" id="acctConLockPeriod" class="text-xs px-3 py-2 border border-zinc-700 rounded-md text-amber-400">Lock period</button>
+          <button type="button" id="acctConNci" class="text-xs px-3 py-2 border border-zinc-700 rounded-md text-sky-400">NCI</button>
+          <button type="button" id="acctConFxPost" class="text-xs px-3 py-2 border border-zinc-700 rounded-md text-cyan-400">Post FX CTA</button>
         </div>
       </div>
 
@@ -168,6 +170,20 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ period_key: data.period_key, lock_children: true }),
+      });
+      switchModule('consolidation');
+    });
+
+    document.getElementById('acctConNci')?.addEventListener('click', async () => {
+      const nci = await api('/api/accounting/consolidation/nci');
+      await AD().alert(`Total NCI: ${(nci.total_nci ?? 0).toLocaleString()}`, 'info');
+    });
+
+    document.getElementById('acctConFxPost')?.addEventListener('click', async () => {
+      await api('/api/accounting/consolidation/fx-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rate_date: new Date().toISOString().slice(0, 10) }),
       });
       switchModule('consolidation');
     });
