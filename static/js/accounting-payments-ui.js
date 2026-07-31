@@ -36,6 +36,7 @@
           <button type="button" id="acctPpSettings" class="text-xs px-3 py-2 border border-zinc-700 rounded-md text-zinc-300">Processor settings</button>
           <button type="button" id="acctPpNewBatch" class="text-xs px-3 py-2 bg-violet-600 hover:bg-violet-500 rounded-md text-white">+ Payment batch</button>
           <button type="button" id="acctPpPayNow" class="text-xs px-3 py-2 border border-emerald-700 rounded-md text-emerald-400">+ Pay Now link</button>
+          <button type="button" id="acctPpStripeTest" class="text-xs px-3 py-2 border border-violet-700 rounded-md text-violet-400">Stripe test intent</button>
         </div>
       </div>
 
@@ -252,6 +253,15 @@
         });
         switchModule('payments');
       });
+    });
+
+    document.getElementById('acctPpStripeTest')?.addEventListener('click', async () => {
+      const out = await api('/api/accounting/payments/stripe-intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: 100, currency: 'usd', metadata: { test: true } }),
+      });
+      await AD().alert(`Test intent: ${out.client_secret}`, 'info');
     });
   }
 

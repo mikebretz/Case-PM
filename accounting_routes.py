@@ -13,6 +13,7 @@ def register_accounting_routes(app, deps):
     SageSyncEvent = deps.get('SageSyncEvent')
 
     models = {k: deps[k] for k in deps if k.startswith('Acct')}
+    from datetime import date
 
     def _ensure_schema():
         from accounting_persistence import ensure_accounting_schema
@@ -3323,4 +3324,131 @@ def register_accounting_routes(app, deps):
             return jsonify({'ok': True, **out})
         except ValueError as exc:
             db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    # --- Parity wave 3 ---
+
+    @app.route('/api/accounting/payroll/form-941', methods=['GET'])
+    @login_required
+    def api_acct_payroll_941():
+        from accounting_parity_wave3 import export_form_941_summary, export_form_941_csv
+        from flask import Response
+        lid = _ledger_id()
+        q = request.args.get('quarter', type=int) or 1
+        y = request.args.get('year', type=int) or date.today().year
+        if request.args.get('format') == 'csv':
+            return Response(export_form_941_csv(db, models, lid, q, y), mimetype='text/csv')
+        return jsonify(export_form_941_summary(db, models, lid, q, y))
+
+    @app.route('/api/accounting/payroll/w2-summary', methods=['GET'])
+    @login_required
+    def api_acct_payroll_w2():
+        from accounting_parity_wave3 import export_w2_summary
+        y = request.args.get('tax_year', type=int) or date.today().year
+        return jsonify(export_w2_summary(db, models, _ledger_id(), y))
+
+    @app.route('/api/accounting/payroll/certified/<int:project_id>', methods=['GET'])
+    @login_required
+    def api_acct_payroll_certified(project_id):
+        from accounting_parity_wave3 import certified_payroll_wh347
+        from flask import Response
+        we = request.args.get('week_ending') or date.today().isoformat()
+        return Response(
+            certified_payroll_wh347(db, models, _ledger_id(), project_id, we),
+            mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment; filename=wh347-p{project_id}.csv'},
+        )
+
+    @app.route('/api/accounting/ap/1099/print/<int:vendor_id>', methods=['GET'])
+    @login_required
+    def api_acct_1099_official(vendor_id):
+        from accounting_parity_wave3 import form_1099_official_html
+        from flask import Response
+        yr = request.args.get('tax_year', type=int) or date.today().year
+        html = form_1099_official_html(db, models, _ledger_id(), yr, vendor_id)
+        return Response(html, mimetype='text/html')
+
+    @app.route('/api/accounting/payments/stripe-webhook', methods=['POST'])
+    @login_required
+    def api_acct_stripe_webhook():
+        from accounting_parity_wave3 import stripe_webhook_stub
+        return jsonify(stripe_webhook_stub(request.get_json(silent=True) or {}))
+
+    @app.route('/api/accounting/payments/stripe-capture', methods=['POST'])
+    @login_required
+    def api_acct_stripe_capture():
+        from accounting_parity_wave3 import capture_pay_now_stripe
+        body = request.get_json(silent=True) or {}
+        try:
+            out = capture_pay_now_stripe(db, models, body['token'], body.get('payment_intent_id', ''), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, 'receipt_id': out.get('receipt_id'), 'journal_batch_id': out.get('journal_batch_id')})
+        except (ValueError, KeyError) as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/reports/comparative', methods=['GET'])
+    @login_required
+    def api_acct_report_comparative():
+        from accounting_parity_wave3 import comparative_income_statement
+        pa = request.args.get('period_a') or date.today().strftime('%Y-%m')
+        pb = request.args.get('period_b') or date.today().strftime('%Y-%m')
+        return jsonify(comparative_income_statement(db, models, _ledger_id(), pa, pb))
+
+    @app.route('/api/accounting/inventory/fifo-issue', methods=['POST'])
+    @login_required
+    def api_acct_inventory_fifo():
+        from accounting_parity_wave3 import inventory_fifo_issue
+        body = request.get_json(silent=True) or {}
+        try:
+            out = inventory_fifo_issue(db, models, _ledger_id(), body['item_id'], body['qty'], body.get('reference'))
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except (ValueError, KeyError) as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/bank/plaid-import', methods=['POST'])
+    @login_required
+    def api_acct_bank_plaid():
+        from accounting_parity_wave3 import import_plaid_transactions
+        body = request.get_json(silent=True) or {}
+        try:
+            out = import_plaid_transactions(
+                db, models, _ledger_id(), body['bank_account_id'], body.get('transactions') or [], user_id=current_user.id,
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except (ValueError, KeyError) as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/gl/batches/<int:batch_id>/validate-segments', methods=['GET'])
+    @login_required
+    def api_acct_gl_validate_segments(batch_id):
+        from accounting_parity_wave3 import validate_journal_batch_segments
+        return jsonify(validate_journal_batch_segments(db, models, _ledger_id(), batch_id))
+
+    @app.route('/api/accounting/consolidation/auditor-package', methods=['GET'])
+    @login_required
+    def api_acct_con_auditor():
+        from accounting_parity_wave3 import auditor_package
+        parent = request.args.get('parent_ledger_id', type=int) or _ledger_id()
+        return jsonify(auditor_package(db, models, parent, as_of=request.args.get('as_of')))
+
+    @app.route('/api/accounting/reports/run-scheduled', methods=['POST'])
+    @login_required
+    def api_acct_reports_run_scheduled():
+        from accounting_parity_wave3 import run_due_scheduled_reports
+        out = run_due_scheduled_reports(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/ap/match-grid/<int:invoice_id>/lines', methods=['GET'])
+    @login_required
+    def api_acct_ap_match_lines(invoice_id):
+        from accounting_parity_wave3 import ap_match_line_grid_enriched
+        try:
+            return jsonify(ap_match_line_grid_enriched(db, models, _ledger_id(), invoice_id))
+        except ValueError as exc:
             return jsonify({'error': str(exc)}), 400

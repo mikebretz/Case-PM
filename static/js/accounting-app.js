@@ -594,20 +594,24 @@
         title: 'Payment amount',
         fields: [
           { key: 'amt', label: 'Payment amount', type: 'number', step: '0.01', defaultValue: String(openAmt), required: true },
+          { key: 'discount', label: 'Early payment discount (optional)', type: 'number', step: '0.01', defaultValue: '0' },
         ],
         submitLabel: 'Post payment',
       });
       if (!data) return;
       const banks = await api('/api/accounting/bank/accounts');
       const bankId = (banks.accounts || [])[0]?.id;
+      const payAmt = parseFloat(data.amt);
+      const disc = parseFloat(data.discount || 0) || 0;
       await api('/api/accounting/ap/payments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           vendor_id: inv.vendor_id,
-          amount: parseFloat(data.amt),
+          amount: payAmt,
+          discount_amount: disc,
           bank_account_id: bankId,
-          applications: [{ ap_document_id: inv.id, amount: parseFloat(data.amt) }],
+          applications: [{ ap_document_id: inv.id, amount: payAmt + disc }],
         }),
       });
       switchModule('ap');
@@ -1090,8 +1094,14 @@
     });
     document.querySelectorAll('[data-post-batch]').forEach((btn) => {
       btn.addEventListener('click', async () => {
+        const bid = btn.getAttribute('data-post-batch');
         try {
-          await api(`/api/accounting/gl/batches/${btn.getAttribute('data-post-batch')}/post`, { method: 'POST', body: '{}' });
+          const v = await api(`/api/accounting/gl/batches/${bid}/validate-segments`);
+          if (!v.valid) {
+            const msg = (v.errors || []).map((e) => `Line ${e.line}: ${e.error || e.account}`).join('\n');
+            if (!await AD().confirm({ title: 'Segment validation failed', message: `${msg}\n\nPost anyway?` })) return;
+          }
+          await api(`/api/accounting/gl/batches/${bid}/post`, { method: 'POST', body: '{}' });
           switchModule('gl');
         } catch (e) {
           await AD().alert(e.message, 'error');

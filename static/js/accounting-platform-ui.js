@@ -12,14 +12,21 @@
 
   async function render() {
     const { api, esc } = ctx;
-    const [periods, locations, audit, integrity, locale] = await Promise.all([
+    const [periods, locations, audit, integrity, locale, perms] = await Promise.all([
       api('/api/accounting/platform/fiscal-periods'),
       api('/api/accounting/platform/locations'),
       api('/api/accounting/platform/audit-log'),
       api('/api/accounting/platform/integrity'),
       api('/api/accounting/platform/locale'),
+      api('/api/accounting/platform/screen-permissions').catch(() => ({ permissions: {} })),
     ]);
     const openPeriods = (periods.periods || []).filter((p) => p.status === 'Open').length;
+    const routes = ['gl', 'ap', 'ar', 'bank', 'payroll', 'reports', 'admin', 'consolidation'];
+    const permMap = perms.permissions || {};
+    global._acctScreenPermDraft = { ...permMap };
+    const permHtml = routes.map((r) =>
+      `<label class="flex items-center gap-2"><input type="checkbox" class="acct-plat-perm" data-route="${r}" ${permMap[r] !== false ? 'checked' : ''} /> ${esc(r)}</label>`
+    ).join('');
     return `<div class="space-y-6">
       <div class="flex flex-wrap justify-between gap-2">
         <div>
@@ -57,6 +64,13 @@
           <div class="${integrity.ok ? 'text-emerald-400' : 'text-amber-400'}">${integrity.ok ? 'OK' : `${integrity.issue_count || 0} issue(s)`}</div>
         </div>
       </div>
+
+      <section class="border border-zinc-700 rounded-lg p-3">
+        <h3 class="text-sm text-zinc-400 mb-2">Screen permissions (module access)</h3>
+        <p class="text-xs text-zinc-600 mb-2">Restrict accounting routes per role label stored on ledger settings.</p>
+        <div id="acctPlatScreenPerms" class="grid sm:grid-cols-2 gap-2 text-xs">${permHtml}</div>
+        <button type="button" id="acctPlatSavePerms" class="mt-2 text-xs text-emerald-400">Save permissions</button>
+      </section>
 
       <div class="grid lg:grid-cols-2 gap-4">
         <section class="border border-zinc-700 rounded-lg p-3">
@@ -187,6 +201,19 @@
     document.getElementById('acctPlatSchedule')?.addEventListener('click', async () => {
       const s = await api('/api/accounting/platform/posting-schedule');
       await AD().alert(`Due: GL ${s.gl_recurring_due}, AP ${s.ap_recurring_due}, AR ${s.ar_recurring_due}`, 'info');
+    });
+
+    document.getElementById('acctPlatSavePerms')?.addEventListener('click', async () => {
+      const permissions = {};
+      document.querySelectorAll('.acct-plat-perm').forEach((el) => {
+        permissions[el.getAttribute('data-route')] = el.checked;
+      });
+      await api('/api/accounting/platform/screen-permissions', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ permissions }),
+      });
+      await AD().alert('Screen permissions saved.', 'success');
     });
 
     document.getElementById('acctPlatLocale')?.addEventListener('click', async () => {

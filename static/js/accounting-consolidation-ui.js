@@ -49,6 +49,8 @@
           <button type="button" id="acctConNci" class="text-xs px-3 py-2 border border-zinc-700 rounded-md text-sky-400">NCI</button>
           <button type="button" id="acctConFxPost" class="text-xs px-3 py-2 border border-zinc-700 rounded-md text-cyan-400">Post FX CTA</button>
           <button type="button" id="acctConIcRules" class="text-xs px-3 py-2 border border-zinc-700 rounded-md text-zinc-300">IC rules</button>
+          <button type="button" id="acctConAutoElim" class="text-xs px-3 py-2 border border-emerald-800 rounded-md text-emerald-400">Auto elim (latest run)</button>
+          <button type="button" id="acctConAuditor" class="text-xs px-3 py-2 border border-zinc-700 rounded-md text-zinc-300">Auditor package</button>
         </div>
       </div>
 
@@ -298,6 +300,19 @@
         });
         switchModule('consolidation');
       });
+    });
+
+    document.getElementById('acctConAutoElim')?.addEventListener('click', async () => {
+      const runs = await api('/api/accounting/consolidation/runs');
+      const open = (runs.runs || []).find((r) => r.status === 'Open');
+      if (!open) return AD().alert('No open consolidation run.', 'warning');
+      await api(`/api/accounting/consolidation/runs/${open.id}/auto-eliminations`, { method: 'POST', body: '{}' });
+      switchModule('consolidation');
+    });
+
+    document.getElementById('acctConAuditor')?.addEventListener('click', async () => {
+      const pack = await api('/api/accounting/consolidation/auditor-package');
+      await AD().alert(`Auditor package generated at ${pack.generated_at} (TB rows: ${(pack.consolidated_trial_balance?.rows || []).length}). Download JSON from network tab or API.`, 'info');
     });
   }
 
