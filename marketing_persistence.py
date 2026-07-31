@@ -47,4 +47,12 @@ def ensure_marketing_schema(db):
         'template_key': 'VARCHAR(40)',
         'campaign_type': 'VARCHAR(40)',
     })
+    _add_columns('marketing_referral', {
+        'incentive_code': 'VARCHAR(40)',
+        'issued_at': 'DATETIME',
+        'redeemed_at': 'DATETIME',
+    })
+    _add_columns('marketing_proposal', {
+        'pdf_path': 'VARCHAR(400)',
+    })
     db.session.commit()

@@ -229,3 +229,23 @@ def verify_webhook_signature(body_bytes: bytes, headers) -> bool:
         ).decode('ascii')
         return hmac.compare_digest(expected, legacy)
     return False
+
+
+def send_generic_envelope(
+    *,
+    signer_email: str,
+    signer_name: str,
+    email_subject: str,
+    pdf_bytes: bytes,
+    pdf_filename: str = 'document.pdf',
+) -> dict:
+    """Send a one-document envelope (proposals, marketing collateral)."""
+    fake_commitment = {
+        'id': 'proposal',
+        'number': email_subject[:40],
+        'title': email_subject,
+        'contact_email': signer_email,
+        'contact_name': signer_name,
+        'company_name': signer_name,
+    }
+    return send_commitment_envelope(fake_commitment, pdf_bytes, pdf_filename)

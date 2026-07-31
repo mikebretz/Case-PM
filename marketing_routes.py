@@ -25,8 +25,12 @@ def register_marketing_routes(app, deps):
     MarketingLandingPage = deps['MarketingLandingPage']
     MarketingSpend = deps['MarketingSpend']
     MarketingCampaignTemplate = deps['MarketingCampaignTemplate']
+    MarketingBrandKit = deps['MarketingBrandKit']
+    MarketingPortalPack = deps['MarketingPortalPack']
     Project = deps['Project']
     Photo = deps['Photo']
+    Document = deps.get('Document')
+    OperationsBimAsset = deps.get('OperationsBimAsset')
     Estimate = deps['Estimate']
     EstimateLine = deps.get('EstimateLine')
     BidPackage = deps.get('BidPackage')
@@ -49,9 +53,15 @@ def register_marketing_routes(app, deps):
             'MarketingLandingPage': MarketingLandingPage,
             'MarketingSpend': MarketingSpend,
             'MarketingCampaignTemplate': MarketingCampaignTemplate,
+            'MarketingBrandKit': MarketingBrandKit,
+            'MarketingPortalPack': MarketingPortalPack,
             'Estimate': Estimate,
             'EstimateLine': EstimateLine,
             'Project': Project,
+            'Photo': Photo,
+            'Document': Document,
+            'OperationsBimAsset': OperationsBimAsset,
+            'BudgetProjectState': BudgetProjectState,
         }
 
     def uid():
@@ -516,6 +526,136 @@ def register_marketing_routes(app, deps):
     def api_marketing_campaign_templates():
         rows = MarketingCampaignTemplate.query.order_by(MarketingCampaignTemplate.key).all()
         return jsonify({'templates': [{'key': r.key, 'name': r.name, 'subject': r.subject, 'channel': r.channel} for r in rows]})
+
+    @app.route('/api/marketing/brand-kit', methods=['GET', 'POST', 'PUT'])
+    @login_required
+    def api_marketing_brand_kit():
+        from marketing_gaps import default_brand_kit, upsert_brand_kit
+        if request.method == 'GET':
+            default_brand_kit(db, MarketingBrandKit)
+            db.session.commit()
+            rows = MarketingBrandKit.query.all()
+            from marketing_gaps import brand_kit_to_dict
+            return jsonify({'kits': [brand_kit_to_dict(r) for r in rows]})
+        body = request.get_json(silent=True) or {}
+        out = upsert_brand_kit(db, MarketingBrandKit, body, kit_id=body.get('id'))
+        db.session.commit()
+        return jsonify(out)
+
+    @app.route('/api/marketing/portal-pack/<int:project_id>', methods=['GET', 'PUT'])
+    @login_required
+    def api_marketing_portal_pack(project_id):
+        from marketing_gaps import build_portal_marketing_pack, upsert_portal_pack
+        if request.method == 'GET':
+            return jsonify(build_portal_marketing_pack(db, models(), project_id))
+        upsert_portal_pack(db, MarketingPortalPack, project_id, request.get_json(silent=True) or {})
+        db.session.commit()
+        return jsonify(build_portal_marketing_pack(db, models(), project_id))
+
+    @app.route('/api/marketing/case-studies/<int:case_study_id>/award-package')
+    @login_required
+    def api_marketing_award_package(case_study_id):
+        from marketing_gaps import case_study_award_package
+        return jsonify(case_study_award_package(db, MarketingCaseStudy, MarketingBrandKit, case_study_id, Photo))
+
+    @app.route('/api/marketing/proposals/<int:proposal_id>/pdf', methods=['POST'])
+    @login_required
+    def api_marketing_proposal_pdf(proposal_id):
+        from marketing_gaps import build_proposal_pdf, save_proposal_pdf
+        row = MarketingProposal.query.get_or_404(proposal_id)
+        path = save_proposal_pdf(row, build_proposal_pdf(row))
+        db.session.commit()
+        return jsonify({'pdf_path': path})
+
+    @app.route('/api/marketing/proposals/<int:proposal_id>/docusign', methods=['POST'])
+    @login_required
+    def api_marketing_proposal_docusign(proposal_id):
+        from marketing_gaps import send_proposal_docusign
+        body = request.get_json(silent=True) or {}
+        if not body.get('email'):
+            return jsonify({'error': 'email required'}), 400
+        out = send_proposal_docusign(db, MarketingProposal, proposal_id, body['email'], body.get('name') or '')
+        db.session.commit()
+        return jsonify(out)
+
+    @app.route('/api/marketing/referrals/<int:referral_id>/issue', methods=['POST'])
+    @login_required
+    def api_marketing_referral_issue(referral_id):
+        from marketing_gaps import issue_referral_incentive
+        out = issue_referral_incentive(db, MarketingReferral, request.get_json(silent=True) or {}, referral_id=referral_id)
+        db.session.commit()
+        return jsonify(out)
+
+    @app.route('/api/marketing/referrals/<int:referral_id>/redeem', methods=['POST'])
+    @login_required
+    def api_marketing_referral_redeem(referral_id):
+        from marketing_gaps import redeem_referral_incentive
+        body = request.get_json(silent=True) or {}
+        try:
+            out = redeem_referral_incentive(db, MarketingReferral, referral_id, body.get('code') or '')
+            db.session.commit()
+            return jsonify(out)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/marketing/seo/audit')
+    @login_required
+    def api_marketing_seo_audit():
+        from marketing_gaps import local_seo_audit
+        return jsonify(local_seo_audit(db, MarketingLandingPage, MarketingCaseStudy))
+
+    @app.route('/api/marketing/integrations/catalog')
+    @login_required
+    def api_marketing_integrations_catalog():
+        from marketing_integrations import integration_catalog
+        return jsonify(integration_catalog())
+
+    @app.route('/api/marketing/integrations/bim-sync', methods=['POST'])
+    @login_required
+    def api_marketing_bim_sync():
+        from marketing_integrations import sync_bim_assets_to_dam
+        body = request.get_json(silent=True) or {}
+        pid = body.get('project_id') or (get_current_project_id() if get_current_project_id else None)
+        if not pid:
+            return jsonify({'error': 'project_id required'}), 400
+        out = sync_bim_assets_to_dam(db, models(), int(pid), user_id=uid())
+        db.session.commit()
+        return jsonify(out)
+
+    @app.route('/api/marketing/integrations/accounting-sync', methods=['POST'])
+    @login_required
+    def api_marketing_accounting_sync():
+        from marketing_integrations import sync_accounting_won_signal
+        out = sync_accounting_won_signal(db, MarketingLead, Project)
+        db.session.commit()
+        return jsonify(out)
+
+    @app.route('/api/marketing/leads/itb', methods=['POST'])
+    @login_required
+    def api_marketing_itb_lead():
+        from marketing_gaps import create_itb_lead
+        out = create_itb_lead(db, MarketingLead, request.get_json(silent=True) or {}, user_id=uid())
+        db.session.commit()
+        return jsonify(out)
+
+    @app.route('/api/marketing/jobs/run', methods=['POST'])
+    @login_required
+    def api_marketing_jobs_run():
+        from marketing_gaps import run_scheduled_marketing_jobs
+        out = run_scheduled_marketing_jobs(db, models(), Project)
+        db.session.commit()
+        return jsonify(out)
+
+    @app.route('/api/public/marketing/integrations/<source>', methods=['POST'])
+    def api_public_marketing_integration(source):
+        from marketing_integrations import ingest_integration_lead, _verify_webhook_secret
+        if source not in ('houzz', 'dodge', 'constructconnect'):
+            return jsonify({'error': 'Unknown integration'}), 404
+        if not _verify_webhook_secret(request.headers):
+            return jsonify({'error': 'Unauthorized'}), 401
+        out = ingest_integration_lead(db, MarketingLead, request.get_json(silent=True) or {}, source)
+        db.session.commit()
+        return jsonify({'ok': True, 'lead': out})
 
     @app.route('/api/marketing/track/open/<token>.gif')
     def api_marketing_track_open(token):

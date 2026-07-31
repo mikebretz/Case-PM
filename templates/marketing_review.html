@@ -15,6 +15,13 @@
 {% if review %}
   <h1>How did we do?</h1>
   <p>Platform: {{ review.platform }}</p>
+  {% if review.platform_links %}
+  <p>Also leave a review on:
+    {% for k, url in review.platform_links.items() %}
+      {% if url %}<a href="{{ url }}" target="_blank" rel="noopener">{{ k }}</a>{% endif %}
+    {% endfor %}
+  </p>
+  {% endif %}
   <form id="reviewForm">
     <label>Rating (1-5)<input name="rating" type="number" min="1" max="5" required></label>
     <label>Testimonial<textarea name="testimonial_text" required></textarea></label>
