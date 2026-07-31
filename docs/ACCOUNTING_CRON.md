@@ -237,4 +237,15 @@ POST /api/accounting/cron/operations-bundle
 X-CasePM-Cron-Secret: your-long-random-secret
 ```
 
+Includes go-live alert refresh, cutover checklist snapshots, and (wave 48) **go-live email digest** per ledger when alerts or incomplete cutover steps exist.
+
+## Go-live email digest only (wave 48, optional)
+
+```http
+POST /api/accounting/cron/go-live-email-digest
+X-CasePM-Cron-Secret: your-long-random-secret
+```
+
+Sends SMTP digest to Program Settings → **admin notification email** when integration/cutover issues are present. Interactive: Accounting → Construction sync → **Email go-live digest**.
+
 See `docs/DEPLOY_OPERATIONS.md` and `docs/SAGE_CUTOVER_CHECKLIST.md`.

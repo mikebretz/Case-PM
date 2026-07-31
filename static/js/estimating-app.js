@@ -512,6 +512,26 @@
     const b = json.budget || {};
     await estAlert(`Budget: ${b.lines_pushed || 0} line(s). Accounting wizard ${json.accounting ? 'ran' : 'skipped'}.`, 'success');
     await loadCurrent();
+    if (state.current?.project_id) {
+      await sovAlignmentReport(state.current.project_id).catch(() => {});
+    }
+  }
+
+  async function sovAlignmentReport(projectId) {
+    const out = await api(`/api/accounting/estimating/sov-alignment?project_id=${projectId}`);
+    const el = document.getElementById('estSovAlignmentOut');
+    if (!el) return;
+    const lines = [
+      `Aligned codes: ${out.aligned_codes ?? 0} · mismatches: ${out.mismatch_count ?? 0}`,
+      ...(out.mismatches || []).slice(0, 12).map((m) => `  ${m.cost_code}: budget ${m.budget_total} vs SOV ${m.sov_total} (Δ ${m.variance})`),
+    ];
+    if ((out.only_in_budget || []).length) lines.push(`Only in budget: ${out.only_in_budget.join(', ')}`);
+    if ((out.only_in_sov || []).length) lines.push(`Only in SOV: ${out.only_in_sov.join(', ')}`);
+    el.textContent = lines.join('\n') || 'No budget or SOV lines to compare.';
+    el.classList.remove('hidden');
+    if (!out.ok && out.mismatch_count) {
+      await estAlert(`${out.mismatch_count} cost code mismatch(es) between budget and contractor SOV.`, 'warning');
+    }
   }
 
   async function initPackageModalCsi() {
@@ -620,6 +640,11 @@
     document.getElementById('estRefreshLeveling')?.addEventListener('click', () => renderLeveling().catch(e => estAlert(e.message, 'error')));
     document.getElementById('estAwardBudget')?.addEventListener('click', () => awardToBudget().catch(e => estAlert(e.message, 'error')));
     document.getElementById('estAccountingPipeline')?.addEventListener('click', () => accountingPipeline().catch(e => estAlert(e.message, 'error')));
+    document.getElementById('estSovAlignment')?.addEventListener('click', () => {
+      const pid = state.current?.project_id;
+      if (!pid) return estAlert('Select an estimate with a project first.', 'error');
+      return sovAlignmentReport(pid).catch(e => estAlert(e.message, 'error'));
+    });
 
     const tab = new URLSearchParams(location.search).get('tab');
     if (tab) setTab(tab);
