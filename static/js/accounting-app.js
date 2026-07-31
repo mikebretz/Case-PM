@@ -307,6 +307,8 @@
       <div id="acctApExtRoot"></div>
     </div>`;
   }
+
+  async function renderAR() {
     const [customers, invoices, receipts, aging] = await Promise.all([
       api('/api/accounting/ar/customers'),
       api('/api/accounting/ar/invoices'),
