@@ -1379,6 +1379,18 @@ def run_change_order_accounting_sync(
                         ),
                         user_id=user_id,
                     )
+            if new_status == 'Approved' and old_status != 'Approved':
+                try:
+                    from accounting_waves_22 import process_co_approval_accounting
+
+                    result['accounting'] = process_co_approval_accounting(
+                        co, db, user_id=user_id,
+                        ChangeOrderAllocation=ChangeOrderAllocation,
+                        Commitment=Commitment,
+                        Project=Project,
+                    )
+                except Exception as acc_exc:
+                    result['accounting'] = {'error': str(acc_exc)}
     except Exception as exc:
         co.sage_sync_status = f'sync_error:{str(exc)[:120]}'
         result['sync_result'] = {'error': str(exc)}

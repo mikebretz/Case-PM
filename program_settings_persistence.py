@@ -197,6 +197,8 @@ ACCOUNTING_DEFAULT_KEYS = [
     'g702_post_on_approve',
     'sub_pay_app_post_on_approve',
     'commitment_post_on_approve',
+    'co_post_on_approve',
+    'auto_wip_on_billing_sync',
     'cash_account',
     'ar_account',
     'ap_account',
@@ -215,7 +217,10 @@ def load_accounting_defaults():
     out = {
         k: (acct.get(k) or '').strip()
         if k
-        not in ('auto_post_enabled', 'g702_post_on_approve', 'sub_pay_app_post_on_approve', 'commitment_post_on_approve')
+        not in (
+            'auto_post_enabled', 'g702_post_on_approve', 'sub_pay_app_post_on_approve',
+            'commitment_post_on_approve', 'co_post_on_approve', 'auto_wip_on_billing_sync',
+        )
         else acct.get(k, '1')
         for k in ACCOUNTING_DEFAULT_KEYS
     }
@@ -227,6 +232,10 @@ def load_accounting_defaults():
         out['sub_pay_app_post_on_approve'] = '1'
     if not str(out.get('commitment_post_on_approve', '1')).strip():
         out['commitment_post_on_approve'] = '1'
+    if not str(out.get('co_post_on_approve', '1')).strip():
+        out['co_post_on_approve'] = '1'
+    if not str(out.get('auto_wip_on_billing_sync', '0')).strip():
+        out['auto_wip_on_billing_sync'] = '0'
     for k, default in (
         ('cash_account', '1000'), ('ar_account', '1100'), ('ap_account', '2000'),
         ('revenue_account', '4000'), ('subcontract_expense', '5100'), ('materials_expense', '5200'),
@@ -246,6 +255,8 @@ def save_accounting_defaults(form_data):
             'g702_post_on_approve',
             'sub_pay_app_post_on_approve',
             'commitment_post_on_approve',
+            'co_post_on_approve',
+            'auto_wip_on_billing_sync',
         ):
             payload[k] = '1' if form_data.get(k) in (True, '1', 'on', 'true') else '0'
         else:

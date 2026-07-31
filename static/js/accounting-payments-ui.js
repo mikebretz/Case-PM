@@ -42,6 +42,7 @@
           <button type="button" id="acctPpStripeTest" class="text-xs px-3 py-2 border border-violet-700 rounded-md text-violet-400">Stripe test intent</button>
           <button type="button" id="acctPpPlaidImport" class="text-xs px-3 py-2 border border-cyan-700 rounded-md text-cyan-400">Plaid import (7d)</button>
           <button type="button" id="acctPpExceptions" class="text-xs px-3 py-2 border border-red-800 rounded-md text-red-300">Payment exceptions</button>
+          <button type="button" id="acctPpYearEnd" class="text-xs px-3 py-2 border border-violet-800 rounded-md text-violet-300">Year-end tax pkg</button>
         </div>
       </div>
 
@@ -291,6 +292,15 @@
       } else {
         await AD().alert(n ? `${n} payment exception(s) on file.` : 'No payment exceptions.', 'info');
       }
+    });
+    document.getElementById('acctPpYearEnd')?.addEventListener('click', async () => {
+      const yr = new Date().getFullYear();
+      const pkg = await api(`/api/accounting/compliance/year-end-package?tax_year=${yr}`);
+      const issues = (pkg.form_941?.issues || []).length;
+      await AD().alert(
+        `Year-end ${yr}: W-2 rows ${(pkg.w2?.employees || []).length}. 941 validation issues: ${issues}`,
+        issues ? 'warning' : 'success',
+      );
     });
   }
 

@@ -68,3 +68,18 @@ Runs wave 10 maintenance, Sage queue flush, Plaid auto-import (7 days), and sche
 POST /api/accounting/cron/wave11
 X-CasePM-Cron-Secret: your-long-random-secret
 ```
+
+## Wave 12 maintenance (optional)
+
+Wave 11 plus Sage ops admin email when conflicts/errors exist:
+
+```http
+POST /api/accounting/cron/wave12
+X-CasePM-Cron-Secret: your-long-random-secret
+```
+
+Post-deploy check (authenticated API or script):
+
+```bash
+PYTHONPATH=. python3 scripts/deploy_accounting_check.py
+```
