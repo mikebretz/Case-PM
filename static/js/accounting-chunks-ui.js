@@ -73,6 +73,7 @@
           <button type="button" id="acctJcCloseout" class="px-2 py-1 bg-amber-900 rounded border border-amber-700">Accounting closeout checklist</button>
           <button type="button" id="acctJcReversePost" class="px-2 py-1 bg-red-950 rounded border border-red-800 text-red-300">Reverse construction post</button>
           <button type="button" id="acctJcSageReconcile" class="px-2 py-1 bg-indigo-950 rounded border border-indigo-700">Sage job reconcile</button>
+          <button type="button" id="acctJcIntegrationHealth" class="px-2 py-1 bg-teal-950 rounded border border-teal-700 text-teal-200">Integration health</button>
         </div>
         ${(closeout.items || []).length ? `<ul class="text-xs list-disc pl-4 text-amber-300">${(closeout.items || []).map((i) => `<li>${esc(i.label)}</li>`).join('')}</ul>` : ''}
         ${closeout.ready_to_close ? '<p class="text-xs text-emerald-400">No blocking closeout warnings.</p>' : ''}
@@ -199,6 +200,15 @@
       const r = await api(`/api/accounting/jobcost/${pid}/sage-reconcile`);
       const lines = (r.items || []).map((i) => `• ${i.label}`).join('\n') || 'No variances reported.';
       await AD().alert(`${r.aligned ? 'Aligned with Sage.\n' : 'Review variances.\n'}${lines}`, r.aligned ? 'success' : 'warning');
+    });
+    document.getElementById('acctJcIntegrationHealth')?.addEventListener('click', async () => {
+      const pid = projectId();
+      const r = await api(`/api/accounting/integration/health?project_id=${encodeURIComponent(pid)}`);
+      const issues = (r.issues || []).map((i) => i.code).join(', ') || 'none';
+      await AD().alert(
+        `Health ${r.grade || '—'} (${r.score ?? '—'})\nG702 pending: ${JSON.stringify(r.g702_pending || []).slice(0, 120)}\nIssues: ${issues}`,
+        (r.score || 0) >= 75 ? 'success' : 'warning',
+      );
     });
   }
 

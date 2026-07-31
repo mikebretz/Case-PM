@@ -41,6 +41,10 @@ def construction_force_post_for_event(event_type: str, payload: dict | None) -> 
         return True
     if event_type == 'ChangeOrderApproved' and _accounting_flag('co_post_on_approve'):
         return True
+    if event_type == 'TimesheetPosted' and _accounting_flag('timesheet_post_on_approve'):
+        return True
+    if event_type == 'DirectCostPosted' and _accounting_flag('direct_cost_post_on_approve'):
+        return True
     return False
 
 # --- 1: Sub pay apps → A/P ---

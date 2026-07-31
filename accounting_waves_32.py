@@ -155,7 +155,13 @@ def portfolio_job_variance_v2(db, models, ledger_id: int, Project=None, limit: i
     settings = _ledger_settings(ledger)
     settings['sage_portfolio_variance_v2'] = {'at': datetime.utcnow().isoformat() + 'Z', 'count': len(rows)}
     _save_ledger_settings(ledger, settings)
-    return {'projects': rows, 'warning_count': sum(1 for r in rows if (r.get('wip') or {}).get('variance_warning'))}
+    return {
+        'projects': rows,
+        'warning_count': sum(
+            1 for r in rows
+            if (r.get('wip') or {}).get('status') in ('overbilled', 'underbilled')
+        ),
+    }
 
 
 def validate_g702_lifecycle_fixture() -> dict:
