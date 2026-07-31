@@ -29,6 +29,10 @@ if not exist ".git" (
 
 echo STEP 1: Pull latest code from GitHub main...
 echo.
+if exist "instance\case_pm.db" (
+  echo Preserving local database ^(instance\case_pm.db^)...
+  git rm --cached -f instance/case_pm.db >nul 2>&1
+)
 git pull origin main
 if errorlevel 1 (
     echo Pull failed.

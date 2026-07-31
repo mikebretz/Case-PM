@@ -33,6 +33,11 @@ if not exist ".git" (
 
 echo Pulling latest code from GitHub main branch...
 echo.
+REM Local SQLite lives here — never let Git overwrite your database during pull.
+if exist "instance\case_pm.db" (
+  echo Preserving your local database ^(instance\case_pm.db^)...
+  git rm --cached -f instance/case_pm.db >nul 2>&1
+)
 git pull origin main
 if errorlevel 1 (
     echo.
