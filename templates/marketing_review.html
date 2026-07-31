@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Project feedback</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 560px; margin: 2rem auto; padding: 1rem; }
+    label { display: block; margin-top: 1rem; }
+    textarea { width: 100%; min-height: 120px; }
+    button { margin-top: 1rem; padding: 0.6rem 1.2rem; background: #059669; color: #fff; border: 0; border-radius: 6px; }
+  </style>
+</head>
+<body>
+{% if review %}
+  <h1>How did we do?</h1>
+  <p>Platform: {{ review.platform }}</p>
+  <form id="reviewForm">
+    <label>Rating (1-5)<input name="rating" type="number" min="1" max="5" required></label>
+    <label>Testimonial<textarea name="testimonial_text" required></textarea></label>
+    <label><input name="public_share_ok" type="checkbox" value="1"> Allow us to share this publicly</label>
+    <button type="submit">Submit</button>
+  </form>
+  <p id="msg"></p>
+  <script>
+    document.getElementById('reviewForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const body = {
+        rating: parseInt(fd.get('rating'), 10),
+        testimonial_text: fd.get('testimonial_text'),
+        public_share_ok: !!fd.get('public_share_ok'),
+      };
+      const res = await fetch('/api/public/marketing/review/{{ token }}', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      document.getElementById('msg').textContent = res.ok ? 'Thank you for your feedback!' : 'Submission failed.';
+    });
+  </script>
+{% else %}
+  <p>Review link not found.</p>
+{% endif %}
+</body>
+</html>

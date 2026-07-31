@@ -35,6 +35,9 @@
       reviews: 'mkPanelReviews',
       assets: 'mkPanelAssets',
       capture: 'mkPanelCapture',
+      proposals: 'mkPanelProposals',
+      web: 'mkPanelWeb',
+      analytics: 'mkPanelAnalytics',
     }[name];
     document.getElementById(id)?.classList.remove('hidden');
   }
@@ -43,10 +46,10 @@
     const host = document.getElementById('mkDashboard');
     if (!host) return;
     const cards = [
-      ['Open pipeline', `$${Number(d.pipeline_weighted_value || 0).toLocaleString()}`],
-      ['Leads', d.lead_count || 0],
-      ['Win rate', d.win_rate != null ? `${Math.round(d.win_rate * 100)}%` : '—'],
-      ['Won revenue (est.)', `$${Number(d.won_revenue_attributed || 0).toLocaleString()}`],
+      ['Forecast (history)', `$${Number(d.forecast_with_history || d.pipeline_weighted_value || 0).toLocaleString()}`],
+      ['Marketing spend', `$${Number(d.marketing_spend_total || 0).toLocaleString()}`],
+      ['Campaign opens/clicks', `${d.campaign_opens || 0} / ${d.campaign_clicks || 0}`],
+      ['Portfolio views', d.portfolio_page_views || 0],
     ];
     host.innerHTML = cards.map(([label, val]) => `
       <div class="mk-card"><div class="mk-stat">${esc(val)}</div><div class="mk-stat-label">${esc(label)}</div></div>`).join('');
@@ -93,6 +96,8 @@
   async function loadDashboard() {
     const d = await api('/api/marketing/dashboard');
     renderDashboard(d);
+    const detail = document.getElementById('mkAnalyticsDetail');
+    if (detail) detail.textContent = JSON.stringify(d, null, 2);
   }
 
   async function loadCaseStudies() {
@@ -224,5 +229,40 @@
     loadCampaigns();
   });
 
+  async function loadLanding() {
+    const data = await api('/api/marketing/landing-pages');
+    const host = document.getElementById('mkLandingPages');
+    if (host) {
+      host.innerHTML = (data.pages || []).map(p =>
+        `<div class="mb-2"><a class="text-sky-400" href="${esc(p.public_url)}" target="_blank">${esc(p.title)}</a> · ${esc(p.status)}</div>`,
+      ).join('') || '<p class="text-zinc-500">No landing pages.</p>';
+    }
+    const settings = await api('/api/marketing/settings');
+    const sh = document.getElementById('mkMarketingSettings');
+    if (sh) sh.innerHTML = `<pre class="text-xs">${esc(JSON.stringify(settings, null, 2))}</pre>`;
+  }
+
+  document.getElementById('mkBuildProposal')?.addEventListener('click', async () => {
+    const estId = prompt('Estimate ID to build proposal from:');
+    if (!estId) return;
+    const out = await api('/api/marketing/proposals', { method: 'POST', body: JSON.stringify({ estimate_id: parseInt(estId, 10) }) });
+    const host = document.getElementById('mkProposals');
+    if (host) host.innerHTML = `<p>Proposal <a class="text-sky-400" href="${esc(out.public_url)}" target="_blank">#${out.id}</a></p>`;
+  });
+  document.getElementById('mkSeedLanding')?.addEventListener('click', () => loadLanding());
+  document.getElementById('mkAddSpend')?.addEventListener('click', async () => {
+    const amount = prompt('Spend amount USD:');
+    if (!amount) return;
+    const channel = prompt('Channel (paid_ads, houzz, other):') || 'paid_ads';
+    await api('/api/marketing/spend', { method: 'POST', body: JSON.stringify({ amount: parseFloat(amount), channel, label: 'Manual entry' }) });
+    loadDashboard();
+  });
+  document.getElementById('mkRunAutomation')?.addEventListener('click', async () => {
+    if (!ctx.projectId) { alert('Select active project'); return; }
+    const out = await api('/api/marketing/automation/run', { method: 'POST', body: JSON.stringify({ project_id: ctx.projectId }) });
+    alert(`Automation fired: ${(out.fired || []).length} action(s)`);
+  });
+
   loadAll();
+  loadLanding().catch(() => {});
 })();

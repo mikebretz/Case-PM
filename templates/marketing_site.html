@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% if page %}{{ page.title }}{% else %}Site{% endif %}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 960px; margin: 0 auto; padding: 1.5rem; }
+    section { margin: 2rem 0; }
+    .hero h1 { font-size: 2rem; }
+    form input, form textarea { display: block; width: 100%; margin: 0.5rem 0; padding: 0.5rem; }
+    button { padding: 0.6rem 1.2rem; background: #059669; color: #fff; border: 0; border-radius: 6px; }
+  </style>
+</head>
+<body>
+{% if page %}
+  {% for sec in page.sections %}
+    <section>
+      {% if sec.type == 'hero' %}
+        <div class="hero"><h1>{{ sec.headline }}</h1><p>{{ sec.sub }}</p></div>
+      {% elif sec.type == 'cta' %}
+        <p><strong>{{ sec.text }}</strong></p>
+      {% elif sec.type == 'portfolio' %}
+        <h2>Our work</h2>
+        <p>See published case studies on our portfolio.</p>
+      {% else %}
+        <pre>{{ sec }}</pre>
+      {% endif %}
+    </section>
+  {% endfor %}
+  <section>
+    <h2>Contact us</h2>
+    <form id="leadForm">
+      <input name="contact_name" placeholder="Name" required>
+      <input name="email" type="email" placeholder="Email" required>
+      <input name="phone" placeholder="Phone">
+      <textarea name="notes" placeholder="Tell us about your project"></textarea>
+      <button type="submit">Submit</button>
+    </form>
+    <p id="leadMsg"></p>
+  </section>
+  <script>
+    document.getElementById('leadForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const body = Object.fromEntries(fd.entries());
+      body.source = 'website';
+      body.landing_page_id = {{ page.id }};
+      const res = await fetch('/api/public/marketing/leads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      document.getElementById('leadMsg').textContent = res.ok ? 'Thank you — we will be in touch.' : 'Could not submit. Please call us.';
+    });
+  </script>
+{% else %}
+  <p>Page not found.</p>
+{% endif %}
+</body>
+</html>

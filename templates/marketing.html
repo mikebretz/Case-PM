@@ -41,6 +41,9 @@ window.CASEPM_MARKETING_CTX = {
     <button type="button" class="mk-tab" data-tab="reviews">Reviews</button>
     <button type="button" class="mk-tab" data-tab="assets">Assets</button>
     <button type="button" class="mk-tab" data-tab="capture">Lead capture</button>
+    <button type="button" class="mk-tab" data-tab="proposals">Proposals</button>
+    <button type="button" class="mk-tab" data-tab="web">Web & SEO</button>
+    <button type="button" class="mk-tab" data-tab="analytics">ROI & spend</button>
   </div>
 
   <div id="mkPanelPipeline" class="mk-panel mk-card flex-1 min-h-0 overflow-auto">
@@ -72,6 +75,20 @@ window.CASEPM_MARKETING_CTX = {
     <p>Embed this public lead endpoint on your website (POST JSON):</p>
     <code class="block bg-zinc-900 p-3 rounded-md text-xs break-all" id="mkLeadEndpoint"></code>
     <p class="text-zinc-500">Published case studies: <span id="mkEmbedHint"></span></p>
+  </div>
+  <div id="mkPanelProposals" class="mk-panel mk-card hidden flex-1 overflow-auto text-sm">
+    <button type="button" id="mkBuildProposal" class="text-sm px-3 py-1.5 bg-zinc-800 rounded-md mb-3">Build proposal from active project estimate</button>
+    <div id="mkProposals"></div>
+  </div>
+  <div id="mkPanelWeb" class="mk-panel mk-card hidden flex-1 overflow-auto text-sm space-y-3">
+    <button type="button" id="mkSeedLanding" class="px-3 py-1.5 bg-zinc-800 rounded-md">Ensure default landing page</button>
+    <div id="mkLandingPages"></div>
+    <div id="mkMarketingSettings"></div>
+  </div>
+  <div id="mkPanelAnalytics" class="mk-panel mk-card hidden flex-1 overflow-auto text-sm space-y-3">
+    <button type="button" id="mkAddSpend" class="px-3 py-1.5 bg-zinc-800 rounded-md">Record marketing spend</button>
+    <button type="button" id="mkRunAutomation" class="px-3 py-1.5 bg-zinc-800 rounded-md">Run closeout automation (active project)</button>
+    <pre id="mkAnalyticsDetail" class="text-xs bg-zinc-900 p-3 rounded-md overflow-auto"></pre>
   </div>
 </div>
 

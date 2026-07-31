@@ -168,6 +168,13 @@ def case_study_to_dict(row) -> dict:
         'metrics': _json_load(row.metrics_json),
         'tags': _json_load(row.tags_json, []),
         'team_credits': _json_load(row.team_credits_json, []),
+        'gallery': _json_load(getattr(row, 'gallery_json', None), []),
+        'before_after': _json_load(getattr(row, 'before_after_json', None), []),
+        'videos': _json_load(getattr(row, 'videos_json', None), []),
+        'client_type': getattr(row, 'client_type', None),
+        'style_tags': _json_load(getattr(row, 'style_tags_json', None), []),
+        'challenges': _json_load(getattr(row, 'challenges_json', None), []),
+        'view_count': int(getattr(row, 'view_count', None) or 0),
         'template_key': row.template_key,
         'version': row.version,
         'published_at': row.published_at.isoformat() if row.published_at else None,
@@ -221,6 +228,11 @@ def build_case_study_from_project(
     )
     db.session.add(row)
     db.session.flush()
+    try:
+        from marketing_pillars import enrich_case_study_from_project
+        enrich_case_study_from_project(db, MarketingCaseStudy, row, Project, Photo)
+    except Exception:
+        pass
     out = case_study_to_dict(row)
     out['photo_ids'] = [p.id for p in photos]
     out['embed_html'] = export_case_study_html(row, photos)
@@ -329,8 +341,21 @@ def capture_public_lead(db, MarketingLead, body: dict) -> dict:
         'source': body.get('source') if body.get('source') in MARKETING_LEAD_SOURCES else 'website',
         'stage': 'inquiry',
         'estimated_value': body.get('estimated_value') or 0,
+        'metadata': {
+            'utm': body.get('utm') or {},
+            'landing_page_id': body.get('landing_page_id'),
+            'campaign_id': body.get('campaign_id'),
+        },
     }
-    return upsert_lead(db, MarketingLead, payload)
+    out = upsert_lead(db, MarketingLead, payload)
+    if body.get('landing_page_id'):
+        lead = MarketingLead.query.get(out['id'])
+        if lead:
+            lead.landing_page_id = int(body['landing_page_id'])
+            lead.attribution_json = json.dumps(payload['metadata'])
+            db.session.flush()
+            out = lead_to_dict(lead)
+    return out
 
 
 def published_case_study_by_slug(db, MarketingCaseStudy, Photo, slug: str) -> dict | None:
@@ -348,12 +373,16 @@ def published_case_study_by_slug(db, MarketingCaseStudy, Photo, slug: str) -> di
 
 
 def create_review_request(db, MarketingReviewRequest, body: dict, *, user_id=None) -> dict:
+    import secrets
     row = MarketingReviewRequest(
         project_id=int(body['project_id']),
         company_id=body.get('company_id'),
         platform=(body.get('platform') or 'google')[:40],
         status='pending',
         referral_incentive=(body.get('referral_incentive') or '')[:120],
+        client_email=(body.get('client_email') or body.get('email') or '')[:200],
+        access_token=secrets.token_urlsafe(24),
+        trigger_milestone=(body.get('trigger_milestone') or '')[:80],
         created_by_id=user_id,
     )
     db.session.add(row)
@@ -369,12 +398,15 @@ def send_review_request_email(db, MarketingReviewRequest, review_id: int, email:
         raise ValueError('Review request not found')
     if not (email or '').strip():
         raise ValueError('email required')
+    review_url = f'/public/marketing/review/{row.access_token}' if row.access_token else ''
     body = (
         f"Thank you for working with us on project #{row.project_id}. "
-        "We would appreciate a brief review of your experience. "
-        "Reply to this email with your testimonial or leave a review on Google/Houzz."
+        "We would appreciate a brief review of your experience."
     )
-    sent = send_workflow_email(email.strip(), 'Case PM — project feedback request', f'<p>{body}</p>', body)
+    html = f'<p>{body}</p>'
+    if review_url:
+        html += f'<p><a href="{review_url}">Leave your feedback</a></p>'
+    sent = send_workflow_email(email.strip(), 'Case PM — project feedback request', html, body + (f' {review_url}' if review_url else ''))
     row.status = 'sent'
     return {'sent': sent, 'review_id': row.id}
 
@@ -511,10 +543,10 @@ def marketing_module_catalog() -> dict:
             {'id': 'pipeline', 'title': 'Lead & opportunity pipeline', 'status': 'live'},
             {'id': 'portal_marketing', 'title': 'Client portal + reviews', 'status': 'live'},
             {'id': 'reputation', 'title': 'Reputation & referral tracking', 'status': 'live'},
-            {'id': 'campaigns', 'title': 'Email campaign automation', 'status': 'live'},
+            {'id': 'campaigns', 'title': 'Email & SMS campaign automation', 'status': 'live'},
             {'id': 'dam', 'title': 'Visual asset management', 'status': 'live'},
-            {'id': 'collateral', 'title': 'Proposal & collateral templates', 'status': 'partial'},
-            {'id': 'web_leads', 'title': 'Website & lead capture', 'status': 'partial'},
+            {'id': 'collateral', 'title': 'Proposal & collateral tools', 'status': 'live'},
+            {'id': 'web_leads', 'title': 'Website & lead capture', 'status': 'live'},
             {'id': 'analytics', 'title': 'Marketing ROI dashboards', 'status': 'live'},
             {'id': 'integrations', 'title': 'Houzz / Dodge / CRM integrations', 'status': 'planned'},
         ],
@@ -526,9 +558,13 @@ def marketing_deploy_check() -> dict:
     try:
         import marketing_services as ms  # noqa: F401
         import marketing_models  # noqa: F401
+        from marketing_pillars import pillars_deploy_check
 
         assert callable(ms.build_case_study_from_project)
         assert callable(ms.pipeline_analytics)
+        pillar = pillars_deploy_check()
+        if not pillar.get('ok'):
+            return pillar
         return {'ok': True}
     except Exception as exc:
         return {'ok': False, 'error': str(exc)[:200]}
