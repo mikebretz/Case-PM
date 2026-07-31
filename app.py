@@ -2063,6 +2063,15 @@ AcctSalesOrder = _acct_models['AcctSalesOrder']
 AcctFixedAsset = _acct_models['AcctFixedAsset']
 AcctPayrollRun = _acct_models['AcctPayrollRun']
 
+from marketing_models import define_marketing_models
+_marketing_models = define_marketing_models(db)
+MarketingLead = _marketing_models['MarketingLead']
+MarketingCaseStudy = _marketing_models['MarketingCaseStudy']
+MarketingCampaign = _marketing_models['MarketingCampaign']
+MarketingReviewRequest = _marketing_models['MarketingReviewRequest']
+MarketingAsset = _marketing_models['MarketingAsset']
+MarketingCollateralTemplate = _marketing_models['MarketingCollateralTemplate']
+
 
 class Company(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -18570,6 +18579,29 @@ register_accounting_routes(app, {
     'SageSyncEvent': SageSyncEvent,
     'PayAppProjectState': PayAppProjectState,
     **_acct_models,
+})
+
+
+from marketing_routes import register_marketing_routes
+register_marketing_routes(app, {
+    'db': db,
+    'request': request,
+    'jsonify': jsonify,
+    'login_required': login_required,
+    'current_user': current_user,
+    'get_current_project_id': get_current_project_id,
+    'get_active_project': get_active_project,
+    'MarketingLead': MarketingLead,
+    'MarketingCaseStudy': MarketingCaseStudy,
+    'MarketingCampaign': MarketingCampaign,
+    'MarketingReviewRequest': MarketingReviewRequest,
+    'MarketingAsset': MarketingAsset,
+    'MarketingCollateralTemplate': MarketingCollateralTemplate,
+    'Project': Project,
+    'Photo': Photo,
+    'Estimate': Estimate,
+    'BudgetProjectState': BudgetProjectState,
+    'PayAppProjectState': PayAppProjectState,
 })
 
 

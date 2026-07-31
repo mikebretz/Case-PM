@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Marketing{% endblock %}
+
+{% block content %}
+<script>
+window.CASEPM_MARKETING_CTX = {
+  projectId: {{ active_project.id if active_project else 'null' }},
+  projectName: {{ (active_project.name if active_project else '')|tojson }},
+};
+</script>
+<style>
+.mk-page { display:flex; flex-direction:column; flex:1; min-height:0; padding:1rem; gap:1rem; }
+.mk-card { background:#18181b; border:1px solid #3f3f46; border-radius:0.75rem; padding:1rem; }
+.mk-tab { padding:0.5rem 1rem; font-size:0.85rem; border-radius:0.5rem; color:#a1a1aa; cursor:pointer; border:none; background:transparent; }
+.mk-tab.active { background:#27272a; color:#fff; }
+.mk-pipeline { display:grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap:0.5rem; overflow-x:auto; }
+.mk-col { background:#09090b; border:1px solid #27272a; border-radius:0.5rem; min-height:200px; padding:0.5rem; }
+.mk-col h3 { font-size:10px; text-transform:uppercase; color:#71717a; margin:0 0 0.5rem; }
+.mk-lead { background:#18181b; border:1px solid #3f3f46; border-radius:0.375rem; padding:0.5rem; margin-bottom:0.35rem; font-size:12px; cursor:pointer; }
+.mk-lead:hover { border-color:#52525b; }
+.mk-stat { font-size:1.5rem; font-weight:600; color:#fff; }
+.mk-stat-label { font-size:11px; color:#71717a; }
+</style>
+
+<div class="mk-page">
+  <div class="flex items-center justify-between flex-wrap gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold text-white">Marketing</h1>
+      <p class="text-sm text-zinc-400 mt-0.5">Pipeline · portfolio · campaigns · reputation · DAM</p>
+    </div>
+    <button type="button" id="mkRefresh" class="px-3 py-2 text-sm bg-zinc-800 hover:bg-zinc-700 rounded-md">Refresh</button>
+  </div>
+
+  <div id="mkDashboard" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+
+  <div class="flex gap-2 flex-wrap">
+    <button type="button" class="mk-tab active" data-tab="pipeline">Pipeline</button>
+    <button type="button" class="mk-tab" data-tab="portfolio">Portfolio</button>
+    <button type="button" class="mk-tab" data-tab="campaigns">Campaigns</button>
+    <button type="button" class="mk-tab" data-tab="reviews">Reviews</button>
+    <button type="button" class="mk-tab" data-tab="assets">Assets</button>
+    <button type="button" class="mk-tab" data-tab="capture">Lead capture</button>
+  </div>
+
+  <div id="mkPanelPipeline" class="mk-panel mk-card flex-1 min-h-0 overflow-auto">
+    <div class="flex justify-between items-center mb-3">
+      <span class="text-sm text-zinc-400">Drag stages via card actions · convert won leads to estimates</span>
+      <button type="button" id="mkNewLead" class="text-sm px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 rounded-md">New lead</button>
+    </div>
+    <div id="mkPipeline" class="mk-pipeline"></div>
+  </div>
+  <div id="mkPanelPortfolio" class="mk-panel mk-card hidden flex-1 overflow-auto">
+    <div class="flex gap-2 mb-3 flex-wrap">
+      <button type="button" id="mkBuildCaseStudy" class="text-sm px-3 py-1.5 bg-zinc-800 rounded-md">Build case study from active project</button>
+    </div>
+    <div id="mkCaseStudies" class="text-sm space-y-2"></div>
+  </div>
+  <div id="mkPanelCampaigns" class="mk-panel mk-card hidden flex-1 overflow-auto">
+    <button type="button" id="mkNewCampaign" class="text-sm px-3 py-1.5 bg-zinc-800 rounded-md mb-3">New email campaign</button>
+    <div id="mkCampaigns" class="text-sm"></div>
+  </div>
+  <div id="mkPanelReviews" class="mk-panel mk-card hidden flex-1 overflow-auto">
+    <button type="button" id="mkNewReview" class="text-sm px-3 py-1.5 bg-zinc-800 rounded-md mb-3">Request review (active project)</button>
+    <div id="mkReviews" class="text-sm"></div>
+  </div>
+  <div id="mkPanelAssets" class="mk-panel mk-card hidden flex-1 overflow-auto">
+    <button type="button" id="mkSyncAssets" class="text-sm px-3 py-1.5 bg-zinc-800 rounded-md mb-3">Sync photos from project</button>
+    <div id="mkAssets" class="grid grid-cols-2 md:grid-cols-4 gap-2"></div>
+  </div>
+  <div id="mkPanelCapture" class="mk-panel mk-card hidden flex-1 overflow-auto text-sm text-zinc-300 space-y-3">
+    <p>Embed this public lead endpoint on your website (POST JSON):</p>
+    <code class="block bg-zinc-900 p-3 rounded-md text-xs break-all" id="mkLeadEndpoint"></code>
+    <p class="text-zinc-500">Published case studies: <span id="mkEmbedHint"></span></p>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/marketing-app.js') }}"></script>
+{% endblock %}
