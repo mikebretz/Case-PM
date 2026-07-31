@@ -75,4 +75,5 @@ def pm_roadmap_status() -> dict:
             'construction_sync_module': 'accounting → Construction sync',
         },
         'wave_49_gap_closure': True,
+        'finalize_ops': '/api/accounting/platform/finalize-ops',
     }

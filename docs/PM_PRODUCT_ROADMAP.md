@@ -30,6 +30,15 @@ Built-in **Accounting** and optional **Sage 300** sync remain the financial syst
 - `POST /api/accounting/construction/sync-all-pending` — one-click sync for active project.
 - `GET /api/accounting/sage/go-live-alerts` — Sage go-live readiness snapshot.
 
-## Operations (not product gaps)
+## Operations (server checklist)
 
-Sage go-live still requires server configuration: credentials, cron (`docs/ACCOUNTING_CRON.md`), CRE auto-post profile, and smoke tests on the deploy host. Agency tax e-file remains an audit log in Case PM — confirm filings with your CPA or filing service.
+```bash
+PYTHONPATH=. python3 scripts/accounting_startup_guard.py
+PYTHONPATH=. python3 scripts/test_accounting_smoke.py
+PYTHONPATH=. python3 scripts/accounting_finalize_ops.py        # status
+PYTHONPATH=. python3 scripts/accounting_finalize_ops.py --run  # auto-fix + cutover refresh
+```
+
+UI: **Accounting → Construction sync → Finalize ops**.
+
+Agency tax e-file is an audit log only — use your CPA/filing service for submission. IFC in-browser needs GLB upload unless you add an external viewer bridge.

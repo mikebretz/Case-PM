@@ -299,6 +299,13 @@ window.CASEPM_ESTIMATE_CTX = {
         <button type="button" id="estSovRemediate" class="px-4 py-2 bg-violet-900 hover:bg-violet-800 rounded-md text-sm">Align SOV from budget</button>
         <pre id="estSovAlignmentOut" class="text-xs text-zinc-400 mt-2 whitespace-pre-wrap max-h-40 overflow-y-auto hidden"></pre>
       </div>
+      <div class="mt-4 border-t border-zinc-800 pt-4">
+        <h4 class="text-sm font-medium text-zinc-300 mb-2">Estimate revision import (CSV)</h4>
+        <p class="text-xs text-zinc-500 mb-2">Columns: cost_code, description, quantity, unit_cost</p>
+        <textarea id="estRevisionCsv" class="w-full h-24 bg-zinc-950 border border-zinc-700 rounded p-2 text-xs font-mono" placeholder="cost_code,description,quantity,unit_cost"></textarea>
+        <label class="flex items-center gap-2 text-xs mt-2"><input type="checkbox" id="estRevisionReplace" class="rounded"> Replace existing lines</label>
+        <button type="button" id="estImportRevision" class="mt-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Import revision</button>
+      </div>
     </div>
     <div class="bg-zinc-900 border border-zinc-700 rounded-md p-5">
       <div class="flex justify-between mb-2"><h3 class="font-medium">Spec → Budget Mapping</h3><button type="button" id="estSaveMappings" class="text-sm text-emerald-400">Save rules</button></div>
