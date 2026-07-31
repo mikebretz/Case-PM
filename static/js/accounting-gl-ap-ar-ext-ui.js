@@ -36,12 +36,17 @@
 
   async function glExtrasHtml() {
     const { api, esc } = ctx;
-    const [budgets, recurring, alloc, ic] = await Promise.all([
+    const results = await Promise.allSettled([
       api('/api/accounting/gl/budgets'),
       api('/api/accounting/gl/recurring-journals'),
       api('/api/accounting/gl/allocations'),
       api('/api/accounting/gl/intercompany'),
     ]);
+    const budgets = results[0].status === 'fulfilled' ? results[0].value : { budgets: [] };
+    const recurring = results[1].status === 'fulfilled' ? results[1].value : { recurring: [] };
+    const alloc = results[2].status === 'fulfilled' ? results[2].value : { templates: [] };
+    const ic = results[3].status === 'fulfilled' ? results[3].value : { entries: [] };
+    const extrasFailed = results.some((r) => r.status === 'rejected');
     return `<section class="border border-zinc-700 rounded-lg p-4 space-y-4">
       <h3 class="text-sm font-semibold text-white">Advanced G/L</h3>
       <div class="flex flex-wrap gap-2 text-xs">
@@ -56,6 +61,7 @@
         <button type="button" id="acctGlRunDue" class="px-2 py-1 border border-zinc-600 rounded text-zinc-300">Run due recurring</button>
       </div>
       <p class="text-[11px] text-zinc-600">Subledger tie-out: click the button above to compare control accounts to open A/P and A/R.</p>
+      ${extrasFailed ? '<p class="text-[11px] text-amber-500">Some advanced G/L data could not be loaded — refresh the page after a moment or check server logs.</p>' : ''}
       <div id="acctGlSubOut" class="hidden"></div>
       <div id="acctGlBudgetGridHost" class="mt-2"></div>
       <div class="grid md:grid-cols-3 gap-2 text-xs">
