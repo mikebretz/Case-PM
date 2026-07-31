@@ -81,6 +81,7 @@ ACCOUNTING_MODULES = [
             'Statement reconciliation',
             'NSF and reversals',
             'Distribution codes',
+            'OFX bank feed import',
         ],
     },
     {
@@ -94,8 +95,9 @@ ACCOUNTING_MODULES = [
             'Tax tables and rate maintenance',
             'Sales / use / withholding groups',
             'Tax calculator and vendor assignment',
-            'GST/VAT/sales tax on AP/AR (beta)',
-            'Filing prep (planned)',
+            'GST/VAT/sales tax on AP/AR',
+            'Stacked tax components',
+            'Filing prep summaries',
         ],
     },
     {
@@ -109,8 +111,8 @@ ACCOUNTING_MODULES = [
             'Acquisition & disposal with G/L posting',
             'Straight-line depreciation runs',
             'Net book value and location tracking',
-            'Multiple books (beta)',
-            'Revaluation (planned)',
+            'Multiple depreciation books',
+            'DDB / SYD methods',
         ],
     },
     {
@@ -120,7 +122,7 @@ ACCOUNTING_MODULES = [
         'status': 'live',
         'route': 'inventory',
         'summary': 'Perpetual inventory, locations, serial/lot (roadmap).',
-        'features': ['Item master', 'Receipts & issues', 'Transfers', 'Costing', 'Lot/serial (planned)'],
+        'features': ['Item master', 'Receipts & issues', 'Transfers', 'Costing', 'Lot/serial tracking'],
     },
     {
         'id': 'oe',
@@ -129,7 +131,7 @@ ACCOUNTING_MODULES = [
         'status': 'live',
         'route': 'oe',
         'summary': 'Quotes, orders, shipments, invoicing.',
-        'features': ['Sales orders', 'Shipments', 'Commissions (planned)', 'IC & AR integration'],
+        'features': ['Sales orders', 'Quotes & returns', 'Commissions (roadmap)', 'IC & AR integration'],
     },
     {
         'id': 'po',
@@ -138,7 +140,7 @@ ACCOUNTING_MODULES = [
         'status': 'live',
         'route': 'po',
         'summary': 'Requisitions through PO, receipts, vendor invoice matching.',
-        'features': ['Blanket & standing POs', 'Receipts', 'Drop-ship (planned)', 'AP & IC integration'],
+        'features': ['Blanket & standing POs', 'Blanket releases', 'Receipts', 'Drop-ship flag', 'AP & IC integration'],
     },
     {
         'id': 'jc',
@@ -150,7 +152,7 @@ ACCOUNTING_MODULES = [
         'features': [
             'Job / phase / category structure',
             'Committed vs actual costs',
-            'Revenue recognition methods (beta)',
+            'Revenue recognition schedule API',
             'Integration with Budget & Pay Apps',
         ],
     },
@@ -167,7 +169,7 @@ ACCOUNTING_MODULES = [
             'Deduction codes & enrollments',
             'Pay run build, calculate, post to G/L',
             'Job cost labor by project on journal lines',
-            'Payroll register & EFT (beta)',
+            'Payroll register & EFT CSV export',
         ],
     },
     {
@@ -198,7 +200,8 @@ ACCOUNTING_MODULES = [
             'Journal register and job cost',
             'Construction bridge audit',
             'Custom saved reports with CSV export',
-            'KPI dashboards (beta)',
+            'KPI dashboards',
+            'Report designer JSON layouts',
         ],
     },
     {
