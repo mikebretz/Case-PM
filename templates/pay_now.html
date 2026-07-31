@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pay invoice — Case PM</title>
+  <script src="https://js.stripe.com/v3/"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #18181b; color: #fafafa; margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .card { background: #27272a; border: 1px solid #3f3f46; border-radius: 12px; padding: 2rem; max-width: 420px; width: 100%; }
+    h1 { font-size: 1.25rem; margin: 0 0 0.5rem; }
+    .muted { color: #a1a1aa; font-size: 0.875rem; }
+    #payment-element { margin: 1.25rem 0; }
+    button { width: 100%; padding: 0.75rem; background: #059669; color: white; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .err { color: #f87171; font-size: 0.875rem; margin-top: 1rem; }
+    .ok { color: #34d399; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Pay invoice</h1>
+    <p class="muted" id="subtitle">Loading…</p>
+    <div id="payment-element"></div>
+    <button type="button" id="submit" disabled>Pay now</button>
+    <p id="msg" class="err"></p>
+  </div>
+  <script>
+    const token = {{ token|tojson }};
+    const fmt = (n) => new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(n);
+    async function main() {
+      const msg = document.getElementById('msg');
+      const sub = document.getElementById('subtitle');
+      const btn = document.getElementById('submit');
+      let session;
+      try {
+        const res = await fetch('/api/accounting/payments/pay-now/' + encodeURIComponent(token) + '/checkout');
+        session = await res.json();
+        if (!res.ok) throw new Error(session.error || res.statusText);
+      } catch (e) {
+        sub.textContent = '';
+        msg.textContent = e.message;
+        return;
+      }
+      const link = session.link;
+      sub.innerHTML = (session.customer_name ? session.customer_name + ' · ' : '') +
+        (session.invoice_number ? 'Invoice ' + session.invoice_number + ' · ' : '') +
+        '<strong>' + fmt(link.amount) + '</strong>';
+      const stripeCfg = session.stripe;
+      if (!stripeCfg || !stripeCfg.client_secret || !stripeCfg.publishable_key) {
+        msg.textContent = 'Card payments are not configured on this server. Contact your contractor for other payment options.';
+        return;
+      }
+      const stripe = Stripe(stripeCfg.publishable_key);
+      const elements = stripe.elements({ clientSecret: stripeCfg.client_secret });
+      const paymentElement = elements.create('payment');
+      paymentElement.mount('#payment-element');
+      btn.disabled = false;
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        msg.textContent = '';
+        const { error } = await stripe.confirmPayment({
+          elements,
+          confirmParams: { return_url: window.location.href },
+          redirect: 'if_required',
+        });
+        if (error) {
+          msg.textContent = error.message;
+          btn.disabled = false;
+          return;
+        }
+        await fetch('/api/accounting/payments/pay-now/' + encodeURIComponent(token) + '/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ payment_intent_id: stripeCfg.payment_intent_id }),
+        });
+        sub.innerHTML = '<span class="ok">Payment received. Thank you.</span>';
+        document.getElementById('payment-element').innerHTML = '';
+        btn.style.display = 'none';
+      });
+    }
+    main();
+  </script>
+</body>
+</html>

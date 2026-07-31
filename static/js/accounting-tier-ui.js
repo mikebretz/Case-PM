@@ -47,6 +47,7 @@
         <button type="button" id="acctTierSageVendors" class="px-2 py-1 border border-zinc-600 rounded text-emerald-400">Pull Sage vendors</button>
         <button type="button" id="acctTierSageGl" class="px-2 py-1 border border-zinc-600 rounded text-sky-400">Pull Sage G/L</button>
         <button type="button" id="acctTierSageQueue" class="px-2 py-1 border border-zinc-600 rounded text-amber-400">Queue open J/E to Sage</button>
+        <button type="button" id="acctTierSageFlush" class="px-2 py-1 border border-zinc-600 rounded text-rose-400">Flush Sage queues</button>
         <button type="button" id="acctTierW2" class="px-2 py-1 border border-zinc-600 rounded text-zinc-300">W-2 e-file pkg</button>
         <button type="button" id="acctTier941" class="px-2 py-1 border border-zinc-600 rounded text-zinc-300">941 e-file pkg</button>
         <button type="button" id="acctTier1099Log" class="px-2 py-1 border border-zinc-600 rounded text-violet-300">Log 1099 transmit</button>
@@ -71,6 +72,11 @@
     document.getElementById('acctTierSageQueue')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/sage/sync/queue-batches', { method: 'POST' });
       await AD().alert(`Queued ${r.queued || 0} batch(es) for Sage export.`, 'success');
+      switchModule('admin');
+    });
+    document.getElementById('acctTierSageFlush')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/sync/flush', { method: 'POST', body: '{}' });
+      await AD().alert(`Flushed ${r.processed || 0} queue item(s). Check sync log.`, 'info');
       switchModule('admin');
     });
     document.getElementById('acctTierW2')?.addEventListener('click', () => {

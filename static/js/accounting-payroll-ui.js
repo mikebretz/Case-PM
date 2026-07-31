@@ -252,6 +252,7 @@
       const pid = projectId();
       if (!pid) return AD().alert('Select a project for certified payroll.', 'warning');
       global.open(`/api/accounting/payroll/certified/${pid}?week_ending=${new Date().toISOString().slice(0, 10)}`, '_blank');
+      global.open(`/api/accounting/payroll/wh347/${pid}.pdf?week_ending=${new Date().toISOString().slice(0, 10)}`, '_blank');
     });
   }
 
