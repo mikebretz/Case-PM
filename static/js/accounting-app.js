@@ -50,8 +50,16 @@
   }
 
   function buildNav() {
+    const allowed = catalog?.allowed_screens || null;
     const mods = [{ id: 'dashboard', name: 'Dashboard', route: 'dashboard', status: 'live' }];
-    (catalog?.modules || []).forEach((m) => mods.push(m));
+    (catalog?.modules || []).forEach((m) => {
+      const route = m.route || m.id;
+      if (allowed && allowed[route] === false) return;
+      mods.push(m);
+    });
+    if (allowed && allowed.dashboard === false) {
+      mods.shift();
+    }
     const nav = document.getElementById('acctModuleNav');
     const mob = document.getElementById('acctModuleNavMobile');
     const html = mods.map((m) => {
@@ -72,6 +80,14 @@
 
   async function switchModule(route) {
     activeModule = route || 'dashboard';
+    const allowed = catalog?.allowed_screens;
+    if (allowed && allowed[activeModule] === false) {
+      activeModule = 'dashboard';
+      if (allowed.dashboard === false) {
+        const first = (catalog?.modules || []).find((m) => allowed[m.route || m.id] !== false);
+        activeModule = first ? (first.route || first.id) : 'dashboard';
+      }
+    }
     buildNav();
     const root = document.getElementById('acctPanelRoot');
     if (!root) return;
@@ -170,6 +186,9 @@
       if (route === 'payments' && global.CasePMAcctPaymentsUI?.bindHandlers) {
         global.CasePMAcctPaymentsUI.bindHandlers();
       }
+      if (route === 'consolidation' && global.CasePMAcctConsolidationUI?.bindHandlers) {
+        global.CasePMAcctConsolidationUI.bindHandlers();
+      }
       if (route === 'jobcost' && global.CasePMAcctChunksUI?.bindJobCostPanel) {
         global.CasePMAcctChunksUI.bindJobCostPanel();
       }
@@ -187,17 +206,71 @@
     }
   }
 
+  function formatKpiTileValue(tile) {
+    const v = tile.value;
+    if (tile.format === 'money') return money(v);
+    if (tile.format === 'int') return String(Math.round(v));
+    if (typeof v === 'number') return String(v);
+    return esc(String(v ?? '—'));
+  }
+
   function renderDashboard() {
     const d = dashboard || {};
     const k = d.kpis || {};
     const sync = d.external_sync?.sage_300 || {};
+    const tiles = (d.kpi_tiles && d.kpi_tiles.length) ? d.kpi_tiles : [
+      { id: 'open_ap', label: 'Open A/P', value: k.open_ap, format: 'money', drill_route: 'ap' },
+      { id: 'open_ar', label: 'Open A/R', value: k.open_ar, format: 'money', drill_route: 'ar' },
+      { id: 'gl_accounts', label: 'G/L Accounts', value: k.gl_accounts, format: 'int', drill_route: 'gl' },
+      { id: 'open_batches', label: 'Open J/E Batches', value: k.open_batches, format: 'int', drill_route: 'gl' },
+    ];
+    const tileHtml = tiles.map((t) => {
+      const route = t.drill_route || '';
+      const clickable = route ? 'acct-kpi-tile cursor-pointer hover:border-emerald-700/60' : '';
+      return `<div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4 ${clickable}" ${route ? `data-acct-kpi-drill="${esc(route)}"` : ''}>
+        <div class="text-xs text-zinc-500">${esc(t.label)}</div>
+        <div class="text-xl font-semibold text-zinc-100">${formatKpiTileValue(t)}</div>
+        ${route ? '<div class="text-[10px] text-emerald-600/80 mt-1">View module →</div>' : ''}
+      </div>`;
+    }).join('');
+    const con = d.consolidated_summary || {};
+    let conHtml = '';
+    if (con.enabled) {
+      const tot = con.totals || {};
+      conHtml = `<div class="bg-violet-950/30 border border-violet-900/50 rounded-lg p-4 mb-4">
+        <div class="flex flex-wrap justify-between gap-2 items-start">
+          <div>
+            <h2 class="text-sm font-semibold text-violet-200">Consolidated multi-entity</h2>
+            <p class="text-xs text-zinc-500 mt-1">${con.entity_count} ledger(s) rolled up · parent <span class="font-mono text-zinc-400">${esc(con.parent_code)}</span></p>
+          </div>
+          <button type="button" class="text-xs text-violet-400 hover:underline" data-acct-kpi-drill="consolidation">Open consolidation</button>
+        </div>
+        <div class="grid grid-cols-3 gap-3 mt-3 text-xs">
+          <div><span class="text-zinc-600">Assets (TB)</span><div class="text-lg text-white">${money(tot.assets)}</div></div>
+          <div><span class="text-zinc-600">Liabilities</span><div class="text-lg text-white">${money(tot.liabilities)}</div></div>
+          <div><span class="text-zinc-600">Equity</span><div class="text-lg text-white">${money(tot.equity)}</div></div>
+        </div>
+      </div>`;
+    } else if (con.message) {
+      conHtml = `<div class="bg-zinc-800/40 border border-zinc-800 rounded-lg p-3 mb-4 text-xs text-zinc-500">
+        <span class="text-zinc-400">Multi-entity:</span> ${esc(con.message)}
+        <button type="button" class="text-emerald-500 hover:underline ml-2" data-acct-kpi-drill="consolidation">Set up</button>
+      </div>`;
+    }
     return `
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4"><div class="text-xs text-zinc-500">Open A/P</div><div class="text-xl font-semibold text-amber-400">${money(k.open_ap)}</div></div>
-        <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4"><div class="text-xs text-zinc-500">Open A/R</div><div class="text-xl font-semibold text-sky-400">${money(k.open_ar)}</div></div>
-        <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4"><div class="text-xs text-zinc-500">G/L Accounts</div><div class="text-xl font-semibold">${k.gl_accounts || 0}</div></div>
-        <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4"><div class="text-xs text-zinc-500">Open J/E Batches</div><div class="text-xl font-semibold">${k.open_batches || 0}</div></div>
+      <div class="flex justify-end mb-2">
+        <button type="button" id="acctDashKpiConfig" class="text-xs text-zinc-500 hover:text-emerald-400">Customize KPI tiles</button>
       </div>
+      <div id="acctDashKpiEditor" class="hidden mb-4 border border-zinc-700 rounded-lg p-3 bg-zinc-900/80">
+        <p class="text-xs text-zinc-500 mb-2">Select tiles to display (saved per company ledger).</p>
+        <div id="acctDashKpiEditorGrid" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 text-xs"></div>
+        <div class="flex gap-2 mt-3">
+          <button type="button" id="acctDashKpiSave" class="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 rounded text-xs text-white">Save</button>
+          <button type="button" id="acctDashKpiCancel" class="px-3 py-1.5 border border-zinc-700 rounded text-xs text-zinc-400">Cancel</button>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6" id="acctDashKpiGrid">${tileHtml}</div>
+      ${conHtml}
       ${d.project ? `<p class="text-xs text-zinc-500 mb-4">Active project context: <strong class="text-zinc-300">${esc(d.project.name)}</strong> · Job ${esc(d.project.job_number || '—')}</p>` : ''}
       <div class="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4 mb-4">
         <h2 class="text-sm font-semibold text-white mb-2">Company books</h2>
@@ -550,6 +623,39 @@
   }
 
   function bindPanelHandlers(route) {
+    if (route === 'dashboard') {
+      document.querySelectorAll('[data-acct-kpi-drill]').forEach((el) => {
+        el.addEventListener('click', () => switchModule(el.getAttribute('data-acct-kpi-drill')));
+      });
+      const editor = document.getElementById('acctDashKpiEditor');
+      const editorGrid = document.getElementById('acctDashKpiEditorGrid');
+      document.getElementById('acctDashKpiConfig')?.addEventListener('click', async () => {
+        if (!editor || !editorGrid) return;
+        const cfg = await api('/api/accounting/dashboard/kpi-config');
+        const visible = new Set(cfg.visible_tile_ids || []);
+        editorGrid.innerHTML = (cfg.catalog || []).map((c) =>
+          `<label class="flex items-center gap-2"><input type="checkbox" class="acct-dash-kpi-pick" data-id="${esc(c.id)}" ${visible.has(c.id) ? 'checked' : ''} /> ${esc(c.label)}</label>`
+        ).join('');
+        editor.classList.remove('hidden');
+      });
+      document.getElementById('acctDashKpiCancel')?.addEventListener('click', () => editor?.classList.add('hidden'));
+      document.getElementById('acctDashKpiSave')?.addEventListener('click', async () => {
+        if (!editorGrid) return;
+        const picks = [];
+        editorGrid.querySelectorAll('.acct-dash-kpi-pick:checked').forEach((el) => picks.push(el.getAttribute('data-id')));
+        if (!picks.length) {
+          await AD().alert('Select at least one tile.', 'warning');
+          return;
+        }
+        await api('/api/accounting/dashboard/kpi-config', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ visible_tile_ids: picks, tile_order: picks }),
+        });
+        dashboard = await api('/api/accounting/dashboard');
+        switchModule('dashboard');
+      });
+    }
     if (route === 'ap' && global.CasePMAcctGlApArExt) {
       global.CasePMAcctGlApArExt.init({ api, esc, money, switchModule, AD: () => global.CasePMAccountingDialog || {}, projectId });
       const root = document.getElementById('acctApExtRoot');
