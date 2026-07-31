@@ -84,6 +84,8 @@ def batch_lines_payload(AcctJournalLine, AcctGLAccount, batch_id):
             'credit': ln.credit,
             'project_id': ln.project_id,
             'reference': ln.reference,
+            'location_id': getattr(ln, 'location_id', None),
+            'segments': json.loads(ln.segments_json) if ln.segments_json else None,
         })
     return out
 

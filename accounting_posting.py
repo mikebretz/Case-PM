@@ -102,7 +102,7 @@ def _create_posted_batch(
         ))
     db.session.flush()
     ledger = models['AcctLedger'].query.get(ledger_id)
-    post_journal_batch(db, batch, AcctJournalLine, ledger=ledger)
+    post_journal_batch(db, batch, AcctJournalLine, ledger=ledger, models=models, user_id=user_id)
     return batch
 
 

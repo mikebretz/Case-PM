@@ -242,7 +242,7 @@ def run_recurring_journal(db, models, recurring, user_id=None):
             project_id=ln.get('project_id'),
             reference=(ln.get('reference') or recurring.code)[:80],
         ))
-    post_journal_batch(db, batch, AcctJournalLine, ledger=ledger)
+    post_journal_batch(db, batch, AcctJournalLine, ledger=ledger, models=models, user_id=user_id)
     recurring.last_run_date = batch.batch_date
     recurring.next_run_date = _advance_date(batch.batch_date, recurring.frequency or 'monthly')
     db.session.flush()
@@ -346,7 +346,7 @@ def run_allocation(db, models, template, amount, *, batch_date=None, user_id=Non
             debit=ln['debit'],
             credit=ln['credit'],
         ))
-    post_journal_batch(db, batch, AcctJournalLine, ledger=ledger)
+    post_journal_batch(db, batch, AcctJournalLine, ledger=ledger, models=models, user_id=user_id)
     db.session.flush()
     return {'batch_id': batch.id}
 
@@ -417,7 +417,7 @@ def post_intercompany_entry(db, models, entry, user_id=None):
         batch_id=batch.id, line_number=2, account_id=entry.to_account_id,
         description=entry.description, debit=0, credit=amt,
     ))
-    post_journal_batch(db, batch, AcctJournalLine, ledger=ledger)
+    post_journal_batch(db, batch, AcctJournalLine, ledger=ledger, models=models, user_id=user_id)
     entry.status = 'Posted'
     entry.journal_batch_id = batch.id
     db.session.flush()
@@ -502,3 +502,23 @@ def run_due_recurring_schedules(db, models, ledger_id, user_id=None):
         if r.next_run_date and r.next_run_date <= today:
             out.append(run_recurring_journal(db, models, r, user_id=user_id))
     return {'runs': out}
+
+
+def compare_budget_scenarios(db, models, ledger_id, budget_ids):
+    """Side-by-side totals for multiple budget versions."""
+    AcctGLBudget = models['AcctGLBudget']
+    AcctGLBudgetLine = models['AcctGLBudgetLine']
+    out = []
+    for bid in budget_ids:
+        b = AcctGLBudget.query.filter_by(id=int(bid), ledger_id=ledger_id).first()
+        if not b:
+            continue
+        total = sum(float(ln.amount or 0) for ln in AcctGLBudgetLine.query.filter_by(budget_id=b.id).all())
+        out.append({
+            'budget_id': b.id,
+            'name': b.name,
+            'version_name': getattr(b, 'version_name', None),
+            'scenario': getattr(b, 'scenario', None),
+            'total': round(total, 2),
+        })
+    return {'budgets': out}

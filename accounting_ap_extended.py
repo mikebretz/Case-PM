@@ -215,7 +215,7 @@ def void_ap_payment(db, models, payment, reason='', user_id=None):
         batch_id=batch.id, line_number=2, account_id=ap_acct.id,
         description='Payment void', debit=0, credit=amt,
     ))
-    post_journal_batch(db, batch, AcctJournalLine, ledger=ledger)
+    post_journal_batch(db, batch, AcctJournalLine, ledger=ledger, models=models, user_id=user_id)
     payment.status = 'Void'
     payment.void_reason = (reason or '')[:200]
     payment.voided_at = datetime.utcnow()
@@ -332,7 +332,7 @@ def release_retainage(db, models, ledger_id, invoice_id, amount, user_id=None):
     return {'invoice_id': doc.id, 'released': amt, 'retainage_remaining': doc.retainage_amount}
 
 
-def apply_payment_discount(db, models, payment, discount_amount):
+def apply_payment_discount(db, models, payment, discount_amount, user_id=None):
     """Record early-payment discount on AP payment (reduces cash, posts to discount account)."""
     from accounting_posting import load_accounting_options, _account_by_number
     from accounting_persistence import next_batch_number, post_journal_batch
@@ -362,7 +362,7 @@ def apply_payment_discount(db, models, payment, discount_amount):
     db.session.add(AcctJournalLine(batch_id=batch.id, line_number=1, account_id=ap_acct.id, debit=pay_amt, credit=0, description='Payment'))
     db.session.add(AcctJournalLine(batch_id=batch.id, line_number=2, account_id=disc_acct.id, debit=0, credit=disc, description='Discount'))
     db.session.add(AcctJournalLine(batch_id=batch.id, line_number=3, account_id=cash_acct.id, debit=0, credit=round(pay_amt - disc, 2), description='Cash'))
-    post_journal_batch(db, batch, AcctJournalLine, ledger=ledger)
+    post_journal_batch(db, batch, AcctJournalLine, ledger=ledger, models=models, user_id=user_id)
     return {'discount_batch_id': batch.id, 'discount': disc}
 
 
@@ -376,3 +376,105 @@ def export_1099_efile(db, models, ledger_id, tax_year):
         )
     lines.append(f'F|{len(data.get("vendors") or [])}|')
     return {'tax_year': int(tax_year), 'format': 'pipe_stub', 'content': '\n'.join(lines), 'vendor_count': len(data.get('vendors') or [])}
+
+
+def report_1099_printable_html(db, models, ledger_id, tax_year):
+    data = report_1099(db, models, ledger_id, tax_year)
+    rows = ''.join(
+        f'<tr><td>{v.get("vendor_code", "")}</td><td>{v.get("vendor_name", "")}</td>'
+        f'<td>{v.get("tax_id", "")}</td><td>{v.get("form_type", "NEC")}</td>'
+        f'<td style="text-align:right">{v.get("payments", 0):,.2f}</td></tr>'
+        for v in data.get('vendors') or []
+    )
+    return f'''<!DOCTYPE html><html><head><meta charset="utf-8"><title>1099 {tax_year}</title>
+    <style>table{{border-collapse:collapse;width:100%}} th,td{{border:1px solid #ccc;padding:6px;font-size:12px}}</style></head>
+    <body><h1>Form 1099 summary — {tax_year}</h1>
+    <table><thead><tr><th>Code</th><th>Vendor</th><th>Tax ID</th><th>Form</th><th>Payments</th></tr></thead>
+    <tbody>{rows or "<tr><td colspan=5>None</td></tr>"}</tbody></table>
+    <script>window.onload=function(){{window.print()}}</script></body></html>'''
+
+
+def parse_payment_terms_discount(terms):
+    """Parse 2/10 net 30 style terms -> discount percent and days."""
+    t = (terms or '').lower().replace(' ', '')
+    if '/' not in t:
+        return None
+    try:
+        disc_part, rest = t.split('/', 1)
+        pct = float(disc_part)
+        days = 10
+        if 'net' in rest:
+            import re
+            m = re.search(r'(\d+)', rest)
+            if m:
+                days = int(m.group(1))
+        return {'discount_percent': pct, 'discount_days': min(days, 30)}
+    except (TypeError, ValueError):
+        return None
+
+
+def compute_withholding_for_invoice(db, models, ledger_id, vendor_id, gross):
+    AcctWithholdingRule = models['AcctWithholdingRule']
+    AcctVendor = models['AcctVendor']
+    v = AcctVendor.query.filter_by(id=int(vendor_id), ledger_id=ledger_id).first()
+    gross = float(gross or 0)
+    pct = float(v.default_withhold_percent or 0) if v else 0
+    rules = AcctWithholdingRule.query.filter_by(ledger_id=ledger_id, is_active=True).all()
+    for r in rules:
+        if v and r.vendor_group_id and v.vendor_group_id == r.vendor_group_id:
+            pct = max(pct, float(r.withhold_percent or 0))
+        elif not r.vendor_group_id:
+            pct = max(pct, float(r.withhold_percent or 0))
+    threshold = 0.0
+    for r in rules:
+        threshold = max(threshold, float(r.threshold_amount or 0))
+    if threshold and gross < threshold:
+        return {'withhold_percent': 0, 'withhold_amount': 0}
+    amt = round(gross * pct / 100.0, 2)
+    return {'withhold_percent': pct, 'withhold_amount': amt}
+
+
+def serialize_withholding_rule(r):
+    return {
+        'id': r.id, 'name': r.name, 'vendor_group_id': r.vendor_group_id,
+        'withhold_percent': r.withhold_percent, 'threshold_amount': r.threshold_amount,
+        'is_active': r.is_active,
+    }
+
+
+def upsert_withholding_rule(db, models, ledger_id, body, rule_id=None):
+    AcctWithholdingRule = models['AcctWithholdingRule']
+    if rule_id:
+        r = AcctWithholdingRule.query.filter_by(id=int(rule_id), ledger_id=ledger_id).first()
+        if not r:
+            raise ValueError('Rule not found')
+    else:
+        r = AcctWithholdingRule(ledger_id=ledger_id, name=(body.get('name') or 'Rule')[:80])
+        db.session.add(r)
+    r.name = (body.get('name') or r.name)[:80]
+    r.vendor_group_id = int(body['vendor_group_id']) if body.get('vendor_group_id') else None
+    r.withhold_percent = float(body.get('withhold_percent') or r.withhold_percent or 0)
+    r.threshold_amount = float(body.get('threshold_amount') or 0)
+    if 'is_active' in body:
+        r.is_active = bool(body['is_active'])
+    db.session.flush()
+    return r
+
+
+def ap_match_workbench(db, models, ledger_id):
+    AcctAPDocument = models['AcctAPDocument']
+    AcctVendor = models['AcctVendor']
+    rows = []
+    for doc in AcctAPDocument.query.filter_by(ledger_id=ledger_id, document_type='Invoice').filter(
+        AcctAPDocument.status.in_(['Open', 'Partial'])
+    ).limit(200).all():
+        m = three_way_match(db, models, ledger_id, doc.id)
+        v = AcctVendor.query.get(doc.vendor_id)
+        rows.append({
+            'invoice_id': doc.id,
+            'document_number': doc.document_number,
+            'vendor_code': v.code if v else '',
+            'amount': doc.amount,
+            **m,
+        })
+    return {'exceptions': [r for r in rows if not r.get('matched')], 'all': rows}

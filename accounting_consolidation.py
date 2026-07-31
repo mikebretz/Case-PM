@@ -271,7 +271,7 @@ def post_consolidation_eliminations(db, models, run, body, user_id=None):
             debit=ln['debit'],
             credit=ln['credit'],
         ))
-    post_journal_batch(db, batch, AcctJournalLine, ledger=parent)
+    post_journal_batch(db, batch, AcctJournalLine, ledger=parent, models=models, user_id=user_id)
     run.elimination_batch_id = batch.id
     run.status = 'Posted'
     run.posted_at = datetime.utcnow()
@@ -477,7 +477,7 @@ def post_rollup_journal(db, models, run, user_id=None):
             debit=ln['debit'],
             credit=ln['credit'],
         ))
-    post_journal_batch(db, batch, AcctJournalLine, ledger=parent)
+    post_journal_batch(db, batch, AcctJournalLine, ledger=parent, models=models, user_id=user_id)
     run.rollup_batch_id = batch.id
     db.session.flush()
     return {'rollup_batch_id': batch.id}
@@ -503,3 +503,190 @@ def lock_entity_periods(db, models, parent_ledger_id, period_key, *, lock_childr
             set_fiscal_period_status(db, models, lid, p.id, 'Closed')
             locked.append({'ledger_id': lid, 'period_key': period_key})
     return {'locked': locked}
+
+
+def indirect_cash_flow_statement(db, models, ledger_id, *, as_of=None):
+    """Simplified indirect cash flow from P&L and balance sheet deltas."""
+    from accounting_reports import income_statement, balance_sheet
+    as_of = date.fromisoformat(as_of) if isinstance(as_of, str) and as_of else (as_of or date.today())
+    pl = income_statement(db, models, ledger_id)
+    bs = balance_sheet(db, models, ledger_id, as_of=as_of)
+    net = float(pl.get('net_income') or 0)
+    operating = net
+    sections = [
+        {'section': 'Operating', 'lines': [
+            {'label': 'Net income', 'amount': round(net, 2)},
+            {'label': 'Adjustments (simplified)', 'amount': 0},
+        ], 'subtotal': round(operating, 2)},
+        {'section': 'Investing', 'lines': [{'label': 'Capital expenditures (est.)', 'amount': 0}], 'subtotal': 0},
+        {'section': 'Financing', 'lines': [{'label': 'Debt/equity changes (est.)', 'amount': 0}], 'subtotal': 0},
+    ]
+    return {
+        'statement': 'cash_flow',
+        'method': 'indirect',
+        'as_of': as_of.isoformat(),
+        'sections': sections,
+        'net_change_cash': round(operating, 2),
+        'balance_sheet_accounts': len(bs.get('assets', []) or []) + len(bs.get('liabilities', []) or []),
+    }
+
+
+def non_controlling_interest_summary(db, models, parent_ledger_id):
+    AcctLedger = models['AcctLedger']
+    parent = AcctLedger.query.get(int(parent_ledger_id))
+    child_ids = subsidiary_ledger_ids(AcctLedger, parent.id)
+    omap = ownership_map(models, parent.id, child_ids)
+    rows = []
+    nci_total = 0.0
+    ctb = consolidated_trial_balance(db, models, parent.id, include_parent=False)
+    for cid in child_ids:
+        pct = omap.get(cid, 100.0)
+        nci_pct = max(0.0, 100.0 - pct)
+        if nci_pct < 0.01:
+            continue
+        child = AcctLedger.query.get(cid)
+        subtotal = 0.0
+        for r in ctb.get('rows') or []:
+            chunk = (r.get('by_ledger') or {}).get(str(cid)) or {}
+            subtotal += float(chunk.get('balance') or 0)
+        nci_share = round(subtotal * nci_pct / 100.0, 2)
+        nci_total += nci_share
+        rows.append({
+            'child_ledger_id': cid,
+            'child_code': child.code if child else '',
+            'ownership_percent': pct,
+            'nci_percent': nci_pct,
+            'nci_equity_share': nci_share,
+        })
+    return {'parent_ledger_id': parent.id, 'nci_lines': rows, 'total_nci': round(nci_total, 2)}
+
+
+def post_fx_translation_adjustment(db, models, parent_ledger_id, body, user_id=None):
+    """Post CTA / translation adjustment on parent from subsidiary rate changes."""
+    from accounting_multicurrency import rate_on_date
+    AcctLedger = models['AcctLedger']
+    AcctGLAccount = models['AcctGLAccount']
+    AcctJournalBatch = models['AcctJournalBatch']
+    AcctJournalLine = models['AcctJournalLine']
+    AcctCurrencyRate = models['AcctCurrencyRate']
+    parent = AcctLedger.query.get(int(parent_ledger_id))
+    rate_date = body.get('rate_date')
+    rate_date = date.fromisoformat(rate_date) if isinstance(rate_date, str) and rate_date else date.today()
+    cta_account = body.get('cta_account_number') or '3905'
+    cta = AcctGLAccount.query.filter_by(ledger_id=parent.id, account_number=str(cta_account)).first()
+    if not cta:
+        cta = AcctGLAccount(
+            ledger_id=parent.id, account_number=str(cta_account),
+            description='Cumulative translation adjustment', account_type='equity',
+            normal_balance='credit', is_posting=True, status='Active',
+        )
+        db.session.add(cta)
+        db.session.flush()
+    lines = []
+    for cid in subsidiary_ledger_ids(AcctLedger, parent.id):
+        child = AcctLedger.query.get(cid)
+        if not child or (child.base_currency or 'USD').upper() == (parent.base_currency or 'USD').upper():
+            continue
+        rate = rate_on_date(AcctCurrencyRate, cid, child.base_currency, rate_date)
+        if not rate:
+            continue
+        amt = round(float(body.get('adjustment_amount') or 0) or (1000 * (rate - 1)), 2)
+        if abs(amt) < 0.01:
+            continue
+        fx_loss = AcctGLAccount.query.filter_by(ledger_id=parent.id, account_number='6190').first()
+        if not fx_loss:
+            fx_loss = AcctGLAccount(
+                ledger_id=parent.id, account_number='6190', description='FX translation gain/loss',
+                account_type='expense', normal_balance='debit', is_posting=True, status='Active',
+            )
+            db.session.add(fx_loss)
+            db.session.flush()
+        if amt > 0:
+            lines.extend([
+                {'account_id': fx_loss.id, 'debit': amt, 'credit': 0, 'description': f'FX {child.code}'},
+                {'account_id': cta.id, 'debit': 0, 'credit': amt, 'description': f'CTA {child.code}'},
+            ])
+        else:
+            lines.extend([
+                {'account_id': cta.id, 'debit': abs(amt), 'credit': 0, 'description': f'CTA {child.code}'},
+                {'account_id': fx_loss.id, 'debit': 0, 'credit': abs(amt), 'description': f'FX {child.code}'},
+            ])
+    if not lines:
+        raise ValueError('No FX adjustments to post')
+    batch = AcctJournalBatch(
+        ledger_id=parent.id,
+        batch_number=next_batch_number(AcctJournalBatch, parent.id),
+        source='CON-FX',
+        description=f'FX translation CTA {rate_date.isoformat()}',
+        batch_date=rate_date,
+        status='Open',
+        created_by_id=user_id,
+    )
+    db.session.add(batch)
+    db.session.flush()
+    for i, ln in enumerate(lines, start=1):
+        db.session.add(AcctJournalLine(
+            batch_id=batch.id, line_number=i,
+            account_id=ln['account_id'], description=ln['description'],
+            debit=ln['debit'], credit=ln['credit'],
+        ))
+    post_journal_batch(db, batch, AcctJournalLine, ledger=parent, models=models, user_id=user_id)
+    return {'batch_id': batch.id, 'line_count': len(lines)}
+
+
+def serialize_ic_rule(r):
+    return {
+        'id': r.id,
+        'parent_ledger_id': r.parent_ledger_id,
+        'due_from_account_number': r.due_from_account_number,
+        'due_to_account_number': r.due_to_account_number,
+        'auto_eliminate': bool(r.auto_eliminate),
+        'description': r.description or '',
+    }
+
+
+def list_ic_rules(models, parent_ledger_id):
+    AcctIntercompanyRule = models['AcctIntercompanyRule']
+    rows = AcctIntercompanyRule.query.filter_by(parent_ledger_id=int(parent_ledger_id)).all()
+    return {'rules': [serialize_ic_rule(r) for r in rows]}
+
+
+def upsert_ic_rule(db, models, parent_ledger_id, body, rule_id=None):
+    AcctIntercompanyRule = models['AcctIntercompanyRule']
+    if rule_id:
+        r = AcctIntercompanyRule.query.filter_by(id=int(rule_id), parent_ledger_id=int(parent_ledger_id)).first()
+        if not r:
+            raise ValueError('Rule not found')
+    else:
+        r = AcctIntercompanyRule(parent_ledger_id=int(parent_ledger_id))
+        db.session.add(r)
+    r.due_from_account_number = (body.get('due_from_account_number') or r.due_from_account_number or '1500')[:40]
+    r.due_to_account_number = (body.get('due_to_account_number') or r.due_to_account_number or '2500')[:40]
+    r.auto_eliminate = bool(body.get('auto_eliminate', True))
+    r.description = (body.get('description') or '')[:200]
+    db.session.flush()
+    return r
+
+
+def intercompany_reconciliation(db, models, parent_ledger_id):
+    AcctLedger = models['AcctLedger']
+    parent = AcctLedger.query.get(int(parent_ledger_id))
+    child_ids = subsidiary_ledger_ids(AcctLedger, parent.id)
+    pairs = []
+    for cid in child_ids:
+        child = AcctLedger.query.get(cid)
+        ctb = consolidated_trial_balance(db, models, parent.id, include_parent=True, child_ids=[cid])
+        due_from = due_to = 0.0
+        for r in ctb.get('rows') or []:
+            if str(r.get('account_number', '')).startswith('150'):
+                due_from += float(r.get('balance') or 0)
+            if str(r.get('account_number', '')).startswith('250'):
+                due_to += float(r.get('balance') or 0)
+        pairs.append({
+            'child_ledger_id': cid,
+            'child_code': child.code if child else '',
+            'due_from_balance': round(due_from, 2),
+            'due_to_balance': round(due_to, 2),
+            'difference': round(due_from + due_to, 2),
+        })
+    return {'parent_ledger_id': parent.id, 'pairs': pairs}

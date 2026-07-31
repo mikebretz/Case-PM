@@ -27,6 +27,10 @@
           <p class="text-xs text-zinc-500 mt-1">Fiscal calendar, locations, G/L security, optional fields, audit, and data tools.</p>
         </div>
         <div class="flex flex-wrap gap-2 text-xs">
+          <button type="button" id="acctPlatYearEnd" class="px-3 py-2 border border-zinc-700 rounded-md text-violet-400">Year-end close</button>
+          <button type="button" id="acctPlatReporter" class="px-3 py-2 border border-zinc-700 rounded-md text-cyan-400">Financial reporter</button>
+          <button type="button" id="acctPlatImportVend" class="px-3 py-2 border border-zinc-700 rounded-md text-zinc-300">Import vendors</button>
+          <a href="/api/accounting/platform/export/vendors" class="px-3 py-2 border border-zinc-700 rounded-md text-zinc-300 inline-block">Export vendors</a>
           <button type="button" id="acctPlatGenFy" class="px-3 py-2 border border-zinc-700 rounded-md text-emerald-400">Generate fiscal year</button>
           <button type="button" id="acctPlatAddLoc" class="px-3 py-2 border border-zinc-700 rounded-md text-sky-400">+ Location</button>
           <button type="button" id="acctPlatIntegrity" class="px-3 py-2 border border-zinc-700 rounded-md text-amber-400">Re-run integrity</button>
@@ -115,6 +119,36 @@
     });
 
     document.getElementById('acctPlatIntegrity')?.addEventListener('click', () => switchModule('admin'));
+
+    document.getElementById('acctPlatYearEnd')?.addEventListener('click', async () => {
+      const y = new Date().getFullYear();
+      if (!await AD().confirm({ title: 'Year-end close?', message: `Close FY${y} and post retained earnings?` })) return;
+      await api('/api/accounting/platform/year-end-close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fiscal_year: y }),
+      });
+      switchModule('admin');
+    });
+
+    document.getElementById('acctPlatReporter')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/platform/financial-reporter/run?report_type=cash_flow');
+      await AD().alert(`Cash flow (indirect): net change ${r.net_change_cash ?? '—'}`, 'info');
+    });
+
+    document.getElementById('acctPlatImportVend')?.addEventListener('click', async () => {
+      const data = await AD().form({
+        title: 'Import vendors CSV',
+        fields: [{ key: 'csv', label: 'Paste CSV', type: 'textarea', required: true }],
+      });
+      if (!data) return;
+      await api('/api/accounting/platform/import/vendors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csv: data.csv }),
+      });
+      switchModule('admin');
+    });
 
     document.getElementById('acctPlatLocale')?.addEventListener('click', async () => {
       const loc = await api('/api/accounting/platform/locale');

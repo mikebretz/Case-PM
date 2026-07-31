@@ -155,7 +155,11 @@ def register_accounting_routes(app, deps):
         batch = models['AcctJournalBatch'].query.get_or_404(batch_id)
         try:
             ledger = models['AcctLedger'].query.get(batch.ledger_id)
-            post_journal_batch(db, batch, models['AcctJournalLine'], ledger=ledger)
+            from accounting_enforcement import posting_context
+            post_journal_batch(
+                db, batch, models['AcctJournalLine'], ledger=ledger,
+                models=models, **posting_context(current_user),
+            )
             db.session.commit()
         except ValueError as exc:
             db.session.rollback()
@@ -617,10 +621,16 @@ def register_accounting_routes(app, deps):
     @login_required
     def api_acct_ap_vendor_tax(vendor_id):
         from accounting_ap_extended import patch_vendor_extended, serialize_vendor_extended
+        from accounting_enforcement import merge_optional_fields, optional_fields_from_entity
         v = models['AcctVendor'].query.filter_by(id=vendor_id, ledger_id=_ledger_id()).first_or_404()
-        patch_vendor_extended(v, request.get_json(silent=True) or {})
+        body = request.get_json(silent=True) or {}
+        patch_vendor_extended(v, body)
+        if 'optional_fields' in body:
+            v.details_json = merge_optional_fields(v.details_json, 'vendor', body['optional_fields'], models, _ledger_id())
         db.session.commit()
-        return jsonify({'vendor': serialize_vendor_extended(v)})
+        out = serialize_vendor_extended(v)
+        out['optional_fields'] = optional_fields_from_entity(v)
+        return jsonify({'vendor': out})
 
     @app.route('/api/accounting/ap/recurring-payables', methods=['GET', 'POST'])
     @login_required
@@ -2634,3 +2644,202 @@ def register_accounting_routes(app, deps):
         except ValueError as exc:
             db.session.rollback()
             return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/platform/i18n', methods=['GET'])
+    @login_required
+    def api_acct_platform_i18n():
+        from accounting_i18n import pack_for_lang
+        from accounting_platform import ledger_locale_settings
+        ledger = models['AcctLedger'].query.get(_ledger_id())
+        loc = ledger_locale_settings(ledger)
+        return jsonify({'lang': loc.get('ui_language', 'en'), 'strings': pack_for_lang(loc.get('ui_language'))})
+
+    @app.route('/api/accounting/platform/year-end-close', methods=['POST'])
+    @login_required
+    def api_acct_platform_year_end():
+        from financial_security import require_accounting_role
+        from accounting_platform import year_end_close
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        body = request.get_json(silent=True) or {}
+        try:
+            out = year_end_close(db, models, _ledger_id(), body.get('fiscal_year'), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/platform/security-matrix', methods=['GET'])
+    @login_required
+    def api_acct_platform_security_matrix():
+        from accounting_platform import security_matrix
+        return jsonify(security_matrix(models, _ledger_id()))
+
+    @app.route('/api/accounting/platform/financial-reporter/run', methods=['GET'])
+    @login_required
+    def api_acct_platform_financial_reporter_run():
+        from accounting_platform import run_financial_reporter
+        rtype = request.args.get('report_type') or 'trial_balance'
+        return jsonify(run_financial_reporter(
+            db, models, _ledger_id(), rtype,
+            location_id=request.args.get('location_id', type=int),
+            as_of=request.args.get('as_of'),
+        ))
+
+    @app.route('/api/accounting/platform/export/vendors', methods=['GET'])
+    @login_required
+    def api_acct_export_vendors():
+        from accounting_platform import export_vendors_csv
+        from flask import Response
+        return Response(export_vendors_csv(models, _ledger_id()), mimetype='text/csv',
+                        headers={'Content-Disposition': 'attachment; filename=vendors.csv'})
+
+    @app.route('/api/accounting/platform/export/customers', methods=['GET'])
+    @login_required
+    def api_acct_export_customers():
+        from accounting_platform import export_customers_csv
+        from flask import Response
+        return Response(export_customers_csv(models, _ledger_id()), mimetype='text/csv',
+                        headers={'Content-Disposition': 'attachment; filename=customers.csv'})
+
+    @app.route('/api/accounting/platform/import/vendors', methods=['POST'])
+    @login_required
+    def api_acct_import_vendors():
+        from accounting_platform import import_vendors_csv, write_audit
+        body = request.get_json(silent=True) or {}
+        out = import_vendors_csv(db, models, _ledger_id(), body.get('csv') or '')
+        write_audit(db, models, _ledger_id(), user_id=current_user.id, action='import_vendors', details=out)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/platform/import/customers', methods=['POST'])
+    @login_required
+    def api_acct_import_customers():
+        from accounting_platform import import_customers_csv, write_audit
+        body = request.get_json(silent=True) or {}
+        out = import_customers_csv(db, models, _ledger_id(), body.get('csv') or '')
+        write_audit(db, models, _ledger_id(), user_id=current_user.id, action='import_customers', details=out)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/gl/budgets/compare', methods=['GET'])
+    @login_required
+    def api_acct_gl_budget_compare():
+        from accounting_gl_extended import compare_budget_scenarios
+        ids = request.args.get('ids', '')
+        budget_ids = [int(x) for x in ids.split(',') if x.strip().isdigit()]
+        return jsonify(compare_budget_scenarios(db, models, _ledger_id(), budget_ids))
+
+    @app.route('/api/accounting/consolidation/cash-flow', methods=['GET'])
+    @login_required
+    def api_acct_consolidation_cf():
+        from accounting_consolidation import indirect_cash_flow_statement
+        parent_id = request.args.get('parent_ledger_id', type=int) or _ledger_id()
+        return jsonify(indirect_cash_flow_statement(db, models, parent_id, as_of=request.args.get('as_of')))
+
+    @app.route('/api/accounting/consolidation/nci', methods=['GET'])
+    @login_required
+    def api_acct_consolidation_nci():
+        from accounting_consolidation import non_controlling_interest_summary
+        parent_id = request.args.get('parent_ledger_id', type=int) or _ledger_id()
+        return jsonify(non_controlling_interest_summary(db, models, parent_id))
+
+    @app.route('/api/accounting/consolidation/fx-post', methods=['POST'])
+    @login_required
+    def api_acct_consolidation_fx_post():
+        from accounting_consolidation import post_fx_translation_adjustment
+        from financial_security import require_accounting_role
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        try:
+            out = post_fx_translation_adjustment(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/consolidation/ic-rules', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_consolidation_ic_rules():
+        from accounting_consolidation import list_ic_rules, upsert_ic_rule, serialize_ic_rule
+        parent_id = request.args.get('parent_ledger_id', type=int) or _ledger_id()
+        if request.method == 'GET':
+            return jsonify(list_ic_rules(models, parent_id))
+        r = upsert_ic_rule(db, models, parent_id, request.get_json(silent=True) or {})
+        db.session.commit()
+        return jsonify({'rule': serialize_ic_rule(r)}), 201
+
+    @app.route('/api/accounting/consolidation/ic-reconciliation', methods=['GET'])
+    @login_required
+    def api_acct_consolidation_ic_recon():
+        from accounting_consolidation import intercompany_reconciliation
+        parent_id = request.args.get('parent_ledger_id', type=int) or _ledger_id()
+        return jsonify(intercompany_reconciliation(db, models, parent_id))
+
+    @app.route('/api/accounting/ap/withholding-rules', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_ap_withholding():
+        from accounting_ap_extended import serialize_withholding_rule, upsert_withholding_rule
+        AcctWithholdingRule = models['AcctWithholdingRule']
+        lid = _ledger_id()
+        if request.method == 'GET':
+            rows = AcctWithholdingRule.query.filter_by(ledger_id=lid).all()
+            return jsonify({'rules': [serialize_withholding_rule(r) for r in rows]})
+        r = upsert_withholding_rule(db, models, lid, request.get_json(silent=True) or {})
+        db.session.commit()
+        return jsonify({'rule': serialize_withholding_rule(r)}), 201
+
+    @app.route('/api/accounting/ap/match-workbench', methods=['GET'])
+    @login_required
+    def api_acct_ap_match_workbench():
+        from accounting_ap_extended import ap_match_workbench
+        return jsonify(ap_match_workbench(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/ap/reports/1099/print', methods=['GET'])
+    @login_required
+    def api_acct_ap_1099_print():
+        from accounting_ap_extended import report_1099_printable_html
+        from flask import Response
+        from datetime import date as date_cls
+        year = request.args.get('tax_year', type=int) or (date_cls.today().year - 1)
+        html = report_1099_printable_html(db, models, _ledger_id(), year)
+        return Response(html, mimetype='text/html')
+
+    @app.route('/api/accounting/ap/withholding/calculate', methods=['POST'])
+    @login_required
+    def api_acct_ap_withhold_calc():
+        from accounting_ap_extended import compute_withholding_for_invoice
+        body = request.get_json(silent=True) or {}
+        return jsonify(compute_withholding_for_invoice(db, models, _ledger_id(), body.get('vendor_id'), body.get('gross')))
+
+    @app.route('/api/accounting/ar/dunning/smtp', methods=['POST'])
+    @login_required
+    def api_acct_ar_dunning_smtp():
+        from accounting_ar_extended import send_dunning_smtp
+        body = request.get_json(silent=True) or {}
+        try:
+            out = send_dunning_smtp(db, models, _ledger_id(), body['customer_id'], int(body.get('level') or 1), body.get('message'))
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/ar/dunning/run-auto', methods=['POST'])
+    @login_required
+    def api_acct_ar_dunning_auto():
+        from accounting_ar_extended import run_automated_dunning
+        from financial_security import require_accounting_role
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        out = run_automated_dunning(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})

@@ -320,5 +320,191 @@ def financial_reporter_layout(models, ledger_id, report_type='trial_balance'):
         'ledger_id': ledger_id,
         'columns': ['account_number', 'description', 'debit', 'credit', 'balance'],
         'filters': {'location_id': None, 'segment': None},
-        'available_reports': ['trial_balance', 'income_statement', 'balance_sheet'],
+        'available_reports': ['trial_balance', 'income_statement', 'balance_sheet', 'cash_flow'],
     }
+
+
+def run_financial_reporter(db, models, ledger_id, report_type='trial_balance', *, location_id=None, as_of=None):
+    from datetime import date as date_cls
+    from accounting_reports import balance_sheet, income_statement
+    from accounting_persistence import trial_balance
+    as_of = date_cls.fromisoformat(as_of) if isinstance(as_of, str) and as_of else (as_of or date_cls.today())
+    AcctGLAccount = models['AcctGLAccount']
+    AcctJournalLine = models['AcctJournalLine']
+    AcctJournalBatch = models['AcctJournalBatch']
+    if report_type == 'trial_balance':
+        rows = trial_balance(db, AcctGLAccount, AcctJournalLine, AcctJournalBatch, ledger_id)
+    elif report_type == 'balance_sheet':
+        data = balance_sheet(db, models, ledger_id, as_of=as_of)
+        rows = data.get('rows') or data.get('sections', [])
+        return {'report_type': report_type, 'as_of': as_of.isoformat(), 'rows': rows}
+    elif report_type == 'income_statement':
+        data = income_statement(db, models, ledger_id)
+        return {'report_type': report_type, **data}
+    elif report_type == 'cash_flow':
+        from accounting_consolidation import indirect_cash_flow_statement
+        return indirect_cash_flow_statement(db, models, ledger_id, as_of=as_of)
+    else:
+        rows = trial_balance(db, AcctGLAccount, AcctJournalLine, AcctJournalBatch, ledger_id)
+    if location_id:
+        loc = int(location_id)
+        filtered = []
+        for r in rows:
+            if isinstance(r, dict) and r.get('location_id') in (None, loc):
+                filtered.append(r)
+        rows = filtered or rows
+    return {'report_type': report_type, 'as_of': as_of.isoformat(), 'rows': rows}
+
+
+def export_vendors_csv(models, ledger_id):
+    AcctVendor = models['AcctVendor']
+    import csv
+    import io
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(['code', 'name', 'terms', 'email', 'tax_id', 'is_1099'])
+    for v in AcctVendor.query.filter_by(ledger_id=ledger_id).order_by(AcctVendor.code).all():
+        w.writerow([v.code, v.name, v.terms or '', v.email or '', v.tax_id or '', int(bool(v.is_1099))])
+    return buf.getvalue()
+
+
+def export_customers_csv(models, ledger_id):
+    AcctCustomer = models['AcctCustomer']
+    import csv
+    import io
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(['code', 'name', 'terms', 'email', 'credit_limit'])
+    for c in AcctCustomer.query.filter_by(ledger_id=ledger_id).order_by(AcctCustomer.code).all():
+        w.writerow([c.code, c.name, c.terms or '', c.email or '', c.credit_limit or 0])
+    return buf.getvalue()
+
+
+def import_vendors_csv(db, models, ledger_id, csv_text):
+    import csv
+    import io
+    AcctVendor = models['AcctVendor']
+    created = updated = 0
+    for row in csv.DictReader(io.StringIO(csv_text)):
+        code = (row.get('code') or '').strip().upper()
+        if not code:
+            continue
+        v = AcctVendor.query.filter_by(ledger_id=ledger_id, code=code).first()
+        if not v:
+            v = AcctVendor(ledger_id=ledger_id, code=code, name=(row.get('name') or code)[:200])
+            db.session.add(v)
+            created += 1
+        else:
+            updated += 1
+        v.name = (row.get('name') or v.name)[:200]
+        if row.get('terms'):
+            v.terms = row['terms'][:40]
+        if row.get('email'):
+            v.email = row['email'][:120]
+        if row.get('tax_id'):
+            v.tax_id = row['tax_id'][:30]
+        if row.get('is_1099') is not None:
+            v.is_1099 = str(row['is_1099']).strip() in ('1', 'true', 'True', 'yes')
+    db.session.flush()
+    return {'created': created, 'updated': updated}
+
+
+def import_customers_csv(db, models, ledger_id, csv_text):
+    import csv
+    import io
+    AcctCustomer = models['AcctCustomer']
+    created = updated = 0
+    for row in csv.DictReader(io.StringIO(csv_text)):
+        code = (row.get('code') or '').strip().upper()
+        if not code:
+            continue
+        c = AcctCustomer.query.filter_by(ledger_id=ledger_id, code=code).first()
+        if not c:
+            c = AcctCustomer(ledger_id=ledger_id, code=code, name=(row.get('name') or code)[:200])
+            db.session.add(c)
+            created += 1
+        else:
+            updated += 1
+        c.name = (row.get('name') or c.name)[:200]
+        if row.get('terms'):
+            c.terms = row['terms'][:40]
+        if row.get('email'):
+            c.email = row['email'][:120]
+        if row.get('credit_limit'):
+            c.credit_limit = float(row['credit_limit'] or 0)
+    db.session.flush()
+    return {'created': created, 'updated': updated}
+
+
+def year_end_close(db, models, ledger_id, fiscal_year, user_id=None):
+    """Close all periods in fiscal year and post retained earnings summary batch."""
+    from accounting_persistence import next_batch_number, post_journal_batch
+    from accounting_gl_service import period_key_for_date
+    AcctFiscalPeriod = models['AcctFiscalPeriod']
+    AcctLedger = models['AcctLedger']
+    AcctGLAccount = models['AcctGLAccount']
+    AcctJournalBatch = models['AcctJournalBatch']
+    AcctJournalLine = models['AcctJournalLine']
+    fy = int(fiscal_year)
+    generate_fiscal_periods(db, models, ledger_id, fy)
+    periods = AcctFiscalPeriod.query.filter_by(ledger_id=ledger_id, fiscal_year=fy).all()
+    for p in periods:
+        set_fiscal_period_status(db, models, ledger_id, p.id, 'Closed')
+    ledger = AcctLedger.query.get(ledger_id)
+    from accounting_reports import income_statement
+    pl = income_statement(db, models, ledger_id)
+    net = float(pl.get('net_income') or pl.get('totals', {}).get('net_income') or 0)
+    re_acct = AcctGLAccount.query.filter_by(ledger_id=ledger_id, account_number='3900').first()
+    if not re_acct:
+        re_acct = AcctGLAccount(
+            ledger_id=ledger_id, account_number='3900', description='Retained Earnings',
+            account_type='equity', normal_balance='credit', is_posting=True, status='Active',
+        )
+        db.session.add(re_acct)
+        db.session.flush()
+    batch = AcctJournalBatch(
+        ledger_id=ledger_id,
+        batch_number=next_batch_number(AcctJournalBatch, ledger_id),
+        source='YE-CLOSE',
+        description=f'Year-end close FY{fy}',
+        batch_date=date(fy, 12, 31),
+        status='Open',
+        created_by_id=user_id,
+    )
+    db.session.add(batch)
+    db.session.flush()
+    if abs(net) > 0.01:
+        if net > 0:
+            db.session.add(AcctJournalLine(
+                batch_id=batch.id, line_number=1, account_id=re_acct.id,
+                description='Close P&L to retained earnings', debit=net, credit=0,
+            ))
+            rev = AcctGLAccount.query.filter_by(ledger_id=ledger_id, account_type='revenue').first()
+            if rev:
+                db.session.add(AcctJournalLine(
+                    batch_id=batch.id, line_number=2, account_id=rev.id,
+                    description='Year-end close', debit=0, credit=net,
+                ))
+        else:
+            db.session.add(AcctJournalLine(
+                batch_id=batch.id, line_number=1, account_id=re_acct.id,
+                description='Close P&L to retained earnings', debit=0, credit=abs(net),
+            ))
+    post_journal_batch(db, batch, AcctJournalLine, ledger=ledger, models=models, user_id=user_id)
+    write_audit(db, models, ledger_id, user_id=user_id, action='year_end_close', details={'fiscal_year': fy, 'net_income': net})
+    return {'fiscal_year': fy, 'periods_closed': len(periods), 'year_end_batch_id': batch.id, 'net_income': round(net, 2)}
+
+
+def security_matrix(models, ledger_id):
+    AcctGLAccountSecurity = models['AcctGLAccountSecurity']
+    AcctGLAccount = models['AcctGLAccount']
+    rules = AcctGLAccountSecurity.query.filter_by(ledger_id=ledger_id).all()
+    rows = []
+    for r in rules:
+        acct = AcctGLAccount.query.get(r.account_id)
+        rows.append({
+            **serialize_gl_security(r),
+            'account_number': acct.account_number if acct else '',
+            'account_description': acct.description if acct else '',
+        })
+    return {'rules': rows, 'roles': ['admin', 'accounting_user', 'accounting_clerk', 'viewer']}

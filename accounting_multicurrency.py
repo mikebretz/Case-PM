@@ -142,7 +142,7 @@ def run_revaluation(db, models, ledger_id, body, user_id=None):
         adj = abs(adjustment)
         db.session.add(AcctJournalLine(batch_id=batch.id, line_number=1, account_id=int(loss_acct), debit=0, credit=adj, description='FX revaluation'))
         db.session.add(AcctJournalLine(batch_id=batch.id, line_number=2, account_id=int(gain_acct), debit=adj, credit=0, description='FX revaluation'))
-    post_journal_batch(db, batch, AcctJournalLine, ledger=ledger)
+    post_journal_batch(db, batch, AcctJournalLine, ledger=ledger, models=models, user_id=user_id)
     run.journal_batch_id = batch.id
     db.session.flush()
     return {'run_id': run.id, 'journal_batch_id': batch.id, 'adjustment': adjustment}

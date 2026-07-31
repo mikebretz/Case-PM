@@ -59,6 +59,7 @@
         <button type="button" id="acctGlFxRate" class="px-2 py-1 border border-zinc-600 rounded text-cyan-400">FX rate</button>
         <button type="button" id="acctGlReval" class="px-2 py-1 border border-zinc-600 rounded text-cyan-300">Run revaluation</button>
         <button type="button" id="acctGlRunDue" class="px-2 py-1 border border-zinc-600 rounded text-zinc-300">Run due recurring</button>
+        <button type="button" id="acctGlBudgetCompare" class="px-2 py-1 border border-zinc-600 rounded text-emerald-200">Compare budgets</button>
       </div>
       <p class="text-[11px] text-zinc-600">Subledger tie-out: click the button above to compare control accounts to open A/P and A/R.</p>
       ${extrasFailed ? '<p class="text-[11px] text-amber-500">Some advanced G/L data could not be loaded — refresh the page after a moment or check server logs.</p>' : ''}
@@ -103,6 +104,9 @@
         <button type="button" id="acctApNacha" class="px-2 py-1 border border-zinc-600 rounded text-sky-300">EFT / NACHA</button>
         <button type="button" id="acctApMatchTol" class="px-2 py-1 border border-zinc-600 rounded text-zinc-300">Match tolerance</button>
         <button type="button" id="acctAp1099Efile" class="px-2 py-1 border border-zinc-600 rounded text-violet-300">1099 e-file</button>
+        <button type="button" id="acctAp1099Print" class="px-2 py-1 border border-zinc-600 rounded text-violet-200">Print 1099</button>
+        <button type="button" id="acctApMatchBench" class="px-2 py-1 border border-zinc-600 rounded text-amber-300">Match workbench</button>
+        <button type="button" id="acctApWithhold" class="px-2 py-1 border border-zinc-600 rounded text-red-300">Withholding rules</button>
       </div>
       <div id="acctApVendorActOut" class="text-xs max-h-40 overflow-auto border border-zinc-800 rounded p-2 hidden"></div>
       <div class="text-xs text-zinc-500">Vendor groups: ${(groups.groups || []).length} · Recurring: ${(recurring.recurring || []).length}</div>
@@ -129,6 +133,7 @@
         <button type="button" id="acctArStmtPrint" class="px-2 py-1 border border-zinc-600 rounded text-zinc-300">Print statement</button>
         <button type="button" id="acctArDunningRules" class="px-2 py-1 border border-zinc-600 rounded text-orange-400">Dunning rules</button>
         <button type="button" id="acctArCashApp" class="px-2 py-1 border border-zinc-600 rounded text-emerald-300">Cash application</button>
+        <button type="button" id="acctArDunningSmtp" class="px-2 py-1 border border-zinc-600 rounded text-orange-300">SMTP dunning run</button>
       </div>
       <div class="text-xs text-zinc-500">Customer groups: ${(groups.groups || []).length} · Overdue for dunning: ${(overdue.customers || []).length} · Receipt batches: ${(batches.batches || []).length}</div>
     </section>`;
@@ -357,6 +362,17 @@
         await AD().alert(e.message, 'error');
       }
     });
+
+    document.getElementById('acctGlBudgetCompare')?.addEventListener('click', async () => {
+      const budgets = await api('/api/accounting/gl/budgets');
+      const ids = (budgets.budgets || []).slice(0, 3).map((b) => b.id);
+      if (!ids.length) {
+        await AD().alert('Create at least one budget first.', 'warning');
+        return;
+      }
+      const cmp = await api(`/api/accounting/gl/budgets/compare?ids=${ids.join(',')}`);
+      await AD().alert((cmp.budgets || []).map((b) => `${b.name}: ${b.total}`).join('\n'), 'info');
+    });
   }
 
   function bindApExtras() {
@@ -459,6 +475,32 @@
     document.getElementById('acctAp1099Efile')?.addEventListener('click', async () => {
       const r = await api(`/api/accounting/ap/1099/efile?tax_year=${new Date().getFullYear() - 1}`);
       await AD().alert(`E-file stub: ${r.vendor_count} vendor(s). Copy from API response if needed.`, 'info');
+    });
+
+    document.getElementById('acctAp1099Print')?.addEventListener('click', () => {
+      global.open(`/api/accounting/ap/reports/1099/print?tax_year=${new Date().getFullYear() - 1}`, '_blank');
+    });
+
+    document.getElementById('acctApMatchBench')?.addEventListener('click', async () => {
+      const wb = await api('/api/accounting/ap/match-workbench');
+      await AD().alert(`${(wb.exceptions || []).length} match exception(s) of ${(wb.all || []).length} invoice(s).`, 'info');
+    });
+
+    document.getElementById('acctApWithhold')?.addEventListener('click', async () => {
+      const data = await AD().form({
+        title: 'Withholding rule',
+        fields: [
+          { key: 'name', label: 'Name', defaultValue: 'Default withhold' },
+          { key: 'withhold_percent', label: 'Percent', defaultValue: '10' },
+        ],
+      });
+      if (!data) return;
+      await api('/api/accounting/ap/withholding-rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: data.name, withhold_percent: parseFloat(data.withhold_percent) }),
+      });
+      switchModule('ap');
     });
   }
 
@@ -618,6 +660,12 @@
           applications: [{ ar_document_id: inv.ar_document_id, amount: amt }],
         }),
       });
+      switchModule('ar');
+    });
+
+    document.getElementById('acctArDunningSmtp')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/ar/dunning/run-auto', { method: 'POST' });
+      await AD().alert(`Processed ${r.processed || 0} dunning notice(s) via SMTP when configured.`, 'info');
       switchModule('ar');
     });
   }
