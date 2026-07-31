@@ -89,6 +89,9 @@
         <button type="button" id="acctSagePortfolio" class="px-2 py-0.5 border border-indigo-800 rounded text-indigo-200">Portfolio reconcile</button>
         <button type="button" id="acctSageDistEx" class="px-2 py-0.5 border border-amber-900 rounded text-amber-200">Dist exceptions</button>
         <button type="button" id="acctSageYearVar" class="px-2 py-0.5 border border-violet-900 rounded text-violet-200">Year-end variance</button>
+        <button type="button" id="acctSagePullArRcp2" class="px-2 py-0.5 border border-cyan-900 rounded text-cyan-200">Pull AR cash</button>
+        <button type="button" id="acctSageSegVal" class="px-2 py-0.5 border border-zinc-600 rounded">Validate segments</button>
+        <button type="button" id="acctSageRetry" class="px-2 py-0.5 border border-orange-900 rounded text-orange-200">Retry inbox</button>
         <button type="button" id="acctSageOps" class="px-2 py-0.5 border border-zinc-600 rounded text-zinc-300">Ops dashboard</button>
         <button type="button" id="acctSagePolicyCasepm" class="px-2 py-0.5 border border-zinc-600 rounded">SOR: Case PM</button>
         <button type="button" id="acctSagePolicySage" class="px-2 py-0.5 border border-zinc-600 rounded">SOR: Sage</button>
@@ -194,8 +197,22 @@
     });
     document.getElementById('acctSageYearVar')?.addEventListener('click', async () => {
       const yr = new Date().getFullYear();
-      const v = await api(`/api/accounting/sage/compliance/year-end-variance?tax_year=${yr}`);
-      await AD().alert(`Year ${yr}: W-2 rows ${v.w2_rows}. Sage sync issues ${v.sage_sync_issues}. Ready: ${v.ready ? 'yes' : 'review'}.`, v.ready ? 'success' : 'warning');
+      const v = await api(`/api/accounting/sage/compliance/year-end-extended?tax_year=${yr}`);
+      await AD().alert(`Year ${yr}: W-2 rows ${v.w2_rows}. Sage sync issues ${v.sage_sync_issues}. 1099 vendors ${v['1099_vendor_count']}.`, v.ready ? 'success' : 'warning');
+    });
+    document.getElementById('acctSagePullArRcp2')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/sync/pull-ar-receipts', { method: 'POST', body: '{}' });
+      await AD().alert(`Applied ${r.applied || 0} receipt line(s).`, 'info');
+      const ap = await api('/api/accounting/sage/sync/pull-ap-status', { method: 'POST', body: '{}' });
+      await AD().alert(`AP status updated: ${ap.updated || 0} document(s).`, 'info');
+    });
+    document.getElementById('acctSageSegVal')?.addEventListener('click', async () => {
+      const v = await api('/api/accounting/sage/segment-map/validate');
+      await AD().alert(v.ok ? 'Segment map OK vs Sage GL.' : `Missing in Sage: ${(v.missing_in_sage || []).slice(0, 8).join(', ')}`, v.ok ? 'success' : 'warning');
+    });
+    document.getElementById('acctSageRetry')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/sync/retry-inbox', { method: 'POST', body: '{}' });
+      await AD().alert(r.skipped ? `Skipped: ${r.reason}` : 'Retried AP/AR push.', 'info');
     });
     document.getElementById('acctSageOps')?.addEventListener('click', async () => {
       const d = await api('/api/accounting/sage/mirror/dashboard');

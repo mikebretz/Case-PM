@@ -112,3 +112,12 @@ Runs wave 14–19 mirror cron, portfolio job reconcile, and optional Sage paces 
 POST /api/accounting/cron/sage-mirror-full
 X-CasePM-Cron-Secret: your-long-random-secret
 ```
+
+## Sage mirror complete (waves 25–28, optional)
+
+Pull AR/AP status, auto-retry inbox, optional paces (`CASEPM_RUN_SAGE_PACES=1`):
+
+```http
+POST /api/accounting/cron/sage-mirror-complete
+X-CasePM-Cron-Secret: your-long-random-secret
+```
