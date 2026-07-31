@@ -92,3 +92,14 @@ Same secret as wave 12. Runs wave 12 maintenance (wave 11 → wave 10 chain); pe
 POST /api/accounting/cron/wave13
 X-CasePM-Cron-Secret: your-long-random-secret
 ```
+
+## Sage mirror maintenance (waves 14–19, optional)
+
+Runs wave 13 cron chain plus Sage queue flush and mirror coverage check:
+
+```http
+POST /api/accounting/cron/sage-mirror
+X-CasePM-Cron-Secret: your-long-random-secret
+```
+
+Use **Accounting → Integrations** mirror buttons for customer/AR/AP payment/G/L push, bank/tax pull, CRE job reconcile, and module coverage report (`/api/accounting/sage/mirror/coverage`).

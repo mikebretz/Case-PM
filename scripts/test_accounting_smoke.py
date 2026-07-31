@@ -81,6 +81,16 @@ def main() -> int:
     except Exception as exc:
         errors.append(f'accounting_waves_23: {exc}')
 
+    print('6g. Wave 24 Sage mirror (14–19)…')
+    try:
+        import accounting_waves_24 as w24  # noqa: F401
+        assert callable(w24.sage_module_coverage_report)
+        chk = w24.sage_mirror_deploy_check()
+        if not chk.get('ok'):
+            errors.append(f'sage_mirror_deploy_check: {chk.get("errors")}')
+    except Exception as exc:
+        errors.append(f'accounting_waves_24: {exc}')
+
     print('6c. instance DB must not be tracked…')
     try:
         from accounting_waves_20 import git_tracked_paths_must_not_include_db
