@@ -39,6 +39,13 @@ CSRF_EXEMPT_ENDPOINTS = frozenset({
     'api_public_marketing_lead',
     'api_public_marketing_case_study',
     'public_marketing_case_study',
+    'public_marketing_site',
+    'public_marketing_review',
+    'api_public_marketing_review',
+    'public_marketing_proposal',
+    'api_public_proposal_sign',
+    'api_marketing_track_open',
+    'api_marketing_track_click',
 })
 
 

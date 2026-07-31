@@ -1,59 +1,52 @@
-# Case PM Marketing Module
+# Case PM Marketing Module (Pillars 1–9)
 
-Construction-focused marketing ties **project delivery data** to business development: portfolio, pipeline, reputation, campaigns, and visual assets—without maintaining a separate generic CRM.
+Construction marketing ties **project delivery** to **business development**: portfolio, pipeline, portal, reputation, campaigns, DAM, proposals, web capture, and ROI analytics.
 
-## Pillars (research alignment)
+## Status
 
-| Pillar | Status | Implementation |
-|--------|--------|----------------|
-| Project portfolio & case studies | Live | `build_case_study_from_project`, publish + public embed |
-| Lead & opportunity pipeline | Live | Stages inquiry → won/lost, analytics, convert to estimate/project |
-| Client portal + marketing | Live | Complements Client Portal; review requests post-close |
-| Reputation & referrals | Live | `MarketingReviewRequest`, email trigger, public testimonials flag |
-| Email campaigns | Live | Segmented sends via `send_workflow_email` |
-| Visual DAM | Live | Sync from `Photo`, tags and use-cases |
-| Proposal & collateral | Partial | `MarketingCollateralTemplate` seed templates |
-| Website & lead capture | Partial | `POST /api/public/marketing/leads`, public case study URLs |
-| Marketing ROI dashboards | Live | `/api/marketing/dashboard` |
-| Houzz / Dodge / CRM integrations | Planned | Catalog only |
+| # | Pillar | Status |
+|---|--------|--------|
+| 1 | Portfolio & case studies | **Live** — gallery, before/after, videos JSON, exports (HTML/embed/LinkedIn/JSON), view counts |
+| 2 | Lead pipeline & bids | **Live** — RFP/bid-package linkage, lead-from-bid-package, historical close rates + forecast |
+| 3 | Client portal marketing | **Live** — portal tab, review links, published case studies per project |
+| 4 | Reputation & referrals | **Live** — automation rules, public review forms, referral registry, testimonial widget, syndication webhook |
+| 5 | Email & SMS campaigns | **Live** — templates, tracked opens/clicks/conversions (pixel + redirect), Twilio/webhook SMS |
+| 6 | Visual DAM | **Live** — search, register external/video/document assets, phase/trade/use-case filters |
+| 7 | Proposals & collateral | **Live** — content library, estimate-backed proposals, public view + e-sign capture |
+| 8 | Web & lead capture | **Live** — landing pages (`/public/marketing/site/<slug>`), public leads, marketing settings (GBP URL, base URL) |
+| 9 | Marketing ROI | **Live** — spend entries, CPL, campaign attribution, portfolio/landing/proposal view metrics |
+| 10 | External integrations | **Planned** — Houzz/Dodge/ConstructConnect native connectors |
 
-## Routes
+## Key routes
 
-### Staff (login required)
+Staff hub: `/marketing`
 
-- `GET /marketing` — UI hub
-- `GET /api/marketing/catalog` — pillar catalog + seed collateral
-- `GET /api/marketing/dashboard` — ROI + pipeline summary
-- `GET|POST /api/marketing/leads` — CRUD pipeline
-- `POST /api/marketing/leads/<id>/stage` — move stage
-- `POST /api/marketing/leads/<id>/convert-estimate` — won path into PM/estimating
-- `GET /api/marketing/case-studies` — list
-- `POST /api/marketing/case-studies/from-project` — auto-build from project + photos
-- `POST /api/marketing/case-studies/<id>/publish`
-- `GET /api/marketing/assets`, `POST /api/marketing/assets/sync`
-- Reviews & campaigns under `/api/marketing/reviews` and `/api/marketing/campaigns`
+Analytics: `GET /api/marketing/dashboard` (full ROI payload)
 
-### Public (CSRF exempt)
+Automation: `POST /api/marketing/automation/run` `{ "project_id": 1 }`
 
-- `POST /api/public/marketing/leads` — website form intake
-- `GET /public/marketing/case-study/<slug>` — embeddable HTML
-- `GET /api/public/marketing/case-study/<slug>` — JSON for integrations
+Proposals: `POST /api/marketing/proposals` → `GET /public/marketing/proposal/<token>`
 
-## Permissions
+Public review: `/public/marketing/review/<token>`
 
-Module key: `marketing` with sub-keys `marketing_pipeline`, `marketing_portfolio`, `marketing_campaigns`, `marketing_reputation`, `marketing_assets` (see `permissions_catalog.py`).
+Campaign tracking: `/api/marketing/track/open/<token>.gif`, `/api/marketing/track/click/<token>?u=...`
 
-## Data model
+## Configuration
 
-Defined in `marketing_models.py` via `define_marketing_models(db)`:
+Program settings section `marketing` (via `PUT /api/marketing/settings`):
 
-- `MarketingLead`, `MarketingCaseStudy`, `MarketingCampaign`, `MarketingReviewRequest`, `MarketingAsset`, `MarketingCollateralTemplate`
+- `public_base_url` — used in emails and tracked links
+- `google_business_profile_url`
+- `review_syndication_enabled` + optional env `CASEPM_REVIEW_SYNDICATION_WEBHOOK`
 
-Tables are created with `db.create_all()` on startup.
+SMS: `CASEPM_TWILIO_*` or `CASEPM_SMS_WEBHOOK_URL`
+
+## Schema
+
+New tables created via `define_marketing_models`; existing DBs upgraded with `ensure_marketing_schema()` on startup.
 
 ## Deploy check
 
-```python
-from marketing_services import marketing_deploy_check
-marketing_deploy_check()  # {'ok': True}
+```bash
+python3 -c "from marketing_services import marketing_deploy_check; print(marketing_deploy_check())"
 ```

@@ -27,7 +27,7 @@
   function showTab(name) {
     document.querySelectorAll('.cp-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
     document.querySelectorAll('.cp-panel').forEach(p => p.classList.add('hidden'));
-    const map = { approvals: 'cpApprovals', selections: 'cpSelections', draws: 'cpDraws', payments: 'cpPayments', updates: 'cpItems' };
+    const map = { approvals: 'cpApprovals', selections: 'cpSelections', draws: 'cpDraws', payments: 'cpPayments', updates: 'cpItems', marketing: 'cpMarketing' };
     document.getElementById(map[name])?.classList.remove('hidden');
   }
 
@@ -83,6 +83,16 @@
       <div class="text-xs text-zinc-500">$${Number(p.amount||0).toLocaleString()} · ${esc(p.method)} · ${esc(p.status)}</div></div></div>`);
     renderSimpleList('cpItems', feed.portal_items || [], 'No published updates.', i => `
       <div class="cp-row"><div class="font-medium">${esc(i.title)}</div><div class="text-xs text-zinc-500">${esc(i.status)}</div></div>`);
+    const mk = feed.marketing || {};
+    renderSimpleList('cpMarketing', mk.review_requests || [], 'No review requests.', r => `
+      <div class="cp-row"><div class="flex-1"><div class="font-medium">Review (${esc(r.platform)})</div>
+      <div class="text-xs text-zinc-500">${esc(r.status)}</div></div>
+      ${r.public_url ? `<a class="text-xs text-sky-400" href="${esc(r.public_url)}" target="_blank">Open form</a>` : ''}</div>`);
+    if ((mk.published_case_studies || []).length) {
+      document.getElementById('cpMarketing').innerHTML += mk.published_case_studies.map(c =>
+        `<div class="cp-row"><a class="text-sky-400" href="/public/marketing/case-study/${esc(c.slug)}" target="_blank">${esc(c.title)}</a></div>`,
+      ).join('');
+    }
   }
 
   function openRespond(id) {
@@ -92,6 +102,10 @@
 
   async function load() {
     feed = await api('/api/client-portal/feed');
+    try {
+      const mk = await api('/api/marketing/client-portal');
+      feed.marketing = mk;
+    } catch (_) { /* optional */ }
     renderAll();
   }
 

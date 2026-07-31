@@ -2071,6 +2071,14 @@ MarketingCampaign = _marketing_models['MarketingCampaign']
 MarketingReviewRequest = _marketing_models['MarketingReviewRequest']
 MarketingAsset = _marketing_models['MarketingAsset']
 MarketingCollateralTemplate = _marketing_models['MarketingCollateralTemplate']
+MarketingCampaignRecipient = _marketing_models['MarketingCampaignRecipient']
+MarketingAutomationRule = _marketing_models['MarketingAutomationRule']
+MarketingReferral = _marketing_models['MarketingReferral']
+MarketingProposal = _marketing_models['MarketingProposal']
+MarketingContentBlock = _marketing_models['MarketingContentBlock']
+MarketingLandingPage = _marketing_models['MarketingLandingPage']
+MarketingSpend = _marketing_models['MarketingSpend']
+MarketingCampaignTemplate = _marketing_models['MarketingCampaignTemplate']
 
 
 class Company(db.Model):
@@ -18591,17 +18599,14 @@ register_marketing_routes(app, {
     'current_user': current_user,
     'get_current_project_id': get_current_project_id,
     'get_active_project': get_active_project,
-    'MarketingLead': MarketingLead,
-    'MarketingCaseStudy': MarketingCaseStudy,
-    'MarketingCampaign': MarketingCampaign,
-    'MarketingReviewRequest': MarketingReviewRequest,
-    'MarketingAsset': MarketingAsset,
-    'MarketingCollateralTemplate': MarketingCollateralTemplate,
     'Project': Project,
     'Photo': Photo,
     'Estimate': Estimate,
+    'EstimateLine': EstimateLine,
+    'BidPackage': BidPackage,
     'BudgetProjectState': BudgetProjectState,
     'PayAppProjectState': PayAppProjectState,
+    **_marketing_models,
 })
 
 
@@ -18828,6 +18833,11 @@ with app.app_context():
             ensure_estimate_schema(db.engine, db)
         except Exception as _est:
             print('Estimate schema:', _est)
+        try:
+            from marketing_persistence import ensure_marketing_schema
+            ensure_marketing_schema(db)
+        except Exception as _mkt:
+            print('Marketing schema:', _mkt)
         try:
             from document_persistence import ensure_document_schema
             ensure_document_schema(db.engine, db)
