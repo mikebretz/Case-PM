@@ -148,6 +148,7 @@
 
   async function enhanceDashboard(root) {
     const { api, esc, money } = helpers();
+    if (root.querySelector('#acctDashKpiGrid')) return;
     try {
       const kpi = await api('/api/accounting/bi/kpi-dashboard');
       const extra = document.createElement('div');

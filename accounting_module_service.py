@@ -67,15 +67,7 @@ def build_company_dashboard(db, models, project_id=None, Project=None, SageSyncE
             accounting_status='pending_review',
         ).count()
 
-    return {
-        'ok': True,
-        'ledger': {
-            'id': ledger.id,
-            'code': ledger.code,
-            'name': ledger.name,
-            'base_currency': ledger.base_currency,
-        },
-        'kpis': {
+    kpis = {
             'gl_accounts': AcctGLAccount.query.filter_by(ledger_id=ledger.id).count(),
             'open_ap': round(sum(ap['buckets'].values()), 2),
             'open_ar': round(sum(ar['buckets'].values()), 2),
@@ -86,7 +78,25 @@ def build_company_dashboard(db, models, project_id=None, Project=None, SageSyncE
             **__import__('accounting_parity_wave2', fromlist=['extended_dashboard_kpis']).extended_dashboard_kpis(
                 db, models, ledger.id
             ),
+    }
+    from accounting_platform_depth import (
+        build_dashboard_kpi_tiles,
+        consolidated_entity_summary,
+        dashboard_kpi_config,
+    )
+
+    return {
+        'ok': True,
+        'ledger': {
+            'id': ledger.id,
+            'code': ledger.code,
+            'name': ledger.name,
+            'base_currency': ledger.base_currency,
         },
+        'kpis': kpis,
+        'kpi_tiles': build_dashboard_kpi_tiles(kpis, ledger),
+        'dashboard_kpi_config': dashboard_kpi_config(ledger),
+        'consolidated_summary': consolidated_entity_summary(db, models, ledger.id),
         'trial_balance_preview': tb[:8],
         'ap_aging_buckets': ap['buckets'],
         'ar_aging_buckets': ar['buckets'],

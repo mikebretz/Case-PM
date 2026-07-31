@@ -73,6 +73,17 @@ def register_accounting_routes(app, deps):
             db, models, project_id=project_id, Project=Project, SageSyncEvent=SageSyncEvent,
         ))
 
+    @app.route('/api/accounting/dashboard/kpi-config', methods=['GET', 'PATCH'])
+    @login_required
+    def api_accounting_dashboard_kpi_config():
+        from accounting_platform_depth import dashboard_kpi_config, update_dashboard_kpi_config
+        ledger = models['AcctLedger'].query.get(_ledger_id())
+        if request.method == 'GET':
+            return jsonify(dashboard_kpi_config(ledger))
+        cfg = update_dashboard_kpi_config(ledger, request.get_json(silent=True) or {})
+        db.session.commit()
+        return jsonify({'ok': True, **cfg})
+
     @app.route('/api/accounting/gl/accounts', methods=['GET', 'POST'])
     @login_required
     def api_acct_gl_accounts():
@@ -508,30 +519,44 @@ def register_accounting_routes(app, deps):
     @app.route('/api/accounting/ap/vendors/<int:vendor_id>', methods=['PATCH'])
     @login_required
     def api_acct_ap_vendor_patch(vendor_id):
+        from accounting_core_gaps import log_field_changes
         from accounting_persistence import serialize_vendor
         AcctVendor = models['AcctVendor']
         lid = _ledger_id()
         v = AcctVendor.query.filter_by(id=vendor_id, ledger_id=lid).first_or_404()
         body = request.get_json(silent=True) or {}
+        before = {f: getattr(v, f, None) for f in ('name', 'terms', 'tax_group', 'email', 'phone', 'status')}
         for field in ('name', 'terms', 'tax_group', 'email', 'phone', 'status'):
             if field in body:
                 setattr(v, field, str(body[field])[:200] if body[field] is not None else '')
+        log_field_changes(
+            db, models, lid, user_id=current_user.id,
+            entity_type='vendor', entity_id=v.id, before=before,
+            after={f: getattr(v, f, None) for f in before},
+        )
         db.session.commit()
         return jsonify({'ok': True, 'vendor': serialize_vendor(v)})
 
     @app.route('/api/accounting/ar/customers/<int:customer_id>', methods=['PATCH'])
     @login_required
     def api_acct_ar_customer_patch(customer_id):
+        from accounting_core_gaps import log_field_changes
         from accounting_persistence import serialize_customer
         AcctCustomer = models['AcctCustomer']
         lid = _ledger_id()
         c = AcctCustomer.query.filter_by(id=customer_id, ledger_id=lid).first_or_404()
         body = request.get_json(silent=True) or {}
+        before = {f: getattr(c, f, None) for f in ('name', 'terms', 'email', 'status', 'credit_limit')}
         for field in ('name', 'terms', 'email', 'status'):
             if field in body:
                 setattr(c, field, str(body[field])[:200] if body[field] is not None else '')
         if 'credit_limit' in body:
             c.credit_limit = float(body['credit_limit'] or 0)
+        after = {f: getattr(c, f, None) for f in before}
+        log_field_changes(
+            db, models, lid, user_id=current_user.id,
+            entity_type='customer', entity_id=c.id, before=before, after=after,
+        )
         db.session.commit()
         return jsonify({'ok': True, 'customer': serialize_customer(c)})
 
@@ -2929,8 +2954,20 @@ def register_accounting_routes(app, deps):
     @app.route('/api/accounting/platform/posting-schedule', methods=['GET'])
     @login_required
     def api_acct_posting_schedule():
-        from accounting_core_gaps import posting_schedule_dashboard
-        return jsonify(posting_schedule_dashboard(db, models, _ledger_id()))
+        from accounting_platform_depth import posting_schedule_full
+        return jsonify(posting_schedule_full(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/platform/fiscal-archives', methods=['GET'])
+    @login_required
+    def api_acct_platform_fiscal_archives():
+        from accounting_platform_depth import list_fiscal_archive_index
+        return jsonify(list_fiscal_archive_index(models, _ledger_id()))
+
+    @app.route('/api/accounting/platform/revaluation-runs', methods=['GET'])
+    @login_required
+    def api_acct_platform_revaluation_runs():
+        from accounting_platform_depth import list_revaluation_runs
+        return jsonify(list_revaluation_runs(models, _ledger_id()))
 
     @app.route('/api/accounting/platform/report-layouts', methods=['GET', 'POST'])
     @login_required
