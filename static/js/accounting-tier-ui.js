@@ -17,22 +17,32 @@
     const stripe = st.stripe || {};
     const plaid = st.plaid || {};
     const web = sage.web_api || {};
+    const hybridBlock = global.CasePMAcctWaves17UI
+      ? await global.CasePMAcctWaves17UI.sageHybridSection(st)
+      : '';
+    const calBlock = global.CasePMAcctWaves17UI
+      ? await global.CasePMAcctWaves17UI.complianceCalendarHtml()
+      : '';
     return `<section class="border border-violet-900/40 rounded-lg p-3 bg-violet-950/20 space-y-3">
       <h3 class="text-sm font-semibold text-violet-200">Integrations &amp; Sage hybrid</h3>
       <div class="grid md:grid-cols-3 gap-2 text-xs">
         <div class="border border-zinc-700 rounded p-2">
           <div class="text-zinc-500">Stripe</div>
           <div class="text-zinc-200">${esc(stripe.mode || 'off')} · ${stripe.stripe_configured ? 'keys set' : 'no secret key'}</div>
+          <div class="text-[10px] text-zinc-600">Webhook secret: ${stripe.webhook_secret_set ? 'set' : 'optional'}</div>
         </div>
         <div class="border border-zinc-700 rounded p-2">
           <div class="text-zinc-500">Plaid</div>
-          <div class="text-zinc-200">${plaid.configured ? 'API configured' : 'paste transactions in Bank import'}</div>
+          <div class="text-zinc-200">${plaid.configured ? (plaid.linked ? 'linked' : 'ready') : 'not configured'}</div>
+          <button type="button" id="acctPlaidLink" class="mt-1 px-2 py-0.5 border border-zinc-600 rounded text-sky-400">Link bank (Plaid)</button>
         </div>
         <div class="border border-zinc-700 rounded p-2">
           <div class="text-zinc-500">Sage Web API</div>
           <div class="text-zinc-200">${web.configured ? esc(web.mode || 'configured') : 'not configured'}</div>
         </div>
       </div>
+      ${hybridBlock}
+      ${calBlock}
       <div class="flex flex-wrap gap-2 text-xs">
         <button type="button" id="acctTierSageVendors" class="px-2 py-1 border border-zinc-600 rounded text-emerald-400">Pull Sage vendors</button>
         <button type="button" id="acctTierSageGl" class="px-2 py-1 border border-zinc-600 rounded text-sky-400">Pull Sage G/L</button>
@@ -86,6 +96,9 @@
     if (!root || !ctx) return;
     root.innerHTML = await integrationsPanelHtml();
     bindIntegrationsPanel();
+    if (global.CasePMAcctWaves17UI?.afterIntegrationsMount) {
+      await global.CasePMAcctWaves17UI.afterIntegrationsMount();
+    }
   }
 
   global.CasePMAcctTierUI = {

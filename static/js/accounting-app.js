@@ -203,6 +203,9 @@
       }
       if (route === 'admin' && global.CasePMAcctTierUI) {
         global.CasePMAcctTierUI.init({ api, esc, money, switchModule, AD: () => global.CasePMAccountingDialog || {}, projectId });
+        if (global.CasePMAcctWaves17UI) {
+          global.CasePMAcctWaves17UI.init({ api, esc, money, switchModule, AD: () => global.CasePMAccountingDialog || {}, projectId });
+        }
         global.CasePMAcctTierUI.mountAdminIntegrations();
       }
     } catch (e) {
