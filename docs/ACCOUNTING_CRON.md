@@ -175,3 +175,12 @@ Runs bank/cash cron, CRE bridge (53–56), distribution maintenance (57–60), d
 POST /api/accounting/cron/sage-cre-distribution
 X-CasePM-Cron-Secret: your-long-random-secret
 ```
+
+## Sage cross-module cron (waves 49, 61, 65, 69, optional)
+
+GL journal pull/export, stacked tax push, FA multi-book run, company matrix refresh, deploy v9:
+
+```http
+POST /api/accounting/cron/sage-cross-module
+X-CasePM-Cron-Secret: your-long-random-secret
+```

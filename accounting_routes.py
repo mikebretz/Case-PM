@@ -5932,3 +5932,97 @@ def register_accounting_routes(app, deps):
             return jsonify({'ok': True, **out})
         except PermissionError as exc:
             return jsonify({'error': str(exc)}), 403
+
+    # --- Waves 49, 61, 65, 69 ---
+
+    @app.route('/api/accounting/sage/gl/pull-batches', methods=['POST'])
+    @login_required
+    def api_acct_sage_gl_pull_batches():
+        from accounting_waves_34 import sage_pull_gl_journal_batch_status
+        out = sage_pull_gl_journal_batch_status(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/gl/batch-ack', methods=['GET'])
+    @login_required
+    def api_acct_sage_gl_batch_ack():
+        from accounting_waves_34 import sage_gl_journal_batch_ack_summary
+        return jsonify(sage_gl_journal_batch_ack_summary(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/sage/gl/recurring-export', methods=['POST'])
+    @login_required
+    def api_acct_sage_gl_recurring_export():
+        from accounting_waves_34 import sage_export_recurring_and_allocation
+        out = sage_export_recurring_and_allocation(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/tax/stacked-push', methods=['POST'])
+    @login_required
+    def api_acct_sage_tax_stacked():
+        from accounting_waves_34 import sage_push_stacked_tax_batch
+        out = sage_push_stacked_tax_batch(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/tax/stack-calc', methods=['POST'])
+    @login_required
+    def api_acct_sage_tax_stack_calc():
+        from accounting_waves_34 import stacked_tax_on_amount
+        data = request.get_json(silent=True) or {}
+        return jsonify(stacked_tax_on_amount(db, models, _ledger_id(), float(data.get('amount') or 0), data.get('tax_group_code', '')))
+
+    @app.route('/api/accounting/assets/multi-book-run', methods=['POST'])
+    @login_required
+    def api_acct_fa_multi_book():
+        from accounting_waves_34 import fa_multi_book_depreciation_run
+        out = fa_multi_book_depreciation_run(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/assets/<int:asset_id>/schedule', methods=['GET'])
+    @login_required
+    def api_acct_fa_schedule(asset_id):
+        from accounting_waves_34 import fa_ddb_syd_schedule_preview
+        return jsonify(fa_ddb_syd_schedule_preview(db, models, _ledger_id(), asset_id))
+
+    @app.route('/api/accounting/assets/<int:asset_id>/dispose-sage', methods=['POST'])
+    @login_required
+    def api_acct_fa_dispose_sage(asset_id):
+        from accounting_waves_34 import fa_disposal_sage_mirror
+        data = request.get_json(silent=True) or {}
+        out = fa_disposal_sage_mirror(db, models, _ledger_id(), asset_id, float(data.get('proceeds') or 0), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/platform/company-matrix', methods=['GET'])
+    @login_required
+    def api_acct_company_matrix():
+        from accounting_waves_34 import company_matrix_dashboard
+        return jsonify(company_matrix_dashboard(db, models))
+
+    @app.route('/api/accounting/platform/company-coa-map', methods=['POST'])
+    @login_required
+    def api_acct_company_coa_map():
+        from accounting_waves_34 import save_company_coa_map
+        data = request.get_json(silent=True) or {}
+        out = save_company_coa_map(db, models, _ledger_id(), data.get('company_code', ''), data.get('mapping') or {}, user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/platform/company-routing', methods=['GET'])
+    @login_required
+    def api_acct_company_routing():
+        from accounting_waves_34 import company_ledger_routing_table
+        return jsonify(company_ledger_routing_table(db, models))
+
+    @app.route('/api/accounting/cron/sage-cross-module', methods=['POST'])
+    def api_acct_cron_sage_cross_module():
+        from accounting_waves_34 import cron_waves_49_61_65_69_maintenance
+        secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
+        try:
+            out = cron_waves_49_61_65_69_maintenance(db, models, secret, Project=Project)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403

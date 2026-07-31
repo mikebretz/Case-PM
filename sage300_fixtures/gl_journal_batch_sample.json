@@ -1,0 +1,12 @@
+{
+  "@odata.context": "https://example/sage/odata/$metadata#GLJournalBatches",
+  "value": [
+    {
+      "BatchNumber": "JE-2024-08-001",
+      "Description": "Case PM export",
+      "Status": "Posted",
+      "TotalDebits": 1000.0,
+      "TotalCredits": 1000.0
+    }
+  ]
+}
