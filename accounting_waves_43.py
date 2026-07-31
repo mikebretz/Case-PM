@@ -66,6 +66,11 @@ def post_equipment_daily_log_to_accounting(
 
     defaults = load_accounting_defaults()
     rates = defaults.get('equipment_hourly_rates') or {}
+    try:
+        from program_settings_persistence import accounting_equipment_hourly_rates_map
+        rates = {**rates, **accounting_equipment_hourly_rates_map()}
+    except Exception:
+        pass
     default_rate = float(defaults.get('equipment_default_hourly_rate') or 85)
     burden = float(defaults.get('labor_burden_percent') or 0)
     posted = []
