@@ -56,6 +56,7 @@ def define_accounting_models(db):
         credit = db.Column(db.Float, default=0)
         project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
         reference = db.Column(db.String(80))
+        segments_json = db.Column(db.Text)
 
     class AcctVendor(db.Model):
         __tablename__ = 'acct_vendor'
@@ -69,8 +70,22 @@ def define_accounting_models(db):
         phone = db.Column(db.String(40))
         status = db.Column(db.String(20), default='Active')
         company_id = db.Column(db.Integer, db.ForeignKey('company.id'), nullable=True)
+        vendor_group_id = db.Column(db.Integer, db.ForeignKey('acct_vendor_group.id'), nullable=True, index=True)
+        tax_id = db.Column(db.String(30))
+        is_1099 = db.Column(db.Boolean, default=False)
+        form_1099_type = db.Column(db.String(10), default='NEC')
+        default_withhold_percent = db.Column(db.Float, default=0)
         details_json = db.Column(db.Text)
         created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class AcctVendorGroup(db.Model):
+        __tablename__ = 'acct_vendor_group'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        code = db.Column(db.String(20), nullable=False)
+        name = db.Column(db.String(120), nullable=False)
+        terms = db.Column(db.String(40))
+        status = db.Column(db.String(20), default='Active')
 
     class AcctCustomer(db.Model):
         __tablename__ = 'acct_customer'
@@ -84,8 +99,30 @@ def define_accounting_models(db):
         email = db.Column(db.String(120))
         status = db.Column(db.String(20), default='Active')
         company_id = db.Column(db.Integer, db.ForeignKey('company.id'), nullable=True)
+        customer_group_id = db.Column(db.Integer, db.ForeignKey('acct_customer_group.id'), nullable=True, index=True)
+        credit_hold = db.Column(db.Boolean, default=False)
+        national_account_code = db.Column(db.String(40))
         details_json = db.Column(db.Text)
         created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class AcctCustomerGroup(db.Model):
+        __tablename__ = 'acct_customer_group'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        code = db.Column(db.String(20), nullable=False)
+        name = db.Column(db.String(120), nullable=False)
+        credit_limit = db.Column(db.Float, default=0)
+        status = db.Column(db.String(20), default='Active')
+
+    class AcctCustomerShipTo(db.Model):
+        __tablename__ = 'acct_customer_ship_to'
+        id = db.Column(db.Integer, primary_key=True)
+        customer_id = db.Column(db.Integer, db.ForeignKey('acct_customer.id'), nullable=False, index=True)
+        code = db.Column(db.String(20), nullable=False)
+        name = db.Column(db.String(120), nullable=False)
+        address_json = db.Column(db.Text)
+        is_default = db.Column(db.Boolean, default=False)
+        status = db.Column(db.String(20), default='Active')
 
     class AcctAPDocument(db.Model):
         __tablename__ = 'acct_ap_document'
@@ -101,8 +138,25 @@ def define_accounting_models(db):
         status = db.Column(db.String(20), default='Open')
         project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
         po_reference = db.Column(db.String(40))
+        purchase_order_id = db.Column(db.Integer, db.ForeignKey('acct_purchase_order.id'), nullable=True, index=True)
+        retainage_amount = db.Column(db.Float, default=0)
+        withhold_amount = db.Column(db.Float, default=0)
+        gross_amount = db.Column(db.Float, default=0)
         details_json = db.Column(db.Text)
         created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class AcctAPRecurringPayable(db.Model):
+        __tablename__ = 'acct_ap_recurring_payable'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        vendor_id = db.Column(db.Integer, db.ForeignKey('acct_vendor.id'), nullable=False)
+        description = db.Column(db.String(200))
+        amount = db.Column(db.Float, default=0)
+        frequency = db.Column(db.String(20), default='monthly')  # monthly, weekly
+        next_run_date = db.Column(db.Date)
+        last_run_date = db.Column(db.Date, nullable=True)
+        is_active = db.Column(db.Boolean, default=True)
+        document_number_prefix = db.Column(db.String(30), default='REC-AP')
 
     class AcctARDocument(db.Model):
         __tablename__ = 'acct_ar_document'
@@ -117,7 +171,104 @@ def define_accounting_models(db):
         amount_paid = db.Column(db.Float, default=0)
         status = db.Column(db.String(20), default='Open')
         project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
+        ship_to_id = db.Column(db.Integer, db.ForeignKey('acct_customer_ship_to.id'), nullable=True)
+        parent_document_id = db.Column(db.Integer, db.ForeignKey('acct_ar_document.id'), nullable=True)
         details_json = db.Column(db.Text)
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class AcctARRecurringInvoice(db.Model):
+        __tablename__ = 'acct_ar_recurring_invoice'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        customer_id = db.Column(db.Integer, db.ForeignKey('acct_customer.id'), nullable=False)
+        description = db.Column(db.String(200))
+        amount = db.Column(db.Float, default=0)
+        frequency = db.Column(db.String(20), default='monthly')
+        next_run_date = db.Column(db.Date)
+        last_run_date = db.Column(db.Date, nullable=True)
+        is_active = db.Column(db.Boolean, default=True)
+        document_number_prefix = db.Column(db.String(30), default='REC-AR')
+
+    class AcctARDunningLog(db.Model):
+        __tablename__ = 'acct_ar_dunning_log'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        customer_id = db.Column(db.Integer, db.ForeignKey('acct_customer.id'), nullable=False)
+        level = db.Column(db.Integer, default=1)
+        message = db.Column(db.String(500))
+        sent_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class AcctARReceiptBatch(db.Model):
+        __tablename__ = 'acct_ar_receipt_batch'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        batch_number = db.Column(db.String(30), nullable=False)
+        batch_date = db.Column(db.Date)
+        status = db.Column(db.String(20), default='Open')
+        posted_at = db.Column(db.DateTime, nullable=True)
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class AcctARReceiptBatchLine(db.Model):
+        __tablename__ = 'acct_ar_receipt_batch_line'
+        id = db.Column(db.Integer, primary_key=True)
+        batch_id = db.Column(db.Integer, db.ForeignKey('acct_ar_receipt_batch.id'), nullable=False, index=True)
+        customer_id = db.Column(db.Integer, db.ForeignKey('acct_customer.id'), nullable=False)
+        ar_document_id = db.Column(db.Integer, db.ForeignKey('acct_ar_document.id'), nullable=True)
+        amount = db.Column(db.Float, default=0)
+        payment_method = db.Column(db.String(20), default='ACH')
+
+    class AcctGLBudget(db.Model):
+        __tablename__ = 'acct_gl_budget'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        name = db.Column(db.String(80), nullable=False)
+        fiscal_year = db.Column(db.Integer, nullable=False)
+        status = db.Column(db.String(20), default='Active')
+
+    class AcctGLBudgetLine(db.Model):
+        __tablename__ = 'acct_gl_budget_line'
+        id = db.Column(db.Integer, primary_key=True)
+        budget_id = db.Column(db.Integer, db.ForeignKey('acct_gl_budget.id'), nullable=False, index=True)
+        account_id = db.Column(db.Integer, db.ForeignKey('acct_gl_account.id'), nullable=False)
+        period_key = db.Column(db.String(7), nullable=False)  # YYYY-MM
+        amount = db.Column(db.Float, default=0)
+
+    class AcctGLRecurringJournal(db.Model):
+        __tablename__ = 'acct_gl_recurring_journal'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        code = db.Column(db.String(30), nullable=False)
+        description = db.Column(db.String(300))
+        frequency = db.Column(db.String(20), default='monthly')
+        next_run_date = db.Column(db.Date)
+        last_run_date = db.Column(db.Date, nullable=True)
+        source = db.Column(db.String(20), default='GL')
+        lines_json = db.Column(db.Text)
+        is_active = db.Column(db.Boolean, default=True)
+
+    class AcctGLAllocationTemplate(db.Model):
+        __tablename__ = 'acct_gl_allocation_template'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        code = db.Column(db.String(30), nullable=False)
+        description = db.Column(db.String(300))
+        pool_account_id = db.Column(db.Integer, db.ForeignKey('acct_gl_account.id'), nullable=True)
+        lines_json = db.Column(db.Text)
+        is_active = db.Column(db.Boolean, default=True)
+
+    class AcctIntercompanyEntry(db.Model):
+        __tablename__ = 'acct_intercompany_entry'
+        id = db.Column(db.Integer, primary_key=True)
+        ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=False, index=True)
+        entry_number = db.Column(db.String(30), nullable=False)
+        counterparty_ledger_id = db.Column(db.Integer, db.ForeignKey('acct_ledger.id'), nullable=True)
+        from_account_id = db.Column(db.Integer, db.ForeignKey('acct_gl_account.id'), nullable=False)
+        to_account_id = db.Column(db.Integer, db.ForeignKey('acct_gl_account.id'), nullable=False)
+        amount = db.Column(db.Float, default=0)
+        description = db.Column(db.String(300))
+        entry_date = db.Column(db.Date)
+        status = db.Column(db.String(20), default='Open')
+        journal_batch_id = db.Column(db.Integer, db.ForeignKey('acct_journal_batch.id'), nullable=True)
         created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     class AcctBankAccount(db.Model):
@@ -249,6 +400,8 @@ def define_accounting_models(db):
         journal_batch_id = db.Column(db.Integer, db.ForeignKey('acct_journal_batch.id'), nullable=True)
         payment_batch_id = db.Column(db.Integer, db.ForeignKey('acct_payment_batch.id'), nullable=True, index=True)
         check_number = db.Column(db.String(20), nullable=True)
+        void_reason = db.Column(db.String(200), nullable=True)
+        voided_at = db.Column(db.DateTime, nullable=True)
         created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     class AcctPaymentBatch(db.Model):
@@ -444,9 +597,22 @@ def define_accounting_models(db):
         'AcctJournalBatch': AcctJournalBatch,
         'AcctJournalLine': AcctJournalLine,
         'AcctVendor': AcctVendor,
+        'AcctVendorGroup': AcctVendorGroup,
         'AcctCustomer': AcctCustomer,
+        'AcctCustomerGroup': AcctCustomerGroup,
+        'AcctCustomerShipTo': AcctCustomerShipTo,
         'AcctAPDocument': AcctAPDocument,
+        'AcctAPRecurringPayable': AcctAPRecurringPayable,
         'AcctARDocument': AcctARDocument,
+        'AcctARRecurringInvoice': AcctARRecurringInvoice,
+        'AcctARDunningLog': AcctARDunningLog,
+        'AcctARReceiptBatch': AcctARReceiptBatch,
+        'AcctARReceiptBatchLine': AcctARReceiptBatchLine,
+        'AcctGLBudget': AcctGLBudget,
+        'AcctGLBudgetLine': AcctGLBudgetLine,
+        'AcctGLRecurringJournal': AcctGLRecurringJournal,
+        'AcctGLAllocationTemplate': AcctGLAllocationTemplate,
+        'AcctIntercompanyEntry': AcctIntercompanyEntry,
         'AcctBankAccount': AcctBankAccount,
         'AcctBankTransaction': AcctBankTransaction,
         'AcctTaxGroup': AcctTaxGroup,

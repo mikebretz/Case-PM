@@ -72,6 +72,16 @@ def register_accounting_routes(app, deps):
         )
         if not acct.account_number or not acct.description:
             return jsonify({'error': 'account_number and description required'}), 400
+        from accounting_gl_extended import validate_account_number_segments
+        from accounting_gl_service import ledger_gl_options
+        ledger = models['AcctLedger'].query.get(lid)
+        opts = ledger_gl_options(ledger)
+        try:
+            segs = validate_account_number_segments(acct.account_number, opts['segment_count'])
+            import json as json_mod
+            acct.segments_json = json_mod.dumps(segs)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
         db.session.add(acct)
         db.session.commit()
         return jsonify({'ok': True, 'account': serialize_account(acct)})
@@ -221,6 +231,158 @@ def register_accounting_routes(app, deps):
         db.session.commit()
         return jsonify({'ok': True, 'options': data})
 
+    @app.route('/api/accounting/gl/segments/validate', methods=['POST'])
+    @login_required
+    def api_acct_gl_segments_validate():
+        from accounting_gl_extended import segments_payload, validate_account_number_segments
+        from accounting_gl_service import ledger_gl_options
+        body = request.get_json(silent=True) or {}
+        ledger = models['AcctLedger'].query.get(_ledger_id())
+        opts = ledger_gl_options(ledger)
+        segs = validate_account_number_segments(body.get('account_number', ''), opts['segment_count'])
+        return jsonify({'ok': True, **segments_payload(body.get('account_number', ''), opts['segment_count'])})
+
+    @app.route('/api/accounting/gl/budgets', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_gl_budgets():
+        from accounting_gl_extended import create_budget, serialize_budget
+        AcctGLBudget = models['AcctGLBudget']
+        AcctGLBudgetLine = models['AcctGLBudgetLine']
+        lid = _ledger_id()
+        if request.method == 'GET':
+            rows = AcctGLBudget.query.filter_by(ledger_id=lid).order_by(AcctGLBudget.id.desc()).all()
+            return jsonify({'budgets': [serialize_budget(b) for b in rows]})
+        body = request.get_json(silent=True) or {}
+        b = create_budget(db, models, lid, body)
+        db.session.commit()
+        return jsonify({'budget': serialize_budget(b)}), 201
+
+    @app.route('/api/accounting/gl/budgets/<int:budget_id>/vs-actual', methods=['GET'])
+    @login_required
+    def api_acct_gl_budget_vs_actual(budget_id):
+        from accounting_gl_extended import budget_vs_actual
+        period = request.args.get('period_key')
+        try:
+            data = budget_vs_actual(db, models, _ledger_id(), budget_id, period_key=period)
+            return jsonify(data)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/gl/recurring-journals', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_gl_recurring():
+        from accounting_gl_extended import create_recurring_journal, run_recurring_journal, serialize_recurring
+        AcctGLRecurringJournal = models['AcctGLRecurringJournal']
+        lid = _ledger_id()
+        if request.method == 'GET':
+            rows = AcctGLRecurringJournal.query.filter_by(ledger_id=lid).order_by(AcctGLRecurringJournal.id.desc()).all()
+            return jsonify({'recurring': [serialize_recurring(r) for r in rows]})
+        body = request.get_json(silent=True) or {}
+        try:
+            r = create_recurring_journal(db, models, lid, body)
+            db.session.commit()
+            return jsonify({'recurring': serialize_recurring(r)}), 201
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/gl/recurring-journals/<int:rec_id>/run', methods=['POST'])
+    @login_required
+    def api_acct_gl_recurring_run(rec_id):
+        from accounting_gl_extended import run_recurring_journal
+        from financial_security import require_accounting_role
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        r = models['AcctGLRecurringJournal'].query.filter_by(id=rec_id, ledger_id=_ledger_id()).first_or_404()
+        try:
+            out = run_recurring_journal(db, models, r, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/gl/allocations', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_gl_allocations():
+        from accounting_gl_extended import create_allocation_template, run_allocation, serialize_allocation
+        AcctGLAllocationTemplate = models['AcctGLAllocationTemplate']
+        lid = _ledger_id()
+        if request.method == 'GET':
+            rows = AcctGLAllocationTemplate.query.filter_by(ledger_id=lid).all()
+            return jsonify({'templates': [serialize_allocation(t) for t in rows]})
+        body = request.get_json(silent=True) or {}
+        try:
+            t = create_allocation_template(db, models, lid, body)
+            db.session.commit()
+            return jsonify({'template': serialize_allocation(t)}), 201
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/gl/allocations/<int:template_id>/run', methods=['POST'])
+    @login_required
+    def api_acct_gl_allocation_run(template_id):
+        from accounting_gl_extended import run_allocation
+        from financial_security import require_accounting_role
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        t = models['AcctGLAllocationTemplate'].query.filter_by(id=template_id, ledger_id=_ledger_id()).first_or_404()
+        body = request.get_json(silent=True) or {}
+        try:
+            out = run_allocation(db, models, t, body.get('amount'), batch_date=body.get('batch_date'), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/gl/intercompany', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_gl_intercompany():
+        from accounting_gl_extended import create_intercompany_entry, post_intercompany_entry, serialize_intercompany
+        AcctIntercompanyEntry = models['AcctIntercompanyEntry']
+        lid = _ledger_id()
+        if request.method == 'GET':
+            rows = AcctIntercompanyEntry.query.filter_by(ledger_id=lid).order_by(AcctIntercompanyEntry.id.desc()).limit(50).all()
+            return jsonify({'entries': [serialize_intercompany(e) for e in rows]})
+        body = request.get_json(silent=True) or {}
+        try:
+            e = create_intercompany_entry(db, models, lid, body)
+            db.session.commit()
+            return jsonify({'entry': serialize_intercompany(e)}), 201
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/gl/intercompany/<int:entry_id>/post', methods=['POST'])
+    @login_required
+    def api_acct_gl_intercompany_post(entry_id):
+        from accounting_gl_extended import post_intercompany_entry, serialize_intercompany
+        from financial_security import require_accounting_role
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        e = models['AcctIntercompanyEntry'].query.filter_by(id=entry_id, ledger_id=_ledger_id()).first_or_404()
+        try:
+            out = post_intercompany_entry(db, models, e, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out, 'entry': serialize_intercompany(e)})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/gl/subledger-reconcile', methods=['GET'])
+    @login_required
+    def api_acct_gl_subledger_reconcile():
+        from accounting_gl_extended import subledger_control_reconcile
+        return jsonify(subledger_control_reconcile(db, models, _ledger_id()))
+
     @app.route('/api/accounting/ap/invoices/<int:invoice_id>/post-gl', methods=['POST'])
     @login_required
     def api_acct_ap_invoice_post_gl(invoice_id):
@@ -331,13 +493,29 @@ def register_accounting_routes(app, deps):
             rows = AcctAPDocument.query.filter_by(ledger_id=lid).order_by(AcctAPDocument.created_at.desc()).limit(200).all()
             return jsonify({'invoices': [serialize_ap_doc(d) for d in rows]})
         body = request.get_json(silent=True) or {}
+        from accounting_ap_extended import compute_ap_invoice_amounts
+        AcctVendor = models['AcctVendor']
+        vendor = AcctVendor.query.get(int(body['vendor_id']))
+        withhold_pct = body.get('withhold_percent')
+        if withhold_pct is None and vendor:
+            withhold_pct = vendor.default_withhold_percent
+        amounts = compute_ap_invoice_amounts(
+            body.get('gross_amount') or body.get('amount') or 0,
+            retainage_percent=body.get('retainage_percent', 0),
+            withhold_percent=withhold_pct or 0,
+        )
         doc = AcctAPDocument(
             ledger_id=lid,
             vendor_id=int(body['vendor_id']),
             document_number=(body.get('document_number') or '').strip(),
             document_date=date_cls.fromisoformat(body['document_date']) if body.get('document_date') else date_cls.today(),
             due_date=date_cls.fromisoformat(body['due_date']) if body.get('due_date') else None,
-            amount=float(body.get('amount') or 0),
+            amount=amounts['amount'],
+            gross_amount=amounts['gross_amount'],
+            retainage_amount=amounts['retainage_amount'],
+            withhold_amount=amounts['withhold_amount'],
+            purchase_order_id=body.get('purchase_order_id'),
+            po_reference=(body.get('po_reference') or '')[:40] or None,
             project_id=body.get('project_id'),
             status='Open',
         )
@@ -360,6 +538,108 @@ def register_accounting_routes(app, deps):
                 return jsonify({'error': str(exc)}), 400
         db.session.commit()
         return jsonify({'ok': True, 'invoice': serialize_ap_doc(doc)})
+
+    @app.route('/api/accounting/ap/vendor-groups', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_ap_vendor_groups():
+        from accounting_ap_extended import serialize_vendor_group
+        AcctVendorGroup = models['AcctVendorGroup']
+        lid = _ledger_id()
+        if request.method == 'GET':
+            rows = AcctVendorGroup.query.filter_by(ledger_id=lid).all()
+            return jsonify({'groups': [serialize_vendor_group(g) for g in rows]})
+        body = request.get_json(silent=True) or {}
+        g = AcctVendorGroup(
+            ledger_id=lid,
+            code=(body.get('code') or '')[:20],
+            name=(body.get('name') or '')[:120],
+            terms=body.get('terms'),
+        )
+        if not g.code or not g.name:
+            return jsonify({'error': 'code and name required'}), 400
+        db.session.add(g)
+        db.session.commit()
+        return jsonify({'group': serialize_vendor_group(g)}), 201
+
+    @app.route('/api/accounting/ap/vendors/<int:vendor_id>/tax-profile', methods=['PATCH'])
+    @login_required
+    def api_acct_ap_vendor_tax(vendor_id):
+        from accounting_ap_extended import patch_vendor_extended, serialize_vendor_extended
+        v = models['AcctVendor'].query.filter_by(id=vendor_id, ledger_id=_ledger_id()).first_or_404()
+        patch_vendor_extended(v, request.get_json(silent=True) or {})
+        db.session.commit()
+        return jsonify({'vendor': serialize_vendor_extended(v)})
+
+    @app.route('/api/accounting/ap/recurring-payables', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_ap_recurring():
+        from accounting_ap_extended import generate_recurring_ap_invoice, serialize_recurring_ap
+        AcctAPRecurringPayable = models['AcctAPRecurringPayable']
+        lid = _ledger_id()
+        if request.method == 'GET':
+            rows = AcctAPRecurringPayable.query.filter_by(ledger_id=lid).all()
+            return jsonify({'recurring': [serialize_recurring_ap(r) for r in rows]})
+        body = request.get_json(silent=True) or {}
+        from datetime import date as date_cls
+        r = AcctAPRecurringPayable(
+            ledger_id=lid,
+            vendor_id=int(body['vendor_id']),
+            description=body.get('description'),
+            amount=float(body.get('amount') or 0),
+            frequency=(body.get('frequency') or 'monthly')[:20],
+            next_run_date=date_cls.fromisoformat(body['next_run_date']) if body.get('next_run_date') else date_cls.today(),
+            is_active=True,
+        )
+        db.session.add(r)
+        db.session.commit()
+        return jsonify({'recurring': serialize_recurring_ap(r)}), 201
+
+    @app.route('/api/accounting/ap/recurring-payables/<int:rec_id>/generate', methods=['POST'])
+    @login_required
+    def api_acct_ap_recurring_generate(rec_id):
+        from accounting_ap_extended import generate_recurring_ap_invoice
+        from accounting_persistence import serialize_ap_doc
+        r = models['AcctAPRecurringPayable'].query.filter_by(id=rec_id, ledger_id=_ledger_id()).first_or_404()
+        try:
+            doc = generate_recurring_ap_invoice(db, models, r)
+            db.session.commit()
+            return jsonify({'invoice': serialize_ap_doc(doc)})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/ap/invoices/<int:invoice_id>/three-way-match', methods=['GET'])
+    @login_required
+    def api_acct_ap_three_way(invoice_id):
+        from accounting_ap_extended import three_way_match
+        return jsonify(three_way_match(db, models, _ledger_id(), invoice_id))
+
+    @app.route('/api/accounting/ap/reports/1099', methods=['GET'])
+    @login_required
+    def api_acct_ap_1099():
+        from accounting_ap_extended import report_1099
+        from datetime import date
+        year = request.args.get('year', type=int) or date.today().year
+        return jsonify(report_1099(db, models, _ledger_id(), year))
+
+    @app.route('/api/accounting/ap/payments/<int:payment_id>/void', methods=['POST'])
+    @login_required
+    def api_acct_ap_void_payment(payment_id):
+        from accounting_ap_extended import void_ap_payment
+        from financial_security import require_accounting_role
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        p = models['AcctAPPayment'].query.filter_by(id=payment_id, ledger_id=_ledger_id()).first_or_404()
+        body = request.get_json(silent=True) or {}
+        try:
+            out = void_ap_payment(db, models, p, reason=body.get('reason', ''), user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
 
     @app.route('/api/accounting/ar/customers', methods=['GET', 'POST'])
     @login_required
@@ -448,14 +728,24 @@ def register_accounting_routes(app, deps):
             rows = AcctARDocument.query.filter_by(ledger_id=lid).order_by(AcctARDocument.created_at.desc()).limit(200).all()
             return jsonify({'invoices': [serialize_ar_doc(d) for d in rows]})
         body = request.get_json(silent=True) or {}
+        from accounting_ar_extended import assert_customer_can_invoice
+        customer = models['AcctCustomer'].query.filter_by(id=int(body['customer_id']), ledger_id=lid).first()
+        if not customer:
+            return jsonify({'error': 'customer not found'}), 400
+        try:
+            assert_customer_can_invoice(customer)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
         doc = AcctARDocument(
             ledger_id=lid,
             customer_id=int(body['customer_id']),
             document_number=(body.get('document_number') or '').strip(),
+            document_type=(body.get('document_type') or 'Invoice')[:20],
             document_date=date_cls.fromisoformat(body['document_date']) if body.get('document_date') else date_cls.today(),
             due_date=date_cls.fromisoformat(body['due_date']) if body.get('due_date') else None,
             amount=float(body.get('amount') or 0),
             project_id=body.get('project_id'),
+            ship_to_id=body.get('ship_to_id'),
             status='Open',
         )
         if not doc.document_number:
@@ -477,6 +767,192 @@ def register_accounting_routes(app, deps):
                 return jsonify({'error': str(exc)}), 400
         db.session.commit()
         return jsonify({'ok': True, 'invoice': serialize_ar_doc(doc)})
+
+    @app.route('/api/accounting/ar/customer-groups', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_ar_customer_groups():
+        from accounting_ar_extended import serialize_customer_group
+        AcctCustomerGroup = models['AcctCustomerGroup']
+        lid = _ledger_id()
+        if request.method == 'GET':
+            rows = AcctCustomerGroup.query.filter_by(ledger_id=lid).all()
+            return jsonify({'groups': [serialize_customer_group(g) for g in rows]})
+        body = request.get_json(silent=True) or {}
+        g = AcctCustomerGroup(
+            ledger_id=lid,
+            code=(body.get('code') or '')[:20],
+            name=(body.get('name') or '')[:120],
+            credit_limit=float(body.get('credit_limit') or 0),
+        )
+        if not g.code or not g.name:
+            return jsonify({'error': 'code and name required'}), 400
+        db.session.add(g)
+        db.session.commit()
+        return jsonify({'group': serialize_customer_group(g)}), 201
+
+    @app.route('/api/accounting/ar/customers/<int:customer_id>/profile', methods=['PATCH'])
+    @login_required
+    def api_acct_ar_customer_profile(customer_id):
+        from accounting_ar_extended import serialize_customer_extended
+        c = models['AcctCustomer'].query.filter_by(id=customer_id, ledger_id=_ledger_id()).first_or_404()
+        body = request.get_json(silent=True) or {}
+        if 'customer_group_id' in body:
+            c.customer_group_id = int(body['customer_group_id']) if body['customer_group_id'] else None
+        if 'credit_hold' in body:
+            c.credit_hold = bool(body['credit_hold'])
+        if 'national_account_code' in body:
+            c.national_account_code = str(body['national_account_code'])[:40]
+        db.session.commit()
+        return jsonify({'customer': serialize_customer_extended(c)})
+
+    @app.route('/api/accounting/ar/customers/<int:customer_id>/ship-tos', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_ar_ship_tos(customer_id):
+        import json as json_mod
+        from accounting_ar_extended import serialize_ship_to
+        AcctCustomerShipTo = models['AcctCustomerShipTo']
+        c = models['AcctCustomer'].query.filter_by(id=customer_id, ledger_id=_ledger_id()).first_or_404()
+        if request.method == 'GET':
+            rows = AcctCustomerShipTo.query.filter_by(customer_id=c.id).all()
+            return jsonify({'ship_tos': [serialize_ship_to(s) for s in rows]})
+        body = request.get_json(silent=True) or {}
+        s = AcctCustomerShipTo(
+            customer_id=c.id,
+            code=(body.get('code') or 'MAIN')[:20],
+            name=(body.get('name') or c.name)[:120],
+            address_json=json_mod.dumps(body.get('address') or {}),
+            is_default=bool(body.get('is_default')),
+        )
+        db.session.add(s)
+        db.session.commit()
+        return jsonify({'ship_to': serialize_ship_to(s)}), 201
+
+    @app.route('/api/accounting/ar/memos', methods=['POST'])
+    @login_required
+    def api_acct_ar_memos():
+        from accounting_ar_extended import create_ar_memo
+        from accounting_persistence import serialize_ar_doc
+        from financial_security import require_accounting_role
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        try:
+            doc = create_ar_memo(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'invoice': serialize_ar_doc(doc)}), 201
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/ar/recurring-invoices', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_ar_recurring():
+        from accounting_ar_extended import serialize_recurring_ar
+        from datetime import date as date_cls
+        AcctARRecurringInvoice = models['AcctARRecurringInvoice']
+        lid = _ledger_id()
+        if request.method == 'GET':
+            rows = AcctARRecurringInvoice.query.filter_by(ledger_id=lid).all()
+            return jsonify({'recurring': [serialize_recurring_ar(r) for r in rows]})
+        body = request.get_json(silent=True) or {}
+        r = AcctARRecurringInvoice(
+            ledger_id=lid,
+            customer_id=int(body['customer_id']),
+            description=body.get('description'),
+            amount=float(body.get('amount') or 0),
+            frequency=(body.get('frequency') or 'monthly')[:20],
+            next_run_date=date_cls.fromisoformat(body['next_run_date']) if body.get('next_run_date') else date_cls.today(),
+            is_active=True,
+        )
+        db.session.add(r)
+        db.session.commit()
+        return jsonify({'recurring': serialize_recurring_ar(r)}), 201
+
+    @app.route('/api/accounting/ar/recurring-invoices/<int:rec_id>/generate', methods=['POST'])
+    @login_required
+    def api_acct_ar_recurring_generate(rec_id):
+        from accounting_ar_extended import generate_recurring_ar_invoice
+        from accounting_persistence import serialize_ar_doc
+        r = models['AcctARRecurringInvoice'].query.filter_by(id=rec_id, ledger_id=_ledger_id()).first_or_404()
+        try:
+            doc = generate_recurring_ar_invoice(db, models, r)
+            db.session.commit()
+            return jsonify({'invoice': serialize_ar_doc(doc)})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/ar/dunning/overdue', methods=['GET'])
+    @login_required
+    def api_acct_ar_dunning_overdue():
+        from accounting_ar_extended import overdue_customers
+        rows = overdue_customers(models['AcctARDocument'], models['AcctCustomer'], _ledger_id())
+        return jsonify({'customers': rows})
+
+    @app.route('/api/accounting/ar/dunning/send', methods=['POST'])
+    @login_required
+    def api_acct_ar_dunning_send():
+        from accounting_ar_extended import record_dunning, serialize_customer_extended
+        body = request.get_json(silent=True) or {}
+        try:
+            row = record_dunning(
+                db, models, _ledger_id(),
+                body['customer_id'],
+                body.get('level', 1),
+                body.get('message', ''),
+            )
+            db.session.commit()
+            return jsonify({'ok': True, 'dunning_id': row.id})
+        except (KeyError, ValueError) as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/ar/customers/<int:customer_id>/statement', methods=['GET'])
+    @login_required
+    def api_acct_ar_statement(customer_id):
+        from accounting_ar_extended import customer_statement
+        try:
+            return jsonify(customer_statement(db, models, _ledger_id(), customer_id))
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/ar/receipt-batches', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_ar_receipt_batches():
+        from accounting_ar_extended import create_receipt_batch, post_receipt_batch, next_receipt_batch_number
+        AcctARReceiptBatch = models['AcctARReceiptBatch']
+        AcctARReceiptBatchLine = models['AcctARReceiptBatchLine']
+        lid = _ledger_id()
+        if request.method == 'GET':
+            rows = AcctARReceiptBatch.query.filter_by(ledger_id=lid).order_by(AcctARReceiptBatch.id.desc()).limit(30).all()
+            return jsonify({'batches': [{
+                'id': b.id, 'batch_number': b.batch_number,
+                'batch_date': b.batch_date.isoformat() if b.batch_date else None,
+                'status': b.status,
+            } for b in rows]})
+        body = request.get_json(silent=True) or {}
+        batch = create_receipt_batch(db, models, lid, body, user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'batch': {'id': batch.id, 'batch_number': batch.batch_number, 'status': batch.status}}), 201
+
+    @app.route('/api/accounting/ar/receipt-batches/<int:batch_id>/post', methods=['POST'])
+    @login_required
+    def api_acct_ar_receipt_batch_post(batch_id):
+        from accounting_ar_extended import post_receipt_batch
+        from financial_security import require_accounting_role
+        try:
+            require_accounting_role(current_user)
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        batch = models['AcctARReceiptBatch'].query.filter_by(id=batch_id, ledger_id=_ledger_id()).first_or_404()
+        try:
+            out = post_receipt_batch(db, models, batch, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
 
     @app.route('/api/accounting/bank/accounts', methods=['GET', 'POST'])
     @login_required
@@ -1003,7 +1479,7 @@ def register_accounting_routes(app, deps):
             return jsonify({'payments': [{
                 'id': p.id, 'payment_number': p.payment_number, 'vendor_id': p.vendor_id,
                 'amount': p.amount, 'payment_date': p.payment_date.isoformat() if p.payment_date else None,
-                'payment_method': p.payment_method,
+                'payment_method': p.payment_method, 'status': p.status,
             } for p in rows]})
         try:
             require_accounting_role(current_user)

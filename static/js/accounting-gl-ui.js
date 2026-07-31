@@ -295,7 +295,18 @@
           </tbody></table>
         </div>
       </section>
+      ${global.CasePMAcctGlApArExt ? '<div id="acctGlExtRoot"></div>' : ''}
     </div>`;
+  }
+
+  async function appendGlExtras() {
+    if (!global.CasePMAcctGlApArExt || !ctx) return;
+    global.CasePMAcctGlApArExt.init(ctx);
+    const root = document.getElementById('acctGlExtRoot');
+    if (root) {
+      root.innerHTML = await global.CasePMAcctGlApArExt.glExtrasHtml();
+      global.CasePMAcctGlApArExt.bindGlExtras();
+    }
   }
 
   function bindHandlers() {
@@ -381,7 +392,11 @@
     init(context) {
       ctx = context;
     },
-    render,
+    render: async function renderGl() {
+      const html = await render();
+      setTimeout(() => { appendGlExtras(); }, 0);
+      return html;
+    },
     bindHandlers,
     openJournalEditor,
   };
