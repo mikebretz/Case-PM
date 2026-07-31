@@ -131,6 +131,10 @@ def ensure_accounting_schema(db, models):
         if 'acct_journal_line' in table_names:
             add_column('acct_journal_line', 'segments_json', 'TEXT')
 
+        if 'acct_gl_budget' in table_names:
+            add_column('acct_gl_budget', 'version_name', "VARCHAR(40) DEFAULT 'Original'")
+            add_column('acct_gl_budget', 'scenario', "VARCHAR(40) DEFAULT 'Budget'")
+
         try:
             db.create_all()
             db.session.commit()
