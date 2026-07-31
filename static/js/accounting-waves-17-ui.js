@@ -123,6 +123,10 @@
         <button type="button" id="acctGlTieout" class="px-2 py-0.5 border border-violet-800 rounded text-violet-300">GL tie-out</button>
         <button type="button" id="acctFxReval" class="px-2 py-0.5 border border-violet-700 rounded text-violet-200">FX reval</button>
         <button type="button" id="acctThreeWayHold" class="px-2 py-0.5 border border-amber-800 rounded text-amber-200">3-way auto-hold</button>
+        <button type="button" id="acctJcCipFa" class="px-2 py-0.5 border border-emerald-900 rounded text-emerald-200">JC CIP→FA</button>
+        <button type="button" id="acctRetainageAuto" class="px-2 py-0.5 border border-emerald-800 rounded text-emerald-300">Retainage auto</button>
+        <button type="button" id="acctWipGlPush" class="px-2 py-0.5 border border-fuchsia-900 rounded text-fuchsia-200">Push WIP GL</button>
+        <button type="button" id="acctJcCloseGate" class="px-2 py-0.5 border border-fuchsia-800 rounded text-fuchsia-300">JC close gate</button>
       </div>
       <ul class="max-h-20 overflow-y-auto">${log}</ul>
     </div>`;
@@ -379,6 +383,24 @@
     document.getElementById('acctThreeWayHold')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/ap/three-way-auto-hold', { method: 'POST', body: '{}' });
       await AD().alert(`Auto-held ${r.auto_held || 0} invoice(s).`, 'warning');
+    });
+    document.getElementById('acctJcCipFa')?.addEventListener('click', async () => {
+      const pid = await AD().prompt('Project ID for CIP→FA preview', 'JC CIP');
+      if (!pid) return;
+      const r = await api(`/api/accounting/jc/cip-fa/preview/${encodeURIComponent(pid)}`);
+      await AD().alert(`Ready to capitalize: ${r.ready_to_capitalize ?? 0} (CIP GL ${r.cip_gl_balance ?? 0}).`, 'info');
+    });
+    document.getElementById('acctRetainageAuto')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/retainage/auto-candidates');
+      await AD().alert(`Retainage release candidates: ${(r.candidates || []).length}.`, 'info');
+    });
+    document.getElementById('acctWipGlPush')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/wip-gl/push', { method: 'POST', body: '{}' });
+      await AD().alert(`WIP GL batches processed: ${r.processed || 0}.`, 'success');
+    });
+    document.getElementById('acctJcCloseGate')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/jc/month-close-gate');
+      await AD().alert(`Month-close ready: ${r.ready ? 'yes' : 'no'} · blockers ${(r.blockers || []).length}.`, r.ready ? 'success' : 'warning');
     });
     document.getElementById('acctSageFlushC')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/sage/construction/flush-queue', { method: 'POST', body: '{}' });

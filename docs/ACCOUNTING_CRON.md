@@ -193,3 +193,12 @@ GL tie-out/FX, CRE/distribution depth, payroll/tax filing, deploy v10:
 POST /api/accounting/cron/sage-advanced-batch
 X-CasePM-Cron-Secret: your-long-random-secret
 ```
+
+## Sage JC financial cron (waves 66–68, optional)
+
+JC/CIP→FA maintenance, POC retainage scan, WIP GL push to Sage, advanced batch rollup, deploy v11:
+
+```http
+POST /api/accounting/cron/sage-jc-financial
+X-CasePM-Cron-Secret: your-long-random-secret
+```

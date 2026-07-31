@@ -208,6 +208,18 @@ def main() -> int:
     except Exception as exc:
         errors.append(f'accounting_waves_35_37: {exc}')
 
+    print('6s. Waves 38 (66–68) JC/FA, retainage, WIP GL…')
+    try:
+        import accounting_waves_38 as w38  # noqa: F401
+        assert callable(w38.jc_cip_fa_capitalization_preview)
+        assert callable(w38.project_revenue_recognition_report)
+        assert callable(w38.wip_auto_je_with_sor_guard)
+        v11 = w38.sage_mirror_deploy_check_v11()
+        if not v11.get('ok'):
+            errors.append(f'sage_mirror_deploy_check_v11: {v11}')
+    except Exception as exc:
+        errors.append(f'accounting_waves_38: {exc}')
+
     print('6c. instance DB must not be tracked…')
     try:
         from accounting_waves_20 import git_tracked_paths_must_not_include_db
