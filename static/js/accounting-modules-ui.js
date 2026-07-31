@@ -90,6 +90,8 @@
         <div class="flex gap-2">
           <button type="button" id="acctAddAsset" class="text-xs text-emerald-400">+ Asset</button>
           <button type="button" id="acctRunDep" class="text-xs text-violet-400">Run monthly depreciation</button>
+          <button type="button" id="acctRunTaxDep" class="text-xs text-amber-400">Run TAX book</button>
+          <button type="button" id="acctFaMassDispose" class="text-xs text-red-400">Mass dispose</button>
         </div>
       </div>
       <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
@@ -126,7 +128,7 @@
         <button type="button" id="acctAddItem" class="text-xs text-emerald-400">+ Item</button>
         <button type="button" id="acctIcFifo" class="text-xs text-violet-400 ml-2">FIFO issue</button>
         <button type="button" id="acctIcTransfer" class="text-xs text-sky-400 ml-2">Location transfer</button>
-      </div>
+        <button type="button" id="acctIcLots" class="text-xs text-amber-400 ml-2">Lot / serial</button>
       <p class="text-xs text-zinc-500">Perpetual inventory · PO receipts and manual adjustments post to quantity on hand.</p>
       <div class="text-sm bg-zinc-800 border border-zinc-700 rounded p-2 inline-block">Extended value: <strong>${money(ext)}</strong></div>
       <table class="w-full text-sm border border-zinc-700 rounded-lg"><thead class="bg-zinc-800 text-xs text-zinc-400"><tr>
@@ -203,6 +205,7 @@
     return `<div class="space-y-4">
       <h2 class="text-lg font-semibold text-white">Order Entry / Sales</h2>
       <button type="button" id="acctAddOE" class="text-xs text-emerald-400">+ Sales order</button>
+      <button type="button" id="acctOeCommissions" class="text-xs text-violet-400 ml-2">Commissions</button>
       <div>${cards || '<p class="text-zinc-500 text-sm">No sales orders.</p>'}</div>
     </div>`;
   }
@@ -260,6 +263,33 @@
           await AD().alert(e.message, 'error');
         }
       });
+    });
+    document.getElementById('acctRunTaxDep')?.addEventListener('click', async () => {
+      try {
+        const r = await api('/api/accounting/assets/tax-depreciate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ book: 'TAX' }),
+        });
+        await AD().alert(`TAX book depreciation: ${r.assets_processed || r.message || 'done'}`, 'success');
+        switchModule('assets');
+      } catch (e) {
+        await AD().alert(e.message, 'error');
+      }
+    });
+    document.getElementById('acctFaMassDispose')?.addEventListener('click', async () => {
+      const ids = await AD().prompt('Asset IDs to dispose (comma-separated)', '', { title: 'Mass dispose' });
+      if (ids == null || !ids.trim()) return;
+      try {
+        await api('/api/accounting/assets/mass-dispose', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ asset_ids: ids.split(',').map((x) => parseInt(x.trim(), 10)).filter(Boolean) }),
+        });
+        switchModule('assets');
+      } catch (e) {
+        await AD().alert(e.message, 'error');
+      }
     });
   }
 
@@ -352,6 +382,13 @@
       });
       switchModule('inventory');
     });
+    document.getElementById('acctIcLots')?.addEventListener('click', async () => {
+      const g = await api('/api/accounting/inventory/lot-serial-grid');
+      const lines = (g.lots || []).slice(0, 40).map((l) =>
+        `${l.item_number} · lot ${l.lot_number || '—'} · serial ${l.serial_number || '—'} · qty ${l.qty_on_hand} @ ${l.location_code}`
+      ).join('\n');
+      await AD().alert(lines || 'No lot/serial layers yet — receive inventory with lot numbers.', 'info');
+    });
   }
 
   function bindOEExtras() {
@@ -394,6 +431,11 @@
         const lines = (g.lines || []).map((ln) => `Line ${ln.line_index}: open ship ${ln.qty_open} · comm ${ln.commission_percent}%`).join('\n');
         await AD().alert(lines || 'No lines', 'info');
       });
+    });
+    document.getElementById('acctOeCommissions')?.addEventListener('click', async () => {
+      const c = await api('/api/accounting/oe/commissions');
+      const lines = (c.orders || []).map((o) => `${o.order_number}: est commission ${o.commission_est}`).join('\n');
+      await AD().alert(`${lines}\n\nTotal est: ${c.total_commission_est}`, 'info');
     });
   }
 

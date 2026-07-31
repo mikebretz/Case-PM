@@ -209,7 +209,7 @@
           <div class="flex flex-col gap-1 mt-2">
             <button type="button" id="acctReportCompare" class="px-3 py-1.5 border border-zinc-600 rounded text-sm text-violet-400">Comparative P&amp;L</button>
             <button type="button" id="acctReportDesigner" class="px-3 py-1.5 border border-zinc-600 rounded text-sm">Report designer</button>
-            <button type="button" id="acctReportSchedRun" class="px-3 py-1.5 border border-zinc-600 rounded text-sm text-amber-400">Run scheduled (stub)</button>
+            <button type="button" id="acctReportSchedRun" class="px-3 py-1.5 border border-zinc-600 rounded text-sm text-amber-400">Run scheduled (email)</button>
           </div>
         </div>
         <div class="border border-zinc-700 rounded-lg p-3">
@@ -326,20 +326,51 @@
     });
 
     document.getElementById('acctReportDesigner')?.addEventListener('click', async () => {
-      const list = await api('/api/accounting/reports/designer');
-      const name = await AD().prompt('New layout name:', 'Custom P&L', 'Report designer');
+      const layouts = await api('/api/accounting/reports/designer/layouts');
+      const name = await AD().prompt('Layout name:', 'Trial balance columns', 'Report designer');
       if (!name) return;
-      await api('/api/accounting/reports/designer', {
+      const cols = await AD().prompt('Columns (comma-separated)', 'account_number,description,balance', 'Columns');
+      const rtype = currentReportType();
+      const saved = await api('/api/accounting/reports/designer/layouts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, report_type: 'custom', definition: { rows: [{ type: 'section', label: 'Revenue' }], columns: ['actual'] } }),
+        body: JSON.stringify({
+          name,
+          report_type: rtype,
+          columns: (cols || 'account_number,description,balance').split(',').map((c) => c.trim()),
+          parameters: currentFilters(),
+          comparative_period_b: document.getElementById('acctReportEnd')?.value?.slice(0, 7),
+        }),
       });
-      await AD().alert(`${(list.reports || []).length + 1} layout(s) on file.`, 'success');
+      const run = await AD().confirm('Run this layout now?', 'Report designer');
+      if (run && saved.layout?.id) {
+        const data = await api(`/api/accounting/reports/designer/run/${encodeURIComponent(saved.layout.id)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(currentFilters()),
+        });
+        const out = document.getElementById('acctReportOutput');
+        if (out) {
+          out.innerHTML = `<pre class="text-xs overflow-auto max-h-96">${esc(JSON.stringify(data.projected_rows || data.report, null, 2))}</pre>`;
+        }
+      } else {
+        await AD().alert(`${(layouts.layouts || []).length + 1} enhanced layout(s) saved.`, 'success');
+      }
     });
 
     document.getElementById('acctReportSchedRun')?.addEventListener('click', async () => {
+      const email = await AD().prompt('Email for new schedule (optional — uses SMTP from Program Settings)', '', 'Schedule report');
+      if (email === null) return;
+      if (email.trim()) {
+        await api('/api/accounting/reports/schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ report_type: currentReportType(), email: email.trim(), cron: '0 6 * * 1' }),
+        });
+      }
       const r = await api('/api/accounting/reports/run-scheduled', { method: 'POST', body: '{}' });
-      await AD().alert(`Ran ${r.ran} scheduled job(s) (email stub).`, 'info');
+      const statuses = (r.schedules || []).map((s) => s.status).join(', ') || 'none';
+      await AD().alert(`Ran ${r.ran} scheduled job(s). Status: ${statuses}`, 'info');
     });
 
     document.getElementById('acctSaveCustomBtn')?.addEventListener('click', async () => {

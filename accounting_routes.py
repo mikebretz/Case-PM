@@ -3491,10 +3491,32 @@ def register_accounting_routes(app, deps):
         return Response(html, mimetype='text/html')
 
     @app.route('/api/accounting/payments/stripe-webhook', methods=['POST'])
-    @login_required
     def api_acct_stripe_webhook():
+        import json
         from accounting_tier14_wave import handle_stripe_webhook
-        return jsonify(handle_stripe_webhook(request.get_json(silent=True) or {}, request.headers.get('Stripe-Signature', '')))
+        raw = request.get_data() or b''
+        payload = request.get_json(silent=True) or {}
+        if not payload and raw:
+            try:
+                payload = json.loads(raw.decode('utf-8'))
+            except Exception:
+                payload = {}
+        out = handle_stripe_webhook(
+            payload,
+            request.headers.get('Stripe-Signature', ''),
+            raw_body=raw,
+            db=db,
+            models=models,
+        )
+        if out.get('pay_now'):
+            try:
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+        elif out.get('received'):
+            pass
+        status = 400 if out.get('error') else 200
+        return jsonify(out), status
 
     @app.route('/api/accounting/payments/stripe-capture', methods=['POST'])
     @login_required
@@ -3535,8 +3557,14 @@ def register_accounting_routes(app, deps):
     def api_acct_bank_plaid():
         from accounting_parity_wave3 import import_plaid_transactions
         from accounting_tier14_wave import plaid_sandbox_or_live_transactions
+        from accounting_waves_17 import plaid_access_token_for_ledger
         body = request.get_json(silent=True) or {}
         try:
+            ledger = models['AcctLedger'].query.get(_ledger_id())
+            if ledger and not body.get('access_token'):
+                tok = plaid_access_token_for_ledger(ledger)
+                if tok:
+                    body = {**body, 'access_token': tok}
             txns = plaid_sandbox_or_live_transactions(body)
             out = import_plaid_transactions(
                 db, models, _ledger_id(), body['bank_account_id'], txns, user_id=current_user.id,
@@ -3672,8 +3700,8 @@ def register_accounting_routes(app, deps):
     @app.route('/api/accounting/jobcost/<int:project_id>/panel', methods=['GET'])
     @login_required
     def api_acct_jobcost_panel(project_id):
-        from accounting_all_chunks import jobcost_accounting_panel
-        return jsonify(jobcost_accounting_panel(db, models, _ledger_id(), project_id))
+        from accounting_waves_17 import jobcost_with_pay_apps
+        return jsonify(jobcost_with_pay_apps(db, models, _ledger_id(), project_id))
 
     @app.route('/api/accounting/ar/progress-billing', methods=['POST'])
     @login_required
@@ -3697,14 +3725,28 @@ def register_accounting_routes(app, deps):
         import os
         from accounting_all_chunks import stripe_runtime_config
         from accounting_tier14_wave import sage_integration_status
+        from accounting_waves_17 import plaid_credentials_ok, sage_hybrid_dashboard
         ledger = models['AcctLedger'].query.get(_ledger_id())
+        settings = {}
+        try:
+            from accounting_gl_service import _parse_settings
+            settings = _parse_settings(ledger)
+        except Exception:
+            pass
+        plaid_linked = bool((settings.get('plaid') or {}).get('access_token'))
         return jsonify({
-            'stripe': stripe_runtime_config(ledger),
+            'stripe': {
+                **stripe_runtime_config(ledger),
+                'webhook_secret_set': bool(os.environ.get('STRIPE_WEBHOOK_SECRET')),
+            },
             'plaid': {
-                'configured': bool(os.environ.get('PLAID_CLIENT_ID') and os.environ.get('PLAID_SECRET')),
-                'sandbox_import': True,
+                'configured': plaid_credentials_ok(),
+                'linked': plaid_linked,
+                'link_ui': True,
+                'env': os.environ.get('PLAID_ENV', 'sandbox'),
             },
             'sage': sage_integration_status(),
+            'sage_hybrid': sage_hybrid_dashboard(db, models, _ledger_id()),
         })
 
     @app.route('/api/accounting/compliance/w2-efile/<int:tax_year>', methods=['GET'])
@@ -3800,3 +3842,155 @@ def register_accounting_routes(app, deps):
         out = sage_queue_open_batches(db, models, _ledger_id(), user_id=current_user.id)
         db.session.commit()
         return jsonify({'ok': True, **out})
+
+    # --- Waves 1–7 depth ---
+
+    @app.route('/api/accounting/integrations/plaid/link-token', methods=['POST'])
+    @login_required
+    def api_acct_plaid_link_token():
+        from accounting_waves_17 import create_plaid_link_token
+        try:
+            return jsonify(create_plaid_link_token(db, models, _ledger_id(), user_id=current_user.id))
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/integrations/plaid/exchange', methods=['POST'])
+    @login_required
+    def api_acct_plaid_exchange():
+        from accounting_waves_17 import exchange_plaid_public_token
+        body = request.get_json(silent=True) or {}
+        try:
+            out = exchange_plaid_public_token(db, models, _ledger_id(), body['public_token'], user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except (ValueError, KeyError) as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/sage/hybrid', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_sage_hybrid():
+        from accounting_waves_17 import sage_hybrid_dashboard, save_sage_hybrid_policy
+        if request.method == 'POST':
+            out = save_sage_hybrid_policy(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        return jsonify(sage_hybrid_dashboard(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/sage/sync/push-vendors', methods=['POST'])
+    @login_required
+    def api_acct_sage_push_vendors():
+        from accounting_waves_17 import sage_push_vendors
+        out = sage_push_vendors(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/sync/push-open-ap', methods=['POST'])
+    @login_required
+    def api_acct_sage_push_open_ap():
+        from accounting_waves_17 import sage_push_open_ap
+        out = sage_push_open_ap(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/compliance/calendar', methods=['GET'])
+    @login_required
+    def api_acct_compliance_calendar():
+        from accounting_waves_17 import compliance_filing_calendar
+        yr = request.args.get('tax_year', type=int)
+        return jsonify(compliance_filing_calendar(_ledger_id(), yr))
+
+    @app.route('/api/accounting/compliance/amendment/<form>', methods=['POST'])
+    @login_required
+    def api_acct_compliance_amendment(form):
+        from accounting_waves_17 import compliance_amendment_package
+        from flask import Response
+        body = request.get_json(silent=True) or {}
+        yr = body.get('tax_year') or request.args.get('tax_year', type=int) or (date.today().year - 1)
+        text = compliance_amendment_package(db, models, _ledger_id(), form, int(yr), body)
+        return Response(text, mimetype='text/plain', headers={
+            'Content-Disposition': f'attachment; filename=amend-{form}-{yr}.txt',
+        })
+
+    @app.route('/api/accounting/inventory/lot-serial-grid', methods=['GET'])
+    @login_required
+    def api_acct_ic_lot_serial():
+        from accounting_waves_17 import inventory_lot_serial_grid
+        iid = request.args.get('item_id', type=int)
+        return jsonify(inventory_lot_serial_grid(db, models, _ledger_id(), iid))
+
+    @app.route('/api/accounting/oe/commissions', methods=['GET'])
+    @login_required
+    def api_acct_oe_commissions():
+        from accounting_waves_17 import oe_commission_summary
+        oid = request.args.get('order_id', type=int)
+        return jsonify(oe_commission_summary(db, models, _ledger_id(), oid))
+
+    @app.route('/api/accounting/oe/orders/<int:order_id>/commissions', methods=['POST'])
+    @login_required
+    def api_acct_oe_commissions_set(order_id):
+        from accounting_waves_17 import apply_oe_line_commissions
+        try:
+            out = apply_oe_line_commissions(db, models, _ledger_id(), order_id, request.get_json(silent=True) or {}, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/reports/designer/layouts', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_report_designer_layouts():
+        from accounting_waves_17 import list_enhanced_report_layouts, save_enhanced_report_layout
+        if request.method == 'POST':
+            out = save_enhanced_report_layout(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, 'layout': out})
+        return jsonify(list_enhanced_report_layouts(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/reports/designer/run/<layout_id>', methods=['POST'])
+    @login_required
+    def api_acct_report_designer_run(layout_id):
+        from accounting_waves_17 import run_enhanced_layout_report
+        body = request.get_json(silent=True) or {}
+        try:
+            return jsonify(run_enhanced_layout_report(db, models, _ledger_id(), layout_id, body))
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/assets/tax-depreciate', methods=['POST'])
+    @login_required
+    def api_acct_fa_tax_depreciate():
+        from accounting_waves_17 import run_tax_book_depreciation
+        body = request.get_json(silent=True) or {}
+        try:
+            out = run_tax_book_depreciation(db, models, _ledger_id(), body.get('book') or 'TAX', user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/assets/<int:asset_id>/transfer', methods=['POST'])
+    @login_required
+    def api_acct_fa_transfer(asset_id):
+        from accounting_waves_17 import transfer_fixed_asset
+        try:
+            out = transfer_fixed_asset(db, models, _ledger_id(), asset_id, request.get_json(silent=True) or {}, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/accounting/assets/mass-dispose', methods=['POST'])
+    @login_required
+    def api_acct_fa_mass_dispose():
+        from accounting_waves_17 import mass_dispose_assets
+        try:
+            out = mass_dispose_assets(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400

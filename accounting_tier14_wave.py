@@ -66,30 +66,26 @@ def create_stripe_payment_intent(amount: float, currency: str = 'usd', metadata:
         raise ValueError(f'Stripe error: {err or exc.reason}') from exc
 
 
-def handle_stripe_webhook(payload: dict, signature_header: str = '') -> dict:
-    from accounting_parity_wave3 import stripe_webhook_stub
+def handle_stripe_webhook(payload: dict, signature_header: str = '', raw_body: bytes = b'', db=None, models=None, user_id=None) -> dict:
+    from accounting_waves_17 import handle_stripe_webhook_verified
 
-    secret = _stripe_secret()
-    wh_secret = (os.environ.get('STRIPE_WEBHOOK_SECRET') or '').strip()
-    evt_type = payload.get('type') or 'unknown'
-    if not secret:
-        return stripe_webhook_stub(payload)
-    if wh_secret and signature_header:
-        # Production should verify signature with stripe library; log intent for ops.
-        pass
-    obj = payload.get('data', {}).get('object') or {}
-    return {
-        'received': True,
-        'provider': 'stripe',
-        'type': evt_type,
-        'payment_intent_id': obj.get('id'),
-        'status': 'processed',
-        'amount': (obj.get('amount') or 0) / 100.0 if obj.get('amount') else None,
-    }
+    try:
+        return handle_stripe_webhook_verified(
+            payload,
+            raw_body=raw_body,
+            signature_header=signature_header,
+            db=db,
+            models=models,
+            user_id=user_id,
+        )
+    except ValueError as exc:
+        return {'received': False, 'error': str(exc)}
 
 
 def plaid_sandbox_or_live_transactions(body: dict) -> list:
-    """Use Plaid /transactions/sync when access_token provided; else normalize posted transactions."""
+    """Use Plaid /transactions/get when access_token provided; else normalize posted transactions."""
+    from accounting_waves_17 import plaid_access_token_for_ledger
+
     access = (body.get('access_token') or os.environ.get('PLAID_ACCESS_TOKEN') or '').strip()
     if access and os.environ.get('PLAID_CLIENT_ID') and os.environ.get('PLAID_SECRET'):
         plaid_req = {

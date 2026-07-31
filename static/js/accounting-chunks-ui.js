@@ -27,6 +27,7 @@
     }
     const panel = await api(`/api/accounting/jobcost/${pid}/panel`);
     const rev = panel.revenue_recognition || {};
+    const pa = panel.pay_applications || {};
     return `<div class="space-y-4">
       <h2 class="text-lg font-semibold text-white">Project &amp; Job Costing (Accounting)</h2>
       <div class="grid md:grid-cols-4 gap-2 text-sm">
@@ -34,6 +35,11 @@
         <div class="bg-zinc-800 border border-zinc-700 rounded p-3">A/P on job<br><strong class="text-amber-400">${money(panel.committed_ap)}</strong></div>
         <div class="bg-zinc-800 border border-zinc-700 rounded p-3">G/L job net<br><strong>${money(panel.gl_job_cost_net)}</strong></div>
         <div class="bg-zinc-800 border border-zinc-700 rounded p-3">% complete<br><strong>${rev.percent_complete || 0}%</strong></div>
+      </div>
+      <div class="grid md:grid-cols-3 gap-2 text-xs">
+        <div class="bg-zinc-900 border border-zinc-700 rounded p-2">Pay apps: <strong>${pa.count || 0}</strong> · billed <strong>${money(pa.total_billed)}</strong></div>
+        <div class="bg-zinc-900 border border-zinc-700 rounded p-2">Retainage held: <strong>${money(pa.total_retainage)}</strong></div>
+        <div class="bg-zinc-900 border border-zinc-700 rounded p-2">A/R vs pay app variance: <strong>${money(panel.variance_billed_vs_ar)}</strong></div>
       </div>
       <div class="flex flex-wrap gap-2 text-xs">
         <a href="${esc(panel.links?.budget || '#')}" class="text-emerald-400 underline">Budget</a>
