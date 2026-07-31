@@ -152,6 +152,11 @@ def run_scheduled_reports_with_email(db, models, ledger_id: int, user_id=None) -
                 from accounting_waves_19 import record_schedule_run_alert
                 if status.startswith('email_failed') or status.startswith('error'):
                     record_schedule_run_alert(ledger, s.get('id'), status, status)
+                    try:
+                        from accounting_waves_20 import notify_admin_schedule_failures
+                        notify_admin_schedule_failures(db, models, ledger_id)
+                    except Exception:
+                        pass
             except Exception:
                 pass
         except Exception as exc:

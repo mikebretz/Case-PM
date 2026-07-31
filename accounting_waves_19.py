@@ -82,6 +82,7 @@ def sync_g702_period_to_ar(db, models, ledger_id: int, project_id: int, period_n
     payload = _g702_sage_payload(state, period_number, amt, {})
     payload['periodNumber'] = period_number
     payload['period_number'] = period_number
+    payload['force_builtin_post'] = True
     out = process_construction_event(
         'G702Approved',
         int(project_id),

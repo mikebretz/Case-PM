@@ -142,6 +142,7 @@
         <button type="button" id="acctArStmtPrint" class="px-2 py-1 border border-zinc-600 rounded text-zinc-300">Print statement</button>
         <button type="button" id="acctArDunningRules" class="px-2 py-1 border border-zinc-600 rounded text-orange-400">Dunning rules</button>
         <button type="button" id="acctArCashApp" class="px-2 py-1 border border-zinc-600 rounded text-emerald-300">Cash application</button>
+        <button type="button" id="acctArWriteOffInv" class="px-2 py-1 border border-zinc-600 rounded text-red-300">Write-off invoice</button>
         <button type="button" id="acctArDunningSmtp" class="px-2 py-1 border border-zinc-600 rounded text-orange-300">SMTP dunning run</button>
         <button type="button" id="acctArRunDue" class="px-2 py-1 border border-zinc-600 rounded text-emerald-300">Run due recurring</button>
       </div>
@@ -855,6 +856,35 @@
           letter_code: data.letter_code,
           message_template: data.message_template,
         }),
+      });
+      switchModule('ar');
+    });
+
+    document.getElementById('acctArWriteOffInv')?.addEventListener('click', async () => {
+      const { money } = ctx;
+      const invoices = await api('/api/accounting/ar/invoices');
+      const open = (invoices.invoices || []).filter((i) => i.status === 'Open' || i.status === 'Partial');
+      if (!open[0]) {
+        await AD().alert('No open invoices.', 'warning');
+        return;
+      }
+      const pick = await AD().select({
+        title: 'Invoice to write off',
+        items: open.map((i) => ({
+          value: String(i.id),
+          label: `${i.document_number} — open ${money((parseFloat(i.amount) || 0) - (parseFloat(i.amount_paid) || 0))}`,
+        })),
+      });
+      if (!pick) return;
+      const inv = open.find((i) => String(i.id) === pick.value) || open[0];
+      const openAmt = (parseFloat(inv.amount) || 0) - (parseFloat(inv.amount_paid) || 0);
+      const amtStr = await AD().prompt('Write-off amount:', String(openAmt.toFixed(2)), 'Write-off');
+      const reason = await AD().prompt('Reason (uncollectible, small_balance, dispute_settled, bankruptcy, other):', 'uncollectible', 'Write-off');
+      if (!amtStr) return;
+      await api('/api/accounting/ar/write-off', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ar_document_id: inv.id, amount: parseFloat(amtStr), reason: reason || 'other' }),
       });
       switchModule('ar');
     });

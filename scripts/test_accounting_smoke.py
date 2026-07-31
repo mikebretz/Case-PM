@@ -52,6 +52,23 @@ def main() -> int:
     except Exception as exc:
         errors.append(f'accounting_waves_19: {exc}')
 
+    print('6b. Wave 20 module import…')
+    try:
+        import accounting_waves_20 as w20  # noqa: F401
+        w20.report_designer_column_catalog()
+    except Exception as exc:
+        errors.append(f'accounting_waves_20: {exc}')
+
+    print('6c. instance DB must not be tracked…')
+    try:
+        from accounting_waves_20 import git_tracked_paths_must_not_include_db
+
+        db_tracked = git_tracked_paths_must_not_include_db()
+        if db_tracked:
+            errors.append(f'tracked database files in git: {db_tracked}')
+    except Exception as exc:
+        errors.append(f'db track check: {exc}')
+
     print('7. Startup guard…')
     try:
         from accounting_waves_19 import accounting_startup_guard

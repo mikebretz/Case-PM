@@ -510,6 +510,7 @@
                     <input type="checkbox" id="sageSyncAutoEnabledToggle" class="w-5 h-5 accent-emerald-600">
                 </label>
                 <button type="button" onclick="pushManualSageSync()" class="mt-2 px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-md">Queue manual Sage sync now</button>
+                <button type="button" onclick="syncG702ToAccountingAr()" class="mt-2 ml-2 px-3 py-1.5 text-xs bg-emerald-900 hover:bg-emerald-800 border border-emerald-700 rounded-md">Sync approved G702 → Accounting A/R</button>
             </div>
         </div>
 
@@ -1892,6 +1893,33 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     function pushManualSageSync() {
         queueSageSync('ManualSync', { period: currentPayAppPeriod?.periodNumber }, 'Manual Sage sync requested from Pay Applications');
         showCenteredAlert('Sage sync queued. Open the sync log to review status.', 'success');
+    }
+
+    async function syncG702ToAccountingAr() {
+        const pid = window.activeProjectId || new URLSearchParams(window.location.search).get('project_id');
+        if (!pid) {
+            showCenteredAlert('Select a project first.', 'warning');
+            return;
+        }
+        try {
+            const res = await fetch(`/api/accounting/jobcost/${pid}/g702-sync-all`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: '{}',
+            });
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.error || 'Sync failed');
+            const n = json.posted_count || 0;
+            const errs = (json.errors || []).length;
+            showCenteredAlert(
+                n ? `Posted ${n} G702 period(s) to Accounting A/R.` + (errs ? ` (${errs} skipped with errors)` : '')
+                  : 'No approved G702 periods waiting for A/R (or already posted).',
+                n ? 'success' : 'info'
+            );
+        } catch (e) {
+            showCenteredAlert(e.message || 'Could not sync G702 to A/R.', 'error');
+        }
     }
     function complianceHistoryKey(mainG702Period) {
         return `1005_${mainG702Period || 1}`;

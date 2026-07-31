@@ -202,7 +202,16 @@ def process_construction_event(
     Returns dict with posted=True/False and document references.
     """
     opts = load_accounting_options()
-    if not opts['auto_post_enabled']:
+    data = payload or {}
+    force_post = bool(data.get('force_builtin_post'))
+    if not force_post:
+        try:
+            from accounting_waves_20 import construction_force_post_for_event
+
+            force_post = construction_force_post_for_event(event_type, data)
+        except Exception:
+            pass
+    if not opts['auto_post_enabled'] and not force_post:
         return {'posted': False, 'skipped': 'auto_post_disabled'}
 
     AcctLedger = models['AcctLedger']
@@ -216,7 +225,6 @@ def process_construction_event(
     seed_chart_of_accounts(db, AcctLedger, AcctGLAccount, ledger)
     _ensure_supplemental_accounts(db, AcctLedger, AcctGLAccount, ledger.id)
 
-    data = payload or {}
     idem = (data.get('idempotency_key') or '').strip()
     if not idem:
         idem = f'{event_type}:{project_id}:{data.get("periodNumber") or data.get("company_id") or data.get("commitment_id") or ""}'

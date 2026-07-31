@@ -331,7 +331,18 @@
       const catalog = colsResp[currentReportType()] || colsResp.trial_balance || [];
       const name = await AD().prompt('Layout name:', 'Trial balance columns', 'Report designer');
       if (!name) return;
-      const cols = await AD().prompt('Columns (comma-separated)', catalog.join(','), 'Columns');
+      const colFields = catalog.map((col) => ({ key: col, label: col, type: 'checkbox', defaultValue: true }));
+      const picked = colFields.length
+        ? await AD().form({ title: 'Select columns', fields: colFields })
+        : null;
+      let cols = catalog;
+      if (picked) {
+        cols = catalog.filter((col) => picked[col]);
+      }
+      if (!cols.length) {
+        const manual = await AD().prompt('Columns (comma-separated)', catalog.join(','), 'Columns');
+        cols = (manual || '').split(',').map((c) => c.trim()).filter(Boolean);
+      }
       const rtype = currentReportType();
       const saved = await api('/api/accounting/reports/designer/layouts', {
         method: 'POST',
@@ -339,7 +350,7 @@
         body: JSON.stringify({
           name,
           report_type: rtype,
-          columns: (cols || 'account_number,description,balance').split(',').map((c) => c.trim()),
+          columns: (cols || ['account_number', 'description', 'balance']),
           parameters: currentFilters(),
           comparative_period_b: document.getElementById('acctReportEnd')?.value?.slice(0, 7),
         }),

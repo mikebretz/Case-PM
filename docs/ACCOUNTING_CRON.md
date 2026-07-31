@@ -48,3 +48,14 @@ PYTHONPATH=. python3 scripts/accounting_startup_guard.py
 ```
 
 `RUN-AS-SERVER.bat` and Case PM Desktop run this automatically when possible.
+
+## Wave 10 maintenance (optional)
+
+Same secret. Runs scheduled reports plus compliance reminder emails and admin notification for recent schedule failures:
+
+```http
+POST /api/accounting/cron/wave10
+X-CasePM-Cron-Secret: your-long-random-secret
+```
+
+Set **admin notification email** under Program Settings → Email so failure and compliance digests have a recipient.

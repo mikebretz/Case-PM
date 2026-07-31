@@ -132,6 +132,15 @@ def calculate_pay_line(db, models, employee, *, hours_regular=0, hours_overtime=
     fica = round(gross * FICA_EMPLOYEE_RATE, 2)
     medicare = round(gross * MEDICARE_EMPLOYEE_RATE, 2)
     deductions = _employee_deduction_total(db, models, employee.id, gross)
+    try:
+        from accounting_waves_20 import apply_garnishment_deductions
+
+        deductions = round(
+            deductions + apply_garnishment_deductions(db, models, employee.ledger_id, employee.id, gross),
+            2,
+        )
+    except Exception:
+        pass
     taxes = round(federal + state + fica + medicare, 2)
     net = round(gross - taxes - deductions, 2)
     employer_fica = round(gross * FICA_EMPLOYER_RATE, 2)
