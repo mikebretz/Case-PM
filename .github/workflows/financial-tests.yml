@@ -18,6 +18,8 @@ jobs:
         run: |
           pip install -r requirements.txt
       - name: Accounting smoke tests
+        env:
+          CASEPM_RUN_SAGE_PACES: '1'
         run: PYTHONPATH=. python3 scripts/test_accounting_smoke.py
       - name: Pay app workflow tests
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v

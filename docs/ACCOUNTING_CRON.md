@@ -121,3 +121,12 @@ Pull AR/AP status, auto-retry inbox, optional paces (`CASEPM_RUN_SAGE_PACES=1`):
 POST /api/accounting/cron/sage-mirror-complete
 X-CasePM-Cron-Secret: your-long-random-secret
 ```
+
+## Sage production cron (waves 29–32, optional)
+
+Pull v2, AP payment batches, drift alerts, construction queue flush, deploy v3 check:
+
+```http
+POST /api/accounting/cron/sage-production
+X-CasePM-Cron-Secret: your-long-random-secret
+```

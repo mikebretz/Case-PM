@@ -110,6 +110,17 @@ def main() -> int:
     except Exception as exc:
         errors.append(f'accounting_waves_26: {exc}')
 
+    print('6j. Wave 27 Sage production (29–32)…')
+    try:
+        import accounting_waves_27 as w27  # noqa: F401
+        assert callable(w27.sage_pull_ar_receipts_v2)
+        assert callable(w27.sage_drift_dashboard)
+        v3 = w27.sage_mirror_deploy_check_v3()
+        if not v3.get('ok'):
+            errors.append(f'sage_mirror_deploy_check_v3: {v3}')
+    except Exception as exc:
+        errors.append(f'accounting_waves_27: {exc}')
+
     print('6c. instance DB must not be tracked…')
     try:
         from accounting_waves_20 import git_tracked_paths_must_not_include_db
