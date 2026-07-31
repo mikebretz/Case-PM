@@ -935,7 +935,12 @@
     document.querySelectorAll('.acct-ap-3way').forEach((btn) => {
       btn.addEventListener('click', async () => {
         try {
-          const m = await api(`/api/accounting/ap/invoices/${btn.getAttribute('data-id')}/three-way-match`);
+          const id = parseInt(btn.getAttribute('data-id'), 10);
+          if (global.CasePMAcctGlApArExt?.openMatchGrid) {
+            await global.CasePMAcctGlApArExt.openMatchGrid(id);
+            return;
+          }
+          const m = await api(`/api/accounting/ap/invoices/${id}/three-way-match`);
           const msg = m.matched
             ? `Matched PO ${m.po_number || m.purchase_order_id}`
             : `${m.status}: ${m.message || `PO total ${m.po_total}, invoice ${m.invoice_amount}`}`;

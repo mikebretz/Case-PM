@@ -59,16 +59,23 @@
         <button type="button" id="acctGlFxRate" class="px-2 py-1 border border-zinc-600 rounded text-cyan-400">FX rate</button>
         <button type="button" id="acctGlReval" class="px-2 py-1 border border-zinc-600 rounded text-cyan-300">Run revaluation</button>
         <button type="button" id="acctGlRunDue" class="px-2 py-1 border border-zinc-600 rounded text-zinc-300">Run due recurring</button>
-        <button type="button" id="acctGlBudgetCompare" class="px-2 py-1 border border-zinc-600 rounded text-emerald-200">Compare budgets</button>
+        <button type="button" id="acctGlSegTest" class="px-2 py-1 border border-zinc-600 rounded text-zinc-300">Validate segments</button>
+        <button type="button" id="acctGlSubPost" class="px-2 py-1 border border-zinc-600 rounded text-amber-300">Post tie-out adj.</button>
       </div>
-      <p class="text-[11px] text-zinc-600">Subledger tie-out: click the button above to compare control accounts to open A/P and A/R.</p>
+      <p class="text-[11px] text-zinc-600">Subledger tie-out loads automatically; post an adjustment when out of balance.</p>
       ${extrasFailed ? '<p class="text-[11px] text-amber-500">Some advanced G/L data could not be loaded — refresh the page after a moment or check server logs.</p>' : ''}
-      <div id="acctGlSubOut" class="hidden"></div>
+      <div id="acctGlSubOut" class="mt-2"></div>
       <div id="acctGlBudgetGridHost" class="mt-2"></div>
       <div class="grid md:grid-cols-3 gap-2 text-xs">
         <div><div class="text-zinc-500 mb-1">Budgets (${(budgets.budgets || []).length})</div>
-          ${(budgets.budgets || []).slice(0, 3).map((b) => `<div class="flex justify-between gap-2 text-zinc-300"><span>${esc(b.name)} · FY${b.fiscal_year}</span>
-            <button type="button" class="acct-gl-open-budget text-emerald-400 bg-transparent border-none cursor-pointer" data-id="${b.id}">Grid</button></div>`).join('') || '<div class="text-zinc-600">None</div>'}
+          ${(budgets.budgets || []).slice(0, 6).map((b) => `<div class="flex flex-wrap justify-between gap-1 text-zinc-300 py-0.5">
+            <span>${esc(b.name)} · FY${b.fiscal_year} · <span class="text-zinc-500">${esc(b.status || 'Active')}</span></span>
+            <span class="whitespace-nowrap">
+              <button type="button" class="acct-gl-open-budget text-emerald-400 bg-transparent border-none cursor-pointer" data-id="${b.id}">Grid</button>
+              ${(b.status === 'Draft' || b.status === 'Active') ? `<button type="button" class="acct-gl-bud-submit text-sky-400 bg-transparent border-none cursor-pointer" data-id="${b.id}">Submit</button>` : ''}
+              ${b.status === 'Pending Approval' ? `<button type="button" class="acct-gl-bud-approve text-emerald-400 bg-transparent border-none cursor-pointer" data-id="${b.id}">Approve</button>
+              <button type="button" class="acct-gl-bud-reject text-red-400 bg-transparent border-none cursor-pointer" data-id="${b.id}">Reject</button>` : ''}
+            </span></div>`).join('') || '<div class="text-zinc-600">None</div>'}
         </div>
         <div><div class="text-zinc-500 mb-1">Recurring (${(recurring.recurring || []).length})</div>
           ${(recurring.recurring || []).slice(0, 3).map((r) => `<div class="flex justify-between gap-2"><span>${esc(r.code)}</span>
@@ -105,13 +112,15 @@
         <button type="button" id="acctApMatchTol" class="px-2 py-1 border border-zinc-600 rounded text-zinc-300">Match tolerance</button>
         <button type="button" id="acctAp1099Efile" class="px-2 py-1 border border-zinc-600 rounded text-violet-300">1099 e-file</button>
         <button type="button" id="acctAp1099Print" class="px-2 py-1 border border-zinc-600 rounded text-violet-200">Print 1099</button>
+        <button type="button" id="acctApRunDue" class="px-2 py-1 border border-zinc-600 rounded text-emerald-300">Run due recurring</button>
         <button type="button" id="acctApMatchBench" class="px-2 py-1 border border-zinc-600 rounded text-amber-300">Match workbench</button>
         <button type="button" id="acctApWithhold" class="px-2 py-1 border border-zinc-600 rounded text-red-300">Withholding rules</button>
       </div>
-      <div id="acctApMatchBenchHost" class="text-xs max-h-48 overflow-auto border border-zinc-800 rounded p-2 hidden"></div>
+      <div id="acctApVendorActOut" class="hidden text-xs max-h-48 overflow-auto border border-zinc-800 rounded p-2"></div>
+      <div id="acctApMatchBenchHost" class="text-xs max-h-64 overflow-auto border border-zinc-800 rounded p-2 hidden"></div>
       <div class="text-xs text-zinc-500">Vendor groups: ${(groups.groups || []).length} · Recurring: ${(recurring.recurring || []).length}</div>
       <div class="text-xs text-zinc-400">1099 vendors (YTD): ${(report.vendors || []).length}</div>
-      <p class="text-[10px] text-zinc-600">Invoices: use gross + retainage/withhold % on create. Match PO via three-way on open invoice row (API).</p>
+      <p class="text-[10px] text-zinc-600">Link PO on invoice create for 3-way match. Use Match workbench for line-level PO / receipt / invoice grid.</p>
     </section>`;
   }
 
@@ -134,21 +143,148 @@
         <button type="button" id="acctArDunningRules" class="px-2 py-1 border border-zinc-600 rounded text-orange-400">Dunning rules</button>
         <button type="button" id="acctArCashApp" class="px-2 py-1 border border-zinc-600 rounded text-emerald-300">Cash application</button>
         <button type="button" id="acctArDunningSmtp" class="px-2 py-1 border border-zinc-600 rounded text-orange-300">SMTP dunning run</button>
+        <button type="button" id="acctArRunDue" class="px-2 py-1 border border-zinc-600 rounded text-emerald-300">Run due recurring</button>
       </div>
-      <div class="text-xs text-zinc-500">Customer groups: ${(groups.groups || []).length} · Overdue for dunning: ${(overdue.customers || []).length} · Receipt batches: ${(batches.batches || []).length}</div>
+      <div id="acctArCreditHost" class="text-xs border border-zinc-800 rounded p-2 mb-2"></div>
+      <div id="acctArCashWorkbenchHost" class="text-xs border border-zinc-800 rounded p-2"></div>
+      <div class="text-xs text-zinc-500 mt-2">Customer groups: ${(groups.groups || []).length} · Overdue for dunning: ${(overdue.customers || []).length} · Receipt batches: ${(batches.batches || []).length}</div>
     </section>`;
+  }
+
+  async function refreshSubledgerPanel() {
+    const { api, money } = ctx;
+    const el = document.getElementById('acctGlSubOut');
+    if (!el) return;
+    try {
+      const sub = await api('/api/accounting/gl/subledger-reconcile');
+      const sug = await api('/api/accounting/gl/subledger-reconcile/suggestion');
+      let extra = '';
+      if (!(sug.balanced)) {
+        extra = `<p class="text-amber-400 mt-2 text-xs">Out of balance — use Post tie-out adj. after review.</p>`;
+      }
+      el.innerHTML = formatSubledgerTieOut(sub, money) + extra;
+    } catch (_) {
+      el.innerHTML = '<p class="text-zinc-600 text-xs">Could not load subledger tie-out.</p>';
+    }
+  }
+
+  async function openMatchGrid(invoiceId) {
+    const { api, esc, money } = ctx;
+    const grid = await api(`/api/accounting/ap/match-grid/${invoiceId}`);
+    const m = grid.match || {};
+    const lines = (grid.line_grid || []).map((ln) =>
+      `<tr class="border-t border-zinc-800"><td>${ln.line_number}</td><td>${esc(ln.item)}</td>
+        <td class="text-right">${ln.qty_ordered}</td><td class="text-right">${ln.qty_received}</td>
+        <td class="text-right">${money(ln.po_line_amount)}</td>
+        <td class="${ln.qty_match ? 'text-emerald-400' : 'text-amber-400'}">${ln.qty_match ? 'OK' : 'Short'}</td></tr>`
+    ).join('');
+    const sum = grid.summary || {};
+    const html = `<p class="text-xs text-zinc-400 mb-2">Invoice <span class="font-mono text-zinc-200">${esc(grid.document_number)}</span>
+      · Status <span class="${m.matched ? 'text-emerald-400' : 'text-amber-400'}">${esc(m.status || '')}</span>
+      · PO ${esc(m.po_number || '—')}</p>
+      <div class="grid grid-cols-3 gap-2 text-xs mb-3">
+        <div>Invoice ${money(sum.invoice_amount)}</div><div>PO ${money(sum.po_total)}</div><div>Var ${money(sum.amount_variance)}</div>
+      </div>
+      <table class="w-full text-xs"><thead class="text-zinc-500"><tr>
+        <th>#</th><th>Item</th><th class="text-right">Ord</th><th class="text-right">Rcvd</th><th class="text-right">PO $</th><th>Qty</th>
+      </tr></thead><tbody>${lines || '<tr><td colspan="6">No PO lines — link a purchase order on the invoice.</td></tr>'}</tbody></table>`;
+    await AD().alert(html, m.matched ? 'success' : 'warning');
+  }
+
+  async function mountArWorkbenchPanels() {
+    const { api, esc, money, switchModule } = ctx;
+    const creditHost = document.getElementById('acctArCreditHost');
+    if (creditHost) {
+      try {
+        const cr = await api('/api/accounting/ar/credit-reviews');
+        const rows = cr.reviews || [];
+        creditHost.innerHTML = `<div class="text-zinc-400 mb-1">Credit reviews (${rows.length} open)</div>
+          ${rows.slice(0, 5).map((r) => `<div class="flex justify-between gap-2 py-0.5">
+            <span>Customer #${r.customer_id} · ${esc(r.status)} · ${money(r.requested_limit || 0)}</span>
+            <button type="button" class="acct-ar-cr-resolve text-emerald-400 bg-transparent border-none cursor-pointer" data-id="${r.id}">Approve</button>
+          </div>`).join('') || '<span class="text-zinc-600">No open credit reviews.</span>'}`;
+        creditHost.querySelectorAll('.acct-ar-cr-resolve').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            await api('/api/accounting/ar/credit-reviews', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ resolve_review_id: parseInt(btn.getAttribute('data-id'), 10), approved: true, credit_limit: 0 }),
+            });
+            switchModule('ar');
+          });
+        });
+      } catch (_) {
+        creditHost.innerHTML = '';
+      }
+    }
+    const cashHost = document.getElementById('acctArCashWorkbenchHost');
+    if (!cashHost) return;
+    const customers = await api('/api/accounting/ar/customers');
+    const list = customers.customers || [];
+    if (!list.length) {
+      cashHost.innerHTML = '<p class="text-zinc-600">Add a customer to use cash application.</p>';
+      return;
+    }
+    const custId = cashHost.getAttribute('data-customer-id') || String(list[0].id);
+    cashHost.innerHTML = `<div class="flex flex-wrap gap-2 items-center mb-2">
+      <label class="text-zinc-500">Customer</label>
+      <select id="acctArWbCust" class="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs">
+        ${list.map((c) => `<option value="${c.id}" ${String(c.id) === String(custId) ? 'selected' : ''}>${esc(c.code)} — ${esc(c.name)}</option>`).join('')}
+      </select>
+      <button type="button" id="acctArWbReload" class="text-emerald-400 text-xs">Refresh</button>
+    </div><div id="acctArWbBody" class="text-xs">Loading…</div>`;
+    async function loadWb() {
+      const cid = parseInt(document.getElementById('acctArWbCust')?.value || list[0].id, 10);
+      cashHost.setAttribute('data-customer-id', String(cid));
+      const wb = await api(`/api/accounting/ar/cash-application/${cid}`);
+      const body = document.getElementById('acctArWbBody');
+      if (!body) return;
+      const invRows = (wb.open_invoices || []).map((i) =>
+        `<tr class="border-t border-zinc-800"><td class="font-mono">${esc(i.document_number)}</td><td>${esc(i.due_date || '')}</td>
+          <td class="text-right">${money(i.open_amount)}</td>
+          <td><input type="number" step="0.01" class="acct-ar-apply-amt w-20 bg-zinc-900 border border-zinc-700 rounded" data-doc="${i.ar_document_id}" value="0" /></td></tr>`
+      ).join('');
+      const rcptOpts = (wb.unapplied_receipts || []).map((r) =>
+        `<option value="${r.receipt_id}">${esc(r.receipt_number)} · ${money(r.unapplied_amount)}</option>`
+      ).join('');
+      body.innerHTML = `<div class="grid md:grid-cols-2 gap-3">
+        <div><div class="text-zinc-500 mb-1">Open invoices</div>
+          <table class="w-full"><thead class="text-zinc-600"><tr><th>Invoice</th><th>Due</th><th class="text-right">Open</th><th>Apply</th></tr></thead>
+          <tbody>${invRows || '<tr><td colspan="4" class="text-zinc-600">None</td></tr>'}</tbody></table>
+        </div>
+        <div><div class="text-zinc-500 mb-1">Unapplied receipts</div>
+          <select id="acctArWbReceipt" class="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 mb-2">${rcptOpts || '<option>No unapplied receipts</option>'}</select>
+          <button type="button" id="acctArWbApply" class="px-3 py-1.5 bg-emerald-700 rounded text-xs text-white" ${rcptOpts ? '' : 'disabled'}>Apply selected amounts</button>
+        </div>
+      </div>`;
+      document.getElementById('acctArWbApply')?.addEventListener('click', async () => {
+        const receiptId = parseInt(document.getElementById('acctArWbReceipt')?.value, 10);
+        const applications = [];
+        body.querySelectorAll('.acct-ar-apply-amt').forEach((inp) => {
+          const amt = parseFloat(inp.value) || 0;
+          if (amt > 0) applications.push({ ar_document_id: parseInt(inp.getAttribute('data-doc'), 10), amount: amt });
+        });
+        if (!applications.length) {
+          await AD().alert('Enter apply amounts.', 'warning');
+          return;
+        }
+        await api('/api/accounting/ar/cash-application/advanced', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ receipt_id: receiptId, applications }),
+        });
+        switchModule('ar');
+      });
+    }
+    document.getElementById('acctArWbCust')?.addEventListener('change', loadWb);
+    document.getElementById('acctArWbReload')?.addEventListener('click', loadWb);
+    await loadWb();
   }
 
   function bindGlExtras() {
     const { api, switchModule, money } = ctx;
-    document.getElementById('acctGlRefreshSub')?.addEventListener('click', async () => {
-      const sub = await api('/api/accounting/gl/subledger-reconcile');
-      const el = document.getElementById('acctGlSubOut');
-      if (el) {
-        el.classList.remove('hidden');
-        el.innerHTML = formatSubledgerTieOut(sub, money);
-      }
-    });
+    refreshSubledgerPanel();
+    document.getElementById('acctGlRefreshSub')?.addEventListener('click', () => refreshSubledgerPanel());
     document.getElementById('acctGlNewBudget')?.addEventListener('click', async () => {
       const gl = await api('/api/accounting/gl/accounts');
       const accounts = gl.accounts || [];
@@ -373,6 +509,70 @@
       const cmp = await api(`/api/accounting/gl/budgets/compare?ids=${ids.join(',')}`);
       await AD().alert((cmp.budgets || []).map((b) => `${b.name}: ${b.total}`).join('\n'), 'info');
     });
+
+    document.querySelectorAll('.acct-gl-bud-submit').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        await api(`/api/accounting/gl/budgets/${btn.getAttribute('data-id')}/submit-approval`, { method: 'POST' });
+        switchModule('gl');
+      });
+    });
+    document.querySelectorAll('.acct-gl-bud-approve').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        await api(`/api/accounting/gl/budgets/${btn.getAttribute('data-id')}/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ approved: true }),
+        });
+        switchModule('gl');
+      });
+    });
+    document.querySelectorAll('.acct-gl-bud-reject').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        await api(`/api/accounting/gl/budgets/${btn.getAttribute('data-id')}/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ approved: false }),
+        });
+        switchModule('gl');
+      });
+    });
+
+    document.getElementById('acctGlSegTest')?.addEventListener('click', async () => {
+      const data = await AD().form({
+        title: 'Validate account segments',
+        fields: [{ key: 'account_number', label: 'Account number (use - between segments)', required: true }],
+      });
+      if (!data) return;
+      const r = await api('/api/accounting/gl/segments/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_number: data.account_number }),
+      });
+      await AD().alert(`Valid — ${(r.segments || []).join(' | ')} (${r.segment_count} slots)`, 'success');
+    });
+
+    document.getElementById('acctGlSubPost')?.addEventListener('click', async () => {
+      const sug = await api('/api/accounting/gl/subledger-reconcile/suggestion');
+      if (sug.balanced) {
+        await AD().alert('Subledgers are already in balance.', 'info');
+        return;
+      }
+      const pick = await AD().select({
+        title: 'Post tie-out adjustment',
+        items: (sug.suggestions || []).map((s) => ({
+          value: s.module,
+          label: `${s.module.toUpperCase()} · diff ${s.difference} · ${s.action}`,
+        })),
+      });
+      if (!pick) return;
+      if (!await AD().confirm('Post balancing journal for this control account?')) return;
+      await api('/api/accounting/gl/subledger-reconcile/post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ module: pick.value }),
+      });
+      switchModule('gl');
+    });
   }
 
   function bindApExtras() {
@@ -473,8 +673,14 @@
     });
 
     document.getElementById('acctAp1099Efile')?.addEventListener('click', async () => {
-      const r = await api(`/api/accounting/ap/1099/efile?tax_year=${new Date().getFullYear() - 1}`);
-      await AD().alert(`E-file stub: ${r.vendor_count} vendor(s). Copy from API response if needed.`, 'info');
+      const yr = new Date().getFullYear() - 1;
+      const r = await api(`/api/accounting/ap/1099/efile?tax_year=${yr}`);
+      const blob = new Blob([r.content || ''], { type: 'text/plain' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `1099-fire-${yr}.txt`;
+      a.click();
+      await AD().alert(`FIRE transmission ready: ${r.vendor_count} vendor(s).`, 'success');
     });
 
     document.getElementById('acctAp1099Print')?.addEventListener('click', () => {
@@ -482,16 +688,28 @@
     });
 
     document.getElementById('acctApMatchBench')?.addEventListener('click', async () => {
-      const { esc } = ctx;
+      const { esc, money } = ctx;
       const wb = await api('/api/accounting/ap/match-workbench');
       const host = document.getElementById('acctApMatchBenchHost');
       if (!host) return;
       host.classList.remove('hidden');
       const ex = wb.exceptions || [];
-      host.innerHTML = `<table class="w-full text-xs"><thead><tr><th>Invoice</th><th>Vendor</th><th>Status</th><th>Amount</th></tr></thead><tbody>
+      host.innerHTML = `<table class="w-full text-xs"><thead class="text-zinc-500"><tr>
+        <th>Invoice</th><th>Vendor</th><th>Status</th><th class="text-right">Amount</th><th></th></tr></thead><tbody>
         ${ex.map((r) => `<tr class="border-t border-zinc-800"><td>${esc(r.document_number)}</td><td>${esc(r.vendor_code)}</td>
-        <td class="text-amber-400">${esc(r.status)}</td><td>${r.invoice_amount}</td></tr>`).join('') || '<tr><td colspan=4>No exceptions</td></tr>'}
+        <td class="text-amber-400">${esc(r.status)}</td><td class="text-right">${money(r.invoice_amount || r.amount)}</td>
+        <td><button type="button" class="acct-ap-open-grid text-sky-400 bg-transparent border-none cursor-pointer" data-id="${r.invoice_id}">Line grid</button></td></tr>`).join('')
+        || '<tr><td colspan="5" class="text-zinc-600">No match exceptions — all linked invoices within tolerance.</td></tr>'}
         </tbody></table>`;
+      host.querySelectorAll('.acct-ap-open-grid').forEach((btn) => {
+        btn.addEventListener('click', () => openMatchGrid(parseInt(btn.getAttribute('data-id'), 10)));
+      });
+    });
+
+    document.getElementById('acctApRunDue')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/ap/recurring-payables/run-due', { method: 'POST' });
+      await AD().alert(`Generated ${r.ran || 0} recurring A/P invoice(s).`, 'info');
+      switchModule('ap');
     });
 
     document.getElementById('acctApWithhold')?.addEventListener('click', async () => {
@@ -514,6 +732,7 @@
 
   function bindArExtras() {
     const { api, switchModule } = ctx;
+    mountArWorkbenchPanels();
     document.getElementById('acctArCustGroup')?.addEventListener('click', async () => {
       const data = await AD().form({ title: 'Customer group', fields: [{ key: 'code', label: 'Code', required: true }, { key: 'name', label: 'Name', required: true }] });
       if (!data) return;
@@ -682,6 +901,12 @@
       await AD().alert(`Processed ${r.processed || 0} dunning notice(s) via SMTP when configured.`, 'info');
       switchModule('ar');
     });
+
+    document.getElementById('acctArRunDue')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/ar/recurring-invoices/run-due', { method: 'POST' });
+      await AD().alert(`Generated ${r.ran || 0} recurring A/R invoice(s).`, 'info');
+      switchModule('ar');
+    });
   }
 
   global.CasePMAcctGlApArExt = {
@@ -694,5 +919,7 @@
     bindGlExtras,
     bindApExtras,
     bindArExtras,
+    openMatchGrid,
+    mountArWorkbenchPanels,
   };
 })(typeof window !== 'undefined' ? window : global);
