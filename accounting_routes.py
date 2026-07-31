@@ -6026,3 +6026,92 @@ def register_accounting_routes(app, deps):
             return jsonify({'ok': True, **out})
         except PermissionError as exc:
             return jsonify({'error': str(exc)}), 403
+
+    # --- Waves 50–52, 54–60, 62–64 ---
+
+    @app.route('/api/accounting/gl/subledger-tieout', methods=['GET'])
+    @login_required
+    def api_acct_subledger_tieout():
+        from accounting_waves_35 import subledger_gl_tieout_report
+        return jsonify(subledger_gl_tieout_report(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/gl/control-adjustment', methods=['POST'])
+    @login_required
+    def api_acct_gl_control_adj():
+        from accounting_waves_35 import gl_control_adjustment_wizard
+        out = gl_control_adjustment_wizard(db, models, _ledger_id(), request.get_json(silent=True) or {}, user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/sage/fx/revaluation', methods=['POST'])
+    @login_required
+    def api_acct_fx_reval():
+        from accounting_waves_35 import sage_fx_revaluation_round_trip
+        out = sage_fx_revaluation_round_trip(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/gl/security-inbox', methods=['GET'])
+    @login_required
+    def api_acct_gl_sec_inbox():
+        from accounting_waves_35 import gl_security_violation_inbox
+        return jsonify(gl_security_violation_inbox(db, models, _ledger_id()))
+
+    @app.route('/api/accounting/cre/sub-sync-all/<int:project_id>', methods=['POST'])
+    @login_required
+    def api_acct_sub_sync_all(project_id):
+        from accounting_waves_36 import sync_all_sub_pay_apps_for_project
+        out = sync_all_sub_pay_apps_for_project(db, models, _ledger_id(), project_id, PayAppProjectState=PayAppProjectState, user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/cre/pco-replay', methods=['POST'])
+    @login_required
+    def api_acct_pco_replay():
+        from accounting_waves_36 import pco_auto_resolve_from_queue
+        out = pco_auto_resolve_from_queue(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/ap/three-way-auto-hold', methods=['POST'])
+    @login_required
+    def api_acct_three_way_hold():
+        from accounting_waves_36 import three_way_auto_hold_exceptions
+        out = three_way_auto_hold_exceptions(db, models, _ledger_id())
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/compliance/filing-bundle/v2', methods=['GET'])
+    @login_required
+    def api_acct_filing_v2():
+        from accounting_waves_37 import filing_bundle_with_transmit_v2
+        yr = request.args.get('tax_year', type=int) or date.today().year - 1
+        return jsonify(filing_bundle_with_transmit_v2(db, models, _ledger_id(), yr, user_id=current_user.id))
+
+    @app.route('/api/accounting/sage/pr/pull-runs', methods=['POST'])
+    @login_required
+    def api_acct_pr_pull_runs():
+        from accounting_waves_37 import sage_pull_pr_pay_runs
+        out = sage_pull_pr_pay_runs(db, models, _ledger_id(), user_id=current_user.id)
+        db.session.commit()
+        return jsonify({'ok': True, **out})
+
+    @app.route('/api/accounting/payroll/wh347-by-class/<int:project_id>', methods=['GET'])
+    @login_required
+    def api_acct_wh347_class(project_id):
+        from accounting_waves_37 import wh347_per_job_class_report
+        we = request.args.get('week_ending', '')
+        return jsonify(wh347_per_job_class_report(db, models, _ledger_id(), project_id, we))
+
+    @app.route('/api/accounting/cron/sage-advanced-batch', methods=['POST'])
+    def api_acct_cron_sage_advanced():
+        from accounting_waves_37 import cron_waves_50_64_combined
+        secret = request.headers.get('X-CasePM-Cron-Secret') or (request.get_json(silent=True) or {}).get('secret', '')
+        try:
+            out = cron_waves_50_64_combined(
+                db, models, secret, Project=Project, PayAppProjectState=PayAppProjectState, Commitment=Commitment,
+            )
+            db.session.commit()
+            return jsonify({'ok': True, **out})
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403

@@ -194,6 +194,20 @@ def main() -> int:
     except Exception as exc:
         errors.append(f'accounting_waves_34: {exc}')
 
+    print('6r. Waves 35–37 (50–52, 54–60, 62–64)…')
+    try:
+        import accounting_waves_35 as w35  # noqa: F401
+        import accounting_waves_36 as w36  # noqa: F401
+        import accounting_waves_37 as w37  # noqa: F401
+        assert callable(w35.subledger_gl_tieout_report)
+        assert callable(w36.three_way_auto_hold_exceptions)
+        assert callable(w37.sage_pull_pr_pay_runs)
+        v10 = w37.sage_mirror_deploy_check_v10()
+        if not v10.get('ok'):
+            errors.append(f'sage_mirror_deploy_check_v10: {v10}')
+    except Exception as exc:
+        errors.append(f'accounting_waves_35_37: {exc}')
+
     print('6c. instance DB must not be tracked…')
     try:
         from accounting_waves_20 import git_tracked_paths_must_not_include_db
