@@ -70,3 +70,28 @@ def optional_fields_from_entity(row):
 def posting_context(user):
     uid = getattr(user, 'id', None) if user else None
     return {'user_id': uid, 'role_key': _role_key_for_user(user)}
+
+
+def assert_screen_access(ledger, screen: str):
+    """Raise PermissionError if flat screen_permissions disables this route."""
+    if not ledger or not screen:
+        return
+    from accounting_gl_service import _parse_settings
+    settings = _parse_settings(ledger)
+    perms = settings.get('screen_permissions') or {}
+    if not perms:
+        return
+    if screen in perms and perms[screen] is False:
+        raise PermissionError(f'Access denied to accounting module: {screen}')
+    # nested role map: { role: { gl: 'full' } } — allow if any role grants
+    if screen not in perms and isinstance(next(iter(perms.values()), None), dict):
+        return
+
+
+def screen_access_for_request(ledger, path: str, method: str):
+    if method == 'GET' and ('/catalog' in path or path.endswith('/dashboard') or '/i18n' in path):
+        return
+    from accounting_all_chunks import screen_for_api_path
+    screen = screen_for_api_path(path)
+    if screen:
+        assert_screen_access(ledger, screen)
