@@ -566,6 +566,14 @@
       state.pendingPhotos = [];
       el('dlogModal').close();
       await loadList();
+      const equipRows = (payload.equipment || []).filter((r) => (r.equipment_name || r.name || '').trim());
+      if (global.CasePMAccountingField && equipRows.length) {
+        try {
+          await global.CasePMAccountingField.maybePostEquipmentDailyLog(logId, equipRows.length);
+        } catch (accErr) {
+          console.warn(accErr);
+        }
+      }
       if (global.showToast) global.showToast('Daily log saved');
     } catch (e) { alert(e.message || 'Could not save'); }
     finally { saveBtn.disabled = false; saveBtn.textContent = 'Save Daily Log'; }

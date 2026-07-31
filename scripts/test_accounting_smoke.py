@@ -270,6 +270,26 @@ def main() -> int:
     except Exception as exc:
         errors.append(f'accounting_waves_43_44: {exc}')
 
+    print('6w. PM–accounting polish (45) + G702 integration pack…')
+    try:
+        import accounting_waves_45 as w45  # noqa: F401
+        v14 = w45.sage_mirror_deploy_check_v14()
+        if not v14.get('ok'):
+            errors.append(f'sage_mirror_deploy_check_v14: {v14}')
+        import subprocess
+        proc = subprocess.run(
+            [sys.executable, 'scripts/test_accounting_g702_ar_sage_integration.py'],
+            cwd='.',
+            env={**dict(__import__('os').environ), 'PYTHONPATH': '.'},
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if proc.returncode != 0:
+            errors.append(f'g702_ar_sage_integration: {proc.stdout}\n{proc.stderr}')
+    except Exception as exc:
+        errors.append(f'accounting_waves_45: {exc}')
+
     print('6c. instance DB must not be tracked…')
     try:
         from accounting_waves_20 import git_tracked_paths_must_not_include_db

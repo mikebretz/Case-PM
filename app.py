@@ -18521,6 +18521,10 @@ register_accounting_routes(app, {
     'Project': Project,
     'Company': Company,
     'User': User,
+    'COI': COI,
+    'Commitment': Commitment,
+    'CommitmentAllocation': CommitmentAllocation,
+    'BudgetProjectState': BudgetProjectState,
     'SageSyncEvent': SageSyncEvent,
     'PayAppProjectState': PayAppProjectState,
     **_acct_models,
@@ -18538,6 +18542,13 @@ def api_stats():
 def api_health():
     """Public ping for tunnel / load-balancer checks."""
     return jsonify({'ok': True, 'service': 'casepm'})
+
+
+@app.route('/api/pm/roadmap/status', methods=['GET'])
+@login_required
+def api_pm_roadmap_status():
+    from pm_product_roadmap import pm_roadmap_status
+    return jsonify(pm_roadmap_status())
 
 
 with app.app_context():

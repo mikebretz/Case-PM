@@ -197,11 +197,17 @@ ACCOUNTING_DEFAULT_KEYS = [
     'g702_post_on_approve',
     'sub_pay_app_post_on_approve',
     'commitment_post_on_approve',
+    'commitment_po_one_step_on_approve',
+    'commitment_po_queue_sage_distribution',
     'co_post_on_approve',
     'timesheet_post_on_approve',
     'direct_cost_post_on_approve',
+    'auto_post_equipment_on_daily_log',
+    'auto_post_delivery_on_delivered',
+    'ap_require_valid_coi',
     'labor_burden_percent',
     'equipment_default_hourly_rate',
+    'equipment_hourly_rates_json',
     'auto_wip_on_billing_sync',
     'retainage_accounting_enabled',
     'cash_account',
@@ -226,6 +232,8 @@ def load_accounting_defaults():
             'auto_post_enabled', 'g702_post_on_approve', 'sub_pay_app_post_on_approve',
             'commitment_post_on_approve', 'co_post_on_approve', 'auto_wip_on_billing_sync',
             'retainage_accounting_enabled', 'timesheet_post_on_approve', 'direct_cost_post_on_approve',
+            'commitment_po_one_step_on_approve', 'commitment_po_queue_sage_distribution',
+            'auto_post_equipment_on_daily_log', 'auto_post_delivery_on_delivered', 'ap_require_valid_coi',
         )
         else acct.get(k, '1')
         for k in ACCOUNTING_DEFAULT_KEYS
@@ -244,10 +252,22 @@ def load_accounting_defaults():
         out['timesheet_post_on_approve'] = '1'
     if not str(out.get('direct_cost_post_on_approve', '1')).strip():
         out['direct_cost_post_on_approve'] = '1'
+    if not str(out.get('commitment_po_one_step_on_approve', '1')).strip():
+        out['commitment_po_one_step_on_approve'] = '1'
+    if not str(out.get('commitment_po_queue_sage_distribution', '0')).strip():
+        out['commitment_po_queue_sage_distribution'] = '0'
+    if not str(out.get('auto_post_equipment_on_daily_log', '0')).strip():
+        out['auto_post_equipment_on_daily_log'] = '0'
+    if not str(out.get('auto_post_delivery_on_delivered', '0')).strip():
+        out['auto_post_delivery_on_delivered'] = '0'
+    if not str(out.get('ap_require_valid_coi', '0')).strip():
+        out['ap_require_valid_coi'] = '0'
     if not str(out.get('labor_burden_percent', '0')).strip():
         out['labor_burden_percent'] = '0'
     if not str(out.get('equipment_default_hourly_rate', '85')).strip():
         out['equipment_default_hourly_rate'] = '85'
+    if not str(out.get('equipment_hourly_rates_json', '')).strip():
+        out['equipment_hourly_rates_json'] = '{}'
     if not str(out.get('auto_wip_on_billing_sync', '0')).strip():
         out['auto_wip_on_billing_sync'] = '0'
     if not str(out.get('retainage_accounting_enabled', '1')).strip():
@@ -276,11 +296,28 @@ def save_accounting_defaults(form_data):
             'retainage_accounting_enabled',
             'timesheet_post_on_approve',
             'direct_cost_post_on_approve',
+            'commitment_po_one_step_on_approve',
+            'commitment_po_queue_sage_distribution',
+            'auto_post_equipment_on_daily_log',
+            'auto_post_delivery_on_delivered',
+            'ap_require_valid_coi',
         ):
             payload[k] = '1' if form_data.get(k) in (True, '1', 'on', 'true') else '0'
         else:
             payload[k] = (form_data.get(k) or '').strip()
     return save_section('accounting', payload)
+
+
+def accounting_equipment_hourly_rates_map() -> dict:
+    """Parse equipment_hourly_rates_json from accounting defaults."""
+    import json
+
+    raw = load_accounting_defaults().get('equipment_hourly_rates_json') or '{}'
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else (raw or {})
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
 
 
 def load_sage_defaults():

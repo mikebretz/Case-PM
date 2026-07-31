@@ -139,19 +139,29 @@
   async function save() {
     const pid = projectId(); const desc = el('dDesc').value.trim(); const date = el('dDate').value;
     if (!pid || !desc || !date) { alert('Description and delivery date are required.'); return; }
+    const prev = state.editId ? state.deliveries.find((x) => x.id === state.editId) : null;
+    const prevStatus = prev ? prev.status : null;
+    const newStatus = el('dStatus').value;
     const payload = {
       project_id: pid, description: desc, supplier: el('dSupplier').value.trim(), carrier: el('dCarrier').value.trim(),
       delivery_date: date, time_window: el('dTime').value.trim(), duration_days: el('dDuration').value,
-      status: el('dStatus').value, quantity: el('dQuantity').value.trim(), po_number: el('dPo').value.trim(),
+      status: newStatus, quantity: el('dQuantity').value.trim(), po_number: el('dPo').value.trim(),
       location: el('dLocation').value.trim(), responsible: el('dResponsible').value.trim(), received_by: el('dReceived').value.trim(),
       notes: el('dNotes').value.trim(), push_to_schedule: el('dPush').checked,
     };
     const btn = el('dSave'); btn.disabled = true; btn.textContent = 'Saving…';
     try {
       const url = state.editId ? `/api/deliveries/${state.editId}` : '/api/deliveries';
-      await api(url, { method: state.editId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      // If newly checked push on an existing delivery, ensure it's pushed.
+      const saved = await api(url, { method: state.editId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const deliveryId = state.editId || saved.delivery?.id || saved.id;
       el('delModal').close(); await load();
+      if (global.CasePMAccountingField && deliveryId) {
+        try {
+          await global.CasePMAccountingField.maybePostDeliveryReceive(deliveryId, newStatus, prevStatus);
+        } catch (accErr) {
+          console.warn(accErr);
+        }
+      }
       if (global.showToast) global.showToast('Delivery saved');
     } catch (e) { alert(e.message); } finally { btn.disabled = false; btn.textContent = 'Save'; }
   }

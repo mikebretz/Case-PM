@@ -134,6 +134,7 @@
         <button type="button" id="acctCreAutopost" class="px-2 py-0.5 border border-emerald-800 rounded text-emerald-300">Apply CRE auto-post</button>
         <button type="button" id="acctSageSetup" class="px-2 py-0.5 border border-indigo-900 rounded text-indigo-200">Sage setup</button>
         <button type="button" id="acctPjReconcile" class="px-2 py-0.5 border border-indigo-800 rounded text-indigo-300">PJ reconcile</button>
+        <button type="button" id="acctPjCostCode" class="px-2 py-0.5 border border-indigo-700 rounded text-indigo-200">PJ cost codes</button>
       </div>
       <ul class="max-h-20 overflow-y-auto">${log}</ul>
     </div>`;
@@ -442,6 +443,21 @@
       await api('/api/accounting/sage/pj/pull', { method: 'POST', body: '{}' });
       const r = await api('/api/accounting/sage/pj/reconcile-v2');
       await AD().alert(`PJ reconcile — ${(r.projects || []).length} project(s), Sage rows ${r.sage_pj_row_count || 0}.`, 'info');
+    });
+    document.getElementById('acctPjCostCode')?.addEventListener('click', async () => {
+      const pid = ctx.projectId || (typeof getCurrentProjectId === 'function' ? getCurrentProjectId() : null);
+      if (!pid) {
+        await AD().alert('Select an active project first.', 'warning');
+        return;
+      }
+      const r = await api(`/api/accounting/sage/pj/cost-code-reconcile?project_id=${pid}`);
+      const lines = (r.lines || []).slice(0, 8).map((ln) =>
+        `${ln.cost_code}: budget ${ln.budget_revised} · Sage ${ln.sage_pj} · GL ${ln.gl_job_cost}`,
+      ).join('\n');
+      await AD().alert(
+        `Cost codes (${(r.lines || []).length}) · GL total ${r.gl_job_cost_total}\n${lines || 'No lines'}`,
+        'info',
+      );
     });
     document.getElementById('acctSageFlushC')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/sage/construction/flush-queue', { method: 'POST', body: '{}' });

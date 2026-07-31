@@ -702,12 +702,16 @@ def queue_commitment_sage_event(
         payload['idempotency_key'] = f'CommitmentApproved:{commitment.id}'
         from program_settings_persistence import load_accounting_defaults
 
+        post_out = None
         if str(load_accounting_defaults().get('commitment_post_on_approve', '1')) != '0':
             payload['force_builtin_post'] = True
         try:
             import app as app_mod
+            from accounting_persistence import get_or_create_default_ledger
             from accounting_posting import process_construction_event
-            process_construction_event(
+
+            ledger = get_or_create_default_ledger(db, app_mod._acct_models['AcctLedger'])
+            post_out = process_construction_event(
                 event_type,
                 commitment.project_id,
                 payload,
@@ -717,6 +721,19 @@ def queue_commitment_sage_event(
                 Project=Project,
                 Company=app_mod.Company,
                 commitment=commitment,
+            )
+        except Exception as exc:
+            post_out = {'error': str(exc)}
+        try:
+            import app as app_mod
+            from accounting_persistence import get_or_create_default_ledger
+            from accounting_waves_45 import ensure_commitment_po_on_approve
+
+            ledger = get_or_create_default_ledger(db, app_mod._acct_models['AcctLedger'])
+            ensure_commitment_po_on_approve(
+                db, app_mod._acct_models, ledger.id, commitment, post_out,
+                user_id=user_id, Commitment=Commitment, CommitmentAllocation=CommitmentAllocation,
+                Project=Project, Company=app_mod.Company,
             )
         except Exception:
             pass

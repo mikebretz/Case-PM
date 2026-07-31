@@ -846,6 +846,74 @@
                         Apply retainage split on sub pay app → A/P sync
                     </label>
                 </div>
+                <div class="mb-5">
+                    <label class="flex items-center gap-2 text-sm text-zinc-300">
+                        <input type="checkbox" id="acct_timesheet_post_on_approve" class="rounded border-zinc-600" {% if accounting_defaults.get('timesheet_post_on_approve', '1') != '0' %}checked{% endif %}>
+                        Post approved timesheets to payroll / job cost
+                    </label>
+                </div>
+                <div class="mb-5">
+                    <label class="flex items-center gap-2 text-sm text-zinc-300">
+                        <input type="checkbox" id="acct_direct_cost_post_on_approve" class="rounded border-zinc-600" {% if accounting_defaults.get('direct_cost_post_on_approve', '1') != '0' %}checked{% endif %}>
+                        Allow direct cost posts from field (equipment, deliveries)
+                    </label>
+                </div>
+                <div class="mb-5">
+                    <label class="flex items-center gap-2 text-sm text-zinc-300">
+                        <input type="checkbox" id="acct_auto_post_equipment_on_daily_log" class="rounded border-zinc-600" {% if accounting_defaults.get('auto_post_equipment_on_daily_log', '0') != '0' %}checked{% endif %}>
+                        Prompt to post equipment hours when saving a daily log
+                    </label>
+                </div>
+                <div class="mb-5">
+                    <label class="flex items-center gap-2 text-sm text-zinc-300">
+                        <input type="checkbox" id="acct_auto_post_delivery_on_delivered" class="rounded border-zinc-600" {% if accounting_defaults.get('auto_post_delivery_on_delivered', '0') != '0' %}checked{% endif %}>
+                        Prompt to post materials receipt when a delivery is marked Delivered
+                    </label>
+                </div>
+                <div class="mb-5">
+                    <label class="flex items-center gap-2 text-sm text-zinc-300">
+                        <input type="checkbox" id="acct_commitment_po_one_step" class="rounded border-zinc-600" {% if accounting_defaults.get('commitment_po_one_step_on_approve', '1') != '0' %}checked{% endif %}>
+                        Create accounting PO in one step when a commitment is fully approved
+                    </label>
+                </div>
+                <div class="mb-5">
+                    <label class="flex items-center gap-2 text-sm text-zinc-300">
+                        <input type="checkbox" id="acct_commitment_po_queue_sage" class="rounded border-zinc-600" {% if accounting_defaults.get('commitment_po_queue_sage_distribution', '0') != '0' %}checked{% endif %}>
+                        Queue Sage distribution export after commitment PO is created
+                    </label>
+                </div>
+                <div class="mb-5">
+                    <label class="flex items-center gap-2 text-sm text-zinc-300">
+                        <input type="checkbox" id="acct_ap_require_valid_coi" class="rounded border-zinc-600" {% if accounting_defaults.get('ap_require_valid_coi', '0') != '0' %}checked{% endif %}>
+                        Block A/P payments when vendor company COI is missing or expired
+                    </label>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1">Labor burden %</label>
+                        <input type="text" name="labor_burden_percent" id="acct_labor_burden_percent" value="{{ accounting_defaults.get('labor_burden_percent', '0') }}"
+                               class="settings-input font-mono" placeholder="e.g. 28">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1">Default equipment $/hr</label>
+                        <input type="text" name="equipment_default_hourly_rate" id="acct_equipment_default_hourly_rate" value="{{ accounting_defaults.get('equipment_default_hourly_rate', '85') }}"
+                               class="settings-input font-mono">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1">G/L segment count (1–10)</label>
+                        <input type="number" min="1" max="10" id="acct_gl_segment_count" class="settings-input font-mono" placeholder="3">
+                    </div>
+                </div>
+                <div class="mb-5">
+                    <label class="block text-sm text-zinc-400 mb-1">Equipment hourly rates (JSON map)</label>
+                    <textarea name="equipment_hourly_rates_json" id="acct_equipment_hourly_rates_json" rows="3" class="settings-input font-mono text-xs">{{ accounting_defaults.get('equipment_hourly_rates_json', '{}') }}</textarea>
+                </div>
+                <div class="mb-5">
+                    <label class="flex items-center gap-2 text-sm text-zinc-300">
+                        <input type="checkbox" id="acct_sage_enforce_fiscal_close" class="rounded border-zinc-600">
+                        Enforce Sage closed fiscal periods on G/L post (pull calendar in Accounting → Sage setup)
+                    </label>
+                </div>
                 <div id="acctSorSummaryHost" class="mb-5 p-4 border border-zinc-700 rounded-lg text-sm text-zinc-400 hidden"></div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {% for key, label in [
@@ -1042,7 +1110,7 @@
         if (tab === 'workflow' && window.CasePMProgramSettings) CasePMProgramSettings.loadWorkflowForm();
         if (tab === 'integrations' && window.CasePMProgramSettings) CasePMProgramSettings.loadIntegrationsPanel();
         if (tab === 'security' && window.CasePMProgramSettings) CasePMProgramSettings.loadSecurityForm();
-        if (tab === 'accounting') loadAccountingSorSummary();
+        if (tab === 'accounting') { loadAccountingSorSummary(); loadAccountingGlProfile(); }
     }
 
     async function loadAccountingSorSummary() {
@@ -1102,6 +1170,20 @@
         }
     }
 
+    async function loadAccountingGlProfile() {
+        const seg = document.getElementById('acct_gl_segment_count');
+        const fiscal = document.getElementById('acct_sage_enforce_fiscal_close');
+        if (!seg && !fiscal) return;
+        try {
+            const res = await fetch('/api/accounting/gl/segment-profile', { credentials: 'same-origin' });
+            const json = await res.json();
+            if (res.ok && seg) seg.value = json.segment_count || 3;
+            const f = await fetch('/api/accounting/sage/fiscal/enforce', { credentials: 'same-origin' });
+            const fj = await f.json();
+            if (f.ok && fiscal) fiscal.checked = fj.sage_enforce_fiscal_close === '1';
+        } catch (_) { /* optional */ }
+    }
+
     async function saveAccountingDefaults(e) {
         e.preventDefault();
         const form = document.getElementById('accountingDefaultsForm');
@@ -1113,11 +1195,24 @@
             co_post_on_approve: document.getElementById('acct_co_post_on_approve')?.checked ? '1' : '0',
             auto_wip_on_billing_sync: document.getElementById('acct_auto_wip_on_billing_sync')?.checked ? '1' : '0',
             retainage_accounting_enabled: document.getElementById('acct_retainage_accounting_enabled')?.checked ? '1' : '0',
+            timesheet_post_on_approve: document.getElementById('acct_timesheet_post_on_approve')?.checked ? '1' : '0',
+            direct_cost_post_on_approve: document.getElementById('acct_direct_cost_post_on_approve')?.checked ? '1' : '0',
+            auto_post_equipment_on_daily_log: document.getElementById('acct_auto_post_equipment_on_daily_log')?.checked ? '1' : '0',
+            auto_post_delivery_on_delivered: document.getElementById('acct_auto_post_delivery_on_delivered')?.checked ? '1' : '0',
+            commitment_po_one_step_on_approve: document.getElementById('acct_commitment_po_one_step')?.checked ? '1' : '0',
+            commitment_po_queue_sage_distribution: document.getElementById('acct_commitment_po_queue_sage')?.checked ? '1' : '0',
+            ap_require_valid_coi: document.getElementById('acct_ap_require_valid_coi')?.checked ? '1' : '0',
+            labor_burden_percent: document.getElementById('acct_labor_burden_percent')?.value.trim(),
+            equipment_default_hourly_rate: document.getElementById('acct_equipment_default_hourly_rate')?.value.trim(),
+            equipment_hourly_rates_json: document.getElementById('acct_equipment_hourly_rates_json')?.value.trim(),
         };
         form.querySelectorAll('input[name]').forEach((el) => {
             if (['acct_auto_post_enabled', 'acct_g702_post_on_approve', 'acct_sub_pay_app_post_on_approve',
                 'acct_commitment_post_on_approve', 'acct_co_post_on_approve', 'acct_auto_wip_on_billing_sync',
-                'acct_retainage_accounting_enabled'].includes(el.id)) return;
+                'acct_retainage_accounting_enabled', 'acct_timesheet_post_on_approve', 'acct_direct_cost_post_on_approve',
+                'acct_auto_post_equipment_on_daily_log', 'acct_auto_post_delivery_on_delivered',
+                'acct_commitment_po_one_step', 'acct_commitment_po_queue_sage', 'acct_ap_require_valid_coi',
+            ].includes(el.id)) return;
             accounting[el.name] = el.value.trim();
         });
         try {
@@ -1129,6 +1224,21 @@
             });
             const json = await res.json();
             if (!res.ok) throw new Error(json.error || 'Save failed');
+            const segCount = parseInt(document.getElementById('acct_gl_segment_count')?.value || '3', 10);
+            await fetch('/api/accounting/gl/segment-profile', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ segment_count: segCount }),
+            });
+            await fetch('/api/accounting/sage/fiscal/enforce', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    enabled: document.getElementById('acct_sage_enforce_fiscal_close')?.checked ? true : false,
+                }),
+            });
             CasePMDialog.alert('Accounting defaults saved. Construction auto-post will use these G/L mappings.', 'success');
         } catch (err) {
             CasePMDialog.alert(err.message || 'Could not save accounting settings.', 'error');

@@ -13,6 +13,10 @@ def register_accounting_routes(app, deps):
     SageSyncEvent = deps.get('SageSyncEvent')
     PayAppProjectState = deps.get('PayAppProjectState')
     Commitment = deps.get('Commitment')
+    CommitmentAllocation = deps.get('CommitmentAllocation')
+    BudgetProjectState = deps.get('BudgetProjectState')
+    Company = deps.get('Company')
+    COI = deps.get('COI')
 
     models = {k: deps[k] for k in deps if k.startswith('Acct')}
     from datetime import date
@@ -1663,10 +1667,12 @@ def register_accounting_routes(app, deps):
             return jsonify({'error': str(exc)}), 403
         body = request.get_json(silent=True) or {}
         try:
-            from accounting_waves_43 import ap_payment_compliance_hold
+            from accounting_waves_45 import ap_payment_compliance_hold
             hold = ap_payment_compliance_hold(
                 db, models, lid, int(body['vendor_id']), body.get('applications') or [],
                 PayAppProjectState=PayAppProjectState, Project=Project,
+                Company=Company, COI=COI,
+                company_id=body.get('company_id'),
             )
             if hold.get('held'):
                 return jsonify({'error': 'AP payment blocked by compliance hold', 'holds': hold.get('holds')}), 409
@@ -6477,3 +6483,48 @@ def register_accounting_routes(app, deps):
             return jsonify({'ok': True, **out})
         except PermissionError as exc:
             return jsonify({'error': str(exc)}), 403
+
+    @app.route('/api/accounting/field-post-prefs', methods=['GET'])
+    @login_required
+    def api_acct_field_post_prefs():
+        from program_settings_persistence import load_accounting_defaults
+        d = load_accounting_defaults()
+        return jsonify({
+            'direct_cost_post_on_approve': d.get('direct_cost_post_on_approve', '1'),
+            'auto_post_equipment_on_daily_log': d.get('auto_post_equipment_on_daily_log', '0'),
+            'auto_post_delivery_on_delivered': d.get('auto_post_delivery_on_delivered', '0'),
+        })
+
+    @app.route('/api/accounting/sage/pj/cost-code-reconcile', methods=['GET'])
+    @login_required
+    def api_acct_sage_pj_cost_code_reconcile():
+        from accounting_waves_45 import sage_pj_cost_code_reconcile_report
+        pid = request.args.get('project_id', type=int) or get_current_project_id()
+        if not pid:
+            return jsonify({'error': 'project_id required'}), 400
+        out = sage_pj_cost_code_reconcile_report(
+            db, models, _ledger_id(), int(pid),
+            BudgetProjectState=BudgetProjectState,
+            Commitment=Commitment,
+            CommitmentAllocation=CommitmentAllocation,
+            user_id=current_user.id,
+        )
+        db.session.commit()
+        return jsonify(out)
+
+    @app.route('/api/accounting/sage/fiscal/enforce', methods=['GET', 'POST'])
+    @login_required
+    def api_acct_sage_fiscal_enforce():
+        from accounting_waves_45 import set_sage_enforce_fiscal_close
+        from accounting_waves_24 import _ledger_settings
+        lid = _ledger_id()
+        if request.method == 'GET':
+            ledger = models['AcctLedger'].query.get(lid)
+            settings = _ledger_settings(ledger)
+            return jsonify({'sage_enforce_fiscal_close': settings.get('sage_enforce_fiscal_close', '0')})
+        body = request.get_json(silent=True) or {}
+        out = set_sage_enforce_fiscal_close(
+            db, models, lid, bool(body.get('enabled')), user_id=current_user.id,
+        )
+        db.session.commit()
+        return jsonify({'ok': True, **out})
