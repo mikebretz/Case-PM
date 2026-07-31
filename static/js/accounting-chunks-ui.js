@@ -271,10 +271,74 @@
     }
   }
 
+  }
+
+  async function renderConstructionSyncPanel() {
+    const { api, esc, money, projectId } = H();
+    const pid = projectId();
+    if (!pid) {
+      return `<p class="text-zinc-500 text-sm">Select a project to manage construction ↔ accounting sync.</p>`;
+    }
+    const pending = await api(`/api/accounting/construction/pending-dashboard?project_id=${pid}`);
+    const cutover = await api('/api/accounting/sage/cutover-checklist').catch(() => ({}));
+    const parity = await api('/api/accounting/sage/parity-matrix').catch(() => ({}));
+    const alerts = await api('/api/accounting/sage/go-live-alerts').catch(() => ({}));
+    const sections = (pending.sections || []).map((s) =>
+      `<div class="border border-zinc-700 rounded p-3"><div class="text-sm text-white font-medium">${esc(s.label)} <span class="text-amber-400">(${s.count})</span></div>
+        <ul class="text-xs text-zinc-400 mt-1 max-h-24 overflow-y-auto">${(s.items || []).slice(0, 8).map((it) => `<li class="font-mono">${esc(JSON.stringify(it).slice(0, 120))}</li>`).join('') || '<li>—</li>'}</ul></div>`
+    ).join('');
+    const cutSteps = (cutover.steps || []).map((s) =>
+      `<li class="${s.ok ? 'text-emerald-400' : 'text-amber-300'}">${s.ok ? '✓' : '○'} ${esc(s.label)}</li>`
+    ).join('');
+    const gapRows = (parity.gaps || []).slice(0, 6).map((g) =>
+      `<tr class="border-t border-zinc-800"><td class="px-2 py-1">${esc(g.module)}</td><td class="px-2 py-1 text-xs text-zinc-400">${esc(g.gap_notes)}</td></tr>`
+    ).join('');
+    return `<div class="space-y-4">
+      <h2 class="text-lg font-semibold text-white">Construction sync &amp; Sage operations</h2>
+      <p class="text-xs text-zinc-500">Pending posts for project ${pid} · total ${pending.total_pending || 0}</p>
+      <div class="grid md:grid-cols-2 gap-3">${sections || '<p class="text-emerald-400 text-sm">No pending construction financial posts.</p>'}</div>
+      <div class="flex flex-wrap gap-2">
+        <button type="button" id="acctCsSyncAll" class="px-3 py-2 text-sm bg-emerald-800 rounded">Sync all pending</button>
+        <button type="button" id="acctCsRefresh" class="px-3 py-2 text-sm bg-zinc-800 rounded">Refresh</button>
+      </div>
+      <div class="border border-zinc-700 rounded p-3">
+        <h3 class="text-sm text-zinc-300 mb-2">Sage cutover ${cutover.ready ? '<span class="text-emerald-400">ready</span>' : '<span class="text-amber-400">incomplete</span>'}</h3>
+        <ul class="text-xs list-none space-y-1">${cutSteps}</ul>
+      </div>
+      <div class="border border-zinc-700 rounded p-3">
+        <h3 class="text-sm text-zinc-300 mb-2">Go-live alerts (${alerts.alert_count || 0})</h3>
+        <ul class="text-xs text-zinc-400">${(alerts.alerts || []).map((a) => `<li>${esc(a.severity)}: ${esc(a.code)}</li>`).join('') || '<li>None</li>'}</ul>
+      </div>
+      <div class="border border-zinc-700 rounded p-3 overflow-x-auto">
+        <h3 class="text-sm text-zinc-300 mb-2">Sage parity gaps (${parity.gap_count || 0})</h3>
+        <table class="w-full text-xs"><thead class="text-zinc-500"><tr><th class="text-left px-2">Module</th><th class="text-left px-2">Note</th></tr></thead><tbody>${gapRows || '<tr><td colspan="2" class="p-2">No critical gaps flagged.</td></tr>'}</tbody></table>
+      </div>
+    </div>`;
+  }
+
+  function bindConstructionSyncPanel() {
+    const { api, AD, switchModule, projectId } = H();
+    document.getElementById('acctCsSyncAll')?.addEventListener('click', async () => {
+      const pid = projectId();
+      const ok = await AD().confirm('Post all pending G702, sub AP, commitments, and COs for this project?', 'Sync');
+      if (!ok) return;
+      await api('/api/accounting/construction/sync-all-pending', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: pid }),
+      });
+      await AD().alert('Sync complete.', 'success');
+      switchModule('construction-sync');
+    });
+    document.getElementById('acctCsRefresh')?.addEventListener('click', () => switchModule('construction-sync'));
+  }
+
   global.CasePMAcctChunksUI = {
     filterNavByScreens,
     renderJobCostPanel,
     bindJobCostPanel,
+    renderConstructionSyncPanel,
+    bindConstructionSyncPanel,
     bankAutoMatchSection,
     enhancePaymentsStripe,
     bindDistributionExtras,

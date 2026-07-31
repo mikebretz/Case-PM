@@ -160,6 +160,20 @@ ACCOUNTING_MODULES = [
         ],
     },
     {
+        'id': 'construction_sync',
+        'code': 'CS',
+        'name': 'Construction sync',
+        'status': 'live',
+        'route': 'construction-sync',
+        'summary': 'Pending G702, sub AP, commitments, COs; Sage cutover and parity matrix.',
+        'features': [
+            'Pending construction dashboard',
+            'One-click sync all pending',
+            'Sage go-live alerts and cutover checklist',
+            'Sage parity matrix (read/write/conflict)',
+        ],
+    },
+    {
         'id': 'pr',
         'code': 'PR',
         'name': 'Payroll',

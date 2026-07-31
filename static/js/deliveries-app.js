@@ -115,7 +115,7 @@
   function resetModal() {
     state.editId = null;
     el('delModalTitle').textContent = 'New Delivery';
-    ['dDesc', 'dSupplier', 'dCarrier', 'dTime', 'dQuantity', 'dPo', 'dLocation', 'dResponsible', 'dReceived', 'dNotes'].forEach((id) => { el(id).value = ''; });
+    ['dDesc', 'dSupplier', 'dCarrier', 'dTime', 'dQuantity', 'dAcctAmount', 'dPo', 'dLocation', 'dResponsible', 'dReceived', 'dNotes'].forEach((id) => { el(id).value = ''; });
     el('dDate').value = iso(new Date()); el('dDuration').value = 1;
     fillSelect(el('dStatus'), state.statuses.length ? state.statuses : ['Scheduled'], 'Scheduled');
     el('dPush').checked = false; el('dSyncedBadge').classList.add('hidden');
@@ -146,6 +146,7 @@
       project_id: pid, description: desc, supplier: el('dSupplier').value.trim(), carrier: el('dCarrier').value.trim(),
       delivery_date: date, time_window: el('dTime').value.trim(), duration_days: el('dDuration').value,
       status: newStatus, quantity: el('dQuantity').value.trim(), po_number: el('dPo').value.trim(),
+      accounting_receipt_amount: el('dAcctAmount').value.trim(),
       location: el('dLocation').value.trim(), responsible: el('dResponsible').value.trim(), received_by: el('dReceived').value.trim(),
       notes: el('dNotes').value.trim(), push_to_schedule: el('dPush').checked,
     };

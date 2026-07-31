@@ -127,6 +127,13 @@
           root.innerHTML = renderJobCost();
         }
       }
+      else if (route === 'construction-sync') {
+        if (global.CasePMAcctChunksUI?.renderConstructionSyncPanel) {
+          root.innerHTML = await global.CasePMAcctChunksUI.renderConstructionSyncPanel();
+        } else {
+          root.innerHTML = renderPlannedModule(route);
+        }
+      }
       else if (route === 'reports') {
         if (global.CasePMAccountingReports) {
           root.innerHTML = await global.CasePMAccountingReports.render();
@@ -191,6 +198,9 @@
       }
       if (route === 'jobcost' && global.CasePMAcctChunksUI?.bindJobCostPanel) {
         global.CasePMAcctChunksUI.bindJobCostPanel();
+      }
+      if (route === 'construction-sync' && global.CasePMAcctChunksUI?.bindConstructionSyncPanel) {
+        global.CasePMAcctChunksUI.bindConstructionSyncPanel();
       }
       if (route === 'payments' && global.CasePMAcctChunksUI?.enhancePaymentsStripe) {
         global.CasePMAcctChunksUI.enhancePaymentsStripe();

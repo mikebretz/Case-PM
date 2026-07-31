@@ -575,6 +575,9 @@
         }
       }
       if (global.showToast) global.showToast('Daily log saved');
+      if (global.CasePMOfflineOutbox) {
+        global.CasePMOfflineOutbox.enqueue({ kind: 'daily_log', daily_log_id: logId }).catch(() => {});
+      }
     } catch (e) { alert(e.message || 'Could not save'); }
     finally { saveBtn.disabled = false; saveBtn.textContent = 'Save Daily Log'; }
   }

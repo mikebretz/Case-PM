@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}BIM viewer{% endblock %}
+{% block content %}
+<div class="flex flex-col flex-1 min-h-0 p-4">
+  <h1 class="text-xl font-semibold text-white mb-2">BIM coordination</h1>
+  <p class="text-sm text-zinc-400 mb-4">Foundation viewer — register viewpoints and link models from Operations BIM assets.</p>
+  <div id="bimViewerHost" class="flex-1 border border-zinc-700 rounded-lg bg-zinc-900 p-4 text-sm text-zinc-400">Loading…</div>
+</div>
+<script>
+(async function () {
+  const params = new URLSearchParams(location.search);
+  const projectId = params.get('project_id') || {{ active_project.id if active_project else 'null' }};
+  const assetId = params.get('asset_id');
+  const host = document.getElementById('bimViewerHost');
+  try {
+    const st = await fetch('/api/pm/bim/status', { credentials: 'same-origin' }).then((r) => r.json());
+    let assets = [];
+    if (projectId) {
+      const a = await fetch(`/api/operations/bim/assets?project_id=${projectId}`, { credentials: 'same-origin' }).then((r) => r.json()).catch(() => ({}));
+      assets = a.assets || [];
+    }
+    host.innerHTML = `<div class="text-zinc-300 mb-2">Status: ${st.status || '—'} · viewpoints ${st.viewpoint_count || 0}</div>
+      <ul class="list-disc pl-4">${assets.map((x) => `<li><a class="text-emerald-400" href="?project_id=${projectId}&asset_id=${x.id}">${x.filename || x.id}</a></li>`).join('') || '<li>No BIM assets — upload via Operations.</li>'}</ul>
+      ${assetId ? `<p class="mt-4 text-xs">Selected asset #${assetId} — IFC/Forge viewer integration planned; use Documents for file download.</p>` : ''}`;
+  } catch (e) {
+    host.textContent = e.message || 'Failed to load BIM status';
+  }
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Sub compliance{% endblock %}
+{% block content %}
+<script>
+window.CASEPM_SUB_COMPLIANCE_CTX = {
+  projectId: {{ active_project.id if active_project else 'null' }},
+};
+</script>
+<script src="{{ url_for('static', filename='js/sub-compliance-portal.js') }}"></script>
+<div class="max-w-2xl mx-auto p-6 space-y-6">
+  <h1 class="text-2xl font-semibold text-white">Subcontractor compliance</h1>
+  <p class="text-sm text-zinc-400">Upload lien waivers and COI for AP payment compliance. Files tie to company id and project pay app state.</p>
+  <div id="subComplianceStatus" class="text-sm text-zinc-500"></div>
+  <form id="subWaiverForm" class="space-y-3 border border-zinc-700 rounded-lg p-4">
+    <h2 class="font-medium text-zinc-200">Lien waiver</h2>
+    <input type="number" id="subCompanyId" placeholder="Company id" class="w-full bg-zinc-800 border border-zinc-600 rounded px-3 py-2 text-sm" required>
+    <input type="text" id="subPeriod" placeholder="Pay period (optional)" class="w-full bg-zinc-800 border border-zinc-600 rounded px-3 py-2 text-sm">
+    <input type="file" id="subWaiverFile" class="text-sm text-zinc-300" required>
+    <button type="submit" class="px-4 py-2 bg-emerald-700 rounded text-sm">Upload waiver</button>
+  </form>
+  <form id="subCoiForm" class="space-y-3 border border-zinc-700 rounded-lg p-4">
+    <h2 class="font-medium text-zinc-200">Certificate of insurance</h2>
+    <input type="number" id="subCoiCompanyId" placeholder="Company id" class="w-full bg-zinc-800 border border-zinc-600 rounded px-3 py-2 text-sm" required>
+    <input type="date" id="subCoiExp" class="w-full bg-zinc-800 border border-zinc-600 rounded px-3 py-2 text-sm" required>
+    <input type="file" id="subCoiFile" class="text-sm text-zinc-300" required>
+    <button type="submit" class="px-4 py-2 bg-sky-800 rounded text-sm">Upload COI</button>
+  </form>
+</div>
+{% endblock %}

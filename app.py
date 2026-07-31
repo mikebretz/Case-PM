@@ -18663,6 +18663,56 @@ def api_pm_bim_viewpoints():
     return jsonify(out)
 
 
+@app.route('/sub-compliance')
+@login_required
+def sub_compliance_portal_page():
+    return render_template('sub_compliance_portal.html', active_project=get_active_project())
+
+
+@app.route('/bim-viewer')
+@login_required
+def bim_viewer_page():
+    return render_template('bim_viewer.html', active_project=get_active_project())
+
+
+@app.route('/api/portal/compliance/lien-waiver', methods=['POST'])
+@login_required
+def api_portal_lien_waiver_upload():
+    from portal_compliance_services import register_sub_lien_waiver
+    project_id = request.form.get('project_id', type=int) or get_current_project_id()
+    company_id = request.form.get('company_id', type=int)
+    period = (request.form.get('period') or '').strip()
+    f = request.files.get('file')
+    if not project_id or not company_id or not f:
+        return jsonify({'error': 'project_id, company_id, and file required'}), 400
+    filename = save_uploaded_file(f, folder='compliance')
+    out = register_sub_lien_waiver(
+        PayAppProjectState, db, int(project_id), int(company_id),
+        filename=filename, period=period, user_id=current_user.id,
+    )
+    db.session.commit()
+    return jsonify({'ok': True, **out})
+
+
+@app.route('/api/portal/compliance/coi', methods=['POST'])
+@login_required
+def api_portal_coi_upload():
+    from portal_compliance_services import register_sub_coi_reference
+    company_id = request.form.get('company_id', type=int)
+    exp = request.form.get('expiration_date')
+    f = request.files.get('file')
+    if not company_id or not f or not exp:
+        return jsonify({'error': 'company_id, expiration_date, and file required'}), 400
+    try:
+        exp_date = datetime.strptime(exp, '%Y-%m-%d').date()
+    except (TypeError, ValueError):
+        return jsonify({'error': 'invalid expiration_date'}), 400
+    filename = save_uploaded_file(f, folder='coi')
+    out = register_sub_coi_reference(db, COI, int(company_id), expiration_date=exp_date, file_path=filename)
+    db.session.commit()
+    return jsonify({'ok': True, **out})
+
+
 with app.app_context():
     try:
         import case_workflow as cw

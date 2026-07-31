@@ -229,3 +229,12 @@ Refreshes integration health + Sage setup alerts stored on the ledger (`GET /api
 POST /api/accounting/cron/go-live-alerts
 X-CasePM-Cron-Secret: your-long-random-secret
 ```
+
+## Operations bundle (wave 47 — cutover + alerts)
+
+```http
+POST /api/accounting/cron/operations-bundle
+X-CasePM-Cron-Secret: your-long-random-secret
+```
+
+See `docs/DEPLOY_OPERATIONS.md` and `docs/SAGE_CUTOVER_CHECKLIST.md`.
