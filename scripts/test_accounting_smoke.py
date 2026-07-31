@@ -49,6 +49,9 @@ def main() -> int:
     try:
         import accounting_waves_19 as w19  # noqa: F401
         w19.report_designer_column_catalog()
+        tiers = w19.accounting_tiers_abcd_status()
+        if not tiers.get('ok'):
+            errors.append(f'accounting_tiers_abcd: {tiers.get("missing")}')
     except Exception as exc:
         errors.append(f'accounting_waves_19: {exc}')
 

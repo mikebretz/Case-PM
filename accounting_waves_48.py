@@ -317,12 +317,17 @@ def sage_mirror_deploy_check_v17() -> dict:
         'parity_gaps_prioritized': True,
         'sov_alignment': True,
         'construction_integration_pack': True,
+        'accounting_tiers_abcd': True,
     }
     try:
         assert callable(sage_go_live_email_digest)
         assert callable(sage_cutover_conflict_playbook)
         assert callable(sage_parity_gap_prioritized_list)
         assert callable(estimate_sov_alignment_report)
+        from accounting_waves_19 import accounting_tiers_abcd_status
+
+        tiers = accounting_tiers_abcd_status()
+        checks['accounting_tiers_abcd'] = bool(tiers.get('ok'))
         import os as _os
         pack = _os.path.join(_os.path.dirname(__file__), 'scripts', 'test_accounting_construction_integration_pack.py')
         checks['construction_integration_pack'] = _os.path.isfile(pack)

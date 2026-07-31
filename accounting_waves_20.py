@@ -242,10 +242,10 @@ def certified_payroll_prevailing_daily_log(
 
 
 def compliance_cron_reminders(db, models, ledger_id: int) -> dict:
-    from accounting_waves_17 import compliance_filing_calendar
+    from accounting_waves_19 import compliance_filing_calendar_enriched, compliance_send_reminders
     from program_settings_persistence import load_program_settings
 
-    cal = compliance_filing_calendar(ledger_id)
+    cal = compliance_filing_calendar_enriched(db, models, ledger_id)
     due = [d for d in cal.get('deadlines') or [] if d.get('status') in ('due_soon', 'past_due')]
     if not due:
         return {'sent': False, 'due_count': 0}
@@ -254,8 +254,6 @@ def compliance_cron_reminders(db, models, ledger_id: int) -> dict:
     email = (email or '').strip()
     if not email:
         return {'sent': False, 'due_count': len(due), 'reason': 'no_admin_email'}
-    from accounting_waves_19 import compliance_send_reminders
-
     out = compliance_send_reminders(db, models, ledger_id, email, user_id=None)
     return {'sent': bool(out.get('smtp_sent')), 'due_count': len(due), **out}
 

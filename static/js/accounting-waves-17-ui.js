@@ -529,10 +529,16 @@
   async function complianceCalendarHtml() {
     const { api, esc } = ctx;
     const cal = await api('/api/accounting/compliance/calendar');
-    const rows = (cal.deadlines || []).map((d) =>
-      `<tr class="border-t border-zinc-800"><td class="px-2 py-1">${esc(d.form)}</td><td class="px-2 py-1">${esc(d.label)}</td>
-        <td class="px-2 py-1">${esc(d.due)}</td><td class="px-2 py-1 text-${d.status === 'past_due' ? 'red' : d.status === 'due_soon' ? 'amber' : 'zinc'}-400">${esc(d.status)}</td></tr>`
-    ).join('');
+    const rows = (cal.deadlines || []).map((d) => {
+      const status = d.status || '';
+      const statusCls = status === 'filed' ? 'emerald' : status === 'past_due' ? 'red' : status === 'due_soon' ? 'amber' : 'zinc';
+      const markBtn = status === 'filed'
+        ? ''
+        : `<button type="button" class="acctMarkFiled text-violet-400" data-deadline-id="${esc(d.id)}">Mark filed</button>`;
+      return `<tr class="border-t border-zinc-800"><td class="px-2 py-1">${esc(d.form)}</td><td class="px-2 py-1">${esc(d.label)}</td>
+        <td class="px-2 py-1">${esc(d.due)}</td><td class="px-2 py-1 text-${statusCls}-400">${esc(status)}</td>
+        <td class="px-2 py-1">${markBtn}</td></tr>`;
+    }).join('');
     return `<div class="border border-zinc-700 rounded p-2 text-xs mt-2">
       <div class="flex justify-between items-center mb-1"><span class="text-zinc-400">Filing calendar ${cal.tax_year}</span>
         <button type="button" id="acctW2Amend" class="text-violet-400">W-2 amendment pkg</button></div>
@@ -541,7 +547,7 @@
         <button type="button" id="acctEfileLog" class="text-zinc-400">Transmit log</button>
         <button type="button" id="acctComplianceRemind" class="text-amber-400">Email reminders</button>
       </div>
-      <table class="w-full mt-2"><thead><tr class="text-zinc-500"><th class="text-left px-2">Form</th><th class="text-left px-2">Item</th><th class="text-left px-2">Due</th><th class="text-left px-2">Status</th></tr></thead><tbody>${rows}</tbody></table>
+      <table class="w-full mt-2"><thead><tr class="text-zinc-500"><th class="text-left px-2">Form</th><th class="text-left px-2">Item</th><th class="text-left px-2">Due</th><th class="text-left px-2">Status</th><th class="text-left px-2"></th></tr></thead><tbody>${rows}</tbody></table>
     </div>`;
   }
 
@@ -578,6 +584,22 @@
         body: JSON.stringify({ email }),
       });
       await AD().alert(r.smtp_sent ? 'Reminders sent.' : 'Reminders generated (configure SMTP to email).', 'info');
+    });
+    document.querySelectorAll('.acctMarkFiled').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-deadline-id');
+        if (!id) return;
+        await ctx.api('/api/accounting/compliance/mark-filed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deadline_id: id }),
+        });
+        const host = btn.closest('.border.border-zinc-700');
+        if (host && global.CasePMAcctWaves17UI?.complianceCalendarHtml) {
+          host.outerHTML = await global.CasePMAcctWaves17UI.complianceCalendarHtml();
+          bindComplianceCalendar();
+        }
+      });
     });
   }
 

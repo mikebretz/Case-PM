@@ -96,6 +96,18 @@ def sync_g702_period_to_ar(db, models, ledger_id: int, project_id: int, period_n
     return out
 
 
+def sync_all_g702_pending_to_ar(
+    db, models, ledger_id: int, project_id: int, user_id=None, PayAppProjectState=None, Project=None,
+) -> dict:
+    """Bulk-sync approved G702 periods (implementation in wave 10; re-exported here for tier A)."""
+    from accounting_waves_20 import sync_all_g702_pending_to_ar as _bulk_sync
+
+    return _bulk_sync(
+        db, models, ledger_id, project_id,
+        user_id=user_id, PayAppProjectState=PayAppProjectState, Project=Project,
+    )
+
+
 # --- Tier A2: Sage open AP push ---
 
 def sage_push_open_ap_live(db, models, ledger_id: int, user_id=None, limit: int = 25) -> dict:
@@ -298,6 +310,24 @@ def certified_payroll_with_prevailing(db, models, ledger_id: int, project_id: in
 
 # --- Tier B4: Compliance calendar ---
 
+def compliance_filing_calendar_enriched(db, models, ledger_id: int, tax_year: int | None = None) -> dict:
+    """Filing calendar with ledger-filed markers from compliance_mark_filed."""
+    from accounting_waves_17 import compliance_filing_calendar
+
+    cal = compliance_filing_calendar(ledger_id, tax_year)
+    ledger = models['AcctLedger'].query.get(ledger_id)
+    filed = _ledger_settings(ledger).get('compliance_filed') or {} if ledger else {}
+    for d in cal.get('deadlines') or []:
+        fid = d.get('id')
+        if not fid or fid not in filed:
+            continue
+        rec = filed[fid] or {}
+        d['status'] = 'filed'
+        d['filed_at'] = rec.get('at')
+        d['filed_by'] = rec.get('by')
+    return cal
+
+
 def compliance_mark_filed(db, models, ledger_id: int, deadline_id: str, user_id=None) -> dict:
     ledger = models['AcctLedger'].query.get(ledger_id)
     settings = _ledger_settings(ledger)
@@ -310,10 +340,9 @@ def compliance_mark_filed(db, models, ledger_id: int, deadline_id: str, user_id=
 
 
 def compliance_send_reminders(db, models, ledger_id: int, email: str, user_id=None) -> dict:
-    from accounting_waves_17 import compliance_filing_calendar
     from email_notifications import send_workflow_email
 
-    cal = compliance_filing_calendar(ledger_id)
+    cal = compliance_filing_calendar_enriched(db, models, ledger_id)
     due_soon = [d for d in cal['deadlines'] if d.get('status') in ('due_soon', 'past_due')]
     if not email:
         raise ValueError('email required')
@@ -403,6 +432,65 @@ def report_designer_column_catalog() -> dict:
 
 # --- Tier D: startup guard ---
 
+TIER_ABCD_EXPORTS: dict[str, list[dict]] = {
+    'A': [
+        {'id': 'A1', 'title': 'G702 → A/R', 'fn': 'g702_pending_ar_sync'},
+        {'id': 'A2', 'title': 'Sage open AP push', 'fn': 'sage_push_open_ap_live'},
+        {'id': 'A3', 'title': 'Sage vendor conflicts', 'fn': 'sage_vendor_conflict_review'},
+        {'id': 'A4', 'title': 'Stripe readiness', 'fn': 'stripe_readiness_banner'},
+    ],
+    'B': [
+        {'id': 'B1', 'title': 'E-file transmit log', 'fn': 'efile_transmit'},
+        {'id': 'B2', 'title': 'Garnishment orders', 'fn': 'create_garnishment_order'},
+        {'id': 'B3', 'title': 'WH-347 prevailing wage', 'fn': 'certified_payroll_with_prevailing'},
+        {'id': 'B4', 'title': 'Compliance calendar filed state', 'fn': 'compliance_filing_calendar_enriched'},
+    ],
+    'C': [
+        {'id': 'C1', 'title': 'AR write-off with G/L', 'fn': 'post_ar_write_off'},
+        {'id': 'C2', 'title': 'Report schedule alerts', 'fn': 'record_schedule_run_alert'},
+    ],
+    'D': [
+        {'id': 'D1', 'title': 'Startup guard', 'fn': 'accounting_startup_guard'},
+        {'id': 'D2', 'title': 'Report designer columns', 'fn': 'report_designer_column_catalog'},
+        {'id': 'D3', 'title': 'G702 bulk sync export', 'fn': 'sync_all_g702_pending_to_ar'},
+    ],
+}
+
+
+def accounting_tiers_abcd_status() -> dict:
+    """Lightweight deploy check for wave 9 tiers A–D (no DB or Sage required)."""
+    import accounting_waves_19 as self_mod
+
+    tiers = []
+    missing = []
+    for tier, items in TIER_ABCD_EXPORTS.items():
+        tier_rows = []
+        for spec in items:
+            fn_name = spec['fn']
+            ok = False
+            detail = ''
+            try:
+                fn = getattr(self_mod, fn_name)
+                ok = callable(fn)
+                if fn_name == 'report_designer_column_catalog':
+                    ok = bool(fn())
+                elif fn_name == 'stripe_readiness_banner':
+                    ok = bool(fn(None))
+            except Exception as exc:
+                detail = str(exc)[:160]
+            if not ok:
+                missing.append(f'{spec["id"]}:{fn_name}')
+            tier_rows.append({**spec, 'ok': ok, 'detail': detail})
+        tiers.append({'tier': tier, 'items': tier_rows})
+    return {
+        'ok': not missing,
+        'wave': 9,
+        'label': 'Tiers A–D',
+        'missing': missing,
+        'tiers': tiers,
+    }
+
+
 def accounting_startup_guard() -> dict:
     """Run before binding server — catches import / duplicate route issues early."""
     errors = []
@@ -425,4 +513,10 @@ def accounting_startup_guard() -> dict:
                 errors.append(f'duplicate route fn: {name}')
     except Exception as exc:
         errors.append(f'routes scan: {exc}')
-    return {'ok': not errors, 'errors': errors}
+    try:
+        tier = accounting_tiers_abcd_status()
+        if not tier.get('ok'):
+            errors.append(f'tiers_abcd: {tier.get("missing")}')
+    except Exception as exc:
+        errors.append(f'tiers_abcd: {exc}')
+    return {'ok': not errors, 'errors': errors, 'tiers_abcd': accounting_tiers_abcd_status()}
