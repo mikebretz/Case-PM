@@ -18590,6 +18590,7 @@ register_marketing_routes(app, {
     'login_required': login_required,
     'current_user': current_user,
     'get_current_project_id': get_current_project_id,
+    'render_template': render_template,
     'get_active_project': get_active_project,
     'MarketingLead': MarketingLead,
     'MarketingCaseStudy': MarketingCaseStudy,
