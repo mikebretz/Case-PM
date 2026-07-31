@@ -46,12 +46,29 @@
         <a href="${esc(panel.links?.pay_apps || '#')}" class="text-emerald-400 underline">Pay applications</a>
         <a href="${esc(panel.links?.commitments || '#')}" class="text-emerald-400 underline">Commitments</a>
       </div>
+      <button type="button" id="acctJcG702Sync" class="px-3 py-2 text-sm bg-emerald-800 rounded">Sync approved G702 → A/R</button>
       <button type="button" id="acctJcProgressAr" class="px-3 py-2 text-sm bg-violet-700 rounded">Create A/R from progress billing</button>
     </div>`;
   }
 
   function bindJobCostPanel() {
     const { api, AD, switchModule, projectId } = H();
+    document.getElementById('acctJcG702Sync')?.addEventListener('click', async () => {
+      const pid = projectId();
+      const pending = await api(`/api/accounting/jobcost/${pid}/g702-pending`);
+      const p = (pending.pending || [])[0];
+      if (!p) {
+        await AD().alert('No approved G702 periods waiting for A/R sync (or already posted).', 'info');
+        return;
+      }
+      const r = await api(`/api/accounting/jobcost/${pid}/g702-sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period: p.period }),
+      });
+      await AD().alert(r.posted ? `Posted A/R for period ${p.period}.` : JSON.stringify(r), 'success');
+      switchModule('jobcost');
+    });
     document.getElementById('acctJcProgressAr')?.addEventListener('click', async () => {
       const pid = projectId();
       const cust = await AD().prompt('Customer id for invoice:', '', 'Progress billing');

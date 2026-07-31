@@ -18509,6 +18509,7 @@ register_accounting_routes(app, {
     'Company': Company,
     'User': User,
     'SageSyncEvent': SageSyncEvent,
+    'PayAppProjectState': PayAppProjectState,
     **_acct_models,
 })
 

@@ -883,10 +883,17 @@
       }
       const wo = parseFloat(pick.write_off) || 0;
       const applyAmt = Math.min(inv.open_amount, rcpt.unapplied_amount);
+      if (wo > 0) {
+        await api('/api/accounting/ar/write-off', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ar_document_id: inv.ar_document_id, amount: wo, reason: 'small_balance' }),
+        });
+      }
       const body = {
         receipt_id: rcpt.receipt_id,
         applications: [{ ar_document_id: inv.ar_document_id, amount: applyAmt }],
-        write_offs: wo > 0 ? [{ ar_document_id: inv.ar_document_id, amount: wo }] : [],
+        write_offs: [],
       };
       await api('/api/accounting/ar/cash-application/advanced', {
         method: 'POST',

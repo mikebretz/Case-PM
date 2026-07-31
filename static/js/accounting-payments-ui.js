@@ -12,12 +12,14 @@
 
   async function render() {
     const { api, esc, money } = ctx;
-    const [settings, batches, links, banks, apInvoices] = await Promise.all([
+    try {
+      const [settings, batches, links, banks, apInvoices, stripeBanner] = await Promise.all([
       api('/api/accounting/payments/settings'),
       api('/api/accounting/payments/batches'),
       api('/api/accounting/payments/pay-now-links'),
       api('/api/accounting/bank/accounts').catch(() => ({ accounts: [] })),
       api('/api/accounting/ap/invoices').catch(() => ({ invoices: [] })),
+      api('/api/accounting/integrations/stripe-banner').catch(() => ({ level: 'ok', messages: [] })),
     ]);
     const openAp = (apInvoices.invoices || []).filter((d) => ['Open', 'Partial'].includes(d.status));
     const arInvoices = await api('/api/accounting/ar/invoices').catch(() => ({ invoices: [] }));
@@ -27,6 +29,7 @@
     });
 
     return `<div class="space-y-6">
+      ${(stripeBanner.messages || []).length ? `<div class="text-xs border border-amber-800 bg-amber-950/30 text-amber-200 rounded p-2">${(stripeBanner.messages || []).map((m) => esc(m)).join('<br>')}</div>` : ''}
       <div class="flex flex-wrap justify-between gap-2 items-start">
         <div>
           <h2 class="text-lg font-semibold text-white">Payment Processing</h2>
@@ -109,6 +112,9 @@
         <p class="text-[10px] text-zinc-600 mt-1">${openAr.length} open AR invoice(s) available for new links.</p>
       </div>
     </div>`;
+    } catch (e) {
+      return `<p class="text-red-400 text-sm">${esc(e.message)}</p>`;
+    }
   }
 
   function bindHandlers() {

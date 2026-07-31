@@ -70,7 +70,8 @@
         · Export queue: ${h.export_queue_size || 0}</div>
       <div class="flex flex-wrap gap-1">
         <button type="button" id="acctSagePushVendors" class="px-2 py-0.5 border border-zinc-600 rounded text-emerald-400">Push vendors</button>
-        <button type="button" id="acctSagePushAp" class="px-2 py-0.5 border border-zinc-600 rounded text-amber-400">Push open AP</button>
+        <button type="button" id="acctSagePushApLive" class="px-2 py-0.5 border border-zinc-600 rounded text-rose-400">Push AP live</button>
+        <button type="button" id="acctSageConflicts" class="px-2 py-0.5 border border-zinc-600 rounded text-sky-400">Vendor conflicts</button>
         <button type="button" id="acctSagePolicyCasepm" class="px-2 py-0.5 border border-zinc-600 rounded">SOR: Case PM</button>
         <button type="button" id="acctSagePolicySage" class="px-2 py-0.5 border border-zinc-600 rounded">SOR: Sage</button>
       </div>
@@ -87,6 +88,28 @@
     document.getElementById('acctSagePushAp')?.addEventListener('click', async () => {
       const r = await api('/api/accounting/sage/sync/push-open-ap', { method: 'POST', body: '{}' });
       await AD().alert(`Queued ${r.queued || 0} open AP document(s).`, 'info');
+    });
+    document.getElementById('acctSagePushApLive')?.addEventListener('click', async () => {
+      const r = await api('/api/accounting/sage/sync/push-open-ap-live', { method: 'POST', body: '{}' });
+      await AD().alert(`Live push attempted for ${r.pushed || 0} document(s).`, 'info');
+    });
+    document.getElementById('acctSageConflicts')?.addEventListener('click', async () => {
+      const c = await api('/api/accounting/sage/conflicts/vendors');
+      const lines = (c.conflicts || []).slice(0, 15).map((x) => `${x.code}: ${x.type} — local "${x.local_name}" vs sage "${x.sage_name || '—'}"`).join('\n');
+      if (!(c.conflicts || []).length) {
+        await AD().alert('No vendor conflicts detected.', 'success');
+        return;
+      }
+      const first = c.conflicts[0];
+      const useSage = await AD().confirm(`Resolve ${first.code} using Sage name "${first.sage_name}"?`, 'Conflict');
+      if (useSage) {
+        await api('/api/accounting/sage/conflicts/resolve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: first.code, winner: 'sage', sage_name: first.sage_name }),
+        });
+      }
+      await AD().alert(lines || 'Done', 'info');
     });
     const policy = async (sor) => {
       await api('/api/accounting/sage/hybrid', {
@@ -110,7 +133,12 @@
     return `<div class="border border-zinc-700 rounded p-2 text-xs mt-2">
       <div class="flex justify-between items-center mb-1"><span class="text-zinc-400">Filing calendar ${cal.tax_year}</span>
         <button type="button" id="acctW2Amend" class="text-violet-400">W-2 amendment pkg</button></div>
-      <table class="w-full"><thead><tr class="text-zinc-500"><th class="text-left px-2">Form</th><th class="text-left px-2">Item</th><th class="text-left px-2">Due</th><th class="text-left px-2">Status</th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="flex flex-wrap gap-2 mt-2">
+        <button type="button" id="acctEfileTransmit" class="text-emerald-400">Log e-file transmit</button>
+        <button type="button" id="acctEfileLog" class="text-zinc-400">Transmit log</button>
+        <button type="button" id="acctComplianceRemind" class="text-amber-400">Email reminders</button>
+      </div>
+      <table class="w-full mt-2"><thead><tr class="text-zinc-500"><th class="text-left px-2">Form</th><th class="text-left px-2">Item</th><th class="text-left px-2">Due</th><th class="text-left px-2">Status</th></tr></thead><tbody>${rows}</tbody></table>
     </div>`;
   }
 
@@ -123,6 +151,30 @@
         body: JSON.stringify({ tax_year: yr, reason: 'User-initiated amendment' }),
       });
       global.open(`/api/accounting/compliance/w2-efile/${yr}`, '_blank');
+    });
+    document.getElementById('acctEfileTransmit')?.addEventListener('click', async () => {
+      const yr = new Date().getFullYear() - 1;
+      const r = await ctx.api('/api/accounting/compliance/efile/transmit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ form: '1099', tax_year: yr, status: 'transmitted' }),
+      });
+      await AD().alert(`Transmit logged: ${r.acknowledgment_id || r.id}`, 'success');
+    });
+    document.getElementById('acctEfileLog')?.addEventListener('click', async () => {
+      const log = await ctx.api('/api/accounting/compliance/efile/log');
+      const lines = (log.entries || []).map((e) => `${e.form} ${e.tax_year}: ${e.status} (${e.acknowledgment_id})`).join('\n');
+      await AD().alert(lines || 'No transmits logged.', 'info');
+    });
+    document.getElementById('acctComplianceRemind')?.addEventListener('click', async () => {
+      const email = await AD().prompt('Send reminders to email:', '', 'Compliance');
+      if (email == null) return;
+      const r = await ctx.api('/api/accounting/compliance/reminders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      await AD().alert(r.smtp_sent ? 'Reminders sent.' : 'Reminders generated (configure SMTP to email).', 'info');
     });
   }
 

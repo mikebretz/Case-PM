@@ -185,6 +185,16 @@ def main() -> int:
             wait_for_enter('Could not start Case PM Desktop.')
             return 1
 
+        try:
+            from accounting_waves_19 import accounting_startup_guard
+            guard = accounting_startup_guard()
+            if not guard.get('ok'):
+                log('Accounting startup guard failed: ' + '; '.join(guard.get('errors') or []))
+                wait_for_enter('Fix accounting errors before starting Case PM Desktop.')
+                return 1
+        except Exception as exc:
+            log(f'Accounting startup guard skipped: {exc}')
+
         server.start(host, port)
         deadline = time.time() + 90.0
         while time.time() < deadline:

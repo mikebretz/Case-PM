@@ -39,6 +39,15 @@ if errorlevel 1 (
     echo.
 )
 
+echo Accounting startup guard...
+set "PYTHONPATH=%CD%"
+"%PY%" scripts\accounting_startup_guard.py
+if errorlevel 1 (
+    echo ERROR: Accounting module failed to load. Fix errors above before serving.
+    pause
+    exit /b 1
+)
+
 echo Checking Java for MS Project MPP import...
 "%PY%" scripts\ensure_java_runtime.py
 call "%~dp0_load_server_env.bat"
