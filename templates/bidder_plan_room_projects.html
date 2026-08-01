@@ -10,17 +10,13 @@
 {% with active='projects' %}
 {% include 'partials/bidder_plan_room_nav.html' %}
 {% endwith %}
-<header class="pr-hub-header">
-  <div class="pr-hub-header-inner">
-    <h1>Bid &amp; plan room</h1>
-    <p class="pr-muted">Active construction opportunities — download plans, specifications, and addenda.</p>
-    <div class="pr-toolbar">
-      <input type="search" id="prProjectSearch" placeholder="Search by project name, city, or number…" class="pr-search">
-      <span id="prProjectCount" class="pr-badge">0 projects</span>
-    </div>
+{% set header_subtitle = 'Active construction opportunities — download plans, specifications, and addenda.' %}
+{% include 'partials/bidder_plan_room_hub_header.html' %}
+<main class="pr-hub-main" style="padding-top:0">
+  <div class="pr-toolbar" style="margin-bottom:1rem">
+    <input type="search" id="prProjectSearch" placeholder="Search by project name, city, or number…" class="pr-search">
+    <span id="prProjectCount" class="pr-badge">0 projects</span>
   </div>
-</header>
-<main class="pr-hub-main">
   <div id="prAccessGate" data-approved="{{ '1' if access.approved else '0' }}" data-reason="{{ access.reason or '' }}"></div>
   <div id="prProjectGrid" class="pr-project-grid"></div>
 </main>

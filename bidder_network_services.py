@@ -396,7 +396,7 @@ def list_plan_room_projects(db, BidPackage, Project, *, public_teaser: bool = Fa
     return {'projects': projects_out}
 
 
-def plan_room_project_detail(db, models, project_id: int) -> dict:
+def plan_room_project_detail(db, models, project_id: int, *, staff_access: bool = False) -> dict:
     Project = models['Project']
     BidPackage = models['BidPackage']
     Document = models['Document']
@@ -406,7 +406,11 @@ def plan_room_project_detail(db, models, project_id: int) -> dict:
     if not project:
         raise ValueError('Project not found')
     packages = _published_packages_for_project(BidPackage, project.id)
-    if not project_in_plan_room(project, packages):
+    if staff_access and not packages:
+        packages = BidPackage.query.filter_by(project_id=project.id).order_by(
+            BidPackage.due_date.asc(), BidPackage.id,
+        ).all()
+    if not staff_access and not project_in_plan_room(project, packages):
         raise ValueError('Project is not published to the plan room')
 
     meta = plan_room_meta(project)
@@ -462,7 +466,7 @@ def plan_room_project_detail(db, models, project_id: int) -> dict:
     }
 
 
-def plan_room_package_detail(db, models, project_id: int, package_id: int) -> dict:
+def plan_room_package_detail(db, models, project_id: int, package_id: int, *, staff_access: bool = False) -> dict:
     Project = models['Project']
     BidPackage = models['BidPackage']
     Document = models['Document']
@@ -474,11 +478,13 @@ def plan_room_package_detail(db, models, project_id: int, package_id: int) -> di
     pkg = BidPackage.query.get(int(package_id))
     if not pkg or int(pkg.project_id) != int(project.id):
         raise ValueError('Bid package not found')
-    if not pkg.network_published:
+    if not staff_access and not pkg.network_published:
         raise ValueError('Package is not published to the plan room')
 
     packages = _published_packages_for_project(BidPackage, project.id)
-    if not project_in_plan_room(project, packages):
+    if staff_access and not packages:
+        packages = [pkg]
+    if not staff_access and not project_in_plan_room(project, packages):
         raise ValueError('Project is not published to the plan room')
 
     meta = plan_room_meta(project)

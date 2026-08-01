@@ -11,7 +11,6 @@ window.CASEPM_PLAN_ROOM_CTX = {
 </script>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/bidder-plan-room.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/plan-room-console.css') }}">
-<script src="{{ url_for('static', filename='js/plan-room-console.js') }}"></script>
 
 <div class="prc-page">
   <header class="prc-header">
@@ -25,11 +24,11 @@ window.CASEPM_PLAN_ROOM_CTX = {
     </div>
   </header>
 
-  <div id="prcNoProject" class="prc-banner hidden">
+  <div id="prcNoProject" class="prc-banner prc-is-hidden">
     Select an active project in the header to configure the plan room for that job.
   </div>
 
-  <div id="prcApp" class="hidden">
+  <div id="prcApp" class="prc-is-hidden">
     <nav class="prc-tabs" id="prcTabs">
       <button type="button" data-tab="project" class="active">Project ITB</button>
       <button type="button" data-tab="packages">Bid packages</button>
@@ -96,7 +95,7 @@ window.CASEPM_PLAN_ROOM_CTX = {
       </form>
     </section>
 
-    <section id="prcTabPackages" class="prc-tab-panel hidden">
+    <section id="prcTabPackages" class="prc-tab-panel prc-is-hidden">
       <div class="prc-split">
         <aside class="prc-package-list" id="prcPackageList"></aside>
         <div class="prc-package-editor" id="prcPackageEditor">
@@ -105,7 +104,7 @@ window.CASEPM_PLAN_ROOM_CTX = {
       </div>
     </section>
 
-    <section id="prcTabBidders" class="prc-tab-panel hidden">
+    <section id="prcTabBidders" class="prc-tab-panel prc-is-hidden">
       <div class="flex justify-between items-center mb-3">
         <h2 class="text-sm font-medium text-zinc-300">Pending registrations</h2>
         <button type="button" id="prcBiddersRefresh" class="prc-btn prc-btn-ghost text-xs">Refresh</button>
@@ -114,4 +113,5 @@ window.CASEPM_PLAN_ROOM_CTX = {
     </section>
   </div>
 </div>
+<script src="{{ url_for('static', filename='js/plan-room-console.js') }}"></script>
 {% endblock %}

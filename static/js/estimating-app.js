@@ -258,6 +258,7 @@
           ${p.scope_notes ? `<p class="text-sm text-zinc-400 mt-2">${esc(p.scope_notes)}</p>` : ''}
           <div class="mt-2 flex flex-wrap gap-2 items-center text-xs border-t border-zinc-800 pt-2">
             <span class="${p.network_published ? 'text-emerald-400' : 'text-zinc-500'}">${p.network_published ? 'On plan room' : 'Not on plan room'}</span>
+            <a href="/plan-room/console?tab=packages&amp;package_id=${p.id}" class="px-2 py-1 bg-indigo-900 hover:bg-indigo-800 rounded text-xs no-underline text-white">Plan room manifest</a>
             <button type="button" class="px-2 py-1 bg-zinc-800 rounded toggle-planroom" data-id="${p.id}" data-published="${p.network_published ? '1' : '0'}">${p.network_published ? 'Unpublish' : 'Publish to plan room'}</button>
           </div>
           <table class="w-full text-sm mt-3">

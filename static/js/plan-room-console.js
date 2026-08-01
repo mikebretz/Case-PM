@@ -26,9 +26,16 @@
     document.querySelectorAll('#prcTabs button').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.tab === name);
     });
-    document.querySelectorAll('.prc-tab-panel').forEach((panel) => panel.classList.add('hidden'));
+    document.querySelectorAll('.prc-tab-panel').forEach((panel) => panel.classList.add('prc-is-hidden'));
     const map = { project: 'prcTabProject', packages: 'prcTabPackages', bidders: 'prcTabBidders' };
-    document.getElementById(map[name])?.classList.remove('hidden');
+    document.getElementById(map[name])?.classList.remove('prc-is-hidden');
+    if (name === 'packages') {
+      if (!selectedPackageId && consoleData?.packages?.length) {
+        selectedPackageId = consoleData.packages[0].id;
+      }
+      renderPackageList();
+      renderPackageEditor();
+    }
     if (name === 'bidders') loadBidders();
   }
 
@@ -367,53 +374,67 @@
     }
   }
 
-  document.getElementById('prcTabs')?.addEventListener('click', (e) => {
-    const btn = e.target.closest('button[data-tab]');
-    if (btn) showTab(btn.dataset.tab);
-  });
 
-  document.getElementById('prcProjectForm')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const msg = document.getElementById('prcProjectMsg');
-    try {
+  function bindConsoleUi() {
+    document.getElementById('prcTabs')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-tab]');
+      if (btn) showTab(btn.dataset.tab);
+    });
+    document.getElementById('prcProjectForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const msg = document.getElementById('prcProjectMsg');
+      try {
+        await api(`/api/bidder-network/projects/${ctx.projectId}/publish`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(projectPayloadFromForm(e.target)),
+        });
+        if (msg) msg.textContent = 'Project ITB saved.';
+        await loadConsole();
+      } catch (err) {
+        if (msg) msg.textContent = '';
+        alert(err.message);
+      }
+    });
+    document.getElementById('prcPublishAll')?.addEventListener('click', async () => {
+      if (!ctx.projectId || !confirm('Publish this project and all bid packages to the plan room?')) return;
+      const form = document.getElementById('prcProjectForm');
+      const payload = { ...projectPayloadFromForm(form), published: true, publish_all_packages: true };
       await api(`/api/bidder-network/projects/${ctx.projectId}/publish`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(projectPayloadFromForm(e.target)),
+        body: JSON.stringify(payload),
       });
-      if (msg) msg.textContent = 'Project ITB saved.';
       await loadConsole();
-    } catch (err) {
-      if (msg) msg.textContent = '';
-      alert(err.message);
-    }
-  });
-
-  document.getElementById('prcPublishAll')?.addEventListener('click', async () => {
-    if (!ctx.projectId || !confirm('Publish this project and all bid packages to the plan room?')) return;
-    const form = document.getElementById('prcProjectForm');
-    const payload = { ...projectPayloadFromForm(form), published: true, publish_all_packages: true };
-    await api(`/api/bidder-network/projects/${ctx.projectId}/publish`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      alert('Published.');
     });
-    await loadConsole();
-    alert('Published.');
-  });
-
-  document.getElementById('prcBiddersRefresh')?.addEventListener('click', loadBidders);
+    document.getElementById('prcBiddersRefresh')?.addEventListener('click', loadBidders);
+  }
 
   function init() {
+    bindConsoleUi();
+    const params = new URLSearchParams(window.location.search);
+    const pkgParam = params.get('package_id');
+    if (pkgParam) {
+      selectedPackageId = Number(pkgParam);
+    }
     const noProject = document.getElementById('prcNoProject');
     const app = document.getElementById('prcApp');
     if (!ctx.projectId) {
-      noProject?.classList.remove('hidden');
+      noProject?.classList.remove('prc-is-hidden');
       return;
     }
-    noProject?.classList.add('hidden');
-    app?.classList.remove('hidden');
-    loadConsole().catch((e) => alert(e.message));
+    noProject?.classList.add('prc-is-hidden');
+    app?.classList.remove('prc-is-hidden');
+    loadConsole()
+      .then(() => {
+        if (pkgParam || params.get('tab') === 'packages') {
+          showTab('packages');
+        } else if (params.get('tab') === 'bidders') {
+          showTab('bidders');
+        }
+      })
+      .catch((e) => alert(e.message));
   }
 
   if (document.readyState === 'loading') {
