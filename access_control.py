@@ -194,6 +194,7 @@ def user_global_flags(user) -> dict:
             'hide_financials': bool(global_flags.get('hide_financials')),
             'sub_vendor_portal_only': bool(global_flags.get('sub_vendor_portal_only')),
             'email_internal_only': bool(global_flags.get('email_internal_only')),
+            'plan_room_portal_only': bool(global_flags.get('plan_room_portal_only')),
         }
     except Exception:
         return {
@@ -288,6 +289,14 @@ def guard_api_request(current_user):
         return None
     if not getattr(current_user, 'is_authenticated', False):
         return None
+
+    try:
+        from portal_plan_room_access import guard_plan_room_api_request
+        blocked = guard_plan_room_api_request(current_user, request)
+        if blocked is not None:
+            return blocked
+    except Exception:
+        pass
 
     for prefix in API_AUTH_ONLY_PREFIXES:
         if path.startswith(prefix):

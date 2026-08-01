@@ -114,6 +114,12 @@ def register_bidder_network_routes(app, deps):
     @login_required
     def plan_room_console_page():
         if not staff_estimating_ok():
+            try:
+                from portal_plan_room_access import is_plan_room_portal_user, plan_room_home_redirect
+                if is_plan_room_portal_user(current_user):
+                    return plan_room_home_redirect(current_user)
+            except Exception:
+                pass
             return redirect(url_for('estimating_page'))
         active_project = get_active_project() if get_active_project else None
         return render_template('plan_room_console.html', active_project=active_project)

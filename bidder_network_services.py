@@ -907,7 +907,7 @@ def approve_registration(db, models, registration_id: int, *, reviewer_id: int |
             'phone': row.phone,
             'company': row.company_name,
             'company_id': company.id,
-            'role': 'Subcontractor Contact',
+            'role': 'Plan Room Bidder',
             'accessEnabled': True,
             'status': 'Active',
             'temp_password': 'BidderNetwork1!',  # overwritten below

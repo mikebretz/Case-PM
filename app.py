@@ -404,6 +404,19 @@ def _guard_upload_downloads():
 
 
 @app.before_request
+def _guard_plan_room_portal_access():
+    if not current_user.is_authenticated:
+        return
+    try:
+        from portal_plan_room_access import guard_plan_room_portal_request
+        blocked = guard_plan_room_portal_request(current_user, request)
+        if blocked is not None:
+            return blocked
+    except Exception:
+        return
+
+
+@app.before_request
 def _guard_api_module_access():
     if not current_user.is_authenticated:
         return

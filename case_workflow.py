@@ -536,6 +536,12 @@ def user_portal_type(user):
 
 
 def is_sub_user(user):
+    try:
+        from portal_plan_room_access import is_plan_room_portal_user
+        if is_plan_room_portal_user(user):
+            return False
+    except Exception:
+        pass
     return user_portal_type(user) == 'sub' or user.role in (
         'Company User', 'Subcontractor', 'Subcontractor Contact', 'Subcontractor Accountant',
     )

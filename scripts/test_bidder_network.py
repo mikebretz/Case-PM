@@ -113,7 +113,13 @@ class BidderNetworkTests(unittest.TestCase):
 
             row = BidderNetworkRegistration.query.get(reg_id)
             self.assertEqual(row.status, 'approved')
-            self.assertTrue(User.query.filter_by(email=email).first())
+            user = User.query.filter_by(email=email).first()
+            self.assertTrue(user)
+            self.assertEqual(user.role, 'Plan Room Bidder')
+            from portal_plan_room_access import is_plan_room_portal_user, plan_room_api_allowed
+            self.assertTrue(is_plan_room_portal_user(user))
+            self.assertFalse(plan_room_api_allowed('/api/projects', 'GET'))
+            self.assertTrue(plan_room_api_allowed('/api/bidder-network/projects', 'GET'))
 
 
 if __name__ == '__main__':
