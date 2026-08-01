@@ -138,6 +138,126 @@ def run_accounting_battery(
     return stats
 
 
+def run_heavy_accounting_battery(
+    db,
+    models: dict,
+    project_values: dict[int, float],
+    *,
+    uid_prefix: str = 'hv',
+    reverse_sample: int = 20,
+) -> dict:
+    """
+    Standard matrix per project plus scaled financial posts (large G702/CO/direct cost)
+    and commitment encumbrance where a commitment exists. Reversals on a broad sample.
+    """
+    pids = list(project_values.keys())
+    stats = run_accounting_battery(
+        db, models, pids, uid_prefix=uid_prefix, reverse_sample=0,
+    )
+    stats['heavy_extra_posts'] = 0
+    stats['heavy_extra_failed'] = 0
+    stats['commitment_posts'] = 0
+
+    from accounting_persistence import get_or_create_default_ledger, seed_chart_of_accounts
+    from accounting_posting import process_construction_event
+
+    app_models = models['_acct_models']
+    Project = models['Project']
+    Commitment = models.get('Commitment')
+    AcctLedger = app_models['AcctLedger']
+    AcctGLAccount = app_models['AcctGLAccount']
+    ledger = get_or_create_default_ledger(db, AcctLedger)
+    seed_chart_of_accounts(db, AcctLedger, AcctGLAccount, ledger)
+
+    reversal_keys: list[str] = []
+
+    for pid, cv in project_values.items():
+        cv = float(cv or 0)
+        extras = [
+            ('G702Approved', {
+                'amount': round(max(500, cv * 0.015), 2),
+                'period_number': 'H2',
+                'idempotency_key': f'{uid_prefix}-p{pid}-G702-heavy',
+                'force_builtin_post': True,
+            }),
+            ('ChangeOrderApproved', {
+                'amount': round(max(100, cv * 0.004), 2),
+                'co_number': f'CO-H-{pid}',
+                'idempotency_key': f'{uid_prefix}-p{pid}-CO-heavy',
+                'force_builtin_post': True,
+                'cost_code': '01-0001',
+            }),
+            ('DirectCostPosted', {
+                'amount': round(max(50, cv * 0.002), 2),
+                'idempotency_key': f'{uid_prefix}-p{pid}-DC-heavy',
+                'force_builtin_post': True,
+                'cost_type': 'Material',
+                'cost_code': '01-5200',
+            }),
+            ('TimesheetPosted', {
+                'amount': round(max(25, cv * 0.001), 2),
+                'idempotency_key': f'{uid_prefix}-p{pid}-TS-heavy',
+                'timesheet_id': f'HEAVY-{pid}',
+                'force_builtin_post': True,
+            }),
+        ]
+        for event_type, payload in extras:
+            try:
+                out = process_construction_event(
+                    event_type, pid, payload, db=db, models=app_models, Project=Project,
+                )
+                if out.get('posted') or out.get('skipped') == 'already_posted':
+                    stats['heavy_extra_posts'] += 1
+                    if event_type == 'TimesheetPosted' and out.get('posted'):
+                        reversal_keys.append(payload['idempotency_key'])
+                else:
+                    stats['heavy_extra_failed'] += 1
+                    stats['errors'].append(f'heavy p{pid} {event_type}: {out}')
+            except Exception as exc:
+                stats['heavy_extra_failed'] += 1
+                stats['errors'].append(f'heavy p{pid} {event_type}: {exc}')
+
+        if Commitment is not None:
+            com = Commitment.query.filter_by(project_id=pid, status='Approved').first()
+            if com:
+                key = f'{uid_prefix}-p{pid}-CMT-{com.id}'
+                try:
+                    out = process_construction_event(
+                        'CommitmentApproved',
+                        pid,
+                        {
+                            'idempotency_key': key,
+                            'force_builtin_post': True,
+                            'amount': float(com.current_amount or com.original_amount or 0),
+                        },
+                        db=db,
+                        models=app_models,
+                        Project=Project,
+                        commitment=com,
+                    )
+                    if out.get('posted'):
+                        stats['commitment_posts'] += 1
+                        reversal_keys.append(key)
+                except Exception as exc:
+                    stats['errors'].append(f'commitment p{pid}: {exc}')
+
+    db.session.commit()
+
+    from accounting_waves_23 import reverse_construction_post
+    for key in reversal_keys[:reverse_sample]:
+        try:
+            reverse_construction_post(
+                db, app_models, ledger.id, key, reason='heavy portfolio correction',
+            )
+            stats['reversals_ok'] += 1
+        except Exception as exc:
+            stats['reversals_failed'] += 1
+            stats['errors'].append(f'reverse {key}: {exc}')
+    db.session.commit()
+
+    return stats
+
+
 def run_accounting_subprocess_suite() -> dict[str, int]:
     """Invoke packaged accounting integration scripts (non-interactive)."""
     scripts = [
