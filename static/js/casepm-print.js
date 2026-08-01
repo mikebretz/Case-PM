@@ -312,7 +312,6 @@
         body.printing-co-detail #appShell > .flex.flex-1 > div.h-10,
         body.printing-co-detail .co-page,
         body.printing-co-detail #coDetailView,
-        body.printing-co-detail #coDrawerBackdrop,
         body.printing-co-detail .fixed.bottom-0,
         body.printing-co-detail dialog,
         body.printing-co-detail .no-print,
