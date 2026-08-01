@@ -3153,12 +3153,21 @@ def api_my_work():
     if project_id is None:
         project_id = get_current_project_id()
     limit = request.args.get('limit', type=int) or 50
-    payload = build_my_work_queue(
-        current_user,
-        project_id=project_id,
-        limit=limit,
-    )
-    return jsonify(payload)
+    try:
+        payload = build_my_work_queue(
+            current_user,
+            project_id=project_id,
+            limit=limit,
+        )
+        return jsonify(payload)
+    except Exception as exc:
+        app.logger.exception('api_my_work failed: %s', exc)
+        return jsonify({
+            'ok': False,
+            'error': 'Work queue temporarily unavailable.',
+            'items': [],
+            'counts': {},
+        }), 500
 
 
 @app.route('/api/dashboard/summary', methods=['GET'])

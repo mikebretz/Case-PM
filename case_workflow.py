@@ -389,6 +389,13 @@ def ensure_workflow_schema(engine):
             _workflow_session().execute(text('ALTER TABLE internal_message ADD COLUMN thread_key VARCHAR(120)'))
         if 'in_reply_to_id' not in cols:
             _workflow_session().execute(text('ALTER TABLE internal_message ADD COLUMN in_reply_to_id INTEGER'))
+        try:
+            _workflow_session().execute(text(
+                'CREATE INDEX IF NOT EXISTS ix_internal_message_user_work_queue '
+                'ON internal_message (user_id, archived, requires_action, is_read, created_at)'
+            ))
+        except Exception:
+            pass
     if 'notification' in inspector.get_table_names():
         cols = {c['name'] for c in inspector.get_columns('notification')}
         if 'link' not in cols:
