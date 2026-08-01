@@ -9,155 +9,193 @@ window.CASEPM_MARKETING_CTX = {
   projectName: {{ (active_project.name if active_project else '')|tojson }},
 };
 </script>
-<style>
-.mk-page { display:flex; flex-direction:column; flex:1; min-height:0; padding:1rem; gap:1rem; overflow:hidden; }
-.mk-panels { display:flex; flex-direction:column; flex:1; min-height:0; }
-.mk-panel { display:flex; flex-direction:column; }
-.mk-panel.hidden { display:none !important; }
-.mk-card { background:#18181b; border:1px solid #3f3f46; border-radius:0.75rem; padding:1rem; }
-.mk-tab { padding:0.5rem 1rem; font-size:0.85rem; border-radius:0.5rem; color:#a1a1aa; cursor:pointer; border:none; background:transparent; }
-.mk-tab.active { background:#27272a; color:#fff; }
-.mk-pipeline { display:grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap:0.5rem; overflow-x:auto; }
-.mk-col { background:#09090b; border:1px solid #27272a; border-radius:0.5rem; min-height:200px; padding:0.5rem; }
-.mk-col h3 { font-size:10px; text-transform:uppercase; color:#71717a; margin:0 0 0.5rem; }
-.mk-lead { background:#18181b; border:1px solid #3f3f46; border-radius:0.375rem; padding:0.5rem; margin-bottom:0.35rem; font-size:12px; cursor:pointer; }
-.mk-lead:hover { border-color:#52525b; }
-.mk-stat { font-size:1.5rem; font-weight:600; color:#fff; }
-.mk-stat-label { font-size:11px; color:#71717a; }
-</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/marketing.css') }}">
 
 <div class="mk-page">
-  <div class="flex items-center justify-between flex-wrap gap-3">
+  <header class="mk-header flex flex-wrap items-start justify-between gap-3">
     <div>
-      <h1 class="text-2xl font-semibold text-white">Marketing</h1>
-      <p class="text-sm text-zinc-400 mt-0.5">Pipeline · portfolio · campaigns · reputation · DAM</p>
-      <p id="mkActiveProject" class="text-xs mt-1 text-amber-400/90 hidden"></p>
+      <h1>Marketing</h1>
+      <p class="mk-tagline">Turn leads into estimates, showcase finished work, and measure what your marketing earns — all in one place.</p>
+      <p id="mkActiveProject" class="mk-project-hint hidden"></p>
     </div>
-    <button type="button" id="mkRefresh" class="px-3 py-2 text-sm bg-zinc-800 hover:bg-zinc-700 rounded-md">Refresh</button>
+    <button type="button" id="mkRefresh" class="mk-btn mk-btn-ghost shrink-0">Refresh data</button>
+  </header>
+
+  <div id="mkQuickStart" class="mk-quickstart hidden">
+    <button type="button" class="mk-dismiss" id="mkDismissQuickStart" aria-label="Dismiss">Hide tips</button>
+    <strong>Quick start</strong>
+    <ol id="mkQuickStartList"></ol>
   </div>
 
-  <div id="mkMarketProfile" class="mk-card text-sm space-y-3">
-    <div class="flex flex-wrap items-end gap-3 justify-between">
-      <div>
-        <div class="text-xs uppercase text-zinc-500 tracking-wide">Construction market profile</div>
-        <p class="text-zinc-400 text-xs mt-0.5">Tailors templates, sources, and messaging to how you build.</p>
-      </div>
+  <details class="mk-market-details" id="mkMarketDetails">
+    <summary>Construction market profile — templates &amp; messaging</summary>
+    <div class="mk-market-inner space-y-3">
+      <p class="text-xs text-zinc-500 m-0">Pick how you build (residential, commercial, government, etc.). Case PM applies email templates, content blocks, and landing copy to match.</p>
       <div class="flex flex-wrap gap-2 items-center">
         <select id="mkPrimaryMarket" class="bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm min-w-[200px]"></select>
-        <button type="button" id="mkApplyMarket" class="px-3 py-2 text-sm bg-emerald-700 hover:bg-emerald-600 rounded-md">Apply marketing scheme</button>
+        <button type="button" id="mkApplyMarket" class="mk-btn mk-btn-primary">Apply scheme</button>
+      </div>
+      <div id="mkSchemeSummary" class="text-zinc-300 text-xs leading-relaxed"></div>
+    </div>
+  </details>
+
+  <div id="mkDashboard" class="mk-stats"></div>
+
+  <div class="mk-layout">
+    <nav class="mk-sidebar" aria-label="Marketing sections">
+      <span class="mk-nav-label">Sales</span>
+      <button type="button" class="mk-tab active" data-tab="pipeline">Pipeline</button>
+      <button type="button" class="mk-tab" data-tab="proposals">Proposals</button>
+
+      <span class="mk-nav-label">Showcase</span>
+      <button type="button" class="mk-tab" data-tab="portfolio">Portfolio &amp; photos</button>
+      <button type="button" class="mk-tab" data-tab="reviews">Reviews</button>
+
+      <span class="mk-nav-label">Outreach</span>
+      <button type="button" class="mk-tab" data-tab="campaigns">Email campaigns</button>
+      <button type="button" class="mk-tab" data-tab="web">Website &amp; SEO</button>
+      <button type="button" class="mk-tab" data-tab="capture">Website leads</button>
+
+      <span class="mk-nav-label">Measure</span>
+      <button type="button" class="mk-tab" data-tab="analytics">ROI &amp; spend</button>
+      <button type="button" class="mk-tab" data-tab="integrations">Integrations</button>
+    </nav>
+
+    <div class="mk-main">
+      <div class="mk-panels">
+        <div id="mkPanelPipeline" class="mk-panel">
+          <h2 class="mk-panel-title">Sales pipeline</h2>
+          <p class="mk-panel-desc">Track inquiries from first contact through won or lost. Click a card to change stage; winning a lead can create an estimate.</p>
+          <div class="mk-toolbar">
+            <span class="text-xs text-zinc-500">Stages flow left → right</span>
+            <button type="button" id="mkNewLead" class="mk-btn mk-btn-primary">Add lead</button>
+          </div>
+          <div id="mkPipeline" class="mk-pipeline"></div>
+        </div>
+
+        <div id="mkPanelPortfolio" class="mk-panel hidden">
+          <h2 class="mk-panel-title">Portfolio &amp; photos</h2>
+          <p class="mk-panel-desc">Publish case studies for your public site and pull project photos into the marketing library.</p>
+          <div class="mk-toolbar">
+            <button type="button" id="mkBuildCaseStudy" class="mk-btn">Build case study from active project</button>
+            <button type="button" id="mkSyncAssets" class="mk-btn">Sync photos from project</button>
+          </div>
+          <div id="mkCaseStudies" class="text-sm space-y-2"></div>
+          <div class="mk-section-divider">
+            <h3>Photo library</h3>
+            <div id="mkAssets" class="grid grid-cols-2 md:grid-cols-4 gap-2"></div>
+          </div>
+        </div>
+
+        <div id="mkPanelCampaigns" class="mk-panel hidden">
+          <h2 class="mk-panel-title">Email campaigns</h2>
+          <p class="mk-panel-desc">Send nurture or announcement emails to leads in a pipeline stage (start with inquiry).</p>
+          <div class="mk-toolbar">
+            <button type="button" id="mkNewCampaign" class="mk-btn mk-btn-primary">New campaign</button>
+          </div>
+          <div id="mkCampaigns" class="text-sm"></div>
+        </div>
+
+        <div id="mkPanelReviews" class="mk-panel hidden">
+          <h2 class="mk-panel-title">Client reviews</h2>
+          <p class="mk-panel-desc">Request Google (or other) reviews after closeout on the active project.</p>
+          <div class="mk-toolbar">
+            <button type="button" id="mkNewReview" class="mk-btn mk-btn-primary">Request review</button>
+          </div>
+          <div id="mkReviews" class="text-sm"></div>
+        </div>
+
+        <div id="mkPanelCapture" class="mk-panel hidden text-sm text-zinc-300">
+          <h2 class="mk-panel-title">Website lead capture</h2>
+          <p class="mk-panel-desc">Point your website form or Zapier at this URL — new submissions appear in the pipeline automatically.</p>
+          <div class="mb-4">
+            <div class="text-xs uppercase text-zinc-500 mb-1">Endpoint (no login)</div>
+            <pre class="bg-zinc-900 p-3 rounded-md text-xs overflow-x-auto border border-zinc-800" id="mkLeadEndpoint"></pre>
+          </div>
+          <div class="mb-4">
+            <div class="text-xs uppercase text-zinc-500 mb-1">Published case studies</div>
+            <div id="mkCaseStudyLinks" class="text-xs space-y-1 text-zinc-400"></div>
+          </div>
+          <div>
+            <div class="text-xs uppercase text-zinc-500 mb-1">Public marketing site</div>
+            <p class="text-xs text-zinc-500 m-0">Create or open your landing page under <strong class="text-zinc-400">Website &amp; SEO</strong>, then share:</p>
+            <a id="mkPublicSiteLink" class="text-sky-400 text-sm break-all" href="#" target="_blank" rel="noopener"></a>
+          </div>
+        </div>
+
+        <div id="mkPanelProposals" class="mk-panel hidden text-sm">
+          <h2 class="mk-panel-title">Client proposals</h2>
+          <p class="mk-panel-desc">Generate a shareable proposal from an estimate — email a link or export PDF.</p>
+          <div class="mk-toolbar">
+            <button type="button" id="mkBuildProposal" class="mk-btn mk-btn-primary">New from estimate ID</button>
+          </div>
+          <div id="mkProposals" class="space-y-2"></div>
+        </div>
+
+        <div id="mkPanelWeb" class="mk-panel hidden text-sm space-y-3">
+          <h2 class="mk-panel-title">Website &amp; local SEO</h2>
+          <p class="mk-panel-desc">Host a simple lead-capture site in Case PM, run an SEO checklist, and connect Google / Houzz / Facebook profiles.</p>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" id="mkSeedLanding" class="mk-btn mk-btn-primary">Create default landing page</button>
+            <button type="button" id="mkRunSeoAudit" class="mk-btn">Run SEO checklist</button>
+          </div>
+          <div id="mkSeoAudit" class="text-xs text-zinc-400"></div>
+          <div>
+            <div class="text-xs uppercase text-zinc-500 mb-1">Your pages</div>
+            <div id="mkLandingPages"></div>
+          </div>
+          <div id="mkBrandKit" class="text-xs border-t border-zinc-800 pt-3"></div>
+          <div class="border-t border-zinc-800 pt-3 space-y-3">
+            <div class="text-xs uppercase text-zinc-500">Settings</div>
+            <form id="mkSettingsForm" class="grid gap-2 max-w-xl text-xs">
+              <label class="flex flex-col gap-0.5">Public site URL (optional)
+                <input name="public_base_url" type="url" class="bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5" placeholder="https://www.yourcompany.com">
+              </label>
+              <label class="flex flex-col gap-0.5">Google Place ID
+                <input name="google_place_id" class="bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5" placeholder="ChIJ...">
+              </label>
+              <label class="flex flex-col gap-0.5">Houzz profile URL
+                <input name="houzz_profile_url" type="url" class="bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5">
+              </label>
+              <label class="flex flex-col gap-0.5">Facebook page URL
+                <input name="facebook_page_url" type="url" class="bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5">
+              </label>
+              <label class="flex items-center gap-2 mt-1">
+                <input name="crm_auto_push" type="checkbox" class="rounded">
+                <span>Auto-send new leads to CRM webhook (<code>CASEPM_CRM_WEBHOOK_URL</code>)</span>
+              </label>
+              <button type="submit" class="mk-btn mk-btn-primary w-fit mt-1">Save settings</button>
+            </form>
+          </div>
+        </div>
+
+        <div id="mkPanelIntegrations" class="mk-panel hidden text-sm space-y-3">
+          <h2 class="mk-panel-title">Integrations &amp; referrals</h2>
+          <p class="mk-panel-desc">Inbound webhooks (Houzz, Dodge, ConstructConnect) create pipeline leads. Optional header <code class="text-zinc-400">X-CasePM-Marketing-Key</code> when <code>CASEPM_MARKETING_WEBHOOK_SECRET</code> is set.</p>
+          <div id="mkIntegrations" class="space-y-2"></div>
+          <div class="border-t border-zinc-800 pt-3">
+            <div class="text-xs uppercase text-zinc-500 mb-2">Referrals</div>
+            <button type="button" id="mkNewReferral" class="mk-btn mb-2">Register referral</button>
+            <div id="mkReferrals" class="text-xs space-y-2"></div>
+          </div>
+        </div>
+
+        <div id="mkPanelAnalytics" class="mk-panel hidden text-sm space-y-3">
+          <h2 class="mk-panel-title">ROI &amp; marketing spend</h2>
+          <p class="mk-panel-desc">Record ad and directory spend, then compare against pipeline value and won jobs.</p>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" id="mkAddSpend" class="mk-btn">Record spend</button>
+            <button type="button" id="mkRunAutomation" class="mk-btn">Run closeout automation (active project)</button>
+          </div>
+          <div id="mkAnalyticsSummary" class="mk-analytics-summary"></div>
+          <div id="mkSpendList" class="text-xs"></div>
+          <details class="text-xs">
+            <summary class="cursor-pointer text-zinc-500">Raw dashboard JSON</summary>
+            <pre id="mkAnalyticsDetail" class="text-xs bg-zinc-900 p-3 rounded-md overflow-auto mt-2 max-h-48 border border-zinc-800"></pre>
+          </details>
+        </div>
       </div>
     </div>
-    <div id="mkSchemeSummary" class="text-zinc-300 text-xs leading-relaxed"></div>
-  </div>
-
-  <div id="mkDashboard" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
-
-  <div class="flex gap-2 flex-wrap">
-    <button type="button" class="mk-tab active" data-tab="pipeline">Pipeline</button>
-    <button type="button" class="mk-tab" data-tab="portfolio">Portfolio</button>
-    <button type="button" class="mk-tab" data-tab="campaigns">Campaigns</button>
-    <button type="button" class="mk-tab" data-tab="reviews">Reviews</button>
-    <button type="button" class="mk-tab" data-tab="assets">Assets</button>
-    <button type="button" class="mk-tab" data-tab="capture">Lead capture</button>
-    <button type="button" class="mk-tab" data-tab="proposals">Proposals</button>
-    <button type="button" class="mk-tab" data-tab="web">Web & SEO</button>
-    <button type="button" class="mk-tab" data-tab="integrations">Integrations</button>
-    <button type="button" class="mk-tab" data-tab="analytics">ROI & spend</button>
-  </div>
-
-  <div class="mk-panels">
-  <div id="mkPanelPipeline" class="mk-panel mk-card flex-1 min-h-0 overflow-auto">
-    <div class="flex justify-between items-center mb-3">
-      <span class="text-sm text-zinc-400">Drag stages via card actions · convert won leads to estimates</span>
-      <button type="button" id="mkNewLead" class="text-sm px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 rounded-md">New lead</button>
-    </div>
-    <div id="mkPipeline" class="mk-pipeline"></div>
-  </div>
-  <div id="mkPanelPortfolio" class="mk-panel mk-card hidden flex-1 overflow-auto">
-    <div class="flex gap-2 mb-3 flex-wrap">
-      <button type="button" id="mkBuildCaseStudy" class="text-sm px-3 py-1.5 bg-zinc-800 rounded-md">Build case study from active project</button>
-    </div>
-    <div id="mkCaseStudies" class="text-sm space-y-2"></div>
-  </div>
-  <div id="mkPanelCampaigns" class="mk-panel mk-card hidden flex-1 overflow-auto">
-    <button type="button" id="mkNewCampaign" class="text-sm px-3 py-1.5 bg-zinc-800 rounded-md mb-3">New email campaign</button>
-    <div id="mkCampaigns" class="text-sm"></div>
-  </div>
-  <div id="mkPanelReviews" class="mk-panel mk-card hidden flex-1 overflow-auto">
-    <button type="button" id="mkNewReview" class="text-sm px-3 py-1.5 bg-zinc-800 rounded-md mb-3">Request review (active project)</button>
-    <div id="mkReviews" class="text-sm"></div>
-  </div>
-  <div id="mkPanelAssets" class="mk-panel mk-card hidden flex-1 overflow-auto">
-    <button type="button" id="mkSyncAssets" class="text-sm px-3 py-1.5 bg-zinc-800 rounded-md mb-3">Sync photos from project</button>
-    <div id="mkAssets" class="grid grid-cols-2 md:grid-cols-4 gap-2"></div>
-  </div>
-  <div id="mkPanelCapture" class="mk-panel mk-card hidden flex-1 overflow-auto text-sm text-zinc-300 space-y-4">
-    <div>
-      <div class="text-xs uppercase text-zinc-500 mb-1">Website lead endpoint</div>
-      <p class="text-zinc-400 text-xs mb-2">POST JSON from your site form or Zapier. No login required.</p>
-      <pre class="bg-zinc-900 p-3 rounded-md text-xs overflow-x-auto" id="mkLeadEndpoint"></pre>
-    </div>
-    <div>
-      <div class="text-xs uppercase text-zinc-500 mb-1">Published case studies</div>
-      <div id="mkCaseStudyLinks" class="text-xs space-y-1 text-zinc-400"></div>
-    </div>
-    <div>
-      <div class="text-xs uppercase text-zinc-500 mb-1">Public landing site</div>
-      <p class="text-xs text-zinc-500">After Web &amp; SEO → ensure landing page, share: <a id="mkPublicSiteLink" class="text-sky-400" href="#" target="_blank"></a></p>
-    </div>
-  </div>
-  <div id="mkPanelProposals" class="mk-panel mk-card hidden flex-1 overflow-auto text-sm">
-    <button type="button" id="mkBuildProposal" class="text-sm px-3 py-1.5 bg-zinc-800 rounded-md mb-3">Build proposal from estimate ID</button>
-    <div id="mkProposals" class="space-y-2"></div>
-  </div>
-  <div id="mkPanelWeb" class="mk-panel mk-card hidden flex-1 overflow-auto text-sm space-y-3">
-    <div class="flex flex-wrap gap-2">
-      <button type="button" id="mkSeedLanding" class="px-3 py-1.5 bg-zinc-800 rounded-md">Ensure default landing page</button>
-      <button type="button" id="mkRunSeoAudit" class="px-3 py-1.5 bg-zinc-800 rounded-md">Run SEO checklist</button>
-    </div>
-    <div id="mkSeoAudit" class="text-xs text-zinc-400"></div>
-    <div id="mkLandingPages"></div>
-    <div id="mkBrandKit" class="text-xs border-t border-zinc-800 pt-3"></div>
-    <div class="border-t border-zinc-800 pt-3 space-y-3">
-      <div class="text-xs uppercase text-zinc-500">Local SEO &amp; integrations</div>
-      <form id="mkSettingsForm" class="grid gap-2 max-w-xl text-xs">
-        <label class="flex flex-col gap-0.5">Public site URL (optional)
-          <input name="public_base_url" type="url" class="bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5" placeholder="https://www.yourcompany.com">
-        </label>
-        <label class="flex flex-col gap-0.5">Google Place ID
-          <input name="google_place_id" class="bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5" placeholder="ChIJ...">
-        </label>
-        <label class="flex flex-col gap-0.5">Houzz profile URL
-          <input name="houzz_profile_url" type="url" class="bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5">
-        </label>
-        <label class="flex flex-col gap-0.5">Facebook page URL
-          <input name="facebook_page_url" type="url" class="bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5">
-        </label>
-        <label class="flex items-center gap-2 mt-1">
-          <input name="crm_auto_push" type="checkbox" class="rounded">
-          <span>Auto-push new leads to CRM webhook (<code>CASEPM_CRM_WEBHOOK_URL</code>)</span>
-        </label>
-        <button type="submit" class="mt-2 px-3 py-1.5 bg-emerald-800 hover:bg-emerald-700 rounded-md w-fit">Save settings</button>
-      </form>
-    </div>
-  </div>
-  <div id="mkPanelIntegrations" class="mk-panel mk-card hidden flex-1 overflow-auto text-sm space-y-3">
-    <p class="text-zinc-400 text-xs">Inbound webhooks create pipeline leads. Optional header <code class="text-zinc-300">X-CasePM-Marketing-Key</code> when <code>CASEPM_MARKETING_WEBHOOK_SECRET</code> is set.</p>
-    <div id="mkIntegrations" class="space-y-2"></div>
-    <div class="border-t border-zinc-800 pt-3">
-      <div class="text-xs uppercase text-zinc-500 mb-2">Referrals</div>
-      <button type="button" id="mkNewReferral" class="text-sm px-3 py-1.5 bg-zinc-800 rounded-md mb-2">Register referral</button>
-      <div id="mkReferrals" class="text-xs space-y-2"></div>
-    </div>
-  </div>
-  <div id="mkPanelAnalytics" class="mk-panel mk-card hidden flex-1 overflow-auto text-sm space-y-3">
-    <div class="flex flex-wrap gap-2">
-      <button type="button" id="mkAddSpend" class="px-3 py-1.5 bg-zinc-800 rounded-md">Record marketing spend</button>
-      <button type="button" id="mkRunAutomation" class="px-3 py-1.5 bg-zinc-800 rounded-md">Run closeout automation (active project)</button>
-    </div>
-    <div id="mkSpendList" class="text-xs"></div>
-    <pre id="mkAnalyticsDetail" class="text-xs bg-zinc-900 p-3 rounded-md overflow-auto flex-1 min-h-[120px]"></pre>
-  </div>
   </div>
 </div>
 
