@@ -292,7 +292,9 @@ def register_bidder_network_routes(app, deps):
         import os
         from flask import send_from_directory
         from bidder_network_services import user_may_access_plan_document
-        if not staff_estimating_ok() and not user_may_access_plan_document(db, models(), current_user, doc_id):
+        if not staff_estimating_ok() and not user_may_access_plan_document(
+            db, models(), current_user, doc_id, staff_access=staff_estimating_ok(),
+        ):
             return jsonify({'error': 'Access denied'}), 403
         doc = Document.query.get_or_404(doc_id)
         directory = os.path.join(upload_folder, 'documents', str(doc.project_id))
@@ -302,6 +304,86 @@ def register_bidder_network_routes(app, deps):
             directory, doc.filename, as_attachment=True,
             download_name=doc.original_filename or doc.filename,
         )
+
+    @app.route('/api/bidder-network/plan-documents/<int:doc_id>/stream')
+    @login_required
+    def api_plan_room_document_stream(doc_id):
+        import os
+        from flask import send_from_directory
+        from bidder_network_services import user_may_access_plan_document
+        staff = staff_estimating_ok()
+        if not staff and not user_may_access_plan_document(db, models(), current_user, doc_id, staff_access=staff):
+            return jsonify({'error': 'Access denied'}), 403
+        doc = Document.query.get_or_404(doc_id)
+        directory = os.path.join(upload_folder, 'documents', str(doc.project_id))
+        path = os.path.join(directory, doc.filename)
+        if not os.path.isfile(path):
+            return jsonify({'error': 'File not found'}), 404
+        return send_from_directory(
+            directory,
+            doc.filename,
+            as_attachment=False,
+            mimetype=doc.mime_type or 'application/octet-stream',
+            download_name=doc.original_filename or doc.filename,
+        )
+
+    @app.route('/plan-room/documents/<int:doc_id>/view')
+    @login_required
+    def plan_room_document_view_page(doc_id):
+        from bidder_network_services import load_plan_room_settings, user_may_access_plan_document, bidder_access_for_user
+        staff = staff_estimating_ok()
+        access = bidder_access_for_user(db, BidderNetworkRegistration, current_user)
+        if staff:
+            access = {'approved': True, 'staff': True}
+        if not access.get('approved'):
+            return redirect(f'/login?next={request.path}')
+        if not user_may_access_plan_document(db, models(), current_user, doc_id, staff_access=staff):
+            return render_template(
+                'bidder_plan_room_document_view.html',
+                settings=load_plan_room_settings(),
+                access=access,
+                doc=None,
+                error='You do not have access to this document.',
+            ), 403
+        doc = Document.query.get_or_404(doc_id)
+        settings = load_plan_room_settings()
+        from bidder_network_services import _document_dict, _doc_can_preview
+        doc_payload = _document_dict(doc)
+        if not _doc_can_preview(doc):
+            return redirect(doc_payload['download_url'])
+        return render_template(
+            'bidder_plan_room_document_view.html',
+            settings=settings,
+            access=access,
+            doc=doc_payload,
+            project_id=doc.project_id,
+            error=None,
+        )
+
+    @app.route('/api/bidder-network/admin/projects/<int:project_id>/estimating-summary')
+    @login_required
+    def api_plan_room_estimating_summary(project_id):
+        if not staff_estimating_ok():
+            return jsonify({'error': 'Estimating access required'}), 403
+        from bidder_network_services import estimating_plan_room_summary
+        try:
+            return jsonify(estimating_plan_room_summary(db, models(), project_id))
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 404
+
+    @app.route('/api/bidder-network/admin/bid-packages/<int:package_id>/sync-estimating', methods=['POST'])
+    @login_required
+    def api_plan_room_sync_estimating(package_id):
+        if not staff_estimating_ok():
+            return jsonify({'error': 'Estimating access required'}), 403
+        from bidder_network_services import sync_package_manifest_from_estimating
+        try:
+            out = sync_package_manifest_from_estimating(db, BidPackage, Document, package_id)
+            db.session.commit()
+            return jsonify(out)
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
 
     @app.route('/api/bidder-network/projects/<int:project_id>/publish', methods=['POST', 'PUT'])
     @login_required

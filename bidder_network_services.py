@@ -229,7 +229,18 @@ def _project_location(project) -> str:
     return ', '.join(p for p in parts if p)
 
 
+def _doc_can_preview(doc) -> bool:
+    mime = (getattr(doc, 'mime_type', None) or '').lower()
+    name = (getattr(doc, 'original_filename', None) or getattr(doc, 'filename', None) or '').lower()
+    if mime.startswith('image/'):
+        return True
+    if mime == 'application/pdf' or name.endswith('.pdf'):
+        return True
+    return False
+
+
 def _document_dict(doc) -> dict:
+    can_preview = _doc_can_preview(doc)
     return {
         'id': doc.id,
         'name': doc.name,
@@ -238,6 +249,9 @@ def _document_dict(doc) -> dict:
         'file_size': doc.file_size or 0,
         'document_type': doc.document_type,
         'download_url': f'/api/bidder-network/plan-documents/{doc.id}/download',
+        'view_url': f'/plan-room/documents/{doc.id}/view' if can_preview else None,
+        'stream_url': f'/api/bidder-network/plan-documents/{doc.id}/stream',
+        'can_preview': can_preview,
     }
 
 
@@ -606,7 +620,7 @@ def update_bid_package_manifest(db, BidPackage, package_id: int, body: dict) -> 
     }
 
 
-def user_may_access_plan_document(db, models, user, doc_id: int) -> bool:
+def user_may_access_plan_document(db, models, user, doc_id: int, *, staff_access: bool = False) -> bool:
     Document = models['Document']
     BidPackage = models['BidPackage']
     Project = models['Project']
@@ -616,6 +630,8 @@ def user_may_access_plan_document(db, models, user, doc_id: int) -> bool:
     doc = Document.query.get(int(doc_id))
     if not doc or doc.deleted_at:
         return False
+    if staff_access:
+        return True
     packages = _published_packages_for_project(BidPackage, doc.project_id)
     project = Project.query.get(doc.project_id)
     if not project or not project_in_plan_room(project, packages):
@@ -625,6 +641,80 @@ def user_may_access_plan_document(db, models, user, doc_id: int) -> bool:
         return False
     access = bidder_access_for_user(db, BidderNetworkRegistration, user)
     return bool(access.get('approved'))
+
+
+def sync_package_manifest_from_estimating(db, BidPackage, Document, package_id: int) -> dict:
+    """Pull bid package attachments_json into plan room manifest (plans + specs)."""
+    pkg = BidPackage.query.get(int(package_id))
+    if not pkg:
+        raise ValueError('Bid package not found')
+    manifest = parse_package_manifest(pkg)
+    docs_block = manifest.setdefault('documents', {})
+    for key in MANIFEST_DOC_KEYS:
+        if key not in docs_block:
+            docs_block[key] = []
+    existing_ids = manifest_document_ids(manifest)
+    attachment_ids = []
+    for did in _json_load(pkg.attachments_json, []):
+        try:
+            attachment_ids.append(int(did))
+        except (TypeError, ValueError):
+            pass
+    added = 0
+    sort_base = max([e.get('sort_order', 0) for cat in docs_block.values() for e in cat] or [0])
+    for did in attachment_ids:
+        if did in existing_ids:
+            continue
+        doc = Document.query.get(did)
+        if not doc or doc.deleted_at or int(doc.project_id) != int(pkg.project_id):
+            continue
+        dtype = (doc.document_type or '').lower()
+        if 'spec' in dtype:
+            cat = 'specifications'
+        elif 'draw' in dtype or 'plan' in dtype:
+            cat = 'plans'
+        else:
+            cat = 'general'
+        sort_base += 1
+        docs_block.setdefault(cat, []).append({
+            'document_id': did,
+            'title': doc.name or doc.original_filename,
+            'sort_order': sort_base,
+            'sheet': '',
+        })
+        existing_ids.add(did)
+        added += 1
+    saved = save_package_manifest(pkg, manifest)
+    return {'ok': True, 'added': added, 'manifest': saved}
+
+
+def estimating_plan_room_summary(db, models, project_id: int) -> dict:
+    Project = models['Project']
+    BidPackage = models['BidPackage']
+    BidderNetworkRegistration = models['BidderNetworkRegistration']
+    project = Project.query.get(int(project_id))
+    if not project:
+        raise ValueError('Project not found')
+    meta = plan_room_meta(project)
+    packages = BidPackage.query.filter_by(project_id=project.id).all()
+    published_pkgs = [p for p in packages if p.network_published]
+    with_manifest = 0
+    for p in packages:
+        if manifest_document_ids(parse_package_manifest(p)):
+            with_manifest += 1
+    pending_regs = BidderNetworkRegistration.query.filter_by(status='pending').count()
+    return {
+        'project_id': project.id,
+        'plan_room_published': bool(meta.get('published')),
+        'bid_date': meta.get('bid_date'),
+        'package_count': len(packages),
+        'packages_published': len(published_pkgs),
+        'packages_with_documents': with_manifest,
+        'pending_bidder_registrations': pending_regs,
+        'console_url': f'/plan-room/console',
+        'bidder_projects_url': '/plan-room/projects',
+        'public_url': '/plan-room?preview=1',
+    }
 
 
 def set_project_plan_room(db, Project, BidPackage, project_id: int, body: dict) -> dict:

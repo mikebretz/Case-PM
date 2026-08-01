@@ -384,9 +384,10 @@
     const idx = state.estimates.findIndex(e => e.id === state.current.id);
     if (idx >= 0) state.estimates[idx] = state.current;
     renderAll();
+    if (typeof window.refreshEstimatingPlanRoomBridge === 'function') {
+      window.refreshEstimatingPlanRoomBridge();
+    }
   }
-
-  function renderAll() {
     const est = state.current;
     if (!est) return;
     updateSummaryBar(est);

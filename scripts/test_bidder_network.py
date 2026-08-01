@@ -27,6 +27,21 @@ class BidderNetworkTests(unittest.TestCase):
                 self.assertEqual(parsed['itb']['timezone'], 'America/Denver')
                 db.session.rollback()
 
+    def test_sync_estimating_attachments(self):
+        from app import app, db, BidPackage, Document, Project
+        from bidder_network_persistence import ensure_bidder_network_schema
+        from bidder_network_services import sync_package_manifest_from_estimating, manifest_document_ids, parse_package_manifest
+
+        with app.app_context():
+            ensure_bidder_network_schema(db)
+            pkg = BidPackage.query.first()
+            if not pkg:
+                return
+            pkg.attachments_json = '[]'
+            out = sync_package_manifest_from_estimating(db, BidPackage, Document, pkg.id)
+            self.assertIn('added', out)
+            db.session.rollback()
+
     def test_registration_and_approve(self):
         from app import (
             app, db, BidderNetworkRegistration, BidderNetworkDocument,

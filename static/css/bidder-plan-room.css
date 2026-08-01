@@ -281,3 +281,38 @@ a.pr-project-card:hover {
   margin-bottom: 0.75rem;
 }
 .pr-pkg-card a.pr-pkg-link { font-weight: 600; color: var(--pr-accent); text-decoration: none; }
+
+/* Document viewer */
+.pr-viewer-page { min-height: 100vh; display: flex; flex-direction: column; }
+.pr-viewer-main { flex: 1; display: flex; flex-direction: column; max-width: 1200px; margin: 0 auto; width: 100%; padding: 0 1rem 2rem; }
+.pr-viewer-toolbar {
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem;
+  padding: 1rem 0; border-bottom: 1px solid var(--pr-border); margin-bottom: 1rem;
+}
+.pr-viewer-toolbar h1 { margin: 0.25rem 0 0; font-size: 1.1rem; }
+.pr-viewer-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.pr-btn-sm {
+  display: inline-block; padding: 0.45rem 0.85rem; border-radius: 8px;
+  background: var(--pr-accent); color: #fff; text-decoration: none; font-size: 0.85rem; font-weight: 600;
+}
+.pr-btn-ghost.pr-btn-sm { background: transparent; border: 1px solid var(--pr-border); color: var(--pr-text); }
+.pr-viewer-host { flex: 1; background: #09090b; border: 1px solid var(--pr-border); border-radius: 12px; padding: 1rem; overflow: auto; min-height: 60vh; }
+.pr-viewer-image { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+#prPdfCanvas { display: block; margin: 0 auto; max-width: 100%; }
+.pr-pdf-toolbar { display: flex; gap: 0.75rem; align-items: center; justify-content: center; margin-bottom: 0.75rem; color: var(--pr-muted); font-size: 0.85rem; }
+.pr-pdf-toolbar button {
+  background: #27272a; border: 1px solid var(--pr-border); color: var(--pr-text);
+  padding: 0.35rem 0.75rem; border-radius: 6px; cursor: pointer;
+}
+.pr-doc-actions { display: flex; gap: 0.35rem; align-items: center; flex-shrink: 0; }
+.pr-doc-sep { color: var(--pr-muted); font-size: 0.75rem; }
+.pr-doc-search { margin-bottom: 1rem; }
+.pr-key-dates {
+  background: var(--pr-card); border: 1px solid var(--pr-border); border-radius: 12px; padding: 1rem 1.15rem;
+}
+.pr-key-dates h3 { margin: 0 0 0.65rem; font-size: 0.95rem; }
+.pr-key-dates dl { margin: 0; display: grid; gap: 0.5rem; font-size: 0.85rem; }
+.pr-key-dates dt { color: var(--pr-muted); margin: 0; }
+.pr-key-dates dd { margin: 0.1rem 0 0; font-weight: 500; }
+.pr-detail-with-sidebar { display: grid; grid-template-columns: 1fr 260px; gap: 1rem; align-items: start; }
+@media (max-width: 900px) { .pr-detail-with-sidebar { grid-template-columns: 1fr; } }
