@@ -60,6 +60,30 @@
 
   window.loadPlanRoomPending = loadPlanRoomPending;
   document.getElementById('estPlanRoomRefresh')?.addEventListener('click', loadPlanRoomPending);
+  document.getElementById('estPlanRoomPublishProject')?.addEventListener('click', async () => {
+    const pid = window.CASEPM_ESTIMATE_CTX?.projectId;
+    if (!pid) {
+      alert('Select an active project in the header first.');
+      return;
+    }
+    const summary = prompt('Public project summary for plan room (optional):') || '';
+    const bidDate = prompt('Bid date (YYYY-MM-DD, optional):') || '';
+    try {
+      await api(`/api/bidder-network/projects/${pid}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          published: true,
+          publish_all_packages: true,
+          summary,
+          bid_date: bidDate || undefined,
+        }),
+      });
+      alert('Project published to plan room. Publish individual packages or attach documents on bid packages as needed.');
+    } catch (e) {
+      alert(e.message);
+    }
+  });
   document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('estPlanRoomPending')) loadPlanRoomPending();
   });
