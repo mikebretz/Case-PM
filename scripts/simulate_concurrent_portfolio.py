@@ -516,8 +516,10 @@ def _spawn_submittals(rt: ProjectRuntime, models: dict, count: float, global_mon
             sub.assigned_company_name = sub_com.company_name
             sub.submitted_by = sub_com.company_name
             sub_user = users.get('sub')
-            if sub_user and getattr(sub_user, 'company_id', None):
-                sub.assigned_company_id = sub_user.company_id
+            if sub_user:
+                sub_user.company = sub_com.company_name
+                sub.assigned_contact_user_id = sub_user.id
+                sub.assigned_company_id = None
         db.session.add(sub)
         db.session.flush()
         try:
@@ -530,7 +532,7 @@ def _spawn_submittals(rt: ProjectRuntime, models: dict, count: float, global_mon
             submittal_workflow_action(sub, 'architect_decision', users['arch'], {'decision': decision})
             if decision == 'No Exceptions Taken':
                 submittal_workflow_action(sub, 'close', users['pm'])
-        except ValueError as exc:
+        except (ValueError, PermissionError) as exc:
             rt.result.add('warning', 'submittal', f'{num}: {exc}')
     db.session.commit()
     rt.result.metrics['submittals_created'] = seq
