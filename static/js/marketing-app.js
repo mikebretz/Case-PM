@@ -5,6 +5,7 @@
   const STAGES = ['inquiry', 'qualification', 'proposal', 'negotiation', 'won', 'lost'];
   let leads = [];
   let stagesMeta = [];
+  let marketCatalog = [];
 
   function csrf() {
     return document.querySelector('meta[name="csrf-token"]')?.content || '';
@@ -180,10 +181,6 @@
     if (hint) hint.textContent = `${origin}/public/marketing/case-study/<slug>`;
   }
 
-  let leads = [];
-  let stagesMeta = [];
-  let marketCatalog = [];
-
   async function loadMarketProfile() {
     const cat = await api('/api/marketing/construction-markets');
     marketCatalog = cat.markets || [];
@@ -203,8 +200,19 @@
   }
 
   async function loadAll() {
-    await loadMarketProfile();
-    await Promise.all([loadDashboard(), loadLeads(), loadCaseStudies(), loadCampaigns(), loadReviews(), loadAssets()]);
+    try {
+      await loadMarketProfile();
+    } catch (e) {
+      console.error('Marketing market profile', e);
+    }
+    await Promise.all([
+      loadDashboard(),
+      loadLeads(),
+      loadCaseStudies(),
+      loadCampaigns(),
+      loadReviews(),
+      loadAssets(),
+    ]).catch((e) => console.error('Marketing load', e));
     setupCapture();
   }
 
@@ -270,7 +278,7 @@
     }
     const settings = await api('/api/marketing/settings');
     const sh = document.getElementById('mkMarketingSettings');
-    if (sh) sh.innerHTML = `<pre class="text-xs">${esc(JSON.stringify(settings, null, 2))}</pre>`;
+    if (sh) sh.innerHTML = `<pre class="text-xs">${esc(JSON.stringify(settings.settings || settings, null, 2))}</pre>`;
   }
 
   document.getElementById('mkBuildProposal')?.addEventListener('click', async () => {
@@ -294,6 +302,6 @@
     alert(`Automation fired: ${(out.fired || []).length} action(s)`);
   });
 
-  loadAll();
+  loadAll().catch((e) => console.error('Marketing init', e));
   loadLanding().catch(() => {});
 })();
