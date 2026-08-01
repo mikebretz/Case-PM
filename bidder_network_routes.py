@@ -12,6 +12,8 @@ def register_bidder_network_routes(app, deps):
     url_for = deps['url_for']
     save_uploaded_file = deps['save_uploaded_file']
     upload_folder = deps['upload_folder']
+    save_document_bytes = deps.get('save_document_bytes')
+    get_active_project = deps.get('get_active_project')
 
     BidderNetworkRegistration = deps['BidderNetworkRegistration']
     BidderNetworkDocument = deps['BidderNetworkDocument']
@@ -85,6 +87,30 @@ def register_bidder_network_routes(app, deps):
             settings=settings,
             access=access,
         )
+
+    @app.route('/plan-room/projects/<int:project_id>/packages/<int:package_id>')
+    @login_required
+    def plan_room_package_detail_page(project_id, package_id):
+        from bidder_network_services import load_plan_room_settings, bidder_access_for_user
+        access = bidder_access_for_user(db, BidderNetworkRegistration, current_user)
+        if staff_estimating_ok():
+            access = {'approved': True, 'staff': True}
+        settings = load_plan_room_settings()
+        return render_template(
+            'bidder_plan_room_package_detail.html',
+            settings=settings,
+            access=access,
+            project_id=project_id,
+            package_id=package_id,
+        )
+
+    @app.route('/plan-room/console')
+    @login_required
+    def plan_room_console_page():
+        if not staff_estimating_ok():
+            return redirect(url_for('estimating_page'))
+        active_project = get_active_project() if get_active_project else None
+        return render_template('plan_room_console.html', active_project=active_project)
 
     @app.route('/plan-room/projects/<int:project_id>')
     @login_required
@@ -168,6 +194,95 @@ def register_bidder_network_routes(app, deps):
             return jsonify(plan_room_project_detail(db, models(), project_id))
         except ValueError as exc:
             return jsonify({'error': str(exc)}), 404
+
+    @app.route('/api/bidder-network/projects/<int:project_id>/packages/<int:package_id>')
+    @login_required
+    def api_bidder_network_package_detail(project_id, package_id):
+        from bidder_network_services import plan_room_package_detail
+        access = bidder_or_staff()
+        if not access.get('approved'):
+            return jsonify({'error': 'Plan room access requires approval', 'access': access}), 403
+        try:
+            return jsonify(plan_room_package_detail(db, models(), project_id, package_id))
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 404
+
+    @app.route('/api/bidder-network/admin/projects/<int:project_id>/console')
+    @login_required
+    def api_plan_room_admin_console(project_id):
+        if not staff_estimating_ok():
+            return jsonify({'error': 'Estimating access required'}), 403
+        from bidder_network_services import admin_plan_room_console
+        try:
+            return jsonify(admin_plan_room_console(db, models(), project_id))
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 404
+
+    @app.route('/api/bidder-network/admin/bid-packages/<int:package_id>/manifest', methods=['GET', 'PUT'])
+    @login_required
+    def api_plan_room_package_manifest(package_id):
+        if not staff_estimating_ok():
+            return jsonify({'error': 'Estimating access required'}), 403
+        from bidder_network_services import parse_package_manifest, update_bid_package_manifest
+        pkg = BidPackage.query.get(int(package_id))
+        if not pkg:
+            return jsonify({'error': 'Bid package not found'}), 404
+        if request.method == 'GET':
+            return jsonify({
+                'id': pkg.id,
+                'project_id': pkg.project_id,
+                'network_published': bool(pkg.network_published),
+                'network_summary': pkg.network_summary,
+                'manifest': parse_package_manifest(pkg),
+            })
+        body = request.get_json(silent=True) or {}
+        try:
+            out = update_bid_package_manifest(db, BidPackage, package_id, body)
+            db.session.commit()
+            return jsonify(out)
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/bidder-network/admin/projects/<int:project_id>/plan-documents', methods=['POST'])
+    @login_required
+    def api_plan_room_admin_upload_document(project_id):
+        if not staff_estimating_ok():
+            return jsonify({'error': 'Estimating access required'}), 403
+        if not save_document_bytes:
+            return jsonify({'error': 'Upload not configured'}), 500
+        f = request.files.get('file')
+        if not f or not f.filename:
+            return jsonify({'error': 'file required'}), 400
+        category = (request.form.get('category') or 'general').strip()
+        name = (request.form.get('name') or f.filename).strip()
+        doc_type_map = {
+            'plans': 'Drawing',
+            'specifications': 'Specification',
+            'geotechnical': 'Report',
+            'schedules': 'Other',
+            'bid_forms': 'Other',
+            'insurance': 'Other',
+            'general': 'Other',
+        }
+        document_type = doc_type_map.get(category, 'Other')
+        try:
+            data = f.read()
+            doc = save_document_bytes(
+                int(project_id),
+                data,
+                name=name,
+                original_filename=f.filename,
+                mime_type=f.mimetype or 'application/octet-stream',
+                document_type=document_type,
+                uploaded_by_id=uid(),
+            )
+            return jsonify({'ok': True, 'document': doc, 'category': category})
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+        except Exception:
+            app.logger.exception('plan room document upload failed')
+            return jsonify({'error': 'Upload failed'}), 500
 
     @app.route('/api/bidder-network/plan-documents/<int:doc_id>/download')
     @login_required
@@ -289,6 +404,7 @@ def register_bidder_network_routes(app, deps):
             db, BidPackage, package_id,
             published=bool(published),
             summary=body.get('network_summary'),
+            manifest=body.get('manifest'),
         )
         db.session.commit()
         return jsonify(out)

@@ -220,3 +220,35 @@ a.pr-project-card:hover {
 }
 .pr-teaser-head { margin-bottom: 1rem; }
 .pr-teaser-card { margin-top: 0; }
+.pr-subnav-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+.pr-subnav-tabs a, .pr-subnav-tabs button {
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--pr-border);
+  background: var(--pr-card);
+  color: var(--pr-muted);
+  font-size: 0.85rem;
+  text-decoration: none;
+  cursor: pointer;
+}
+.pr-subnav-tabs a.active, .pr-subnav-tabs button.active {
+  border-color: var(--pr-accent);
+  color: var(--pr-accent);
+  font-weight: 600;
+}
+.pr-itb-block { font-size: 0.9rem; color: var(--pr-text); }
+.pr-itb-block h3 { font-size: 0.95rem; margin: 1rem 0 0.35rem; }
+.pr-html-content { line-height: 1.55; }
+.pr-html-content p { margin: 0.35rem 0; }
+.pr-pkg-card {
+  border: 1px solid var(--pr-border);
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+}
+.pr-pkg-card a.pr-pkg-link { font-weight: 600; color: var(--pr-accent); text-decoration: none; }

@@ -16,4 +16,6 @@ def ensure_bidder_network_schema(db):
             db.session.execute(text('ALTER TABLE bid_package ADD COLUMN network_published INTEGER DEFAULT 0'))
         if 'network_summary' not in existing:
             db.session.execute(text('ALTER TABLE bid_package ADD COLUMN network_summary TEXT'))
+        if 'network_manifest_json' not in existing:
+            db.session.execute(text('ALTER TABLE bid_package ADD COLUMN network_manifest_json TEXT'))
     db.session.commit()

@@ -6,6 +6,27 @@ sys.path.insert(0, '/workspace')
 
 
 class BidderNetworkTests(unittest.TestCase):
+    def test_package_manifest_roundtrip(self):
+        from app import app, db, BidPackage
+        from bidder_network_services import (
+            default_package_manifest,
+            parse_package_manifest,
+            save_package_manifest,
+            manifest_document_ids,
+        )
+        from bidder_network_persistence import ensure_bidder_network_schema
+
+        with app.app_context():
+            ensure_bidder_network_schema(db)
+            pkg = BidPackage.query.first()
+            if pkg:
+                saved = save_package_manifest(pkg, default_package_manifest())
+                self.assertIn('documents', saved)
+                self.assertEqual(len(manifest_document_ids(saved)), 0)
+                parsed = parse_package_manifest(pkg)
+                self.assertEqual(parsed['itb']['timezone'], 'America/Denver')
+                db.session.rollback()
+
     def test_registration_and_approve(self):
         from app import (
             app, db, BidderNetworkRegistration, BidderNetworkDocument,

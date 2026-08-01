@@ -1622,6 +1622,7 @@ class BidPackage(db.Model):
     email_template_json = db.Column(db.Text)
     network_published = db.Column(db.Boolean, default=False)
     network_summary = db.Column(db.Text)
+    network_manifest_json = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -18652,6 +18653,8 @@ register_bidder_network_routes(app, {
     'User': User,
     'Document': Document,
     'BidPackageAddendum': BidPackageAddendum,
+    'save_document_bytes': _save_document_bytes,
+    'get_active_project': get_active_project,
 })
 
 
