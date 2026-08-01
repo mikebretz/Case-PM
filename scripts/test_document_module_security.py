@@ -156,6 +156,14 @@ class DocumentModuleSecurityTests(unittest.TestCase):
         }, portal='sub')
         assert_submittal_spec_book_read_allowed(user)
 
+    def test_view_only_staff_can_read_spec_book(self):
+        from document_module_security import assert_submittal_spec_book_read_allowed
+
+        user = self._user('Architect', {
+            'submittals': {'access': 'view', 'approve': 'none'},
+        }, portal='consultant')
+        assert_submittal_spec_book_read_allowed(user)
+
     def test_sub_workflow_allowed_from_draft(self):
         from document_module_security import assert_submittal_workflow_allowed
 

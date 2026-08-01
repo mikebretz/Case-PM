@@ -55,7 +55,7 @@ PLUGIN_INVENTORY = [
     {'id': 'html-docx-js', 'host': 'cdn.jsdelivr.net', 'version': '0.3.1', 'purpose': 'DOCX export', 'pages': 'word_editor'},
     {'id': 'luckysheet', 'host': 'cdn.jsdelivr.net', 'version': '2.1.13', 'purpose': 'Excel editor', 'pages': 'sheet_editor'},
     {'id': 'luckyexcel', 'host': 'cdn.jsdelivr.net', 'version': '1.0.1', 'purpose': 'XLSX import', 'pages': 'sheet_editor'},
-    {'id': 'sheetjs', 'host': 'cdn.jsdelivr.net', 'version': '0.18.5', 'purpose': 'Spreadsheet I/O', 'pages': 'sheet_editor, financials'},
+    {'id': 'sheetjs', 'host': 'cdn.jsdelivr.net', 'version': '0.20.3', 'purpose': 'Spreadsheet I/O', 'pages': 'sheet_editor, financials, submittals'},
     {'id': 'chartjs', 'host': 'cdn.jsdelivr.net', 'version': '4.4.1', 'purpose': 'Dashboard charts', 'pages': 'dashboard'},
     {'id': 'pdfjs', 'host': 'cdnjs.cloudflare.com', 'version': '3.11.174', 'purpose': 'PDF viewer', 'pages': 'submittals, drawings, estimating'},
     {'id': 'dhtmlx-gantt', 'host': 'cdn.dhtmlx.com', 'purpose': 'Schedule Gantt', 'pages': 'schedule'},
