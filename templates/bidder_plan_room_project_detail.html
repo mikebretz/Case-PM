@@ -9,9 +9,12 @@
 <body class="pr-hub" style="--pr-accent: {{ settings.primary_color }}">
 {% set active = 'projects' %}
 {% include 'partials/bidder_plan_room_nav.html' %}
-<main class="pr-hub-main pr-detail-layout" id="prProjectDetailRoot" data-project-id="{{ project_id }}" data-approved="{{ '1' if access.approved else '0' }}">
+{% set header_title = 'Project plans & specifications' %}
+{% set header_subtitle = '' %}
+{% include 'partials/bidder_plan_room_hub_header.html' %}
+<main class="pr-hub-main pr-detail-layout" id="prProjectDetailRoot" data-project-id="{{ project_id }}" data-approved="{{ '1' if access.approved else '0' }}" data-staff="{{ '1' if access.get('staff') else '0' }}" style="padding-top:0">
   <p class="pr-muted"><a href="/plan-room/projects">&larr; All projects</a></p>
-  <div id="prProjectDetail"></div>
+  <div id="prProjectDetail"><div class="pr-loading">Loading project…</div></div>
 </main>
 <footer class="pr-footer pr-footer-light">&copy; {{ settings.company_name }}</footer>
 <script src="{{ url_for('static', filename='js/bidder-plan-room-project-detail.js') }}"></script>

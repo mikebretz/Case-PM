@@ -191,7 +191,8 @@ def register_bidder_network_routes(app, deps):
         if not access.get('approved'):
             return jsonify({'error': 'Plan room access requires approval', 'access': access}), 403
         try:
-            return jsonify(plan_room_project_detail(db, models(), project_id))
+            staff = staff_estimating_ok()
+            return jsonify(plan_room_project_detail(db, models(), project_id, staff_access=staff))
         except ValueError as exc:
             return jsonify({'error': str(exc)}), 404
 
@@ -203,7 +204,8 @@ def register_bidder_network_routes(app, deps):
         if not access.get('approved'):
             return jsonify({'error': 'Plan room access requires approval', 'access': access}), 403
         try:
-            return jsonify(plan_room_package_detail(db, models(), project_id, package_id))
+            staff = staff_estimating_ok()
+            return jsonify(plan_room_package_detail(db, models(), project_id, package_id, staff_access=staff))
         except ValueError as exc:
             return jsonify({'error': str(exc)}), 404
 

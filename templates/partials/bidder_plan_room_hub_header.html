@@ -1,0 +1,13 @@
+<header class="pr-hub-header">
+  <div class="pr-hub-header-inner pr-hub-brand-row">
+    {% if settings.logo_data_url %}
+    <img src="{{ settings.logo_data_url }}" alt="{{ settings.company_name }}" class="pr-hub-logo">
+    {% endif %}
+    <div>
+      <h1>{{ header_title|default('Bid & plan room') }}</h1>
+      {% if header_subtitle %}
+      <p class="pr-muted">{{ header_subtitle }}</p>
+      {% endif %}
+    </div>
+  </div>
+</header>

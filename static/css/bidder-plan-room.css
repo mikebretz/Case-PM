@@ -7,6 +7,7 @@
   --pr-muted: #a1a1aa;
 }
 * { box-sizing: border-box; }
+.hidden { display: none !important; }
 body {
   margin: 0;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
@@ -132,6 +133,30 @@ body.pr-hub {
 }
 .pr-hub-header-inner { max-width: 1100px; margin: 0 auto; }
 .pr-hub-header h1 { margin: 0 0 0.35rem; font-size: 1.75rem; }
+.pr-hub-brand-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.pr-hub-logo {
+  max-height: 52px;
+  max-width: 200px;
+  object-fit: contain;
+}
+.pr-topnav-logo {
+  max-height: 36px;
+  max-width: 140px;
+  object-fit: contain;
+  vertical-align: middle;
+  margin-right: 0.5rem;
+}
+.pr-loading {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--pr-muted);
+  font-size: 0.95rem;
+}
 .pr-hub-main { max-width: 1100px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
 .pr-toolbar { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-top: 1rem; }
 .pr-search {
