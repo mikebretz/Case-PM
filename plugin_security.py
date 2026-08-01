@@ -181,6 +181,7 @@ def build_content_security_policy() -> str:
         f"script-src 'self' {cdn_scripts} 'unsafe-inline' 'unsafe-eval'; "
         f"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com {cdn_scripts}; "
         f"font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com {cdn_scripts}; "
+        f"worker-src 'self' blob: https://cdnjs.cloudflare.com; "
         "img-src 'self' data: blob: https:; "
         f"connect-src 'self' {cdn_scripts} https://router.project-osrm.org https://nominatim.openstreetmap.org "
         "https://geocoding-api.open-meteo.com https://api.open-meteo.com https://graph.microsoft.com; "
