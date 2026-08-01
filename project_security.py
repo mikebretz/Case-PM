@@ -193,6 +193,13 @@ def guard_upload_request(user, path: str | None):
     project_id, entity_kind = resolve_upload_access(path)
     if project_id is None:
         return jsonify({'error': 'Not found'}), 404
+    if '/uploads/spec_books/' in (path or ''):
+        from document_module_security import assert_spec_book_project_access
+        try:
+            assert_spec_book_project_access(user, project_id, Project=_load_model('Project'))
+        except PermissionError as exc:
+            return jsonify({'error': str(exc)}), 403
+        return None
     try:
         if entity_kind == 'logo':
             _check_general_project_access(user, project_id)
