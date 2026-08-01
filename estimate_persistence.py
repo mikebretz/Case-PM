@@ -103,6 +103,8 @@ def bid_package_to_dict(pkg, invitations=None, lines=None):
         'scope_notes': pkg.scope_notes or '',
         'status': pkg.status or 'Draft',
         'due_date': pkg.due_date.isoformat() if pkg.due_date else None,
+        'network_published': bool(getattr(pkg, 'network_published', False)),
+        'network_summary': getattr(pkg, 'network_summary', None) or '',
         'awarded_invitation_id': pkg.awarded_invitation_id,
         'drawing_refs': _parse_json(pkg.drawing_refs_json, []),
         'spec_refs': _parse_json(pkg.spec_refs_json, []),
@@ -202,6 +204,10 @@ def apply_bid_package_fields(pkg, data):
         pkg.drawing_refs_json = json.dumps(data['drawing_refs'] or [])
     if 'spec_refs' in data:
         pkg.spec_refs_json = json.dumps(data['spec_refs'] or [])
+    if 'network_published' in data:
+        pkg.network_published = bool(data['network_published'])
+    if 'network_summary' in data:
+        pkg.network_summary = (data['network_summary'] or '').strip() or None
     pkg.updated_at = datetime.utcnow()
 
 

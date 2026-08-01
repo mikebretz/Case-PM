@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ settings.company_name }} — Open bid opportunities</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bidder-plan-room.css') }}">
+</head>
+<body>
+<header class="pr-hero pr-hero-compact" style="--pr-accent: {{ settings.primary_color }}">
+  <div class="pr-hero-inner">
+    <h1>Open bid opportunities</h1>
+    <p class="pr-lead">{{ settings.company_name }}</p>
+  </div>
+</header>
+<main class="pr-main">
+  <div id="prAccessGate" data-approved="{{ '1' if access.approved else '0' }}" data-reason="{{ access.reason }}"></div>
+  <div id="prOpportunityList" class="pr-opp-list"></div>
+</main>
+<script src="{{ url_for('static', filename='js/bidder-plan-room-opportunities.js') }}"></script>
+</body>
+</html>
