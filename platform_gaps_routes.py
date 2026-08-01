@@ -16,6 +16,9 @@ def register_platform_gaps_routes(app, deps):
     ExtendedModuleRecord = deps['ExtendedModuleRecord']
     OperationsTransmittalRecipient = deps['OperationsTransmittalRecipient']
     ClientPortalApproval = deps['ClientPortalApproval']
+    ClientPortalSelection = deps.get('ClientPortalSelection')
+    ClientPortalDrawRequest = deps.get('ClientPortalDrawRequest')
+    ClientPortalPayment = deps.get('ClientPortalPayment')
     IntegrationSyncLog = deps['IntegrationSyncLog']
     BudgetProjectState = deps['BudgetProjectState']
     SageSyncEvent = deps.get('SageSyncEvent')
@@ -31,6 +34,9 @@ def register_platform_gaps_routes(app, deps):
             'ChangeOrder': ChangeOrder,
             'ExtendedModuleRecord': ExtendedModuleRecord,
             'ClientPortalApproval': ClientPortalApproval,
+            'ClientPortalSelection': ClientPortalSelection,
+            'ClientPortalDrawRequest': ClientPortalDrawRequest,
+            'ClientPortalPayment': ClientPortalPayment,
             'IntegrationSyncLog': IntegrationSyncLog,
             'SageSyncEvent': SageSyncEvent,
             'BudgetProjectState': BudgetProjectState,
@@ -48,7 +54,11 @@ def register_platform_gaps_routes(app, deps):
     def api_client_portal_feed():
         from platform_tier2_services import client_portal_extended_feed
         project_id = request.args.get('project_id', type=int) or (get_current_project_id() if get_current_project_id else None)
-        return jsonify(client_portal_extended_feed(db, models_dict(), current_user, project_id))
+        try:
+            return jsonify(client_portal_extended_feed(db, models_dict(), current_user, project_id))
+        except Exception as exc:
+            app.logger.exception('client_portal feed failed: %s', exc)
+            return jsonify({'error': 'Client portal feed unavailable.'}), 500
 
     @app.route('/api/client-portal/approvals/<int:approval_id>/respond', methods=['POST'])
     @login_required

@@ -360,12 +360,12 @@ def client_portal_extended_feed(db, models, user, project_id):
     """Selections, draw requests, payments for owner portal."""
     from platform_gaps_services import build_client_portal_feed
     base = build_client_portal_feed(db, models, user, project_id)
-    ClientPortalSelection = models['ClientPortalSelection']
-    ClientPortalDrawRequest = models['ClientPortalDrawRequest']
-    ClientPortalPayment = models['ClientPortalPayment']
+    ClientPortalSelection = models.get('ClientPortalSelection')
+    ClientPortalDrawRequest = models.get('ClientPortalDrawRequest')
+    ClientPortalPayment = models.get('ClientPortalPayment')
     pid = int(project_id) if project_id else None
     selections, draws, payments = [], [], []
-    if pid:
+    if pid and ClientPortalSelection is not None and ClientPortalDrawRequest is not None and ClientPortalPayment is not None:
         selections = [{
             'id': s.id, 'title': s.title, 'category': s.category,
             'status': s.status, 'due_date': s.due_date.isoformat() if s.due_date else None,
