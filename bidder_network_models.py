@@ -33,7 +33,43 @@ def define_bidder_network_models(db):
         size_bytes = db.Column(db.Integer, default=0)
         created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    class PlanRoomClarification(db.Model):
+        __tablename__ = 'plan_room_clarification'
+        id = db.Column(db.Integer, primary_key=True)
+        project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False, index=True)
+        bid_package_id = db.Column(db.Integer, db.ForeignKey('bid_package.id'), nullable=True, index=True)
+        asked_by_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+        asker_company = db.Column(db.String(200))
+        asker_name = db.Column(db.String(200))
+        subject = db.Column(db.String(300))
+        question_text = db.Column(db.Text, nullable=False)
+        answer_text = db.Column(db.Text)
+        answered_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+        answered_at = db.Column(db.DateTime)
+        is_public = db.Column(db.Boolean, default=True)
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class PlanRoomAddendumAck(db.Model):
+        __tablename__ = 'plan_room_addendum_ack'
+        id = db.Column(db.Integer, primary_key=True)
+        addendum_id = db.Column(db.Integer, db.ForeignKey('bid_package_addendum.id'), nullable=False, index=True)
+        user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+        acknowledged_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    class PlanRoomExternalSyncLog(db.Model):
+        __tablename__ = 'plan_room_external_sync_log'
+        id = db.Column(db.Integer, primary_key=True)
+        project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False, index=True)
+        provider = db.Column(db.String(40), nullable=False)  # buildingconnected | tradetapp
+        direction = db.Column(db.String(20), default='export')
+        status = db.Column(db.String(20), default='success')
+        summary_json = db.Column(db.Text)
+        created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
     return {
         'BidderNetworkRegistration': BidderNetworkRegistration,
         'BidderNetworkDocument': BidderNetworkDocument,
+        'PlanRoomClarification': PlanRoomClarification,
+        'PlanRoomAddendumAck': PlanRoomAddendumAck,
+        'PlanRoomExternalSyncLog': PlanRoomExternalSyncLog,
     }

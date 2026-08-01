@@ -27,7 +27,7 @@
       btn.classList.toggle('active', btn.dataset.tab === name);
     });
     document.querySelectorAll('.prc-tab-panel').forEach((panel) => panel.classList.add('prc-is-hidden'));
-    const map = { project: 'prcTabProject', packages: 'prcTabPackages', bidders: 'prcTabBidders' };
+    const map = { project: 'prcTabProject', packages: 'prcTabPackages', bidders: 'prcTabBidders', qa: 'prcTabQa', outreach: 'prcTabOutreach' };
     document.getElementById(map[name])?.classList.remove('prc-is-hidden');
     if (name === 'packages') {
       if (!selectedPackageId && consoleData?.packages?.length) {
@@ -37,6 +37,7 @@
       renderPackageEditor();
     }
     if (name === 'bidders') loadBidders();
+    if (window.planRoomConsoleAdvanced?.onTab) window.planRoomConsoleAdvanced.onTab(name);
   }
 
   function fillProjectForm(pr) {

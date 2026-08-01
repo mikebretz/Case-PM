@@ -36,6 +36,8 @@ window.CASEPM_PLAN_ROOM_CTX = {
       <button type="button" data-tab="project" class="active">Project ITB</button>
       <button type="button" data-tab="packages">Bid packages</button>
       <button type="button" data-tab="bidders">Bidder registrations</button>
+      <button type="button" data-tab="qa">Q&amp;A</button>
+      <button type="button" data-tab="outreach">Outreach &amp; sync</button>
     </nav>
 
     <section id="prcTabProject" class="prc-tab-panel">
@@ -114,8 +116,38 @@ window.CASEPM_PLAN_ROOM_CTX = {
       </div>
       <div id="prcBiddersPending" class="space-y-2"></div>
     </section>
+
+    <section id="prcTabQa" class="prc-tab-panel prc-is-hidden">
+      <p class="text-sm text-zinc-400 mb-3">Answer bidder questions — responses are visible to all plan room users on the project.</p>
+      <div id="prcQaList" class="space-y-3"></div>
+    </section>
+
+    <section id="prcTabOutreach" class="prc-tab-panel prc-is-hidden">
+      <div class="prc-fieldset mb-4">
+        <legend class="text-sm text-zinc-300 font-medium">ITB email blast</legend>
+        <p class="text-xs text-zinc-500 mb-2">Email all <strong>approved plan room bidders</strong> with project ITB text and plan room login links.</p>
+        <div class="flex flex-wrap gap-2 items-center">
+          <button type="button" id="prcBroadcastItb" class="prc-btn prc-btn-primary">Send ITB to approved bidders</button>
+          <button type="button" id="prcBroadcastItbEmail" class="prc-btn prc-btn-ghost">Email only</button>
+          <span id="prcBroadcastMsg" class="prc-msg"></span>
+        </div>
+        <p class="text-xs text-zinc-500 mt-2">For invited vendors on specific packages, use <a href="/estimating" class="text-emerald-400">Estimating → Send RFP Emails</a> on each bid package.</p>
+      </div>
+      <div class="prc-fieldset">
+        <legend class="text-sm text-zinc-300 font-medium">External networks (BuildingConnected / TradeTapp)</legend>
+        <p class="text-xs text-zinc-500 mb-2">Export a structured ITB + document manifest JSON for import into external bid networks. API keys can be added when your network integration is configured.</p>
+        <div class="flex flex-wrap gap-2 mb-3">
+          <button type="button" class="prc-btn prc-btn-ghost prc-export-bc" data-provider="buildingconnected">Export BuildingConnected package</button>
+          <button type="button" class="prc-btn prc-btn-ghost prc-export-bc" data-provider="tradetapp">Export TradeTapp package</button>
+        </div>
+        <pre id="prcExportOutput" class="text-xs bg-zinc-950 border border-zinc-700 rounded p-3 max-h-48 overflow-auto hidden"></pre>
+        <h3 class="text-xs text-zinc-400 mt-4 mb-2">Recent sync / export log</h3>
+        <div id="prcSyncLog" class="text-xs text-zinc-500"></div>
+      </div>
+    </section>
   </div>
 </div>
 <script src="{{ url_for('static', filename='js/plan-room-share-links.js') }}"></script>
 <script src="{{ url_for('static', filename='js/plan-room-console.js') }}"></script>
+<script src="{{ url_for('static', filename='js/plan-room-console-advanced.js') }}"></script>
 {% endblock %}

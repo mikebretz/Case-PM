@@ -42,6 +42,28 @@ class BidderNetworkTests(unittest.TestCase):
             self.assertIn('added', out)
             db.session.rollback()
 
+    def test_clarification_flow(self):
+        from app import app, db, Project
+        from bidder_network_persistence import ensure_bidder_network_schema
+        from plan_room_advanced_services import submit_clarification, answer_clarification, list_clarifications
+
+        with app.app_context():
+            ensure_bidder_network_schema(db)
+            project = Project.query.first()
+            user = __import__('app', fromlist=['User']).User.query.filter_by(role='Admin').first()
+            if not project or not user:
+                return
+            out = submit_clarification(db, {
+                'PlanRoomClarification': __import__('app', fromlist=['PlanRoomClarification']).PlanRoomClarification,
+                'BidderNetworkRegistration': __import__('app', fromlist=['BidderNetworkRegistration']).BidderNetworkRegistration,
+                'Project': Project,
+            }, project.id, user, {'question_text': 'Is prevailing wage required?'})
+            cid = out['clarification']['id']
+            answer_clarification(db, __import__('app', fromlist=['PlanRoomClarification']).PlanRoomClarification, cid, user.id, {'answer_text': 'Yes, per ITB.'})
+            listed = list_clarifications(db, __import__('app', fromlist=['PlanRoomClarification']).PlanRoomClarification, project.id)
+            self.assertTrue(any(c['answer_text'] for c in listed['clarifications']))
+            db.session.rollback()
+
     def test_registration_and_approve(self):
         from app import (
             app, db, BidderNetworkRegistration, BidderNetworkDocument,

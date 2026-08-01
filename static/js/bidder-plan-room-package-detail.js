@@ -75,6 +75,7 @@
       const itb = pkg.itb || (pkg.manifest && pkg.manifest.itb) || {};
       const sections = data.document_sections || [];
       const addenda = data.addenda || [];
+      const zipUrl = data.documents_zip_url || '';
 
       host.innerHTML = `
         <div class="pr-detail-hero">
@@ -100,6 +101,7 @@
           </section>
           <section class="pr-panel">
             <h2>Plans, specs &amp; exhibits</h2>
+            ${zipUrl ? `<p class="pr-project-meta"><a class="pr-download" href="${esc(zipUrl)}">Download package documents (.zip)</a></p>` : ''}
             <input type="search" class="pr-search pr-doc-search" id="prPkgDocSearch" placeholder="Search documents…">
             <div id="prPkgDocWrap">${renderSections(sections)}</div>
           </section>
@@ -108,8 +110,10 @@
           <div class="pr-pkg-card">
             <strong>${esc(a.number)} — ${esc(a.title)}</strong>
             ${a.require_rebid ? '<span class="pr-tag">Re-bid required</span>' : ''}
+            ${a.acknowledged ? '<span class="pr-tag">Acknowledged</span>' : '<span class="pr-tag">Acknowledgment required</span>'}
             <p class="pr-project-meta">${esc(a.description || '')}</p>
             ${(a.documents || []).length ? `<ul class="pr-doc-list">${a.documents.map((d) => docRow(d)).join('')}</ul>` : ''}
+            ${!a.acknowledged ? `<button type="button" class="pr-btn pr-ack-addendum" data-id="${a.id}" style="margin-top:0.5rem;background:var(--pr-accent);color:#fff;border:none;padding:0.4rem 0.8rem;border-radius:8px;cursor:pointer">I acknowledge this addendum</button>` : ''}
           </div>`).join('')}</section>` : ''}
       `;
       const scopeSlot = document.getElementById('prPkgScopeSlot');
@@ -126,6 +130,15 @@
       if (PRD.bindDocumentSearch) {
         PRD.bindDocumentSearch(document.getElementById('prPkgDocSearch'), document.getElementById('prPkgDocWrap'));
       }
+      host.querySelectorAll('.pr-ack-addendum').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          await fetch(`/api/bidder-network/addenda/${btn.dataset.id}/acknowledge`, {
+            method: 'POST',
+            credentials: 'same-origin',
+          });
+          location.reload();
+        });
+      });
     })
     .catch(() => {
       host.innerHTML = '<p class="pr-muted">Could not load package.</p>';

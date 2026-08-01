@@ -54,7 +54,7 @@
   }
 
   function bindTabs(container) {
-    const panels = { docs: 'prPanelDocs', packages: 'prPanelPackages', addenda: 'prPanelAddenda' };
+    const panels = { docs: 'prPanelDocs', packages: 'prPanelPackages', addenda: 'prPanelAddenda', qa: 'prPanelQa' };
     container.querySelectorAll('.pr-subnav-tabs button').forEach((btn) => {
       btn.addEventListener('click', () => {
         container.querySelectorAll('.pr-subnav-tabs button').forEach((b) => b.classList.remove('active'));
@@ -101,14 +101,39 @@
             </div>
           `).join('') : '<p class="pr-muted">No published packages.</p>';
 
+      const clarifications = data.clarifications || [];
+      const zipUrl = data.documents_zip_url || '';
+      const pendingAcks = data.pending_addendum_acks || 0;
+
       const addendaPanel = addenda.length ? addenda.map((a) => `
-            <div class="pr-pkg-card">
+            <div class="pr-pkg-card" data-addendum-id="${a.id}">
               <strong>${esc(a.number)} — ${esc(a.title)}</strong> <span class="pr-project-meta">(${esc(a.package_title)})</span>
               ${a.require_rebid ? '<span class="pr-tag">Re-bid required</span>' : ''}
+              ${a.acknowledged ? '<span class="pr-tag">Acknowledged</span>' : '<span class="pr-tag">Acknowledgment required</span>'}
               <p class="pr-project-meta">${esc(a.description || '')}</p>
               ${(a.documents || []).length ? `<ul class="pr-doc-list">${a.documents.map((d) => docRow(d)).join('')}</ul>` : ''}
+              ${!a.acknowledged && !isStaff ? `<button type="button" class="pr-btn pr-ack-addendum" data-id="${a.id}" style="margin-top:0.5rem">I acknowledge this addendum</button>` : ''}
             </div>`).join('') : '<p class="pr-muted">No addenda issued.</p>';
 
+      const qaPanel = `
+        <div class="pr-itb-block">
+          <h3>Public Q&amp;A</h3>
+          <div id="prQaThread">${clarifications.length ? clarifications.map((q) => `
+            <div class="pr-pkg-card">
+              <strong>${esc(q.subject || 'Question')}</strong>
+              <p class="pr-project-meta">${esc(q.asker_company)} · ${esc((q.created_at || '').slice(0, 10))}</p>
+              <p>${esc(q.question_text)}</p>
+              ${q.answer_text ? `<p class="pr-project-meta" style="margin-top:0.5rem"><strong>Answer:</strong> ${esc(q.answer_text)}</p>` : '<p class="pr-muted">Awaiting answer from estimating.</p>'}
+            </div>`).join('') : '<p class="pr-muted">No questions posted yet.</p>'}
+          </div>
+          ${isStaff ? '' : `
+          <form id="prAskQuestion" class="mt-3">
+            <label class="pr-muted">Ask a clarification (visible to all bidders once answered)</label>
+            <input type="text" name="subject" class="pr-search" placeholder="Subject" style="margin:0.35rem 0">
+            <textarea name="question" rows="3" class="pr-search" style="width:100%;margin-bottom:0.5rem" placeholder="Your question…" required></textarea>
+            <button type="submit" class="pr-btn" style="background:var(--pr-accent);color:#fff;border:none;padding:0.5rem 1rem;border-radius:8px;cursor:pointer">Submit question</button>
+          </form>`}
+        </div>`;
       host.innerHTML = `
         <div class="pr-detail-with-sidebar">
           <div>
@@ -124,17 +149,21 @@
               ${meetingLine('Pre-bid meeting', pr.pre_bid_meeting)}
               ${meetingLine('Job walk', pr.job_walk)}
             </div>
+            ${pendingAcks && !isStaff ? `<div class="pr-gate">You have ${pendingAcks} addendum(s) to acknowledge before bidding.</div>` : ''}
             <nav class="pr-subnav-tabs">
               <button type="button" class="active" data-panel="docs">Plans &amp; specs</button>
               <button type="button" data-panel="packages">Bid packages (${pkgs.length})</button>
               <button type="button" data-panel="addenda">Addenda (${addenda.length})</button>
+              <button type="button" data-panel="qa">Q&amp;A (${clarifications.length})</button>
             </nav>
             <div id="prPanelDocs" class="pr-panel">
+              ${zipUrl ? `<p class="pr-project-meta"><a class="pr-download" href="${esc(zipUrl)}">Download all plans &amp; specs (.zip)</a></p>` : ''}
               <input type="search" class="pr-search pr-doc-search" id="prDocSearch" placeholder="Search documents by name…">
               <div id="prDocListWrap">${docsPanel}</div>
             </div>
             <div id="prPanelPackages" class="pr-panel hidden">${packagesPanel}</div>
             <div id="prPanelAddenda" class="pr-panel hidden">${addendaPanel}</div>
+            <div id="prPanelQa" class="pr-panel hidden">${qaPanel}</div>
           </div>
           ${keyDatesHtml(pr, p)}
         </div>
@@ -151,6 +180,30 @@
       if (PRD.bindDocumentSearch) {
         PRD.bindDocumentSearch(document.getElementById('prDocSearch'), document.getElementById('prDocListWrap'));
       }
+      host.querySelectorAll('.pr-ack-addendum').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          await fetch(`/api/bidder-network/addenda/${btn.dataset.id}/acknowledge`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          });
+          location.reload();
+        });
+      });
+      document.getElementById('prAskQuestion')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        await fetch(`/api/bidder-network/projects/${projectId}/clarifications`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+          body: JSON.stringify({
+            subject: fd.get('subject'),
+            question_text: fd.get('question'),
+          }),
+        });
+        location.reload();
+      });
     })
     .catch((err) => {
       console.error('plan room project detail', err);
