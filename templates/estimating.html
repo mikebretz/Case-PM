@@ -13,6 +13,7 @@ window.CASEPM_ESTIMATE_CTX = {
 <script src="{{ url_for('static', filename='js/estimating-app.js') }}"></script>
 <script src="{{ url_for('static', filename='js/bidder-plan-room-staff.js') }}"></script>
 <script src="{{ url_for('static', filename='js/estimating-plan-room-bridge.js') }}"></script>
+<script src="{{ url_for('static', filename='js/plan-room-share-links.js') }}"></script>
 <script src="{{ url_for('static', filename='js/estimating-features.js') }}"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="{{ url_for('static', filename='js/csi-catalog.js') }}"></script>
@@ -77,6 +78,7 @@ window.CASEPM_ESTIMATE_CTX = {
 .est-planroom-bridge-meta { font-size: 0.75rem; color: #a1a1aa; margin-top: 0.2rem; }
 .est-planroom-bridge-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 </style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/plan-room-console.css') }}">
 
 <div class="est-page">
   <div id="estPlanRoomBridge"></div>
@@ -207,6 +209,7 @@ window.CASEPM_ESTIMATE_CTX = {
         </div>
       </div>
       <div id="estPlanRoomPending" class="mt-3 text-sm space-y-2"></div>
+      {% include 'partials/plan_room_share_links.html' %}
     </div>
     <div class="flex justify-between items-center mb-3 flex-wrap gap-2">
       <div class="text-sm text-zinc-400">Create RFP packages by spec section · mass-invite matching vendors/subs</div>
