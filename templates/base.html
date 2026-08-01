@@ -13,7 +13,11 @@
     {% if current_user.is_authenticated and csrf_token %}
     <meta name="csrf-token" content="{{ csrf_token }}">
     {% endif %}
-    <!-- Tailwind CSS + Font Awesome -->
+    <!-- Tailwind CSS (Play CDN — compile with CLI for strict production deployments) -->
+    <script>
+      window.tailwind = window.tailwind || {};
+      window.tailwind.config = { darkMode: 'class' };
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
