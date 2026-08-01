@@ -532,7 +532,7 @@ def process_construction_event(
         amount = _float_amount(data.get('amount'), data.get('labor_cost'))
         if amount <= 0 or not project_id:
             return {**result, 'skipped': 'no_amount_or_project'}
-        ref = (data.get('timesheet_ref') or data.get('timesheet_id') or 'Timesheet')[:60]
+        ref = str(data.get('timesheet_ref') or data.get('timesheet_id') or 'Timesheet')[:60]
         labor_acct = _account_by_number(AcctGLAccount, ledger.id, opts['labor_expense'])
         clearing = _account_by_number(AcctGLAccount, ledger.id, opts['payroll_liability'])
         batch = _create_posted_batch(

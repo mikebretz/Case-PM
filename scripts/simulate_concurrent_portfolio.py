@@ -333,6 +333,11 @@ def _setup_project(rt: ProjectRuntime, models: dict, global_month: int) -> None:
         sub_sov_workflow_action(pay_state, key, 'approve', rt.users['pm'])
     save_pay_app_state(PayAppProjectState, db, project.id, pay_state, user_id=None)
     rt.setup_done = True
+    sub_com = next((c for c in rt.commitments if c.commitment_type == 'Subcontract'), None)
+    if sub_com and rt.users.get('sub'):
+        sub_user = rt.users['sub']
+        sub_user.company = sub_com.company_name
+        db.session.commit()
 
 
 def _spawn_rfis(rt: ProjectRuntime, models: dict, count: int, global_month: int) -> None:
@@ -373,7 +378,7 @@ def _spawn_rfis(rt: ProjectRuntime, models: dict, count: int, global_month: int)
         db.session.flush()
         try:
             execute_rfi_action(rfi, 'submit', users['pm'], User, {})
-            if random.random() < 0.7:
+            if random.random() < 0.88:
                 add_response(rfi, {
                     'body': 'Official answer for simulation.',
                     'is_official': True,
@@ -436,6 +441,7 @@ def _spawn_cos(rt: ProjectRuntime, models: dict, count: float, global_month: int
     n = int(count) + (1 if random.random() < (count % 1) else 0)
     scale = rt.scenario.contract_value / 30_000_000.0
     codes = [c[0] for c in rt.scenario.trade_mix if '01-' not in c[0]]
+    sub_com = next((c for c in rt.commitments if c.commitment_type == 'Subcontract'), None)
     for _ in range(n):
         rt.co_seq += 1
         code = random.choice(codes) if codes else '09-250'
@@ -487,6 +493,7 @@ def _spawn_submittals(rt: ProjectRuntime, models: dict, count: float, global_mon
 
     db = models['db']
     users = rt.users
+    sub_com = next((c for c in rt.commitments if c.commitment_type == 'Subcontract'), None)
     n = int(count) + (1 if random.random() < (count % 1) else 0)
     codes = [c[0] for c in rt.scenario.trade_mix if '01-' not in c[0]]
     seq = rt.result.metrics.get('submittals_created', 0)
@@ -505,6 +512,12 @@ def _spawn_submittals(rt: ProjectRuntime, models: dict, count: float, global_mon
             date=datetime.utcnow().date(),
         )
         apply_submittal_fields(sub, {}, is_create=True)
+        if sub_com:
+            sub.assigned_company_name = sub_com.company_name
+            sub.submitted_by = sub_com.company_name
+            sub_user = users.get('sub')
+            if sub_user and getattr(sub_user, 'company_id', None):
+                sub.assigned_company_id = sub_user.company_id
         db.session.add(sub)
         db.session.flush()
         try:

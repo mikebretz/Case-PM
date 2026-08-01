@@ -3842,6 +3842,27 @@ def update_project_status(project_id):
     data = request.get_json(silent=True) or {}
     status = data.get('status') or request.form.get('status')
     if status:
+        from project_closeout import COMPLETE_PROJECT_STATUSES, assert_project_may_complete, closeout_readiness
+        if status in COMPLETE_PROJECT_STATUSES or (status or '').strip() in ('Complete', 'Completed'):
+            force = bool(data.get('force')) and getattr(current_user, 'role', None) in ('Admin', 'Developer')
+            try:
+                assert_project_may_complete(
+                    project_id,
+                    force=force,
+                    RFI=RFI,
+                    ChangeOrder=ChangeOrder,
+                    Submittal=Submittal,
+                    PotentialChangeOrder=PotentialChangeOrder,
+                )
+            except ValueError as exc:
+                report = closeout_readiness(
+                    project_id,
+                    RFI=RFI,
+                    ChangeOrder=ChangeOrder,
+                    Submittal=Submittal,
+                    PotentialChangeOrder=PotentialChangeOrder,
+                )
+                return jsonify({'ok': False, 'error': str(exc), 'closeout': report}), 400
         project.status = status
         project.updated_at = datetime.utcnow()
         db.session.commit()
@@ -3859,6 +3880,23 @@ def update_project_status(project_id):
         except Exception:
             pass
     return jsonify({'ok': True, 'status': project.status})
+
+
+@app.route('/api/projects/<int:project_id>/closeout-readiness', methods=['GET'])
+@login_required
+def api_project_closeout_readiness(project_id):
+    from project_access import user_can_access_project
+    from project_closeout import closeout_readiness
+    if not user_can_access_project(current_user, project_id, Project):
+        return jsonify({'error': 'You do not have access to this project.'}), 403
+    report = closeout_readiness(
+        project_id,
+        RFI=RFI,
+        ChangeOrder=ChangeOrder,
+        Submittal=Submittal,
+        PotentialChangeOrder=PotentialChangeOrder,
+    )
+    return jsonify({'ok': True, 'closeout': report})
 
 
 @app.route('/projects/<int:project_id>')
@@ -16594,7 +16632,12 @@ def global_search():
 @app.route('/api/budget/state', methods=['GET'])
 @login_required
 def api_get_budget_state():
-    from budget_persistence import get_budget_state as load_state, save_budget_state, reconcile_budget_contract_from_project
+    from budget_persistence import (
+        get_budget_state as load_state,
+        save_budget_state,
+        reconcile_budget_contract_from_project,
+        summarize_change_orders_for_budget,
+    )
     from financial_security import require_financial_project_access
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
     if not project_id:
@@ -16615,13 +16658,20 @@ def api_get_budget_state():
         if contract_synced:
             record = save_budget_state(BudgetProjectState, db, project_id, data, current_user.id)
     if not record:
+        co_summary = summarize_change_orders_for_budget(
+            ChangeOrder, ChangeOrderAllocation, project_id,
+        )
         return jsonify({
             'project_id': project_id,
             'data': data if data else None,
             'version': 0,
             'project_contract_amount': project_amt,
             'contract_synced': contract_synced,
+            'change_order_summary': co_summary,
         })
+    co_summary = summarize_change_orders_for_budget(
+        ChangeOrder, ChangeOrderAllocation, project_id,
+    )
     return jsonify({
         'project_id': project_id,
         'data': data,
@@ -16629,6 +16679,7 @@ def api_get_budget_state():
         'updated_at': record.updated_at.isoformat() if record.updated_at else None,
         'project_contract_amount': project_amt,
         'contract_synced': contract_synced,
+        'change_order_summary': co_summary,
     })
 
 

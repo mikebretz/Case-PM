@@ -67,6 +67,7 @@ SUB_VENDOR_ALLOWED_MODULES = frozenset({
     'pay_applications_sub',
     'pay_applications_lien_waivers',
     'change_orders_rfq',
+    'submittals',
     'estimating',
     'internal_messages',
     'email',

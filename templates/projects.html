@@ -221,7 +221,7 @@
                         <span class="text-[10px] font-medium {{ sage.get('class', 'text-zinc-400') }}" title="{{ sage.get('detail', '') }}">{{ sage.get('label', '—') }}</span>
                     </td>
                     <td class="px-3 py-2 text-center">
-                        <select onchange="updateProjectStatus({{ project.id }}, this.value)"
+                        <select onfocus="this.dataset.prevStatus=this.value" onchange="updateProjectStatus({{ project.id }}, this.value)"
                                 onclick="event.stopPropagation()"
                                 class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-[11px] max-w-[110px]">
                             <option value="Pre-Construction" {% if project.status == 'Pre-Construction' %}selected{% endif %}>Pre-Con</option>
@@ -1596,12 +1596,44 @@ function filterProjects() {
 }
 
 async function updateProjectStatus(id, status) {
+    const complete = status === 'Completed' || status === 'Complete';
+    let forceComplete = false;
+    if (complete) {
+        try {
+            const pre = await fetch(`/api/projects/${id}/closeout-readiness`, { credentials: 'same-origin' });
+            const preJson = await pre.json().catch(() => ({}));
+            const c = preJson.closeout || {};
+            if (c.blocking && c.blocking.length) {
+                const msg = c.blocking.join('\n') + (c.warnings?.length ? '\n\nWarnings:\n' + c.warnings.join('\n') : '');
+                const proceed = typeof CasePMDialog !== 'undefined'
+                    ? await CasePMDialog.confirm(msg + '\n\nMark complete anyway?', { title: 'Closeout checklist', danger: true, confirmText: 'Complete anyway' })
+                    : confirm(msg + '\n\nComplete anyway?');
+                if (!proceed) {
+                    const sel = document.querySelector(`select[data-project-id="${id}"]`);
+                    if (sel) sel.value = sel.dataset.prevStatus || 'Active';
+                    return;
+                }
+                const role = (document.body.dataset.currentUserRole || '').trim();
+                if (role === 'Admin' || role === 'Developer' || document.body.dataset.isAdmin === '1' || document.body.dataset.isDeveloper === '1') {
+                    forceComplete = true;
+                }
+            }
+        } catch (e) {
+            console.warn('Closeout pre-check failed', e);
+        }
+    }
     try {
-        await fetch(`/projects/${id}/status`, {
+        const res = await fetch(`/projects/${id}/status`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status })
+            body: JSON.stringify({ status, ...(forceComplete ? { force: true } : {}) })
         });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            alert(json.error || 'Could not update project status.');
+            const sel = document.querySelector(`select[data-project-id="${id}"]`);
+            if (sel) sel.value = sel.dataset.prevStatus || 'Active';
+        }
     } catch (e) {
         console.warn('Status update failed', e);
     }

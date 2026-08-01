@@ -326,6 +326,8 @@ def register_estimate_routes(app, deps):
                 user_id=current_user.id,
                 use_bid_awards=bool(body.get('use_bid_awards')),
                 EstimateBudgetMapping=EstimateBudgetMapping,
+                Project=Project,
+                sync_contract_value=body.get('sync_contract_value', True),
             )
         except Exception as exc:
             db.session.rollback()

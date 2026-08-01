@@ -8,6 +8,7 @@ DEFAULT_COA = [
     ('1000', 'Cash — Operating', 'asset', 'debit'),
     ('1100', 'Accounts Receivable', 'asset', 'debit'),
     ('1200', 'Retainage Receivable', 'asset', 'debit'),
+    ('1150', 'Work in Progress — Construction', 'asset', 'debit'),
     ('1300', 'Costs in Excess of Billings', 'asset', 'debit'),
     ('1500', 'Inventory', 'asset', 'debit'),
     ('1700', 'Equipment', 'asset', 'debit'),
@@ -192,6 +193,7 @@ def seed_chart_of_accounts(db, AcctLedger, AcctGLAccount, ledger=None):
     ledger = ledger or get_or_create_default_ledger(db, AcctLedger)
     existing = AcctGLAccount.query.filter_by(ledger_id=ledger.id).count()
     if existing > 0:
+        ensure_missing_coa_accounts(db, AcctGLAccount, ledger.id)
         return ledger
     for num, desc, atype, normal in DEFAULT_COA:
         db.session.add(AcctGLAccount(
@@ -205,6 +207,30 @@ def seed_chart_of_accounts(db, AcctLedger, AcctGLAccount, ledger=None):
         ))
     db.session.flush()
     return ledger
+
+
+def ensure_missing_coa_accounts(db, AcctGLAccount, ledger_id):
+    """Backfill accounts added to DEFAULT_COA after initial seed (e.g. 1150 WIP)."""
+    have = {
+        a.account_number
+        for a in AcctGLAccount.query.filter_by(ledger_id=ledger_id).all()
+    }
+    added = False
+    for num, desc, atype, normal in DEFAULT_COA:
+        if num in have:
+            continue
+        db.session.add(AcctGLAccount(
+            ledger_id=ledger_id,
+            account_number=num,
+            description=desc,
+            account_type=atype,
+            normal_balance=normal,
+            is_posting=True,
+            status='Active',
+        ))
+        added = True
+    if added:
+        db.session.flush()
 
 
 def serialize_account(a):
