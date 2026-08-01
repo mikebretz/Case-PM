@@ -25,6 +25,8 @@ window.CASEPM_PLAN_ROOM_CTX = {
     </div>
   </header>
 
+  {% include 'partials/plan_room_share_links.html' %}
+
   <div id="prcNoProject" class="prc-banner prc-is-hidden">
     Select an active project in the header to configure the plan room for that job.
   </div>
@@ -114,5 +116,6 @@ window.CASEPM_PLAN_ROOM_CTX = {
     </section>
   </div>
 </div>
+<script src="{{ url_for('static', filename='js/plan-room-share-links.js') }}"></script>
 <script src="{{ url_for('static', filename='js/plan-room-console.js') }}"></script>
 {% endblock %}
