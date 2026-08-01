@@ -211,6 +211,8 @@
     await alert(`Added ${added} takeoff line(s) to worksheet.`, 'success');
     EST().setTab('worksheet');
   }
+
+  async function loadTakeoffLive() {
     const list = document.getElementById('estTakeoffLiveList');
     if (!estId()) return;
     const data = await apiJson(`/api/estimates/${estId()}/takeoff-live`);
