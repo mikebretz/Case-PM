@@ -121,6 +121,25 @@
   async function load() {
     feed = await api('/api/client-portal/feed');
     try {
+      const mw = await fetch('/api/my-work?limit=20', { credentials: 'same-origin' });
+      if (mw.ok) {
+        const q = await mw.json();
+        const extra = (q.items || []).filter((it) => it.kind === 'change_order' || it.kind === 'approval' || it.kind === 'pay_application');
+        const seen = new Set((feed.approvals || []).map((a) => a.id));
+        feed.approvals = [...(feed.approvals || [])];
+        extra.forEach((it) => {
+          const pseudo = {
+            id: it.id,
+            title: it.title,
+            item_type: it.kind,
+            status: 'Pending',
+            action_url: it.action_url,
+          };
+          if (!seen.has(pseudo.id)) feed.approvals.push(pseudo);
+        });
+      }
+    } catch (_) { /* optional */ }
+    try {
       const mk = await api('/api/marketing/client-portal');
       feed.marketing = mk;
     } catch (_) { /* optional */ }

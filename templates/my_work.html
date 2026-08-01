@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+<script>
+window.CASEPM_MY_WORK_CTX = {
+  projectId: {{ active_project.id if active_project else 'null' }},
+  projectScope: {{ 'project'|tojson }},
+};
+</script>
+<script src="{{ static_v('js/my-work-app.js') }}"></script>
+<style>
+.mw-page { display:flex; flex-direction:column; flex:1; min-height:0; padding:1rem; gap:1rem; }
+.mw-filters { display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center; }
+.mw-chip { padding:0.35rem 0.75rem; border-radius:9999px; font-size:0.75rem; border:1px solid #3f3f46; color:#a1a1aa; cursor:pointer; background:#18181b; }
+.mw-chip.active { background:#065f46; border-color:#10b981; color:#ecfdf5; }
+.mw-list { flex:1; min-height:0; overflow:auto; border:1px solid #3f3f46; border-radius:0.75rem; background:#18181b; }
+.mw-row { display:flex; gap:0.75rem; padding:0.85rem 1rem; border-bottom:1px solid #27272a; align-items:flex-start; }
+.mw-row:hover { background:#27272a; }
+.mw-kind { font-size:0.65rem; text-transform:uppercase; letter-spacing:0.06em; color:#71717a; }
+.mw-overdue { color:#f87171; font-size:0.65rem; font-weight:600; }
+</style>
+
+<div class="mw-page">
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold text-white">My work</h1>
+      <p class="text-sm text-zinc-400 mt-0.5">Everything waiting on you — RFIs, submittals, change orders, pay apps, and approvals in one place.</p>
+    </div>
+    <div class="mw-filters">
+      <button type="button" class="mw-chip active" data-scope="all">All projects</button>
+      <button type="button" class="mw-chip" data-scope="project">This project only</button>
+    </div>
+  </div>
+  <div id="mwCounts" class="text-xs text-zinc-500"></div>
+  <div id="mwList" class="mw-list text-sm">
+    <div class="p-8 text-center text-zinc-500">Loading…</div>
+  </div>
+</div>
+{% endblock %}

@@ -3138,6 +3138,29 @@ def dashboard():
     return render_template('dashboard.html', active_project=active)
 
 
+@app.route('/my-work')
+@login_required
+def my_work_page():
+    active = get_active_project()
+    return render_template('my_work.html', active_project=active)
+
+
+@app.route('/api/my-work', methods=['GET'])
+@login_required
+def api_my_work():
+    from work_queue_service import build_my_work_queue
+    project_id = request.args.get('project_id', type=int)
+    if project_id is None:
+        project_id = get_current_project_id()
+    limit = request.args.get('limit', type=int) or 50
+    payload = build_my_work_queue(
+        current_user,
+        project_id=project_id,
+        limit=limit,
+    )
+    return jsonify(payload)
+
+
 @app.route('/api/dashboard/summary', methods=['GET'])
 @login_required
 def api_dashboard_summary():

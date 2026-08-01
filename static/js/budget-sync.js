@@ -101,6 +101,9 @@
       data: fullReplace ? collectLocalBundle() : (patch || collectLocalBundle()),
     };
     if (!fullReplace && patch) body.patch = patch;
+    if (global.CasePMProjectGuard && !global.CasePMProjectGuard.assertProjectMatch(pid, 'budget-save')) {
+      return { ok: false, error: 'Project mismatch — switch to the correct project and save again.' };
+    }
     try {
       const res = await fetch('/api/budget/state', {
         method: 'PUT',

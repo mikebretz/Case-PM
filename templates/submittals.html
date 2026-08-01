@@ -808,6 +808,7 @@ function refreshSubmittalActionButtons() {
                 New Submittal
             </button>
             
+            <span class="flex flex-wrap items-center gap-3" data-casepm-advanced="1">
             <button id="submittalUploadSpecBookBtn" onclick="showUploadSpecBookModal()" 
                     class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-sm font-medium transition-colors">
                 <i class="fa-solid fa-file-pdf mr-2 text-red-400"></i>
@@ -836,12 +837,13 @@ function refreshSubmittalActionButtons() {
                     title="Program Settings > Spec Sections">
                 <i class="fa-solid fa-cog text-zinc-400"></i>
             </button>
+            </span>
             
         </div>
     </div>
 
     <!-- Summary Cards -->
-    <div id="submittalMetricsRow" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-3 flex-shrink-0">
+    <div id="submittalMetricsRow" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-3 flex-shrink-0" data-casepm-advanced="1">
         <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4">
             <div class="text-xs uppercase tracking-wider text-zinc-500">Total Submittals</div>
             <div id="metricTotal" class="text-3xl font-semibold text-white mt-1">0</div>

@@ -233,7 +233,7 @@
         </button>
     </div>
 
-    <div class="pay-app-toolbar-actions flex items-center gap-2 flex-wrap justify-start lg:justify-end">
+    <div class="pay-app-toolbar-actions flex items-center gap-2 flex-wrap justify-start lg:justify-end" data-casepm-advanced="1">
         <button onclick="exportPayApplications()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
             <i class="fa-solid fa-download"></i><span class="hidden sm:inline">Export</span>
         </button>
@@ -255,7 +255,7 @@
 <!-- TABS (clean, consistent with budget style) -->
 <div class="mt-4 flex border-b border-zinc-700 flex-shrink-0">
     <button onclick="switchPayAppTab('previous-payapps')" id="tab-previous-payapps"
-            class="tab-button px-6 py-2 text-sm font-medium text-zinc-400 hover:text-white">Previous Pay Applications</button>
+            class="tab-button px-6 py-2 text-sm font-medium text-zinc-400 hover:text-white" data-casepm-advanced="1">Previous Pay Applications</button>
 
     <button onclick="switchPayAppTab('payapp')" id="tab-payapp"
             class="tab-button px-6 py-2 text-sm font-medium border-b-3 border-emerald-500 text-white">Pay Application (G702)</button>
@@ -264,7 +264,7 @@
             class="tab-button px-6 py-2 text-sm font-medium text-zinc-400 hover:text-white">Contractor Schedule of Values (G703)</button>
     
     <button onclick="switchPayAppTab('sub-sov')" id="tab-sub-sov"
-            class="tab-button px-6 py-2 text-sm font-medium text-zinc-400 hover:text-white">Subcontractor Schedule of Values</button>
+            class="tab-button px-6 py-2 text-sm font-medium text-zinc-400 hover:text-white" data-casepm-advanced="1">Subcontractor Schedule of Values</button>
 
     <button onclick="switchPayAppTab('sub-pay-app-tracker')" id="tab-sub-pay-app-tracker"
             class="tab-button px-6 py-2 text-sm font-medium text-zinc-400 hover:text-white">Sub Pay App Tracker</button>

@@ -416,6 +416,7 @@
         }
 
     </style>
+    <link rel="stylesheet" href="{{ static_v('css/casepm-simple-view.css') }}">
     {% if current_user.is_authenticated and allowed_modules %}
     <style id="nav-module-perms">
         {% for mod, ok in allowed_modules.items() %}
@@ -433,6 +434,9 @@
     <script src="{{ static_v('js/casepm-money.js') }}"></script>
     <script src="{{ static_v('js/casepm-project-storage.js') }}"></script>
     {% if current_user.is_authenticated %}
+    <script src="{{ static_v('js/casepm-project-guard.js') }}"></script>
+    <script src="{{ static_v('js/casepm-simple-view.js') }}"></script>
+    <script src="{{ static_v('js/onboarding-wizard.js') }}"></script>
     <script src="{{ static_v('js/casepm-security.js') }}"></script>
     {% endif %}
     <script src="{{ static_v('js/doc-picker.js') }}"></script>
@@ -493,8 +497,9 @@
     <div id="appShell" class="flex flex-col h-full min-h-0 overflow-hidden">
 
     {% if is_sub_vendor_portal %}
-    <div class="portal-banner-sub-vendor hidden items-center px-5 py-1.5 bg-emerald-950/80 border-b border-emerald-700 text-xs text-emerald-200 flex-shrink-0">
+    <div class="portal-banner-sub-vendor hidden items-center justify-between px-5 py-1.5 bg-emerald-950/80 border-b border-emerald-700 text-xs text-emerald-200 flex-shrink-0">
         <span><i class="fa-solid fa-hard-hat mr-2"></i><strong>Subcontractor Portal</strong> — pay applications and project messages</span>
+        <a href="{{ url_for('my_work_page') }}" class="text-emerald-300 hover:underline font-medium">My work</a>
     </div>
     {% elif is_sub_portal %}
     <div class="portal-banner-sub hidden items-center justify-between px-5 py-1.5 bg-amber-950/80 border-b border-amber-800 text-xs text-amber-200 flex-shrink-0">
@@ -505,12 +510,16 @@
     {% if is_architect_portal %}
     <div class="portal-banner-architect hidden items-center justify-between px-5 py-1.5 bg-sky-950/80 border-b border-sky-800 text-xs text-sky-200 flex-shrink-0">
         <span><i class="fa-solid fa-compass-drafting mr-2"></i><strong>Architect Portal</strong> — review submittals, RFIs, and change orders</span>
+        <span class="flex items-center gap-3">
+        <a href="{{ url_for('my_work_page') }}" class="text-sky-300 hover:underline">My work</a>
         <a href="{{ url_for('email_page') }}?tab=internal" class="text-sky-400 hover:underline">Approvals inbox</a>
+        </span>
     </div>
     {% elif is_owner_portal %}
     <div class="portal-banner-owner hidden items-center justify-between px-5 py-2 bg-emerald-950/90 border-b border-emerald-800 text-xs text-emerald-100 flex-shrink-0">
         <span><i class="fa-solid fa-building-user mr-2"></i><strong>Owner Portal</strong> — project updates, documents, and items awaiting your approval</span>
         <a href="{{ url_for('client_portal_page', project_id=active_project.id) if active_project else url_for('client_portal_page') }}" class="text-emerald-300 hover:underline font-medium">Approvals hub</a>
+        <a href="{{ url_for('my_work_page') }}" class="text-emerald-400/90 hover:underline">My work</a>
     </div>
     {% endif %}
 
@@ -655,6 +664,11 @@
                 <a href="{{ url_for('dashboard') }}" data-nav-module="dashboard" class="nav-link nav-hide-sub-vendor flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'dashboard' %}active{% endif %}">
                     <i class="fa-solid fa-home w-5"></i>
                     <span>{% if is_owner_portal %}Overview{% else %}Dashboard{% endif %}</span>
+                </a>
+
+                <a href="{{ url_for('my_work_page') }}" data-nav-module="dashboard" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'my_work_page' %}active{% endif %}">
+                    <i class="fa-solid fa-list-check w-5 text-emerald-400"></i>
+                    <span>My work</span>
                 </a>
 
                 {% if is_owner_portal %}

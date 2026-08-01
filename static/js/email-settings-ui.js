@@ -446,7 +446,10 @@
   }
 
   function connectGoogle() {
-    if (global.CasePMDialog) global.CasePMDialog.alert('Google Gmail OAuth is planned for a future release. Use IMAP/SMTP credentials below or connect Microsoft Outlook.', 'info');
+    if (global.CasePMDialog) global.CasePMDialog.alert(
+      'Google Gmail sign-in is not available yet. Connect Microsoft Outlook, or enter IMAP/SMTP credentials below. Your admin can document Gmail as IMAP in Program Settings → Email.',
+      'info',
+    );
     else alert('Google Gmail OAuth is planned for a future release.');
   }
 

@@ -55,6 +55,7 @@ def _exclude_hidden_audit_modules(query, AuditLog):
 
 ENDPOINT_TO_MODULE = {
     'dashboard': 'dashboard',
+    'my_work_page': 'dashboard',
     'projects_page': 'projects',
     'project_detail': 'projects',
     'project_directory_page': 'project_directory',
