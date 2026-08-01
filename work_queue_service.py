@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 from datetime import date, datetime
 
+from sqlalchemy import or_
+
 PENDING_CO_STATUSES = (
     'Submitted', 'Under Review', 'Pending', 'Pending PM',
     'Pending Owner', 'Pending Architect', 'Pending Accounting',
@@ -26,6 +28,21 @@ def _iso(dt):
     if isinstance(dt, date):
         return dt.isoformat()
     return str(dt)
+
+
+def _as_date(value):
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and len(value) >= 10:
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    return None
 
 
 def _sort_key(item: dict) -> tuple:
@@ -94,9 +111,12 @@ def build_my_work_queue(
     scope_ids = _project_ids_for_user(user, Project)
     if project_id:
         pid = int(project_id)
-        if scope_ids is not None and pid not in scope_ids:
+        # Explicit project filter from UI/API — allow even when membership set is empty.
+        if scope_ids is not None and len(scope_ids) > 0 and pid not in scope_ids:
             return {'ok': True, 'items': [], 'counts': {}, 'project_id': pid}
         scope_ids = {pid}
+
+    project_names: dict[int, str] = {}
 
     try:
         from co_persistence import user_can_act_on_ball_in_court
@@ -114,16 +134,26 @@ def build_my_work_queue(
     def add_item(**kwargs):
         items.append(kwargs)
 
-    # --- Internal messages ---
+    def project_name(pid) -> str:
+        if not pid:
+            return ''
+        key = int(pid)
+        if key not in project_names:
+            project_names[key] = _project_name(Project, key)
+        return project_names[key]
+
+    # --- Internal messages (indexed filter — avoid full mailbox scan) ---
     if InternalMessage is not None and uid:
-        msg_q = InternalMessage.query.filter_by(user_id=uid, archived=False)
+        msg_q = InternalMessage.query.filter(
+            InternalMessage.user_id == uid,
+            InternalMessage.archived.is_(False),
+            or_(InternalMessage.requires_action.is_(True), InternalMessage.is_read.is_(False)),
+        )
         if scope_ids is not None:
             msg_q = msg_q.filter(
                 (InternalMessage.project_id.in_(list(scope_ids))) | (InternalMessage.project_id.is_(None))
             )
         for m in msg_q.order_by(InternalMessage.created_at.desc()).limit(30).all():
-            if not m.requires_action and m.is_read:
-                continue
             add_item(
                 kind='message',
                 source='internal',
@@ -131,7 +161,7 @@ def build_my_work_queue(
                 title=m.subject or 'Message',
                 subtitle=m.module or m.preview or '',
                 project_id=m.project_id,
-                project_name=_project_name(Project, m.project_id),
+                project_name=project_name(m.project_id),
                 priority='high' if m.requires_action else 'normal',
                 overdue=False,
                 due_date='',
@@ -156,7 +186,7 @@ def build_my_work_queue(
                 title=a.title or 'Approval required',
                 subtitle=mod.replace('_', ' ').title(),
                 project_id=a.project_id,
-                project_name=_project_name(Project, a.project_id),
+                project_name=project_name(a.project_id),
                 priority='high',
                 overdue=False,
                 due_date='',
@@ -176,7 +206,7 @@ def build_my_work_queue(
             role_act = user_can_act_on_ball_in_court(user, ball_role) if ball_role else False
             if not assigned and not role_act:
                 continue
-            due = getattr(rfi, 'due_date', None)
+            due = _as_date(getattr(rfi, 'due_date', None))
             overdue = bool(due and due < today and rfi.status in OPEN_RFI_STATUSES)
             pid = rfi.project_id
             add_item(
@@ -186,7 +216,7 @@ def build_my_work_queue(
                 title=f'RFI {rfi.number}: {rfi.subject or ""}'.strip(),
                 subtitle=rfi.status or '',
                 project_id=pid,
-                project_name=_project_name(Project, pid),
+                project_name=project_name(pid),
                 priority='high' if overdue else 'normal',
                 overdue=overdue,
                 due_date=_iso(due)[:10] if due else '',
@@ -217,7 +247,7 @@ def build_my_work_queue(
                 title=f'Submittal {sub.number or sub.id}: {(sub.description or "")[:80]}'.strip(),
                 subtitle=sub.status or '',
                 project_id=pid,
-                project_name=_project_name(Project, pid),
+                project_name=project_name(pid),
                 priority='normal',
                 overdue=False,
                 due_date='',
@@ -242,7 +272,7 @@ def build_my_work_queue(
                 title=f'{co.number}: {co.title or co.description or "Change order"}'[:120],
                 subtitle=f'{co.status} · Ball: {ball}',
                 project_id=pid,
-                project_name=_project_name(Project, pid),
+                project_name=project_name(pid),
                 priority='high',
                 overdue=False,
                 due_date='',
@@ -269,7 +299,7 @@ def build_my_work_queue(
                 title=f'PCO {pco.number or pco.id}: {pco.title or pco.description or ""}'[:120],
                 subtitle=f'{pco.status} · Ball: {ball}',
                 project_id=pid,
-                project_name=_project_name(Project, pid),
+                project_name=project_name(pid),
                 priority='normal',
                 overdue=False,
                 due_date='',
@@ -306,7 +336,7 @@ def build_my_work_queue(
                     title=f'Pay App period {period_num} — {st}',
                     subtitle='G702 / G703 workflow',
                     project_id=pid,
-                    project_name=_project_name(Project, pid),
+                    project_name=project_name(pid),
                     priority='high' if st in ('Pending Owner', 'Pending Accounting') else 'normal',
                     overdue=False,
                     due_date='',

@@ -32,6 +32,18 @@ def test_build_my_work_queue_smoke() -> None:
     assert isinstance(out['items'], list)
 
 
+def test_build_my_work_queue_explicit_project_when_membership_empty() -> None:
+    """User with no membership rows can still load queue for active project_id."""
+    import app as app_module
+    from work_queue_service import build_my_work_queue
+
+    user = _User('Project Manager')
+    with app_module.app.app_context():
+        out = build_my_work_queue(user, project_id=1, limit=5)
+    assert out.get('ok') is True
+    assert out.get('project_id') == 1
+
+
 def main() -> int:
     test_build_my_work_queue_smoke()
     print('test_work_queue: OK')
