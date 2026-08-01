@@ -173,6 +173,13 @@
     return typeof CasePMDeveloperUnlock !== 'undefined' && CasePMDeveloperUnlock.isActive();
   }
 
+  function isDeveloper() {
+    if (global.CASEPM_IS_DEVELOPER) return true;
+    if (document.body?.dataset?.isDeveloper === '1') return true;
+    const p = global.CASEPM_PORTAL || {};
+    return p.role === 'Developer';
+  }
+
   function currentUserName() {
     if (global.CASEPM_PORTAL && global.CASEPM_PORTAL.userName) return global.CASEPM_PORTAL.userName;
     return 'User';
@@ -1072,7 +1079,6 @@
   }
 
   function openApprovalModal(coId, intent) {
-    closeDrawer();
     const co = state.changeOrders.find(c => c.id === coId) || (state.drawerRecord?.id === coId ? state.drawerRecord : null);
     if (!co) return;
     const allocCheck = validateAllocations(co.allocations || [], {
@@ -1191,7 +1197,7 @@
       }
       if (state.drawerRecord && state.drawerRecord.id === id && json.change_order) {
         state.drawerRecord = json.change_order;
-        renderDrawerCo(json.change_order);
+        renderDetailCo(json.change_order);
       }
       const applied = json.sync_result?.sov_amount_applied;
       const msg = json.final_approved
@@ -1203,18 +1209,157 @@
     }
   }
 
-  function openDrawer() {
-    document.getElementById('coDetailDrawer')?.classList.add('open');
-    const backdrop = document.getElementById('coDrawerBackdrop');
-    if (backdrop) backdrop.classList.remove('hidden');
+  function openDetailView(opts = {}) {
+    const chrome = document.getElementById('coChrome');
+    const detail = document.getElementById('coDetailView');
+    if (chrome) chrome.classList.add('hidden');
+    if (detail) detail.classList.add('is-open');
+    document.body.classList.add('co-detail-active');
+    const showComments = opts.showComments !== false && state.drawerType !== 'ce';
+    const chatCol = document.getElementById('coReviewChatCol');
+    if (chatCol) chatCol.classList.toggle('hidden', !showComments);
+    const clearBtn = document.getElementById('coClearCommentsDevBtn');
+    if (clearBtn) clearBtn.classList.toggle('hidden', !showComments || !isDeveloper());
+    if (showComments) {
+      bindCoCommentInput();
+      loadDetailComments();
+    } else {
+      renderCoReviewComments([]);
+    }
+  }
+
+  function closeDetail() {
+    const chrome = document.getElementById('coChrome');
+    const detail = document.getElementById('coDetailView');
+    if (detail) detail.classList.remove('is-open');
+    if (chrome) chrome.classList.remove('hidden');
+    document.body.classList.remove('co-detail-active');
+    state.drawerRecord = null;
+    state.drawerType = null;
   }
 
   function closeDrawer() {
-    document.getElementById('coDetailDrawer')?.classList.remove('open');
-    const backdrop = document.getElementById('coDrawerBackdrop');
-    if (backdrop) backdrop.classList.add('hidden');
-    state.drawerRecord = null;
-    state.drawerType = null;
+    closeDetail();
+  }
+
+  function commentsApiBase() {
+    const r = state.drawerRecord;
+    if (!r?.id) return null;
+    if (state.drawerType === 'pco') return `/api/pcos/${r.id}/comments`;
+    if (state.drawerType === 'co') return `/api/change-orders/${r.id}/comments`;
+    return null;
+  }
+
+  function renderCoReviewComments(comments) {
+    const el = document.getElementById('coReviewCommentsList');
+    if (!el) return;
+    const list = comments || [];
+    const dev = isDeveloper();
+    if (!list.length) {
+      el.innerHTML = '<p class="text-sm text-zinc-500">No comments yet. Ask a question or add a note for the team.</p>';
+      return;
+    }
+    el.innerHTML = list.map(c => `
+      <div class="review-comment-entry">
+        <div class="flex justify-between items-start gap-2 text-xs text-zinc-500 mb-1">
+          <span>${esc(c.user_name || 'User')}${c.user_role ? ` · ${esc(c.user_role)}` : ''}</span>
+          <span class="flex items-center gap-2 flex-shrink-0">
+            <span>${esc((c.created_at || '').replace('T', ' ').slice(0, 16))}</span>
+            ${dev && c.id != null ? `<button type="button" onclick="CasePMChangeOrders.deleteCommentDev(${Number(c.id)})" class="text-red-400 hover:text-red-300 p-0.5" title="Delete comment"><i class="fa-solid fa-trash-can text-[10px]"></i></button>` : ''}
+          </span>
+        </div>
+        <div class="whitespace-pre-wrap text-zinc-200">${esc(c.body || '')}</div>
+      </div>
+    `).join('');
+    el.scrollTop = el.scrollHeight;
+  }
+
+  async function loadDetailComments() {
+    const base = commentsApiBase();
+    const r = state.drawerRecord;
+    if (!base || !r?.id) {
+      renderCoReviewComments(r?.comments || []);
+      return;
+    }
+    try {
+      const json = await api(base);
+      const comments = json.comments || [];
+      r.comments = comments;
+      renderCoReviewComments(comments);
+    } catch (e) {
+      renderCoReviewComments(r?.comments || []);
+    }
+  }
+
+  function bindCoCommentInput() {
+    const input = document.getElementById('coReviewCommentInput');
+    if (!input || input.dataset.enterBound) return;
+    input.dataset.enterBound = '1';
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        postComment();
+      }
+    });
+  }
+
+  async function postComment() {
+    const r = state.drawerRecord;
+    const base = commentsApiBase();
+    if (!r?.id || !base) return;
+    const input = document.getElementById('coReviewCommentInput');
+    const body = (input?.value || '').trim();
+    if (!body) return;
+    try {
+      const json = await api(base, { method: 'POST', body: JSON.stringify({ body }) });
+      if (input) input.value = '';
+      const comments = json.comments || [];
+      r.comments = comments;
+      renderCoReviewComments(comments);
+    } catch (e) { alert(e.message); }
+  }
+
+  async function clearCommentsDev() {
+    const base = commentsApiBase();
+    const r = state.drawerRecord;
+    if (!r?.id || !base) return;
+    const ok = typeof CasePMDialog !== 'undefined'
+      ? await CasePMDialog.confirm('Clear all review comments?', { title: 'Clear Comments', danger: true, confirmText: 'Clear' })
+      : confirm('Clear all review comments?');
+    if (!ok) return;
+    try {
+      const json = await api(base, { method: 'DELETE' });
+      r.comments = json.comments || [];
+      renderCoReviewComments(r.comments);
+      toast('Review comments cleared');
+    } catch (e) { alert(e.message); }
+  }
+
+  async function deleteCommentDev(commentId) {
+    const base = commentsApiBase();
+    const r = state.drawerRecord;
+    if (!r?.id || !base || commentId == null) return;
+    const ok = typeof CasePMDialog !== 'undefined'
+      ? await CasePMDialog.confirm('Delete this comment?', { title: 'Delete Comment', danger: true, confirmText: 'Delete' })
+      : confirm('Delete this comment?');
+    if (!ok) return;
+    try {
+      const json = await api(`${base}/${commentId}`, { method: 'DELETE' });
+      r.comments = json.comments || [];
+      renderCoReviewComments(r.comments);
+      toast('Comment deleted');
+    } catch (e) { alert(e.message); }
+  }
+
+  function openExternalDetail(meta) {
+    state.drawerType = 'ce';
+    state.drawerRecord = { id: meta.id, title: meta.title, number: meta.number };
+    document.getElementById('coDetailNumber').textContent = meta.number || '';
+    document.getElementById('coDetailTitle').textContent = meta.title || '';
+    document.getElementById('coDetailBadges').innerHTML = meta.badgesHtml || '';
+    document.getElementById('coDetailHeaderActions').innerHTML = meta.headerActionsHtml || '';
+    document.getElementById('coDetailContent').innerHTML = meta.bodyHtml || '';
+    openDetailView({ showComments: false });
   }
 
   function linkedRfiLabel(rfiId) {
@@ -1223,8 +1368,9 @@
     return r ? `${r.number} — ${r.subject || ''}` : `RFI #${rfiId}`;
   }
 
-  function renderDrawerCo(co) {
-    document.getElementById('drawerTitle').textContent = `${co.number} — ${co.title || 'Change Order'}`;
+  function renderDetailCo(co) {
+    state.drawerType = 'co';
+    state.drawerRecord = co;
     const showSubmit = co.status === 'Draft';
     const showApprove = (isSubCo(co) ? subCoApproveStatuses() : ['Submitted', 'Pending Architect', 'Pending Owner', 'Pending Accounting']).includes(co.status) && canActOnBall(co.ball_in_court_role);
     const approveLabel = co.status === 'Pending Owner' ? 'Review & Final Approve' : 'Review & Respond';
@@ -1276,28 +1422,24 @@
         <div class="text-xs text-zinc-500 uppercase tracking-wide mb-2">Attachments</div>
         <p>${atts}</p>
       </div>`;
-    document.getElementById('drawerBody').innerHTML = reviewBanner + bodyHtml;
-    document.getElementById('drawerActions').innerHTML = `
-      <div class="flex flex-col gap-2 w-full sm:flex-row sm:items-center sm:flex-wrap">
-        <select id="coPrintTemplateSelect" onchange="CasePMChangeOrders.selectPrintTemplate(parseInt(this.value,10))" class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm min-w-[180px]"></select>
-        <button type="button" onclick="CasePMChangeOrders.printDetailWithTemplate(${co.id})" class="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-md text-sm"><i class="fa-solid fa-file-pdf mr-1"></i> Print CO Form</button>
-        <button type="button" onclick="CasePMChangeOrders.printDetailStandard(${co.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm"><i class="fa-solid fa-print mr-1"></i> Standard Print</button>
-      </div>
-      <div class="flex flex-wrap gap-2 w-full mt-2">
-      ${showSubmit ? `<button type="button" onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit for Approval</button>` : ''}
+    document.getElementById('coDetailNumber').textContent = co.number || '';
+    document.getElementById('coDetailTitle').textContent = co.title || co.description || 'Change Order';
+    document.getElementById('coDetailBadges').innerHTML = `${statusBadge(co.status)} ${ballBadge(co.ball_in_court_role)}`;
+    document.getElementById('coDetailContent').innerHTML = reviewBanner + bodyHtml;
+    document.getElementById('coDetailHeaderActions').innerHTML = `
+      <select id="coPrintTemplateSelect" onchange="CasePMChangeOrders.selectPrintTemplate(parseInt(this.value,10))" class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm min-w-[140px]"></select>
+      <button type="button" onclick="CasePMChangeOrders.printDetailWithTemplate(${co.id})" class="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-md text-sm font-semibold"><i class="fa-solid fa-file-pdf mr-1"></i> Print Form</button>
+      <button type="button" onclick="CasePMChangeOrders.printDetailStandard(${co.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm"><i class="fa-solid fa-print mr-1"></i> Print</button>
+      ${showSubmit ? `<button type="button" onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-semibold">Submit</button>` : ''}
       ${canApprove() ? `<button type="button" onclick="CasePMChangeOrders.${isSubCo(co) ? 'editSubCo' : 'editCo'}(${co.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
-      <button type="button" onclick="CasePMChangeOrders.deleteCo(${co.id})" class="px-4 py-2 bg-red-950 hover:bg-red-900 border border-red-800 rounded-md text-sm text-red-300">Delete</button>` : ''}
-      <button type="button" onclick="CasePMChangeOrders.closeDrawer()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm text-zinc-400">Close</button></div>`;
+      <button type="button" onclick="CasePMChangeOrders.deleteCo(${co.id})" class="px-4 py-2 bg-red-950 hover:bg-red-900 border border-red-800 rounded-md text-sm text-red-300">Delete</button>` : ''}`;
     populateTemplateSelectors();
-    if (showApprove) {
-      openApprovalModal(co.id, 'approve');
-      return;
-    }
-    openDrawer();
+    openDetailView({ showComments: true });
   }
 
-  function renderDrawerPco(p) {
-    document.getElementById('drawerTitle').textContent = `${p.number} — ${p.title || 'PCO'}`;
+  function renderDetailPco(p) {
+    state.drawerType = 'pco';
+    state.drawerRecord = p;
     const showApprove = ['Pricing', 'Pending Review'].includes(p.status) && canActOnBall(p.ball_in_court_role);
     const reviewBanner = showApprove ? `
       <div class="mb-6 p-4 rounded-lg bg-emerald-950/50 border-2 border-emerald-600 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1332,25 +1474,30 @@
         <div class="text-xs text-zinc-500 uppercase tracking-wide mb-2">Attachments</div>
         <p class="text-xs">${atts}</p>
         <label class="mt-2 inline-flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
-          <input type="file" id="pcoDrawerAttachmentInput" class="text-xs file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-zinc-700 file:text-white" onchange="CasePMChangeOrders.uploadPcoDrawerAttachment(${p.id})">
+          <input type="file" id="pcoDetailAttachmentInput" class="text-xs file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-zinc-700 file:text-white" onchange="CasePMChangeOrders.uploadPcoDrawerAttachment(${p.id})">
           Upload file
         </label>
       </div>`;
-    document.getElementById('drawerBody').innerHTML = reviewBanner + bodyHtml;
-    document.getElementById('drawerActions').innerHTML = `
-      ${p.status === 'Open' ? `<button type="button" onclick="CasePMChangeOrders.pcoWorkflow(${p.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit</button>` : ''}
-      ${p.status !== 'Promoted' && p.status !== 'Void' ? `<button type="button" onclick="CasePMChangeOrders.promotePco(${p.id})" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Promote to CO</button>` : ''}
-      <button type="button" onclick="CasePMChangeOrders.editPco(${p.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
-      <button type="button" onclick="CasePMChangeOrders.closeDrawer()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm text-zinc-400">Close</button>`;
-    if (showApprove) {
-      openPcoReviewModal(p.id);
-      return;
-    }
-    openDrawer();
+    document.getElementById('coDetailNumber').textContent = p.number || '';
+    document.getElementById('coDetailTitle').textContent = p.title || 'PCO';
+    document.getElementById('coDetailBadges').innerHTML = `${statusBadge(p.status)} ${ballBadge(p.ball_in_court_role)}`;
+    document.getElementById('coDetailContent').innerHTML = reviewBanner + bodyHtml;
+    document.getElementById('coDetailHeaderActions').innerHTML = `
+      ${p.status === 'Open' ? `<button type="button" onclick="CasePMChangeOrders.pcoWorkflow(${p.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-semibold">Submit</button>` : ''}
+      ${p.status !== 'Promoted' && p.status !== 'Void' ? `<button type="button" onclick="CasePMChangeOrders.promotePco(${p.id})" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Promote to CO</button>` : ''}
+      <button type="button" onclick="CasePMChangeOrders.editPco(${p.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>`;
+    openDetailView({ showComments: true });
+  }
+
+  function renderDrawerCo(co) {
+    renderDetailCo(co);
+  }
+
+  function renderDrawerPco(p) {
+    renderDetailPco(p);
   }
 
   function openPcoReviewModal(pcoId) {
-    closeDrawer();
     const p = state.pcos.find(x => x.id === pcoId) || (state.drawerRecord?.id === pcoId ? state.drawerRecord : null);
     if (!p) return;
     if (typeof global.CasePMApprovalResponder === 'undefined') {
@@ -1384,7 +1531,8 @@
           await api(`/api/pcos/${pcoId}/workflow`, { method: 'POST', body: JSON.stringify({ action }) });
         }
         await loadPcos();
-        closeDrawer();
+        if (state.drawerRecord?.id === pcoId) await viewPco(pcoId);
+        else closeDrawer();
       },
     });
   }
@@ -1398,6 +1546,7 @@
       await api(`/api/pcos/${id}/workflow`, { method: 'POST', body: JSON.stringify({ action }) });
     }
     await loadPcos();
+    if (state.drawerRecord?.id === id && state.drawerType === 'pco') await viewPco(id);
     toast(`PCO ${action} complete`);
   }
 
@@ -1411,7 +1560,7 @@
   }
 
   async function uploadPcoDrawerAttachment(pcoId) {
-    const input = document.getElementById('pcoDrawerAttachmentInput');
+    const input = document.getElementById('pcoDetailAttachmentInput');
     if (!input?.files?.length) return;
     try {
       for (const file of input.files) {
@@ -1446,20 +1595,10 @@
   }
 
   async function openCoItem(id) {
-    const cached = state.changeOrders.find(c => c.id === id);
-    if (cached && coNeedsReview(cached)) {
-      openApprovalModal(id, 'approve');
-      return;
-    }
     await viewCo(id);
   }
 
   async function openPcoItem(id) {
-    const cached = state.pcos.find(p => p.id === id);
-    if (cached && pcoNeedsReview(cached)) {
-      openPcoReviewModal(id);
-      return;
-    }
     await viewPco(id);
   }
 
@@ -1467,12 +1606,7 @@
     try {
       const co = await api(`/api/change-orders/${id}`);
       state.drawerRecord = co;
-      state.drawerType = 'co';
-      if (coNeedsReview(co)) {
-        openApprovalModal(id, 'approve');
-        return;
-      }
-      renderDrawerCo(co);
+      renderDetailCo(co);
     } catch (err) {
       alert(err.message);
     }
@@ -1482,12 +1616,7 @@
     try {
       const p = await api(`/api/pcos/${id}`);
       state.drawerRecord = p;
-      state.drawerType = 'pco';
-      if (pcoNeedsReview(p)) {
-        openPcoReviewModal(id);
-        return;
-      }
-      renderDrawerPco(p);
+      renderDetailPco(p);
     } catch (err) {
       alert(err.message);
     }
@@ -2295,7 +2424,8 @@
     editCo: id => api(`/api/change-orders/${id}`).then(openModal.bind(null, 'co')).catch(e => alert(e.message)),
     editPco: id => api(`/api/pcos/${id}`).then(openModal.bind(null, 'pco')).catch(e => alert(e.message)),
     viewCo, viewPco, openCoItem, openPcoItem, workflowCo, pcoWorkflow, openPcoReviewModal,
-    applyCoSync, resyncSov, openApprovalModal, confirmApprovalAction, closeDrawer, promotePco, deleteCo,
+    applyCoSync, resyncSov, openApprovalModal, confirmApprovalAction, closeDrawer, closeDetail, openExternalDetail,
+    postComment, clearCommentsDev, deleteCommentDev, promotePco, deleteCo,
     uploadPcoAttachment, uploadPcoDrawerAttachment,
     addAllocRow: () => { state.allocationRows.push({ cost_code: '', cost_type: '', amount: 0, description: '' }); renderAllocationRows(); },
     removeAllocRow: idx => { state.allocationRows.splice(idx, 1); renderAllocationRows(); },

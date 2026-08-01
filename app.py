@@ -1271,6 +1271,7 @@ class ChangeOrder(db.Model):
     approval_stage = db.Column(db.Integer, default=0)
     plan_pins_json = db.Column(db.Text)
     approval_history_json = db.Column(db.Text)
+    comments_json = db.Column(db.Text)
     approval_signatures_json = db.Column(db.Text)
     executed_locked = db.Column(db.Boolean, default=False)
     linked_owner_co_id = db.Column(db.Integer, db.ForeignKey('change_order.id'), nullable=True)
@@ -1335,6 +1336,7 @@ class PotentialChangeOrder(db.Model):
     linked_rfi_id = db.Column(db.Integer, db.ForeignKey('rfi.id'), nullable=True)
     linked_commitment_ref = db.Column(db.String(80))
     attachments_json = db.Column(db.Text)
+    comments_json = db.Column(db.Text)
     change_event_id = db.Column(db.Integer, nullable=True)
     contract_type = db.Column(db.String(40), default='Owner')
     source_rfq_id = db.Column(db.Integer, nullable=True)
@@ -17881,6 +17883,93 @@ def api_change_order_workflow(co_id):
     })
 
 
+@app.route('/api/change-orders/<int:co_id>/comments', methods=['GET'])
+@login_required
+def api_co_list_comments(co_id):
+    from co_persistence import _parse_json
+    from financial_security import require_financial_project_access
+    co = ChangeOrder.query.get_or_404(co_id)
+    try:
+        require_financial_project_access(current_user, co.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    comments = _parse_json(getattr(co, 'comments_json', None), [])
+    return jsonify({'ok': True, 'comments': comments})
+
+
+@app.route('/api/change-orders/<int:co_id>/comments', methods=['POST'])
+@login_required
+def api_co_add_comment(co_id):
+    from co_persistence import _parse_json, add_co_review_comment
+    from financial_security import require_financial_project_access
+    co = ChangeOrder.query.get_or_404(co_id)
+    try:
+        require_financial_project_access(current_user, co.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    body = request.get_json(silent=True) or {}
+    actor_name = _user_display_name(current_user.id)
+    try:
+        entry = add_co_review_comment(
+            co,
+            body,
+            current_user.id,
+            actor_name,
+            user_role=getattr(current_user, 'role', None),
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    db.session.commit()
+    return jsonify({'ok': True, 'comment': entry, 'comments': _parse_json(co.comments_json, [])})
+
+
+@app.route('/api/change-orders/<int:co_id>/comments', methods=['DELETE'])
+@login_required
+def api_co_clear_comments(co_id):
+    from co_persistence import _parse_json, clear_co_review_comments
+    from financial_security import require_financial_project_access
+    try:
+        from developer_tools import is_developer
+        if not is_developer(current_user) and getattr(current_user, 'role', None) != 'Admin':
+            return jsonify({'error': 'Developer access required'}), 403
+    except Exception:
+        if getattr(current_user, 'role', None) != 'Admin':
+            return jsonify({'error': 'Developer access required'}), 403
+    co = ChangeOrder.query.get_or_404(co_id)
+    try:
+        require_financial_project_access(current_user, co.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    clear_co_review_comments(co)
+    db.session.commit()
+    return jsonify({'ok': True, 'comments': _parse_json(co.comments_json, [])})
+
+
+@app.route('/api/change-orders/<int:co_id>/comments/<int:comment_id>', methods=['DELETE'])
+@login_required
+def api_co_delete_comment(co_id, comment_id):
+    from co_persistence import _parse_json, delete_co_review_comment
+    from financial_security import require_financial_project_access
+    try:
+        from developer_tools import is_developer
+        if not is_developer(current_user) and getattr(current_user, 'role', None) != 'Admin':
+            return jsonify({'error': 'Developer access required'}), 403
+    except Exception:
+        if getattr(current_user, 'role', None) != 'Admin':
+            return jsonify({'error': 'Developer access required'}), 403
+    co = ChangeOrder.query.get_or_404(co_id)
+    try:
+        require_financial_project_access(current_user, co.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    try:
+        delete_co_review_comment(co, comment_id)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    db.session.commit()
+    return jsonify({'ok': True, 'comments': _parse_json(co.comments_json, [])})
+
+
 @app.route('/api/change-orders/<int:co_id>/attachments', methods=['POST'])
 @login_required
 def api_upload_co_attachment(co_id):
@@ -18291,6 +18380,93 @@ def api_get_pco(pco_id):
         return jsonify({'error': str(exc)}), 403
     allocs = PCOAllocation.query.filter_by(pco_id=pco.id).all()
     return jsonify(pco_to_dict(pco, allocs))
+
+
+@app.route('/api/pcos/<int:pco_id>/comments', methods=['GET'])
+@login_required
+def api_pco_list_comments(pco_id):
+    from co_persistence import _parse_json
+    from financial_security import require_financial_project_access
+    pco = PotentialChangeOrder.query.get_or_404(pco_id)
+    try:
+        require_financial_project_access(current_user, pco.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    comments = _parse_json(getattr(pco, 'comments_json', None), [])
+    return jsonify({'ok': True, 'comments': comments})
+
+
+@app.route('/api/pcos/<int:pco_id>/comments', methods=['POST'])
+@login_required
+def api_pco_add_comment(pco_id):
+    from co_persistence import _parse_json, add_co_review_comment
+    from financial_security import require_financial_project_access
+    pco = PotentialChangeOrder.query.get_or_404(pco_id)
+    try:
+        require_financial_project_access(current_user, pco.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    body = request.get_json(silent=True) or {}
+    actor_name = _user_display_name(current_user.id)
+    try:
+        entry = add_co_review_comment(
+            pco,
+            body,
+            current_user.id,
+            actor_name,
+            user_role=getattr(current_user, 'role', None),
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    db.session.commit()
+    return jsonify({'ok': True, 'comment': entry, 'comments': _parse_json(pco.comments_json, [])})
+
+
+@app.route('/api/pcos/<int:pco_id>/comments', methods=['DELETE'])
+@login_required
+def api_pco_clear_comments(pco_id):
+    from co_persistence import _parse_json, clear_co_review_comments
+    from financial_security import require_financial_project_access
+    try:
+        from developer_tools import is_developer
+        if not is_developer(current_user) and getattr(current_user, 'role', None) != 'Admin':
+            return jsonify({'error': 'Developer access required'}), 403
+    except Exception:
+        if getattr(current_user, 'role', None) != 'Admin':
+            return jsonify({'error': 'Developer access required'}), 403
+    pco = PotentialChangeOrder.query.get_or_404(pco_id)
+    try:
+        require_financial_project_access(current_user, pco.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    clear_co_review_comments(pco)
+    db.session.commit()
+    return jsonify({'ok': True, 'comments': _parse_json(pco.comments_json, [])})
+
+
+@app.route('/api/pcos/<int:pco_id>/comments/<int:comment_id>', methods=['DELETE'])
+@login_required
+def api_pco_delete_comment(pco_id, comment_id):
+    from co_persistence import _parse_json, delete_co_review_comment
+    from financial_security import require_financial_project_access
+    try:
+        from developer_tools import is_developer
+        if not is_developer(current_user) and getattr(current_user, 'role', None) != 'Admin':
+            return jsonify({'error': 'Developer access required'}), 403
+    except Exception:
+        if getattr(current_user, 'role', None) != 'Admin':
+            return jsonify({'error': 'Developer access required'}), 403
+    pco = PotentialChangeOrder.query.get_or_404(pco_id)
+    try:
+        require_financial_project_access(current_user, pco.project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    try:
+        delete_co_review_comment(pco, comment_id)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    db.session.commit()
+    return jsonify({'ok': True, 'comments': _parse_json(pco.comments_json, [])})
 
 
 @app.route('/api/pcos', methods=['POST'])
