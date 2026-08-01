@@ -454,10 +454,13 @@ def register_marketing_routes(app, deps):
             'id': r.id, 'category': r.category, 'title': r.title, 'body_html': r.body_html,
         } for r in rows]})
 
-    @app.route('/api/marketing/proposals', methods=['POST'])
+    @app.route('/api/marketing/proposals', methods=['GET', 'POST'])
     @login_required
-    def api_marketing_proposals_create():
-        from marketing_pillars import build_proposal_from_estimate
+    def api_marketing_proposals():
+        from marketing_pillars import build_proposal_from_estimate, proposal_to_dict
+        if request.method == 'GET':
+            rows = MarketingProposal.query.order_by(MarketingProposal.id.desc()).limit(50).all()
+            return jsonify({'proposals': [proposal_to_dict(r) for r in rows]})
         body = request.get_json(silent=True) or {}
         if not body.get('estimate_id'):
             return jsonify({'error': 'estimate_id required'}), 400
