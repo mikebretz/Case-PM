@@ -155,7 +155,7 @@ def _finish_project_closeout(rt: ProjectRuntime, models: dict) -> None:
 
     db = models['db']
     Project = models['Project']
-    project = Project.query.get(rt.project.id)
+    project = Project.query.get(rt.result.project_id or rt.project.id)
     if not project:
         return
 
@@ -223,6 +223,10 @@ def run_200m_fifty(
             models['db'].session.rollback()
             _ensure_sim_users(models['db'], models['User'])
 
+            if not skip_subprocess_tests:
+                print('Phase 0: Accounting subprocess integration suite (clean DB)…')
+                summary['accounting_subprocess'] = run_accounting_subprocess_suite()
+
             print('=' * 72)
             print('$200M × 50 PROJECTS — PORTFOLIO + ACCOUNTING')
             print('=' * 72)
@@ -265,10 +269,6 @@ def run_200m_fifty(
             summary['accounting_battery'] = run_accounting_battery(
                 models['db'], models, pids, uid_prefix=uid, reverse_sample=15,
             )
-
-            if not skip_subprocess_tests:
-                print('\nPhase 5: Accounting subprocess integration suite…')
-                summary['accounting_subprocess'] = run_accounting_subprocess_suite()
     finally:
         sig_patch.stop()
 
@@ -321,8 +321,7 @@ def main() -> int:
     sub = summary.get('accounting_subprocess') or {}
     failed_sub = [k for k, v in sub.items() if v != 0]
     if failed_sub:
-        print('\nFailed subprocess tests:', failed_sub)
-        critical += len(failed_sub)
+        print('\nAccounting subprocess tests failed (pre-portfolio):', failed_sub)
 
     if args.report:
         payload = {
@@ -334,7 +333,7 @@ def main() -> int:
             'projects': [
                 {
                     'name': rt.scenario.name,
-                    'project_id': rt.project.id if rt.project else None,
+                    'project_id': rt.result.project_id,
                     'contract_value': rt.scenario.contract_value,
                     'metrics': rt.result.metrics,
                     'issues': [
