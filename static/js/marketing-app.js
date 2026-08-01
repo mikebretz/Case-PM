@@ -6,6 +6,20 @@
   let leads = [];
   let stagesMeta = [];
   let marketCatalog = [];
+  let marketingSettings = {};
+
+  async function marketingBaseUrl() {
+    if (marketingSettings.public_base_url === undefined) {
+      try {
+        const s = await api('/api/marketing/settings');
+        marketingSettings = s.settings || s;
+      } catch (_) {
+        marketingSettings = {};
+      }
+    }
+    const custom = String(marketingSettings.public_base_url || '').replace(/\/$/, '');
+    return custom || window.location.origin;
+  }
 
   function csrf() {
     return document.querySelector('meta[name="csrf-token"]')?.content || '';
@@ -48,7 +62,7 @@
       campaigns: loadCampaigns,
       reviews: loadReviews,
       assets: loadAssets,
-      capture: () => { setupCapture(); return Promise.resolve(); },
+      capture: () => loadCapturePanel(),
       proposals: loadProposals,
       web: loadWebPanel,
       integrations: loadIntegrationsPanel,
@@ -182,6 +196,7 @@
 
   async function loadWebPanel() {
     await loadLanding();
+    await populateSettingsForm();
     const kit = await api('/api/marketing/brand-kit').catch(() => ({}));
     const bk = document.getElementById('mkBrandKit');
     if (bk && kit.kits && kit.kits.length) {
@@ -301,14 +316,46 @@
       </div>`).join('') : '<p class="text-zinc-500 col-span-full">No marketing assets. Sync from project photos.</p>';
   }
 
-  function setupCapture() {
-    const origin = window.location.origin;
+  async function populateSettingsForm() {
+    const data = await api('/api/marketing/settings');
+    marketingSettings = data.settings || {};
+    const form = document.getElementById('mkSettingsForm');
+    if (!form) return;
+    ['public_base_url', 'google_place_id', 'houzz_profile_url', 'facebook_page_url'].forEach((name) => {
+      const el = form.elements[name];
+      if (el) el.value = marketingSettings[name] || '';
+    });
+    const crm = form.elements.crm_auto_push;
+    if (crm) crm.checked = !!marketingSettings.crm_auto_push;
+  }
+
+  async function loadCapturePanel() {
+    const base = await marketingBaseUrl();
     const ep = document.getElementById('mkLeadEndpoint');
     if (ep) {
-      ep.textContent = `POST ${origin}/api/public/marketing/leads  {"contact_name","email","phone","notes","source":"website"}`;
+      const sample = {
+        contact_name: 'Jane Owner',
+        email: 'jane@example.com',
+        phone: '555-0100',
+        notes: 'Kitchen remodel',
+        source: 'website',
+      };
+      ep.textContent = `POST ${base}/api/public/marketing/leads\nContent-Type: application/json\n\n${JSON.stringify(sample, null, 2)}`;
     }
-    const hint = document.getElementById('mkEmbedHint');
-    if (hint) hint.textContent = `${origin}/public/marketing/case-study/<slug>`;
+    const data = await api('/api/marketing/case-studies');
+    const published = (data.case_studies || []).filter((c) => c.status === 'published' && c.slug);
+    const links = document.getElementById('mkCaseStudyLinks');
+    if (links) {
+      links.innerHTML = published.length
+        ? published.map((c) => `<div><a class="text-sky-400" href="${esc(base)}/public/marketing/case-study/${esc(c.slug)}" target="_blank">${esc(c.title)}</a></div>`).join('')
+        : '<p class="text-zinc-500">Publish case studies in Portfolio to list share links here.</p>';
+    }
+    const site = document.getElementById('mkPublicSiteLink');
+    if (site) {
+      const url = `${base}/public/marketing/site/home`;
+      site.href = url;
+      site.textContent = url;
+    }
   }
 
   async function loadMarketProfile() {
@@ -344,15 +391,47 @@
       loadReviews(),
       loadAssets(),
     ]).catch((e) => console.error('Marketing load', e));
-    setupCapture();
+    loadCapturePanel().catch(() => {});
   }
 
   document.getElementById('mkApplyMarket')?.addEventListener('click', async () => {
     const primary = document.getElementById('mkPrimaryMarket')?.value;
     if (!primary) return;
-    await api('/api/marketing/market-scheme/apply', { method: 'POST', body: JSON.stringify({ primary_construction_market: primary }) });
-    await loadMarketProfile();
-    loadCampaigns();
+    const btn = document.getElementById('mkApplyMarket');
+    if (btn) btn.disabled = true;
+    try {
+      const out = await api('/api/marketing/market-scheme/apply', {
+        method: 'POST',
+        body: JSON.stringify({ primary_construction_market: primary }),
+      });
+      await loadMarketProfile();
+      loadCampaigns();
+      const parts = [];
+      if (out.templates) parts.push(`${out.templates} new email templates`);
+      if (out.content) parts.push(`${out.content} content blocks`);
+      if (out.landing) parts.push('landing page updated');
+      alert(parts.length ? `Applied: ${parts.join(', ')}.` : 'Marketing scheme applied.');
+    } catch (e) {
+      alert(e.message || 'Could not apply marketing scheme. Try again or check server logs.');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
+  document.getElementById('mkSettingsForm')?.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const form = ev.target;
+    const body = {
+      public_base_url: form.elements.public_base_url?.value?.trim() || '',
+      google_place_id: form.elements.google_place_id?.value?.trim() || '',
+      houzz_profile_url: form.elements.houzz_profile_url?.value?.trim() || '',
+      facebook_page_url: form.elements.facebook_page_url?.value?.trim() || '',
+      crm_auto_push: !!form.elements.crm_auto_push?.checked,
+    };
+    await api('/api/marketing/settings', { method: 'PUT', body: JSON.stringify(body) });
+    marketingSettings = { ...marketingSettings, ...body };
+    alert('Settings saved.');
+    loadCapturePanel().catch(() => {});
   });
 
   document.querySelectorAll('.mk-tab').forEach(t => t.addEventListener('click', () => showTab(t.dataset.tab)));
@@ -421,9 +500,6 @@
         `<div class="mb-2"><a class="text-sky-400" href="${esc(p.public_url)}" target="_blank">${esc(p.title)}</a> · ${esc(p.status)}</div>`,
       ).join('') || '<p class="text-zinc-500">No landing pages.</p>';
     }
-    const settings = await api('/api/marketing/settings');
-    const sh = document.getElementById('mkMarketingSettings');
-    if (sh) sh.innerHTML = `<pre class="text-xs">${esc(JSON.stringify(settings.settings || settings, null, 2))}</pre>`;
   }
 
   document.getElementById('mkBuildProposal')?.addEventListener('click', async () => {

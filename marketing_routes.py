@@ -529,9 +529,14 @@ def register_marketing_routes(app, deps):
             'primary_construction_market': primary,
             'secondary_construction_markets': secondary,
         })
-        out = apply_construction_market_scheme(db, models(), primary, secondary=secondary)
-        db.session.commit()
-        return jsonify(out)
+        try:
+            out = apply_construction_market_scheme(db, models(), primary, secondary=secondary)
+            db.session.commit()
+            return jsonify(out)
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.exception('market-scheme apply failed')
+            return jsonify({'error': str(exc)}), 500
 
     @app.route('/api/marketing/settings', methods=['GET', 'PUT'])
     @login_required

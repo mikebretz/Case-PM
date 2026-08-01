@@ -297,6 +297,7 @@ def apply_construction_market_scheme(db, models, market_id: str, *, secondary: l
     if MarketingLandingPage and MarketingCaseStudy:
         hero = market_landing_hero(mid)
         studies = MarketingCaseStudy.query.filter_by(status='published').limit(6).all()
+        existing_home = MarketingLandingPage.query.filter_by(slug='home').first()
         upsert_landing_page(db, MarketingLandingPage, {
             'slug': 'home',
             'title': f'Case PM — {get_construction_market(mid)["label"]}',
@@ -312,7 +313,7 @@ def apply_construction_market_scheme(db, models, market_id: str, *, secondary: l
                 'keywords': get_construction_market(mid)['seo_focus'],
             },
             'status': 'published',
-        })
+        }, page_id=existing_home.id if existing_home else None)
         created['landing'] = True
 
     db.session.flush()

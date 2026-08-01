@@ -91,10 +91,20 @@ window.CASEPM_MARKETING_CTX = {
     <button type="button" id="mkSyncAssets" class="text-sm px-3 py-1.5 bg-zinc-800 rounded-md mb-3">Sync photos from project</button>
     <div id="mkAssets" class="grid grid-cols-2 md:grid-cols-4 gap-2"></div>
   </div>
-  <div id="mkPanelCapture" class="mk-panel mk-card hidden flex-1 overflow-auto text-sm text-zinc-300 space-y-3">
-    <p>Embed this public lead endpoint on your website (POST JSON):</p>
-    <code class="block bg-zinc-900 p-3 rounded-md text-xs break-all" id="mkLeadEndpoint"></code>
-    <p class="text-zinc-500">Published case studies: <span id="mkEmbedHint"></span></p>
+  <div id="mkPanelCapture" class="mk-panel mk-card hidden flex-1 overflow-auto text-sm text-zinc-300 space-y-4">
+    <div>
+      <div class="text-xs uppercase text-zinc-500 mb-1">Website lead endpoint</div>
+      <p class="text-zinc-400 text-xs mb-2">POST JSON from your site form or Zapier. No login required.</p>
+      <pre class="bg-zinc-900 p-3 rounded-md text-xs overflow-x-auto" id="mkLeadEndpoint"></pre>
+    </div>
+    <div>
+      <div class="text-xs uppercase text-zinc-500 mb-1">Published case studies</div>
+      <div id="mkCaseStudyLinks" class="text-xs space-y-1 text-zinc-400"></div>
+    </div>
+    <div>
+      <div class="text-xs uppercase text-zinc-500 mb-1">Public landing site</div>
+      <p class="text-xs text-zinc-500">After Web &amp; SEO → ensure landing page, share: <a id="mkPublicSiteLink" class="text-sky-400" href="#" target="_blank"></a></p>
+    </div>
   </div>
   <div id="mkPanelProposals" class="mk-panel mk-card hidden flex-1 overflow-auto text-sm">
     <button type="button" id="mkBuildProposal" class="text-sm px-3 py-1.5 bg-zinc-800 rounded-md mb-3">Build proposal from estimate ID</button>
@@ -108,7 +118,28 @@ window.CASEPM_MARKETING_CTX = {
     <div id="mkSeoAudit" class="text-xs text-zinc-400"></div>
     <div id="mkLandingPages"></div>
     <div id="mkBrandKit" class="text-xs border-t border-zinc-800 pt-3"></div>
-    <div id="mkMarketingSettings"></div>
+    <div class="border-t border-zinc-800 pt-3 space-y-3">
+      <div class="text-xs uppercase text-zinc-500">Local SEO &amp; integrations</div>
+      <form id="mkSettingsForm" class="grid gap-2 max-w-xl text-xs">
+        <label class="flex flex-col gap-0.5">Public site URL (optional)
+          <input name="public_base_url" type="url" class="bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5" placeholder="https://www.yourcompany.com">
+        </label>
+        <label class="flex flex-col gap-0.5">Google Place ID
+          <input name="google_place_id" class="bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5" placeholder="ChIJ...">
+        </label>
+        <label class="flex flex-col gap-0.5">Houzz profile URL
+          <input name="houzz_profile_url" type="url" class="bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5">
+        </label>
+        <label class="flex flex-col gap-0.5">Facebook page URL
+          <input name="facebook_page_url" type="url" class="bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5">
+        </label>
+        <label class="flex items-center gap-2 mt-1">
+          <input name="crm_auto_push" type="checkbox" class="rounded">
+          <span>Auto-push new leads to CRM webhook (<code>CASEPM_CRM_WEBHOOK_URL</code>)</span>
+        </label>
+        <button type="submit" class="mt-2 px-3 py-1.5 bg-emerald-800 hover:bg-emerald-700 rounded-md w-fit">Save settings</button>
+      </form>
+    </div>
   </div>
   <div id="mkPanelIntegrations" class="mk-panel mk-card hidden flex-1 overflow-auto text-sm space-y-3">
     <p class="text-zinc-400 text-xs">Inbound webhooks create pipeline leads. Optional header <code class="text-zinc-300">X-CasePM-Marketing-Key</code> when <code>CASEPM_MARKETING_WEBHOOK_SECRET</code> is set.</p>
