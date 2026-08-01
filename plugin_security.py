@@ -58,7 +58,7 @@ PLUGIN_INVENTORY = [
     {'id': 'sheetjs', 'host': 'cdn.jsdelivr.net', 'version': '0.20.3', 'purpose': 'Spreadsheet I/O', 'pages': 'sheet_editor, financials, submittals'},
     {'id': 'chartjs', 'host': 'cdn.jsdelivr.net', 'version': '4.4.1', 'purpose': 'Dashboard charts', 'pages': 'dashboard'},
     {'id': 'pdfjs', 'host': 'cdnjs.cloudflare.com', 'version': '3.11.174', 'purpose': 'PDF viewer', 'pages': 'submittals, drawings, estimating'},
-    {'id': 'dhtmlx-gantt', 'host': 'cdn.dhtmlx.com', 'purpose': 'Schedule Gantt', 'pages': 'schedule'},
+    {'id': 'dhtmlx-gantt', 'host': 'cdn.dhtmlx.com', 'purpose': 'Schedule Gantt (JS); CSS self-hosted without bundled Inter fonts', 'pages': 'schedule'},
     {'id': 'model-viewer', 'host': 'ajax.googleapis.com', 'version': '3.4.0', 'purpose': 'BIM 3D viewer', 'pages': 'operations_center'},
 ]
 
@@ -180,7 +180,7 @@ def build_content_security_policy() -> str:
         "default-src 'self'; "
         f"script-src 'self' {cdn_scripts} 'unsafe-inline' 'unsafe-eval'; "
         f"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com {cdn_scripts}; "
-        f"font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com {cdn_scripts}; "
+        f"font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com {cdn_scripts}; "
         "img-src 'self' data: blob: https:; "
         f"connect-src 'self' {cdn_scripts} https://router.project-osrm.org https://nominatim.openstreetmap.org "
         "https://geocoding-api.open-meteo.com https://api.open-meteo.com https://graph.microsoft.com; "
