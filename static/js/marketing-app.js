@@ -38,9 +38,35 @@
       capture: 'mkPanelCapture',
       proposals: 'mkPanelProposals',
       web: 'mkPanelWeb',
+      integrations: 'mkPanelIntegrations',
       analytics: 'mkPanelAnalytics',
     }[name];
     document.getElementById(id)?.classList.remove('hidden');
+    const loader = {
+      pipeline: loadLeads,
+      portfolio: loadCaseStudies,
+      campaigns: loadCampaigns,
+      reviews: loadReviews,
+      assets: loadAssets,
+      capture: () => { setupCapture(); return Promise.resolve(); },
+      proposals: loadProposals,
+      web: loadWebPanel,
+      integrations: loadIntegrationsPanel,
+      analytics: loadAnalyticsPanel,
+    }[name];
+    if (loader) loader().catch((e) => console.error('Marketing tab', name, e));
+  }
+
+  function renderActiveProject() {
+    const el = document.getElementById('mkActiveProject');
+    if (!el) return;
+    if (ctx.projectId) {
+      el.textContent = `Active project: ${ctx.projectName || '#' + ctx.projectId} — case studies, assets, and reviews use this project.`;
+      el.classList.remove('hidden');
+    } else {
+      el.textContent = 'No active project — pick a project in the header to enable project-scoped actions.';
+      el.classList.remove('hidden');
+    }
   }
 
   function renderDashboard(d) {
@@ -99,6 +125,110 @@
     renderDashboard(d);
     const detail = document.getElementById('mkAnalyticsDetail');
     if (detail) detail.textContent = JSON.stringify(d, null, 2);
+  }
+
+  async function loadAnalyticsPanel() {
+    await loadDashboard();
+    await loadSpend();
+  }
+
+  async function loadSpend() {
+    const data = await api('/api/marketing/spend');
+    const host = document.getElementById('mkSpendList');
+    if (!host) return;
+    const rows = data.entries || [];
+    if (!rows.length) {
+      host.innerHTML = '<p class="text-zinc-500">No spend recorded yet.</p>';
+      return;
+    }
+    host.innerHTML = `<table class="w-full text-left"><thead><tr class="text-zinc-500"><th class="py-1">Channel</th><th>Label</th><th class="text-right">Amount</th></tr></thead><tbody>
+      ${rows.map(r => `<tr class="border-t border-zinc-800"><td class="py-1">${esc(r.channel)}</td><td>${esc(r.label || '')}</td><td class="text-right">$${Number(r.amount || 0).toLocaleString()}</td></tr>`).join('')}
+    </tbody></table>`;
+  }
+
+  async function loadProposals() {
+    const data = await api('/api/marketing/proposals');
+    const host = document.getElementById('mkProposals');
+    if (!host) return;
+    const rows = data.proposals || [];
+    if (!rows.length) {
+      host.innerHTML = '<p class="text-zinc-500">No proposals yet. Build one from an estimate ID.</p>';
+      return;
+    }
+    host.innerHTML = rows.map(p => `
+      <div class="border border-zinc-700 rounded-md p-3 flex flex-wrap justify-between gap-2 items-center">
+        <div>
+          <div class="font-medium text-white">${esc(p.title || 'Proposal #' + p.id)}</div>
+          <div class="text-xs text-zinc-500">${esc(p.status)} · estimate #${p.estimate_id} · ${p.view_count || 0} views</div>
+        </div>
+        <div class="flex gap-2 flex-wrap text-xs">
+          <a class="text-sky-400" href="${esc(p.public_url)}" target="_blank">Open</a>
+          <button type="button" class="text-emerald-400 mk-prop-send" data-id="${p.id}">Email</button>
+          <button type="button" class="text-violet-400 mk-prop-pdf" data-id="${p.id}">PDF</button>
+        </div>
+      </div>`).join('');
+    host.querySelectorAll('.mk-prop-send').forEach(btn => btn.addEventListener('click', async () => {
+      const email = prompt('Send proposal link to:');
+      if (!email) return;
+      await api(`/api/marketing/proposals/${btn.dataset.id}/send`, { method: 'POST', body: JSON.stringify({ email }) });
+      loadProposals();
+    }));
+    host.querySelectorAll('.mk-prop-pdf').forEach(btn => btn.addEventListener('click', async () => {
+      await api(`/api/marketing/proposals/${btn.dataset.id}/pdf`, { method: 'POST', body: '{}' });
+      alert('PDF generated (stored on proposal record).');
+      loadProposals();
+    }));
+  }
+
+  async function loadWebPanel() {
+    await loadLanding();
+    const kit = await api('/api/marketing/brand-kit').catch(() => ({}));
+    const bk = document.getElementById('mkBrandKit');
+    if (bk && kit.kits && kit.kits.length) {
+      const b = kit.kits.find(k => k.is_default) || kit.kits[0];
+      const primary = (b.colors && b.colors.primary) || '—';
+      bk.innerHTML = `<div class="text-xs uppercase text-zinc-500 mb-1">Brand kit</div>
+        <div class="text-zinc-300">${esc(b.name || 'Default')} · primary ${esc(primary)}</div>`;
+    } else if (bk) {
+      bk.innerHTML = '<div class="text-xs text-zinc-500">Brand kit not configured (API: POST /api/marketing/brand-kit).</div>';
+    }
+  }
+
+  async function loadIntegrationsPanel() {
+    const origin = window.location.origin;
+    const cat = await api('/api/marketing/integrations/catalog');
+    const host = document.getElementById('mkIntegrations');
+    if (host) {
+      host.innerHTML = (cat.integrations || []).map(i => {
+        const url = i.path ? `${origin}${i.path}` : (i.env ? `env: ${i.env}` : '—');
+        return `<div class="border border-zinc-700 rounded-md p-3">
+          <div class="font-medium text-white">${esc(i.name)}</div>
+          <div class="text-xs text-zinc-500">${esc(i.mode)}</div>
+          <code class="text-xs break-all text-sky-300/90">${esc(url)}</code>
+        </div>`;
+      }).join('');
+    }
+    const refs = await api('/api/marketing/referrals');
+    const rh = document.getElementById('mkReferrals');
+    if (rh) {
+      const rows = refs.referrals || refs.items || [];
+      rh.innerHTML = rows.length ? rows.map(r => `
+        <div class="border border-zinc-800 rounded p-2">#${r.id} · ${esc(r.status || '')} · incentive ${esc(r.incentive_type || '')}</div>
+      `).join('') : '<p class="text-zinc-500">No referrals yet.</p>';
+    }
+  }
+
+  async function runSeoAudit() {
+    const out = await api('/api/marketing/seo/audit');
+    const host = document.getElementById('mkSeoAudit');
+    if (!host) return;
+    const score = out.score != null ? out.score : out.overall_score;
+    const items = [...(out.issues || []), ...(out.recommendations || [])];
+    host.innerHTML = `<div class="text-emerald-400/90 mb-2">SEO score: ${esc(score != null ? String(score) : '—')}</div>
+      <ul class="list-disc pl-4 space-y-1">${items.slice(0, 15).map(it => {
+        const label = typeof it === 'string' ? it : (it.label || it.id || JSON.stringify(it));
+        return `<li>${esc(label)}</li>`;
+      }).join('')}</ul>`;
   }
 
   async function loadCaseStudies() {
@@ -200,6 +330,7 @@
   }
 
   async function loadAll() {
+    renderActiveProject();
     try {
       await loadMarketProfile();
     } catch (e) {
@@ -252,16 +383,30 @@
     loadReviews();
   });
   document.getElementById('mkNewCampaign')?.addEventListener('click', async () => {
+    let subject = '';
+    let bodyText = 'Thank you for your interest in our construction services.';
+    try {
+      const tpl = await api('/api/marketing/campaign-templates');
+      const templates = tpl.templates || [];
+      if (templates.length) {
+        const pick = prompt(`Template key (optional): ${templates.map(t => t.key).join(', ')}`);
+        const t = templates.find(x => x.key === pick);
+        if (t) {
+          subject = t.subject || '';
+          bodyText = t.name ? `Template: ${t.name}` : bodyText;
+        }
+      }
+    } catch (_) { /* optional */ }
     const name = prompt('Campaign name:');
     if (!name) return;
-    const subject = prompt('Email subject:') || name;
+    if (!subject) subject = prompt('Email subject:') || name;
     await api('/api/marketing/campaigns', {
       method: 'POST',
       body: JSON.stringify({
         name,
         subject,
         channel: 'email',
-        body_text: 'Thank you for your interest in our construction services.',
+        body_text: bodyText,
         segment: { stage: 'inquiry' },
       }),
     });
@@ -284,17 +429,31 @@
   document.getElementById('mkBuildProposal')?.addEventListener('click', async () => {
     const estId = prompt('Estimate ID to build proposal from:');
     if (!estId) return;
-    const out = await api('/api/marketing/proposals', { method: 'POST', body: JSON.stringify({ estimate_id: parseInt(estId, 10) }) });
-    const host = document.getElementById('mkProposals');
-    if (host) host.innerHTML = `<p>Proposal <a class="text-sky-400" href="${esc(out.public_url)}" target="_blank">#${out.id}</a></p>`;
+    await api('/api/marketing/proposals', { method: 'POST', body: JSON.stringify({ estimate_id: parseInt(estId, 10) }) });
+    loadProposals();
   });
-  document.getElementById('mkSeedLanding')?.addEventListener('click', () => loadLanding());
+  document.getElementById('mkSeedLanding')?.addEventListener('click', () => loadWebPanel());
+  document.getElementById('mkRunSeoAudit')?.addEventListener('click', () => runSeoAudit().catch(e => alert(e.message)));
+  document.getElementById('mkNewReferral')?.addEventListener('click', async () => {
+    const refId = prompt('Referrer lead ID (optional):');
+    const title = prompt('Referred lead title:');
+    if (!title) return;
+    const email = prompt('Referred contact email:') || '';
+    await api('/api/marketing/referrals', {
+      method: 'POST',
+      body: JSON.stringify({
+        referrer_lead_id: refId ? parseInt(refId, 10) : null,
+        referred_lead: { title, email, source: 'referral' },
+      }),
+    });
+    loadIntegrationsPanel();
+  });
   document.getElementById('mkAddSpend')?.addEventListener('click', async () => {
     const amount = prompt('Spend amount USD:');
     if (!amount) return;
     const channel = prompt('Channel (paid_ads, houzz, other):') || 'paid_ads';
     await api('/api/marketing/spend', { method: 'POST', body: JSON.stringify({ amount: parseFloat(amount), channel, label: 'Manual entry' }) });
-    loadDashboard();
+    loadAnalyticsPanel();
   });
   document.getElementById('mkRunAutomation')?.addEventListener('click', async () => {
     if (!ctx.projectId) { alert('Select active project'); return; }
@@ -303,5 +462,4 @@
   });
 
   loadAll().catch((e) => console.error('Marketing init', e));
-  loadLanding().catch(() => {});
 })();

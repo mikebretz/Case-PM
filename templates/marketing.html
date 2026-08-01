@@ -10,7 +10,10 @@ window.CASEPM_MARKETING_CTX = {
 };
 </script>
 <style>
-.mk-page { display:flex; flex-direction:column; flex:1; min-height:0; padding:1rem; gap:1rem; }
+.mk-page { display:flex; flex-direction:column; flex:1; min-height:0; padding:1rem; gap:1rem; overflow:hidden; }
+.mk-panels { display:flex; flex-direction:column; flex:1; min-height:0; }
+.mk-panel { display:flex; flex-direction:column; }
+.mk-panel.hidden { display:none !important; }
 .mk-card { background:#18181b; border:1px solid #3f3f46; border-radius:0.75rem; padding:1rem; }
 .mk-tab { padding:0.5rem 1rem; font-size:0.85rem; border-radius:0.5rem; color:#a1a1aa; cursor:pointer; border:none; background:transparent; }
 .mk-tab.active { background:#27272a; color:#fff; }
@@ -28,6 +31,7 @@ window.CASEPM_MARKETING_CTX = {
     <div>
       <h1 class="text-2xl font-semibold text-white">Marketing</h1>
       <p class="text-sm text-zinc-400 mt-0.5">Pipeline · portfolio · campaigns · reputation · DAM</p>
+      <p id="mkActiveProject" class="text-xs mt-1 text-amber-400/90 hidden"></p>
     </div>
     <button type="button" id="mkRefresh" class="px-3 py-2 text-sm bg-zinc-800 hover:bg-zinc-700 rounded-md">Refresh</button>
   </div>
@@ -57,9 +61,11 @@ window.CASEPM_MARKETING_CTX = {
     <button type="button" class="mk-tab" data-tab="capture">Lead capture</button>
     <button type="button" class="mk-tab" data-tab="proposals">Proposals</button>
     <button type="button" class="mk-tab" data-tab="web">Web & SEO</button>
+    <button type="button" class="mk-tab" data-tab="integrations">Integrations</button>
     <button type="button" class="mk-tab" data-tab="analytics">ROI & spend</button>
   </div>
 
+  <div class="mk-panels">
   <div id="mkPanelPipeline" class="mk-panel mk-card flex-1 min-h-0 overflow-auto">
     <div class="flex justify-between items-center mb-3">
       <span class="text-sm text-zinc-400">Drag stages via card actions · convert won leads to estimates</span>
@@ -91,18 +97,36 @@ window.CASEPM_MARKETING_CTX = {
     <p class="text-zinc-500">Published case studies: <span id="mkEmbedHint"></span></p>
   </div>
   <div id="mkPanelProposals" class="mk-panel mk-card hidden flex-1 overflow-auto text-sm">
-    <button type="button" id="mkBuildProposal" class="text-sm px-3 py-1.5 bg-zinc-800 rounded-md mb-3">Build proposal from active project estimate</button>
-    <div id="mkProposals"></div>
+    <button type="button" id="mkBuildProposal" class="text-sm px-3 py-1.5 bg-zinc-800 rounded-md mb-3">Build proposal from estimate ID</button>
+    <div id="mkProposals" class="space-y-2"></div>
   </div>
   <div id="mkPanelWeb" class="mk-panel mk-card hidden flex-1 overflow-auto text-sm space-y-3">
-    <button type="button" id="mkSeedLanding" class="px-3 py-1.5 bg-zinc-800 rounded-md">Ensure default landing page</button>
+    <div class="flex flex-wrap gap-2">
+      <button type="button" id="mkSeedLanding" class="px-3 py-1.5 bg-zinc-800 rounded-md">Ensure default landing page</button>
+      <button type="button" id="mkRunSeoAudit" class="px-3 py-1.5 bg-zinc-800 rounded-md">Run SEO checklist</button>
+    </div>
+    <div id="mkSeoAudit" class="text-xs text-zinc-400"></div>
     <div id="mkLandingPages"></div>
+    <div id="mkBrandKit" class="text-xs border-t border-zinc-800 pt-3"></div>
     <div id="mkMarketingSettings"></div>
   </div>
+  <div id="mkPanelIntegrations" class="mk-panel mk-card hidden flex-1 overflow-auto text-sm space-y-3">
+    <p class="text-zinc-400 text-xs">Inbound webhooks create pipeline leads. Optional header <code class="text-zinc-300">X-CasePM-Marketing-Key</code> when <code>CASEPM_MARKETING_WEBHOOK_SECRET</code> is set.</p>
+    <div id="mkIntegrations" class="space-y-2"></div>
+    <div class="border-t border-zinc-800 pt-3">
+      <div class="text-xs uppercase text-zinc-500 mb-2">Referrals</div>
+      <button type="button" id="mkNewReferral" class="text-sm px-3 py-1.5 bg-zinc-800 rounded-md mb-2">Register referral</button>
+      <div id="mkReferrals" class="text-xs space-y-2"></div>
+    </div>
+  </div>
   <div id="mkPanelAnalytics" class="mk-panel mk-card hidden flex-1 overflow-auto text-sm space-y-3">
-    <button type="button" id="mkAddSpend" class="px-3 py-1.5 bg-zinc-800 rounded-md">Record marketing spend</button>
-    <button type="button" id="mkRunAutomation" class="px-3 py-1.5 bg-zinc-800 rounded-md">Run closeout automation (active project)</button>
-    <pre id="mkAnalyticsDetail" class="text-xs bg-zinc-900 p-3 rounded-md overflow-auto"></pre>
+    <div class="flex flex-wrap gap-2">
+      <button type="button" id="mkAddSpend" class="px-3 py-1.5 bg-zinc-800 rounded-md">Record marketing spend</button>
+      <button type="button" id="mkRunAutomation" class="px-3 py-1.5 bg-zinc-800 rounded-md">Run closeout automation (active project)</button>
+    </div>
+    <div id="mkSpendList" class="text-xs"></div>
+    <pre id="mkAnalyticsDetail" class="text-xs bg-zinc-900 p-3 rounded-md overflow-auto flex-1 min-h-[120px]"></pre>
+  </div>
   </div>
 </div>
 
