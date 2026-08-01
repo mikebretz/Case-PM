@@ -388,6 +388,8 @@
       window.refreshEstimatingPlanRoomBridge();
     }
   }
+
+  function renderAll() {
     const est = state.current;
     if (!est) return;
     updateSummaryBar(est);
