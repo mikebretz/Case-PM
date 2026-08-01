@@ -121,7 +121,9 @@
   async function load() {
     feed = await api('/api/client-portal/feed');
     try {
-      const mw = await fetch('/api/my-work?limit=20', { credentials: 'same-origin' });
+      const mwParams = new URLSearchParams({ limit: '20' });
+      if (ctx.projectId) mwParams.set('project_id', String(ctx.projectId));
+      const mw = await fetch(`/api/my-work?${mwParams}`, { credentials: 'same-origin' });
       if (mw.ok) {
         const q = await mw.json();
         const extra = (q.items || []).filter((it) => it.kind === 'change_order' || it.kind === 'approval' || it.kind === 'pay_application');
