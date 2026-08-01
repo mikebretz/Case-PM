@@ -293,10 +293,15 @@
         .portal-sub .nav-hide-sub,
         .portal-architect .nav-staff-only,
         .portal-architect .nav-sub-only,
-        .portal-architect .nav-hide-architect {
+        .portal-architect .nav-hide-architect,
+        .portal-owner .nav-staff-only,
+        .portal-owner .nav-sub-only,
+        .portal-owner .nav-hide-owner {
             display: none !important;
         }
-        .portal-architect .nav-architect-visible {
+        .portal-architect .nav-architect-visible,
+        .portal-owner .nav-architect-visible,
+        .portal-owner .nav-owner-visible {
             display: flex !important;
         }
         .portal-sub .nav-sub-only { display: block !important; }
@@ -304,8 +309,25 @@
         .portal-sub-vendor .nav-link[data-nav-module="projects"],
         .portal-sub-vendor .nav-hide-sub-vendor { display: none !important; }
         .portal-sub .portal-banner-sub,
-        .portal-architect .portal-banner-architect {
+        .portal-architect .portal-banner-architect,
+        .portal-owner .portal-banner-owner {
             display: flex;
+        }
+        .portal-owner {
+            --owner-accent: #10b981;
+            --owner-banner-bg: rgba(6, 78, 59, 0.85);
+        }
+        .portal-owner .app-header-bar {
+            background: linear-gradient(180deg, #0f1419 0%, #18181b 100%);
+            border-bottom-color: #27272a;
+        }
+        .portal-owner .nav-link.active {
+            background: rgba(16, 185, 129, 0.12);
+            border-left: 3px solid var(--owner-accent);
+        }
+        .portal-owner .section-header {
+            color: #71717a;
+            letter-spacing: 0.06em;
         }
         .portal-sub-vendor .portal-banner-sub-vendor {
             display: flex;
@@ -317,7 +339,8 @@
             display: none !important;
         }
         .portal-sub .rfi-staff-only,
-        .portal-architect .rfi-staff-only {
+        .portal-architect .rfi-staff-only,
+        .portal-owner .rfi-staff-only {
             display: none !important;
         }
 
@@ -432,7 +455,7 @@
     <script src="{{ static_v('js/developer-actions.js') }}"></script>
     {% endif %}
 </head>
-<body class="bg-zinc-950 text-zinc-200 h-screen overflow-hidden {% if is_sub_portal %}portal-sub{% elif is_architect_portal %}portal-architect{% else %}portal-staff{% endif %}{% if is_sub_vendor_portal %} portal-sub-vendor{% endif %}{% if desktop_mode %} casepm-desktop-app{% endif %}"
+<body class="bg-zinc-950 text-zinc-200 h-screen overflow-hidden {% if is_sub_portal %}portal-sub{% elif is_owner_portal %}portal-owner{% elif is_architect_portal %}portal-architect{% else %}portal-staff{% endif %}{% if is_sub_vendor_portal %} portal-sub-vendor{% endif %}{% if desktop_mode %} casepm-desktop-app{% endif %}"
       data-is-staff-portal="{{ '1' if show_page_help else '0' }}"
       data-page-module="{{ page_module|default('app') }}"
       data-current-user="{{ current_user.full_name if current_user.is_authenticated else '' }}"
@@ -481,8 +504,13 @@
     {% endif %}
     {% if is_architect_portal %}
     <div class="portal-banner-architect hidden items-center justify-between px-5 py-1.5 bg-sky-950/80 border-b border-sky-800 text-xs text-sky-200 flex-shrink-0">
-        <span><i class="fa-solid fa-compass-drafting mr-2"></i><strong>{% if current_user.role == 'Architect' %}Architect{% else %}Consultant{% endif %} Portal</strong> — review submittals, RFIs, and change orders</span>
+        <span><i class="fa-solid fa-compass-drafting mr-2"></i><strong>Architect Portal</strong> — review submittals, RFIs, and change orders</span>
         <a href="{{ url_for('email_page') }}?tab=internal" class="text-sky-400 hover:underline">Approvals inbox</a>
+    </div>
+    {% elif is_owner_portal %}
+    <div class="portal-banner-owner hidden items-center justify-between px-5 py-2 bg-emerald-950/90 border-b border-emerald-800 text-xs text-emerald-100 flex-shrink-0">
+        <span><i class="fa-solid fa-building-user mr-2"></i><strong>Owner Portal</strong> — project updates, documents, and items awaiting your approval</span>
+        <a href="{{ url_for('client_portal_page', project_id=active_project.id) if active_project else url_for('client_portal_page') }}" class="text-emerald-300 hover:underline font-medium">Approvals hub</a>
     </div>
     {% endif %}
 
@@ -626,10 +654,17 @@
                 
                 <a href="{{ url_for('dashboard') }}" data-nav-module="dashboard" class="nav-link nav-hide-sub-vendor flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'dashboard' %}active{% endif %}">
                     <i class="fa-solid fa-home w-5"></i>
-                    <span>Dashboard</span>
+                    <span>{% if is_owner_portal %}Overview{% else %}Dashboard{% endif %}</span>
                 </a>
+
+                {% if is_owner_portal %}
+                <a href="{{ url_for('client_portal_page', project_id=active_project.id) if active_project else url_for('client_portal_page') }}" data-nav-module="operations_center" class="nav-link nav-owner-visible flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'client_portal_page' %}active{% endif %}">
+                    <i class="fa-solid fa-circle-check w-5 text-emerald-400"></i>
+                    <span>Approvals &amp; updates</span>
+                </a>
+                {% endif %}
                 
-                <a href="{{ url_for('projects_page') }}" data-nav-module="projects" class="nav-link nav-staff-only nav-hide-sub-vendor flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'projects_page' %}active{% endif %}">
+                <a href="{{ url_for('projects_page') }}" data-nav-module="projects" class="nav-link nav-staff-only nav-owner-visible flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'projects_page' %}active{% endif %}">
                     <i class="fa-solid fa-folder w-5"></i>
                     <span>Projects</span>
                 </a>
@@ -651,7 +686,7 @@
                 </a>
                 {% endif %}
 
-                <a href="{{ url_for('safety_page', project_id=active_project.id) if active_project else url_for('safety_page') }}" data-nav-module="safety" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'safety_page' %}active{% endif %}">
+                <a href="{{ url_for('safety_page', project_id=active_project.id) if active_project else url_for('safety_page') }}" data-nav-module="safety" class="nav-link nav-staff-only nav-owner-visible flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'safety_page' %}active{% endif %}">
                     <i class="fa-solid fa-shield-alt w-5"></i>
                     <span>Safety</span>
                 </a>
@@ -661,12 +696,12 @@
                     <div class="section-header px-2 mb-0.5">Core Modules</div>
                 </div>
 
-                <a href="{{ url_for('daily_log', project_id=active_project.id) if active_project else url_for('daily_log') }}" data-nav-module="daily_log" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'daily_log' %}active{% endif %}">
+                <a href="{{ url_for('daily_log', project_id=active_project.id) if active_project else url_for('daily_log') }}" data-nav-module="daily_log" class="nav-link nav-staff-only nav-owner-visible flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'daily_log' %}active{% endif %}">
                     <i class="fa-solid fa-clipboard-list w-5"></i>
                     <span>Daily Log</span>
                 </a>
 
-                <a href="{{ url_for('weekly_report', project_id=active_project.id) if active_project else url_for('weekly_report') }}" data-nav-module="weekly_report" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'weekly_report' %}active{% endif %}">
+                <a href="{{ url_for('weekly_report', project_id=active_project.id) if active_project else url_for('weekly_report') }}" data-nav-module="weekly_report" class="nav-link nav-staff-only nav-owner-visible flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'weekly_report' %}active{% endif %}">
                     <i class="fa-solid fa-calendar-week w-5"></i>
                     <span>Weekly Report</span>
                 </a>
@@ -696,7 +731,7 @@
                     <span>Submittals</span>
                 </a>
 
-                <a href="{{ url_for('punch_list_page', project_id=active_project.id) if active_project else url_for('punch_list_page') }}" data-nav-module="punch_list" class="nav-link nav-staff-only nav-architect-visible flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'punch_list_page' %}active{% endif %}">
+                <a href="{{ url_for('punch_list_page', project_id=active_project.id) if active_project else url_for('punch_list_page') }}" data-nav-module="punch_list" class="nav-link nav-staff-only nav-architect-visible nav-owner-visible flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'punch_list_page' %}active{% endif %}">
                     <i class="fa-solid fa-tasks w-5"></i>
                     <span>Punch List</span>
                 </a>
@@ -757,12 +792,12 @@
                     <div class="section-header px-2 mb-0.5">Field &amp; Docs</div>
                 </div>
 
-                <a href="{{ url_for('photos_page', project_id=active_project.id) if active_project else url_for('photos_page') }}" data-nav-module="photos" class="nav-link nav-staff-only nav-architect-visible flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'photos_page' %}active{% endif %}">
+                <a href="{{ url_for('photos_page', project_id=active_project.id) if active_project else url_for('photos_page') }}" data-nav-module="photos" class="nav-link nav-staff-only nav-architect-visible nav-owner-visible flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'photos_page' %}active{% endif %}">
                     <i class="fa-solid fa-camera w-5"></i>
                     <span>Photos</span>
                 </a>
 
-                <a href="{{ url_for('documents_page', project_id=active_project.id) if active_project else url_for('documents_page') }}" data-nav-module="documents" class="nav-link nav-staff-only nav-architect-visible flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'documents_page' %}active{% endif %}">
+                <a href="{{ url_for('documents_page', project_id=active_project.id) if active_project else url_for('documents_page') }}" data-nav-module="documents" class="nav-link nav-staff-only nav-architect-visible nav-owner-visible flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'documents_page' %}active{% endif %}">
                     <i class="fa-solid fa-folder-open w-5"></i>
                     <span>Documents</span>
                 </a>
@@ -788,17 +823,17 @@
                     <span>Marketing</span>
                 </a>
 
-                <a href="{{ url_for('client_portal_page', project_id=active_project.id) if active_project else url_for('client_portal_page') }}" data-nav-module="operations_center" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'client_portal_page' %}active{% endif %}">
+                <a href="{{ url_for('client_portal_page', project_id=active_project.id) if active_project else url_for('client_portal_page') }}" data-nav-module="operations_center" class="nav-link nav-staff-only nav-hide-owner flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'client_portal_page' %}active{% endif %}">
                     <i class="fa-solid fa-house-user w-5"></i>
                     <span>Client Portal</span>
                 </a>
 
-                <a href="{{ url_for('inspections_page', project_id=active_project.id) if active_project else url_for('inspections_page') }}" data-nav-module="inspections" class="nav-link nav-staff-only nav-architect-visible flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'inspections_page' %}active{% endif %}">
+                <a href="{{ url_for('inspections_page', project_id=active_project.id) if active_project else url_for('inspections_page') }}" data-nav-module="inspections" class="nav-link nav-staff-only nav-architect-visible nav-owner-visible flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'inspections_page' %}active{% endif %}">
                     <i class="fa-solid fa-clipboard-check w-5"></i>
                     <span>Permits &amp; Inspections</span>
                 </a>
 
-                <a href="{{ url_for('meeting_minutes_page', project_id=active_project.id) if active_project else url_for('meeting_minutes_page') }}" data-nav-module="meeting_minutes" class="nav-link nav-staff-only nav-architect-visible flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'meeting_minutes_page' %}active{% endif %}">
+                <a href="{{ url_for('meeting_minutes_page', project_id=active_project.id) if active_project else url_for('meeting_minutes_page') }}" data-nav-module="meeting_minutes" class="nav-link nav-staff-only nav-architect-visible nav-owner-visible flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'meeting_minutes_page' %}active{% endif %}">
                     <i class="fa-solid fa-users w-5"></i>
                     <span>Meeting Minutes</span>
                 </a>

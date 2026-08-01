@@ -52,11 +52,22 @@ def test_architect_template_hides_financials_flag() -> None:
 
 
 def test_owner_uses_consultant_portal() -> None:
-    from case_workflow import is_consultant_portal_user
+    from case_workflow import is_consultant_portal_user, is_owner_portal_user
     perms = permissions_from_role('Owner')
     user = _User('Owner', json.dumps(perms))
     assert is_consultant_portal_user(user)
+    assert is_owner_portal_user(user)
     assert user_has_module_access(user, 'schedule', 'client_view')
+    assert user_has_module_access(user, 'schedule', 'view')
+    assert user_has_module_access(user, 'operations_center', 'view')
+    assert user_has_module_access(user, 'budget', 'view') is False
+
+
+def test_owner_home_prefers_client_portal() -> None:
+    from portal_sub_access import portal_home_endpoint_for_user
+    perms = permissions_from_role('Owner')
+    user = _User('Owner', json.dumps(perms))
+    assert portal_home_endpoint_for_user(user) == 'client_portal_page'
 
 
 def main() -> int:
@@ -64,6 +75,7 @@ def main() -> int:
     test_architect_can_access_review_and_directory_modules()
     test_architect_template_hides_financials_flag()
     test_owner_uses_consultant_portal()
+    test_owner_home_prefers_client_portal()
     print('test_architect_portal_permissions: OK')
     return 0
 

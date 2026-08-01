@@ -911,18 +911,33 @@ def inject_project_context():
         return {'current_user_profile': {}}
     portal = {}
     try:
-        from case_workflow import get_role_permissions, user_portal_type, is_sub_user, is_architect_user, is_consultant_portal_user
+        from case_workflow import (
+            get_role_permissions,
+            user_portal_type,
+            is_sub_user,
+            is_architect_user,
+            is_consultant_portal_user,
+            is_owner_portal_user,
+            is_architect_portal_user,
+        )
         from portal_sub_access import is_sub_vendor_portal_user
         portal = {
             'portal_type': user_portal_type(current_user),
             'is_sub_portal': is_sub_user(current_user),
-            'is_architect_portal': is_architect_user(current_user),
+            'is_architect_portal': is_architect_portal_user(current_user),
+            'is_owner_portal': is_owner_portal_user(current_user),
             'is_consultant_portal': is_consultant_portal_user(current_user),
             'is_sub_vendor_portal': is_sub_vendor_portal_user(current_user),
             'role_permissions': get_role_permissions(current_user),
         }
     except Exception:
-        portal = {'portal_type': 'staff', 'is_sub_portal': False, 'is_architect_portal': False, 'is_sub_vendor_portal': False}
+        portal = {
+            'portal_type': 'staff',
+            'is_sub_portal': False,
+            'is_architect_portal': False,
+            'is_owner_portal': False,
+            'is_sub_vendor_portal': False,
+        }
     company_info = {}
     company_logo_url = ''
     try:

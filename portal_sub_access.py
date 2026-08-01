@@ -26,6 +26,7 @@ CONSULTANT_PORTAL_ALLOWED_MODULES = frozenset({
     'safety_reports',
     'internal_messages',
     'notifications',
+    'operations_center',
 })
 
 CONSULTANT_PORTAL_ALWAYS_MODULES = frozenset({
@@ -998,6 +999,14 @@ def portal_home_endpoint_for_user(user) -> str:
         pass
     if is_sub_vendor_portal_user(user):
         return 'pay_applications_page'
+    try:
+        from case_workflow import is_owner_portal_user, user_has_module_access
+        if is_owner_portal_user(user) and user_has_module_access(user, 'operations_center', 'client_view'):
+            return 'client_portal_page'
+    except Exception:
+        pass
+    if is_consultant_portal_user(user):
+        return 'dashboard'
     return 'dashboard'
 
 
@@ -1232,8 +1241,11 @@ def build_portal_context_payload(user, Company, db, helpers: dict) -> dict:
         is_sub = portal == 'sub'
 
     try:
-        is_arch = is_architect_user(user) if is_architect_user else False
+        from case_workflow import is_owner_portal_user, is_architect_portal_user
+        is_owner = is_owner_portal_user(user)
+        is_arch = is_architect_portal_user(user)
     except Exception:
+        is_owner = (getattr(user, 'role', None) or '') == 'Owner'
         is_arch = (getattr(user, 'role', None) or '') == 'Architect'
 
     return {
@@ -1251,6 +1263,7 @@ def build_portal_context_payload(user, Company, db, helpers: dict) -> dict:
         'permissions': _portal_permissions_for_client(perms),
         'isSub': is_sub,
         'isArchitect': is_arch,
+        'isOwner': is_owner,
         'isConsultant': is_consultant_portal_user(user),
         'hideFinancials': hide_financials,
         'isSubVendorPayPortal': sub_vendor,

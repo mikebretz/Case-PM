@@ -17,8 +17,8 @@ window.CASEPM_CLIENT_PORTAL_CTX = {
 
 <div class="cp-page">
   <div>
-    <h1 class="text-2xl font-semibold text-white">Client Portal</h1>
-    <p class="text-sm text-zinc-400 mt-0.5">Approvals, selections, draw requests, and payments.</p>
+    <h1 class="text-2xl font-semibold text-white">{% if is_owner_portal|default(false) %}Your project hub{% else %}Client Portal{% endif %}</h1>
+    <p class="text-sm text-zinc-400 mt-0.5">{% if is_owner_portal|default(false) %}Review and approve change orders, selections, draws, and payments in one place.{% else %}Approvals, selections, draw requests, and payments.{% endif %}</p>
   </div>
 
   <div class="flex gap-2 flex-wrap">
