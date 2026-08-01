@@ -494,16 +494,26 @@ def _direct_module_access_rank(user, module):
     return ACCESS_RANK.get(mp.get('access', 'none'), 0)
 
 
+def _min_access_rank(min_access: str) -> int:
+    """Rank required for a permission check. client_view satisfies read-only 'view'."""
+    from permissions_catalog import ACCESS_RANK
+    key = (min_access or 'view').strip()
+    if key == 'view':
+        return ACCESS_RANK.get('client_view', 0)
+    return ACCESS_RANK.get(key, 0)
+
+
 def user_has_module_access(user, module, min_access='view'):
     from permissions_catalog import ACCESS_RANK, submodule_keys_for
     if user.role in ('Admin', 'Developer'):
         return True
+    min_rank = _min_access_rank(min_access)
     key = _resolve_module_key(module)
-    if _direct_module_access_rank(user, key) >= ACCESS_RANK.get(min_access, 0):
+    if _direct_module_access_rank(user, key) >= min_rank:
         return True
     # Parent page access if any sub-tab is allowed
     for sub_key in submodule_keys_for(key):
-        if _direct_module_access_rank(user, sub_key) >= ACCESS_RANK.get(min_access, 0):
+        if _direct_module_access_rank(user, sub_key) >= min_rank:
             return True
     return False
 
@@ -555,8 +565,24 @@ def is_consultant_portal_user(user):
     return (getattr(user, 'role', None) or '') in ('Architect', 'Owner')
 
 
+def is_owner_portal_user(user) -> bool:
+    """Owner/client role — website-style portal, broader read access than architect."""
+    if not user:
+        return False
+    return (getattr(user, 'role', None) or '').strip() == 'Owner'
+
+
+def is_architect_portal_user(user) -> bool:
+    """Design professional consultant portal (not owner)."""
+    if not user or is_owner_portal_user(user):
+        return False
+    if user_portal_type(user) == 'consultant':
+        return True
+    return (getattr(user, 'role', None) or '').strip() == 'Architect'
+
+
 def is_architect_user(user):
-    """Consultant portal styling — architect and owner roles share the simplified nav."""
+    """Consultant portal data scoping — architect and owner (legacy name)."""
     return is_consultant_portal_user(user)
 
 

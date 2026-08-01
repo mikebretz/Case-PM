@@ -482,6 +482,7 @@ ROLE_TEMPLATES = {
             'safety_reports': ('client_view', 'none'),
             'inspections': ('client_view', 'none'),
             'meeting_minutes': ('client_view', 'none'),
+            'operations_center': ('client_view', 'approve_reject'),
             'email': ('edit', 'none'),
             'budget': ('none', 'none'),
             'forecast': ('none', 'none'),
