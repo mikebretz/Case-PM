@@ -19,6 +19,7 @@
     kpis:          { label: 'KPI Summary',        icon: 'fa-chart-simple',        default: true,  h: 2 },
     weather:       { label: 'Weather',            icon: 'fa-cloud-sun',           default: true,  h: 2 },
     assigned:      { label: 'Assigned to Me',     icon: 'fa-inbox',               default: true,  h: 2 },
+    my_work:       { label: 'My Work Queue',      icon: 'fa-list-check',          default: true,  h: 2 },
     financial:     { label: 'Financial Snapshot', icon: 'fa-dollar-sign',         default: true,  h: 2 },
     forecast_chart:{ label: 'Forecast Trend',     icon: 'fa-chart-line',          default: true,  h: 2 },
     open_items:    { label: 'Open Items',         icon: 'fa-triangle-exclamation',default: true,  h: 2 },
@@ -240,20 +241,46 @@
   }
 
   function renderAssigned(d) {
-    const items = d.assigned_items || [];
+    const items = (state.myWork?.items?.length ? state.myWork.items : (d.assigned_items || [])).slice(0, 8);
     const u = ctx.urls || {};
     if (!items.length) {
       return `<div class="dash-tile-body text-sm text-zinc-500 text-center py-6">No pending items — you're caught up.</div>`;
     }
-    return `<div class="dash-tile-body space-y-1.5">${items.map((it) => `
-      <a href="${esc(it.action_url || u.email)}" class="flex items-center gap-2 p-1.5 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-md transition-colors">
-        <i class="fa-solid ${it.source === 'approval' ? 'fa-circle-check text-amber-400' : 'fa-envelope text-emerald-400'} text-xs shrink-0"></i>
+    return `<div class="dash-tile-body space-y-1.5">${items.map((it) => {
+      const subject = it.title || it.subject;
+      const mod = it.subtitle || it.module || it.preview;
+      const url = it.action_url || u.email;
+      const src = it.source || it.kind || 'internal';
+      const icon = src === 'approval' ? 'fa-circle-check text-amber-400' : (src === 'rfi' ? 'fa-question-circle text-yellow-400' : (src === 'change_order' || it.kind === 'change_order' ? 'fa-exchange-alt text-orange-400' : 'fa-envelope text-emerald-400'));
+      return `
+      <a href="${esc(url)}" class="flex items-center gap-2 p-1.5 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-md transition-colors">
+        <i class="fa-solid ${icon} text-xs shrink-0"></i>
         <div class="min-w-0 flex-1">
-          <div class="text-xs truncate ${it.unread ? 'text-white font-medium' : 'text-zinc-300'}">${esc(it.subject)}</div>
-          <div class="text-[10px] text-zinc-500 truncate">${esc(it.module || it.preview)}</div>
+          <div class="text-xs truncate text-white font-medium">${esc(subject)}</div>
+          <div class="text-[10px] text-zinc-500 truncate">${esc(mod)}</div>
         </div>
-        ${it.requires_action ? '<span class="text-[9px] px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded-full shrink-0">!</span>' : ''}
-      </a>`).join('')}</div>`;
+        ${it.overdue ? '<span class="text-[9px] px-1.5 py-0.5 bg-red-500/20 text-red-400 rounded-full shrink-0">!</span>' : ''}
+      </a>`;
+    }).join('')}</div>`;
+  }
+
+  function renderMyWork() {
+    const items = (state.myWork?.items || []).slice(0, 10);
+    const u = ctx.urls || {};
+    if (!items.length) {
+      return `<div class="dash-tile-body text-sm text-zinc-500 text-center py-6">You're caught up — nothing needs your action.</div>`;
+    }
+    const byKind = state.myWork?.counts || {};
+    const summary = Object.entries(byKind).map(([k, n]) => `${k.replace(/_/g, ' ')} (${n})`).join(' · ');
+    return `<div class="dash-tile-body space-y-2">
+      <div class="text-[10px] text-zinc-500">${esc(summary)}</div>
+      <div class="space-y-1">${items.slice(0, 6).map((it) => `
+        <a href="${esc(it.action_url || u.myWork || '/my-work')}" class="flex items-center gap-2 text-xs p-1.5 rounded-md hover:bg-zinc-800 border border-zinc-800/80">
+          <span class="text-zinc-500 uppercase text-[9px] w-14 shrink-0">${esc((it.kind || '').replace(/_/g, ' '))}</span>
+          <span class="truncate text-zinc-200 flex-1">${esc(it.title)}</span>
+        </a>`).join('')}</div>
+      <a href="${esc(u.myWork || '/my-work')}" class="text-xs text-emerald-400 hover:text-emerald-300 inline-block pt-1">Open full queue →</a>
+    </div>`;
   }
 
   function renderFinancial(d) {
@@ -444,6 +471,7 @@
   function renderQuickActions() {
     const u = ctx.urls || {};
     const actions = [
+      { label: 'My work', icon: 'fa-list-check text-emerald-400', url: u.myWork || '/my-work' },
       { label: 'Daily Log', icon: 'fa-clipboard-list text-emerald-400', url: u.dailyLog },
       { label: 'New RFI', icon: 'fa-circle-question text-yellow-400', url: (u.rfis || '') + '?action=new' },
       { label: 'Change Order', icon: 'fa-arrows-rotate text-orange-400', url: (u.changeOrders || '') + '?action=new' },
@@ -516,6 +544,7 @@
     kpis: (d) => renderKpis(d),
     weather: () => renderWeather(),
     assigned: (d) => renderAssigned(d),
+    my_work: () => renderMyWork(),
     financial: (d) => renderFinancial(d),
     forecast_chart: (d) => renderForecastChart(d),
     open_items: (d) => renderOpenItems(d),
@@ -535,7 +564,8 @@
   };
 
   const TILE_LINKS = {
-    assigned: { url: () => ctx.urls?.email, label: 'Internal inbox' },
+    assigned: { url: () => ctx.urls?.myWork || ctx.urls?.email, label: 'My work' },
+    my_work: { url: () => ctx.urls?.myWork || '/my-work', label: 'View all' },
     daily_logs: { url: () => ctx.urls?.dailyLog, label: 'View all' },
     schedule: { url: () => ctx.urls?.schedule, label: 'Schedule' },
     activity: { url: null, label: null },
@@ -939,12 +969,23 @@
     return res.json();
   }
 
+  async function fetchMyWork() {
+    const pid = projectId();
+    const q = new URLSearchParams({ limit: '15' });
+    if (pid) q.set('project_id', String(pid));
+    const res = await fetch(`/api/my-work?${q}`, { credentials: 'same-origin' });
+    if (!res.ok) return { items: [], counts: {} };
+    return res.json();
+  }
+
   async function refreshProject() {
     const status = document.getElementById('dashStatusText');
     const updated = document.getElementById('dashUpdatedAt');
     if (status) status.textContent = 'Refreshing…';
 
-    state.data = await fetchSummary();
+    const [summary, myWork] = await Promise.all([fetchSummary(), fetchMyWork()]);
+    state.data = summary;
+    state.myWork = myWork;
     state.weather = await fetchWeather(state.data.location);
     renderGrid();
     const p = state.data.project;

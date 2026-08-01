@@ -1,0 +1,16 @@
+/* Simple view — progressive disclosure on heavy construction modules */
+html.casepm-simple-view [data-casepm-advanced="1"],
+body.casepm-simple-view [data-casepm-advanced="1"] {
+  display: none !important;
+}
+
+html.casepm-simple-view .casepm-simple-only,
+body.casepm-simple-view .casepm-simple-only {
+  display: block !important;
+}
+
+body.casepm-simple-view.portal-owner .nav-link[data-nav-module="dashboard"] span,
+body.casepm-simple-view .app-sidebar .section-header {
+  /* slightly calmer nav in simple mode */
+  letter-spacing: 0.05em;
+}

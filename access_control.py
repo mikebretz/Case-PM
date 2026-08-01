@@ -82,6 +82,7 @@ API_PREFIX_MODULE = [
     ('/api/schedule', 'schedule'),
     ('/api/projects/', 'projects'),
     ('/api/project-directory/', 'project_directory'),
+    ('/api/my-work', 'dashboard'),
     ('/api/dashboard', 'dashboard'),
     ('/api/email', 'email'),
     ('/api/internal-messages', 'internal_messages'),

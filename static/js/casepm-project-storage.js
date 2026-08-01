@@ -11,9 +11,20 @@
     ]);
 
     function projectId() {
+        const domId = document.body?.getAttribute('data-active-project-id');
+        if (domId) {
+            const parsed = parseInt(domId, 10);
+            if (parsed > 0) {
+                const ls = localStorage.getItem('casepm_current_project_id');
+                if (ls && parseInt(ls, 10) !== parsed) {
+                    localStorage.setItem('casepm_current_project_id', String(parsed));
+                }
+                window.CASEPM_ACTIVE_PROJECT_ID = parsed;
+                return String(parsed);
+            }
+        }
         const raw = window.CASEPM_ACTIVE_PROJECT_ID || localStorage.getItem('casepm_current_project_id');
-        const id = parseInt(raw, 10);
-        return id > 0 ? String(id) : '';
+        return raw ? String(parseInt(raw, 10)) : '';
     }
 
     function storageKey(key) {
