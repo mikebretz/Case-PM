@@ -303,6 +303,19 @@ def guard_api_request(current_user):
         if path.startswith(prefix):
             return None
 
+    # Work queue — owners and operations-center users use it from client portal (not only dashboard).
+    if path.startswith('/api/my-work') and request.method in ('GET', 'HEAD', 'OPTIONS'):
+        try:
+            from case_workflow import user_has_module_access, is_owner_portal_user
+            if user_has_module_access(current_user, 'dashboard', 'view'):
+                return None
+            if is_owner_portal_user(current_user):
+                return None
+            if user_has_module_access(current_user, 'operations_center', 'view'):
+                return None
+        except Exception:
+            pass
+
     # Read-only pay-app defaults and commitments for sub/vendor portal users.
     if request.method in ('GET', 'HEAD', 'OPTIONS'):
         try:

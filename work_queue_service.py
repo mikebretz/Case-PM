@@ -144,31 +144,38 @@ def build_my_work_queue(
 
     # --- Internal messages (indexed filter — avoid full mailbox scan) ---
     if InternalMessage is not None and uid:
-        msg_q = InternalMessage.query.filter(
-            InternalMessage.user_id == uid,
-            InternalMessage.archived.is_(False),
-            or_(InternalMessage.requires_action.is_(True), InternalMessage.is_read.is_(False)),
-        )
-        if scope_ids is not None:
-            msg_q = msg_q.filter(
-                (InternalMessage.project_id.in_(list(scope_ids))) | (InternalMessage.project_id.is_(None))
+        try:
+            msg_q = InternalMessage.query.filter(
+                InternalMessage.user_id == uid,
+                InternalMessage.archived.is_(False),
+                or_(InternalMessage.requires_action.is_(True), InternalMessage.is_read.is_(False)),
             )
-        for m in msg_q.order_by(InternalMessage.created_at.desc()).limit(30).all():
-            add_item(
-                kind='message',
-                source='internal',
-                id=f'msg-{m.id}',
-                title=m.subject or 'Message',
-                subtitle=m.module or m.preview or '',
-                project_id=m.project_id,
-                project_name=project_name(m.project_id),
-                priority='high' if m.requires_action else 'normal',
-                overdue=False,
-                due_date='',
-                sort_date=_iso(m.created_at),
-                action_url=m.action_url or '/email?tab=internal',
-                can_act=True,
-            )
+            if scope_ids is not None:
+                if scope_ids:
+                    msg_q = msg_q.filter(
+                        (InternalMessage.project_id.in_(list(scope_ids)))
+                        | (InternalMessage.project_id.is_(None))
+                    )
+                else:
+                    msg_q = msg_q.filter(InternalMessage.project_id.is_(None))
+            for m in msg_q.order_by(InternalMessage.created_at.desc()).limit(30).all():
+                add_item(
+                    kind='message',
+                    source='internal',
+                    id=f'msg-{m.id}',
+                    title=m.subject or 'Message',
+                    subtitle=m.module or m.preview or '',
+                    project_id=m.project_id,
+                    project_name=project_name(m.project_id),
+                    priority='high' if m.requires_action else 'normal',
+                    overdue=False,
+                    due_date='',
+                    sort_date=_iso(m.created_at),
+                    action_url=m.action_url or '/email?tab=internal',
+                    can_act=True,
+                )
+        except Exception:
+            pass
 
     # --- Approval requests ---
     if ApprovalRequest is not None:
@@ -202,7 +209,7 @@ def build_my_work_queue(
         for rfi in rfi_q.limit(200).all():
             ball_uid = getattr(rfi, 'ball_in_court_user_id', None)
             ball_role = getattr(rfi, 'ball_in_court_role', None)
-            assigned = ball_uid is not None and int(ball_uid) == int(uid)
+            assigned = ball_uid is not None and uid is not None and int(ball_uid) == int(uid)
             role_act = user_can_act_on_ball_in_court(user, ball_role) if ball_role else False
             if not assigned and not role_act:
                 continue
@@ -312,7 +319,12 @@ def build_my_work_queue(
     if PayAppProjectState is not None:
         pa_q = PayAppProjectState.query
         if scope_ids is not None:
-            pa_q = pa_q.filter(PayAppProjectState.project_id.in_(list(scope_ids)))
+            if not scope_ids:
+                pa_q = pa_q.filter(False)
+            else:
+                pa_q = pa_q.filter(PayAppProjectState.project_id.in_(list(scope_ids)))
+        elif project_id:
+            pa_q = pa_q.filter(PayAppProjectState.project_id == int(project_id))
         for row in pa_q.limit(80).all():
             state = _parse_json(getattr(row, 'data_json', None) or getattr(row, 'state_json', None))
             periods = state.get('periods') or state.get('payPeriods') or []

@@ -3163,11 +3163,12 @@ def api_my_work():
     except Exception as exc:
         app.logger.exception('api_my_work failed: %s', exc)
         return jsonify({
-            'ok': False,
+            'ok': True,
             'error': 'Work queue temporarily unavailable.',
             'items': [],
             'counts': {},
-        }), 500
+            'total': 0,
+        })
 
 
 @app.route('/api/dashboard/summary', methods=['GET'])
