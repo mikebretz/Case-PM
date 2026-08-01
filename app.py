@@ -5810,11 +5810,12 @@ def serve_project_logo(project_id):
 @login_required
 def serve_spec_book_pdf(project_id):
     from document_module_security import assert_submittal_spec_book_read_allowed
-    from financial_security import require_financial_project_access
+    from project_access import user_can_access_project
     try:
         assert_submittal_spec_book_read_allowed(current_user)
-        require_financial_project_access(current_user, project_id, Project)
-    except (PermissionError, ValueError) as exc:
+        if not user_can_access_project(current_user, project_id, Project=Project):
+            abort(403)
+    except PermissionError:
         abort(403)
     directory = os.path.join(app.config['UPLOAD_FOLDER'], 'spec_books', str(project_id))
     return send_from_directory(directory, 'spec_book.pdf', mimetype='application/pdf')

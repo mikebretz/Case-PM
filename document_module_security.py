@@ -202,13 +202,10 @@ def assert_submittal_attachment_delete_allowed(user, submittal, attachment, *, C
 
 
 def assert_submittal_spec_book_read_allowed(user) -> None:
-    """Read spec book metadata/PDF when submittals module is readable (staff entry or assigned subs)."""
+    """Read spec book metadata/PDF when submittals module is readable (includes view-only staff and assigned subs)."""
     if _is_privileged(user):
         return
     assert_submittal_read_allowed(user)
-    if is_sub_portal_user(user) and not is_staff_portal_user(user):
-        return
-    assert_submittal_log_manage_allowed(user)
 
 
 def assert_submittal_signature_allowed(user, submittal, *, Company=None, db=None) -> None:
