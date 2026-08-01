@@ -40,6 +40,9 @@ class PluginSecurityTests(unittest.TestCase):
         csp = build_content_security_policy()
         self.assertIn('cdn.jsdelivr.net', csp)
         self.assertIn("object-src 'none'", csp)
+        connect_idx = csp.index('connect-src')
+        connect_clause = csp[connect_idx:].split(';', 1)[0]
+        self.assertIn('https://cdn.jsdelivr.net', connect_clause)
 
     def test_plugin_inventory(self):
         from plugin_security import plugin_inventory_payload

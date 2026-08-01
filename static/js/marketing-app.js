@@ -278,7 +278,7 @@
     }
     const settings = await api('/api/marketing/settings');
     const sh = document.getElementById('mkMarketingSettings');
-    if (sh) sh.innerHTML = `<pre class="text-xs">${esc(JSON.stringify(settings, null, 2))}</pre>`;
+    if (sh) sh.innerHTML = `<pre class="text-xs">${esc(JSON.stringify(settings.settings || settings, null, 2))}</pre>`;
   }
 
   document.getElementById('mkBuildProposal')?.addEventListener('click', async () => {

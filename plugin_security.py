@@ -182,7 +182,7 @@ def build_content_security_policy() -> str:
         f"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com {cdn_scripts}; "
         f"font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com {cdn_scripts}; "
         "img-src 'self' data: blob: https:; "
-        "connect-src 'self' https://router.project-osrm.org https://nominatim.openstreetmap.org "
+        f"connect-src 'self' {cdn_scripts} https://router.project-osrm.org https://nominatim.openstreetmap.org "
         "https://geocoding-api.open-meteo.com https://api.open-meteo.com https://graph.microsoft.com; "
         "frame-src 'self' blob:; "
         "object-src 'none'; "
