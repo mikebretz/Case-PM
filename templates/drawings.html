@@ -2,6 +2,11 @@
 
 {% block content %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+</script>
 <script src="{{ url_for('static', filename='js/drawings-app.js') }}?v=20260710f"></script>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/draw-viewer.css') }}">
 
