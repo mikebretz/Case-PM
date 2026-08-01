@@ -6,7 +6,7 @@
   <title>{{ settings.company_name }} — Project plans</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/bidder-plan-room.css') }}">
 </head>
-<body class="pr-hub" style="--pr-accent: {{ settings.primary_color }}">
+<body class="pr-hub" style="--pr-accent: {{ settings.primary_color or '#059669' }}">
 {% set active = 'projects' %}
 {% include 'partials/bidder_plan_room_nav.html' %}
 {% set header_title = 'Project plans & specifications' %}

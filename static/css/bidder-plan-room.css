@@ -96,18 +96,21 @@ input, textarea {
   margin-bottom: 1rem;
 }
 
-/* —— BidHub-style hub (light) —— */
+/* —— Logged-in plan room hub (dark, matches registration) —— */
 body.pr-hub {
-  --pr-bg: #f4f6f9;
-  --pr-card: #ffffff;
-  --pr-border: #e2e8f0;
-  --pr-text: #0f172a;
-  --pr-muted: #64748b;
+  --pr-bg: #0c0c0e;
+  --pr-card: #18181b;
+  --pr-border: #3f3f46;
+  --pr-text: #fafafa;
+  --pr-muted: #a1a1aa;
   background: var(--pr-bg);
   color: var(--pr-text);
 }
+body.pr-hub .pr-muted { margin-bottom: 0.5rem; }
+body.pr-hub a { color: var(--pr-accent); }
+body.pr-hub .pr-hub-main > .pr-muted a { color: var(--pr-accent); }
 .pr-topnav {
-  background: #fff;
+  background: #09090b;
   border-bottom: 1px solid var(--pr-border);
   position: sticky;
   top: 0;
@@ -122,34 +125,31 @@ body.pr-hub {
   justify-content: space-between;
   gap: 1rem;
 }
-.pr-brand { font-weight: 700; color: var(--pr-text); text-decoration: none; font-size: 1rem; }
-.pr-nav-links { display: flex; gap: 1.25rem; font-size: 0.9rem; }
+.pr-brand {
+  font-weight: 700;
+  color: var(--pr-text);
+  text-decoration: none;
+  font-size: 1rem;
+}
+.pr-nav-links { display: flex; gap: 1.25rem; font-size: 0.9rem; flex-wrap: wrap; }
 .pr-nav-links a { color: var(--pr-muted); text-decoration: none; }
 .pr-nav-links a.active, .pr-nav-links a:hover { color: var(--pr-accent); }
-.pr-hub-header {
-  background: linear-gradient(180deg, #fff 0%, #f8fafc 100%);
-  border-bottom: 1px solid var(--pr-border);
-  padding: 1.75rem 1.25rem;
+.pr-hub-page-hero {
+  border-bottom: 3px solid var(--pr-accent);
 }
 .pr-hub-header-inner { max-width: 1100px; margin: 0 auto; }
-.pr-hub-header h1 { margin: 0 0 0.35rem; font-size: 1.75rem; }
+.pr-hub-header h1 { margin: 0 0 0.35rem; font-size: clamp(1.5rem, 3vw, 1.85rem); }
 .pr-hub-brand-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 1rem;
   flex-wrap: wrap;
 }
 .pr-hub-logo {
-  max-height: 52px;
-  max-width: 200px;
+  max-height: 56px;
+  max-width: 220px;
   object-fit: contain;
-}
-.pr-topnav-logo {
-  max-height: 36px;
-  max-width: 140px;
-  object-fit: contain;
-  vertical-align: middle;
-  margin-right: 0.5rem;
+  margin-bottom: 0.25rem;
 }
 .pr-loading {
   padding: 2rem 1rem;
@@ -166,13 +166,16 @@ body.pr-hub {
   border: 1px solid var(--pr-border);
   border-radius: 8px;
   font: inherit;
+  color: var(--pr-text);
+  background: #09090b;
 }
 .pr-badge {
   font-size: 0.8rem;
-  background: #e0e7ff;
-  color: #3730a3;
+  background: rgba(16, 185, 129, 0.15);
+  color: #6ee7b7;
   padding: 0.35rem 0.65rem;
   border-radius: 999px;
+  border: 1px solid rgba(16, 185, 129, 0.35);
 }
 .pr-project-grid {
   display: grid;
@@ -185,7 +188,7 @@ body.pr-hub {
   border: 1px solid var(--pr-border);
   border-radius: 12px;
   padding: 1.15rem 1.25rem;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -195,17 +198,18 @@ body.pr-hub {
 }
 a.pr-project-card:hover {
   border-color: var(--pr-accent);
-  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.12);
+  box-shadow: 0 4px 20px rgba(5, 150, 105, 0.2);
 }
 .pr-project-card h3 { margin: 0; font-size: 1.05rem; }
 .pr-project-meta { font-size: 0.8rem; color: var(--pr-muted); }
 .pr-project-tags { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .pr-tag {
   font-size: 0.7rem;
-  background: #f1f5f9;
-  color: #475569;
+  background: #27272a;
+  color: #d4d4d8;
   padding: 0.2rem 0.45rem;
   border-radius: 4px;
+  border: 1px solid var(--pr-border);
 }
 .pr-due { font-size: 0.85rem; font-weight: 600; color: var(--pr-accent); }
 .pr-footer-light { background: transparent; border: none; color: var(--pr-muted); }
