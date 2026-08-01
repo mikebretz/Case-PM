@@ -8,6 +8,7 @@
   const projectId = root.dataset.projectId;
   const approved = root.dataset.approved === '1';
   const isStaff = root.dataset.staff === '1';
+  const PRD = window.PlanRoomDocs || {};
 
   function esc(s) {
     if (s == null) return '';
@@ -24,15 +25,32 @@
   }
 
   function formatBytes(n) {
-    const b = Number(n) || 0;
-    if (b < 1024) return `${b} B`;
-    if (b < 1048576) return `${(b / 1024).toFixed(1)} KB`;
-    return `${(b / 1048576).toFixed(1)} MB`;
+    return PRD.formatBytes ? PRD.formatBytes(n) : String(n);
+  }
+
+  function docRow(d) {
+    return PRD.renderListItem ? PRD.renderListItem(d) : `<li>${esc(d.name)}</li>`;
   }
 
   function meetingLine(label, block) {
     if (!block || (!block.date && !block.time && !block.location && !block.notes)) return '';
     return `<p class="pr-project-meta"><strong>${esc(label)}:</strong> ${formatDate(block.date)}${block.time ? ` ${esc(block.time)}` : ''}${block.location ? ` · ${esc(block.location)}` : ''}${block.mandatory ? ' (mandatory)' : ''}${block.notes ? ` — ${esc(block.notes)}` : ''}</p>`;
+  }
+
+  function keyDatesHtml(pr, p) {
+    const pbm = pr.pre_bid_meeting || {};
+    const jw = pr.job_walk || {};
+    return `
+      <aside class="pr-key-dates">
+        <h3>Key dates</h3>
+        <dl>
+          <div><dt>Bid due</dt><dd>${formatDate(p.bid_date || pr.bid_date)}${pr.bid_due_time ? ` · ${esc(pr.bid_due_time)}` : ''}</dd></div>
+          ${pr.pre_bid_date ? `<div><dt>Pre-bid</dt><dd>${formatDate(pr.pre_bid_date)}</dd></div>` : ''}
+          ${pbm.date ? `<div><dt>Pre-bid meeting</dt><dd>${formatDate(pbm.date)}${pbm.time ? ` ${esc(pbm.time)}` : ''}</dd></div>` : ''}
+          ${jw.date ? `<div><dt>Job walk</dt><dd>${formatDate(jw.date)}${jw.time ? ` ${esc(jw.time)}` : ''}</dd></div>` : ''}
+        </dl>
+        ${isStaff ? `<p class="pr-project-meta" style="margin-top:0.75rem"><a href="/plan-room/console">Edit in plan room console</a> · <a href="/estimating">Estimating</a></p>` : ''}
+      </aside>`;
   }
 
   function bindTabs(container) {
@@ -70,13 +88,9 @@
         ? sections.map((sec) => `
           <div class="pr-itb-block">
             <h3>${esc(sec.label)}</h3>
-            <ul class="pr-doc-list">${(sec.documents || []).map((d) => `
-              <li><span>${esc(d.title || d.name)} <span class="pr-project-meta">(${formatBytes(d.file_size)})</span></span>
-              <a class="pr-download" href="${esc(d.download_url)}">Download</a></li>`).join('')}</ul>
+            <ul class="pr-doc-list">${(sec.documents || []).map((d) => docRow(d)).join('')}</ul>
           </div>`).join('')
-        : (docs.length ? `<ul class="pr-doc-list">${docs.map((d) => `
-            <li><span>${esc(d.name)} (${formatBytes(d.file_size)})</span>
-            <a class="pr-download" href="${esc(d.download_url)}">Download</a></li>`).join('')}</ul>` : '<p class="pr-muted">No documents attached yet. Check back for addenda.</p>');
+        : (docs.length ? `<ul class="pr-doc-list">${docs.map((d) => docRow(d)).join('')}</ul>` : '<p class="pr-muted">No documents attached yet. Check back for addenda.</p>');
 
       const packagesPanel = pkgs.length ? pkgs.map((pkg) => `
             <div class="pr-pkg-card">
@@ -92,31 +106,38 @@
               <strong>${esc(a.number)} — ${esc(a.title)}</strong> <span class="pr-project-meta">(${esc(a.package_title)})</span>
               ${a.require_rebid ? '<span class="pr-tag">Re-bid required</span>' : ''}
               <p class="pr-project-meta">${esc(a.description || '')}</p>
-              ${(a.documents || []).length ? `<ul class="pr-doc-list">${a.documents.map((d) => `
-                <li><span>${esc(d.name)}</span><a class="pr-download" href="${esc(d.download_url)}">Download</a></li>`).join('')}</ul>` : ''}
+              ${(a.documents || []).length ? `<ul class="pr-doc-list">${a.documents.map((d) => docRow(d)).join('')}</ul>` : ''}
             </div>`).join('') : '<p class="pr-muted">No addenda issued.</p>';
 
       host.innerHTML = `
-        <div class="pr-detail-hero">
-          <h1>${esc(p.name)}</h1>
-          <div class="pr-project-meta">${esc(p.number)} · ${esc(p.location)} · ${esc(p.project_type || '')}</div>
-          <div class="pr-due" style="margin-top:0.5rem">Bid date: ${formatDate(p.bid_date)}${pr.bid_due_time ? ` at ${esc(pr.bid_due_time)}` : ''}${pr.pre_bid_date ? ` · Pre-bid: ${formatDate(pr.pre_bid_date)}` : ''}</div>
-          ${pr.owner_name ? `<p class="pr-project-meta">Owner: ${esc(pr.owner_name)}</p>` : ''}
-          ${pr.architect_name ? `<p class="pr-project-meta">Architect: ${esc(pr.architect_name)}</p>` : ''}
-          ${pr.contact_email ? `<p class="pr-project-meta">Bid contact: ${esc(pr.contact_name || '')} <a href="mailto:${esc(pr.contact_email)}">${esc(pr.contact_email)}</a>${pr.contact_phone ? ` · ${esc(pr.contact_phone)}` : ''}</p>` : ''}
-          <p style="margin-top:0.75rem">${esc(p.summary || pr.summary || '')}</p>
-          <div id="prInstructionsSlot" class="pr-html-content" style="margin-top:0.75rem"></div>
-          ${meetingLine('Pre-bid meeting', pr.pre_bid_meeting)}
-          ${meetingLine('Job walk', pr.job_walk)}
+        <div class="pr-detail-with-sidebar">
+          <div>
+            <div class="pr-detail-hero">
+              <h1>${esc(p.name)}</h1>
+              <div class="pr-project-meta">${esc(p.number)} · ${esc(p.location)} · ${esc(p.project_type || '')}</div>
+              <div class="pr-due" style="margin-top:0.5rem">Bid date: ${formatDate(p.bid_date)}${pr.bid_due_time ? ` at ${esc(pr.bid_due_time)}` : ''}</div>
+              ${pr.owner_name ? `<p class="pr-project-meta">Owner: ${esc(pr.owner_name)}</p>` : ''}
+              ${pr.architect_name ? `<p class="pr-project-meta">Architect: ${esc(pr.architect_name)}</p>` : ''}
+              ${pr.contact_email ? `<p class="pr-project-meta">Bid contact: ${esc(pr.contact_name || '')} <a href="mailto:${esc(pr.contact_email)}">${esc(pr.contact_email)}</a>${pr.contact_phone ? ` · ${esc(pr.contact_phone)}` : ''}</p>` : ''}
+              <p style="margin-top:0.75rem">${esc(p.summary || pr.summary || '')}</p>
+              <div id="prInstructionsSlot" class="pr-html-content" style="margin-top:0.75rem"></div>
+              ${meetingLine('Pre-bid meeting', pr.pre_bid_meeting)}
+              ${meetingLine('Job walk', pr.job_walk)}
+            </div>
+            <nav class="pr-subnav-tabs">
+              <button type="button" class="active" data-panel="docs">Plans &amp; specs</button>
+              <button type="button" data-panel="packages">Bid packages (${pkgs.length})</button>
+              <button type="button" data-panel="addenda">Addenda (${addenda.length})</button>
+            </nav>
+            <div id="prPanelDocs" class="pr-panel">
+              <input type="search" class="pr-search pr-doc-search" id="prDocSearch" placeholder="Search documents by name…">
+              <div id="prDocListWrap">${docsPanel}</div>
+            </div>
+            <div id="prPanelPackages" class="pr-panel hidden">${packagesPanel}</div>
+            <div id="prPanelAddenda" class="pr-panel hidden">${addendaPanel}</div>
+          </div>
+          ${keyDatesHtml(pr, p)}
         </div>
-        <nav class="pr-subnav-tabs">
-          <button type="button" class="active" data-panel="docs">Plans &amp; specs</button>
-          <button type="button" data-panel="packages">Bid packages (${pkgs.length})</button>
-          <button type="button" data-panel="addenda">Addenda (${addenda.length})</button>
-        </nav>
-        <div id="prPanelDocs" class="pr-panel">${docsPanel}</div>
-        <div id="prPanelPackages" class="pr-panel hidden">${packagesPanel}</div>
-        <div id="prPanelAddenda" class="pr-panel hidden">${addendaPanel}</div>
       `;
 
       const instrSlot = document.getElementById('prInstructionsSlot');
@@ -127,6 +148,9 @@
       }
 
       bindTabs(host);
+      if (PRD.bindDocumentSearch) {
+        PRD.bindDocumentSearch(document.getElementById('prDocSearch'), document.getElementById('prDocListWrap'));
+      }
     })
     .catch((err) => {
       console.error('plan room project detail', err);

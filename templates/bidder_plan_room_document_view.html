@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ settings.company_name }} — View document</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bidder-plan-room.css') }}">
+</head>
+<body class="pr-hub pr-viewer-page" style="--pr-accent: {{ settings.primary_color or '#059669' }}">
+{% set active = 'projects' %}
+{% include 'partials/bidder_plan_room_nav.html' %}
+<main class="pr-viewer-main" id="prViewerRoot"
+      data-stream-url="{{ doc.stream_url if doc else '' }}"
+      data-mime="{{ doc.mime_type if doc else '' }}"
+      data-title="{{ doc.name if doc else '' }}">
+  {% if error %}
+  <div class="pr-gate">{{ error }}</div>
+  {% elif doc %}
+  <div class="pr-viewer-toolbar">
+    <div class="pr-viewer-title">
+      <a href="javascript:history.back()" class="pr-muted">&larr; Back</a>
+      <h1>{{ doc.name }}</h1>
+      <span class="pr-project-meta">{{ doc.filename }}</span>
+    </div>
+    <div class="pr-viewer-actions">
+      <a class="pr-btn pr-btn-sm" href="{{ doc.download_url }}">Download</a>
+      {% if project_id %}
+      <a class="pr-btn pr-btn-sm pr-btn-ghost" href="/plan-room/projects/{{ project_id }}">Project</a>
+      {% endif %}
+    </div>
+  </div>
+  <div id="prViewerHost" class="pr-viewer-host">
+    <p class="pr-loading">Loading document…</p>
+  </div>
+  {% endif %}
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="{{ url_for('static', filename='js/bidder-plan-room-viewer.js') }}"></script>
+</body>
+</html>

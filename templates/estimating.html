@@ -12,6 +12,7 @@ window.CASEPM_ESTIMATE_CTX = {
 <script src="{{ url_for('static', filename='js/budget-sync.js') }}"></script>
 <script src="{{ url_for('static', filename='js/estimating-app.js') }}"></script>
 <script src="{{ url_for('static', filename='js/bidder-plan-room-staff.js') }}"></script>
+<script src="{{ url_for('static', filename='js/estimating-plan-room-bridge.js') }}"></script>
 <script src="{{ url_for('static', filename='js/estimating-features.js') }}"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="{{ url_for('static', filename='js/csi-catalog.js') }}"></script>
@@ -67,9 +68,18 @@ window.CASEPM_ESTIMATE_CTX = {
 }
 .ett-wrap { min-height: 280px; }
 #estTakeoffViewer { min-height: 320px; }
+.est-planroom-bridge {
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.75rem; align-items: center;
+  margin-bottom: 1rem; padding: 0.75rem 1rem; border-radius: 0.5rem;
+  border: 1px solid rgba(16,185,129,0.35); background: rgba(6,78,59,0.2);
+}
+.est-planroom-bridge-title { font-size: 0.85rem; font-weight: 600; color: #fff; }
+.est-planroom-bridge-meta { font-size: 0.75rem; color: #a1a1aa; margin-top: 0.2rem; }
+.est-planroom-bridge-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 </style>
 
 <div class="est-page">
+  <div id="estPlanRoomBridge"></div>
   <div class="flex items-center justify-between flex-shrink-0 mb-4 gap-3 flex-wrap">
     <div>
       <div class="text-2xl font-semibold text-white">Estimating</div>

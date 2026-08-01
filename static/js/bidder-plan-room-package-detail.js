@@ -8,6 +8,7 @@
   const projectId = root.dataset.projectId;
   const packageId = root.dataset.packageId;
   const approved = root.dataset.approved === '1';
+  const PRD = window.PlanRoomDocs || {};
 
   function esc(s) {
     if (s == null) return '';
@@ -23,11 +24,8 @@
     }
   }
 
-  function formatBytes(n) {
-    const b = Number(n) || 0;
-    if (b < 1024) return `${b} B`;
-    if (b < 1048576) return `${(b / 1024).toFixed(1)} KB`;
-    return `${(b / 1048576).toFixed(1)} MB`;
+  function docRow(d) {
+    return PRD.renderListItem ? PRD.renderListItem(d) : `<li>${esc(d.name)}</li>`;
   }
 
   function meetingBlock(label, block) {
@@ -53,12 +51,7 @@
       <div class="pr-itb-block">
         <h3>${esc(sec.label)}</h3>
         <ul class="pr-doc-list">
-          ${(sec.documents || []).map((d) => `
-            <li>
-              <span>${esc(d.title || d.name)}${d.sheet ? ` <span class="pr-project-meta">(${esc(d.sheet)})</span>` : ''}
-                <span class="pr-project-meta"> · ${formatBytes(d.file_size)}</span></span>
-              <a class="pr-download" href="${esc(d.download_url)}">Download</a>
-            </li>`).join('')}
+          ${(sec.documents || []).map((d) => docRow(d)).join('')}
         </ul>
       </div>
     `).join('');
@@ -107,7 +100,8 @@
           </section>
           <section class="pr-panel">
             <h2>Plans, specs &amp; exhibits</h2>
-            ${renderSections(sections)}
+            <input type="search" class="pr-search pr-doc-search" id="prPkgDocSearch" placeholder="Search documents…">
+            <div id="prPkgDocWrap">${renderSections(sections)}</div>
           </section>
         </div>
         ${addenda.length ? `<section class="pr-panel"><h2>Addenda</h2>${addenda.map((a) => `
@@ -115,8 +109,7 @@
             <strong>${esc(a.number)} — ${esc(a.title)}</strong>
             ${a.require_rebid ? '<span class="pr-tag">Re-bid required</span>' : ''}
             <p class="pr-project-meta">${esc(a.description || '')}</p>
-            ${(a.documents || []).length ? `<ul class="pr-doc-list">${a.documents.map((d) => `
-              <li><span>${esc(d.name)}</span><a class="pr-download" href="${esc(d.download_url)}">Download</a></li>`).join('')}</ul>` : ''}
+            ${(a.documents || []).length ? `<ul class="pr-doc-list">${a.documents.map((d) => docRow(d)).join('')}</ul>` : ''}
           </div>`).join('')}</section>` : ''}
       `;
       const scopeSlot = document.getElementById('prPkgScopeSlot');
@@ -130,6 +123,9 @@
       if (qualSlot && itb.qualifications_html) {
         qualSlot.innerHTML = `<div class="pr-itb-block"><h3>Qualifications</h3><div class="pr-html-content">${itb.qualifications_html}</div></div>`;
       } else qualSlot?.remove();
+      if (PRD.bindDocumentSearch) {
+        PRD.bindDocumentSearch(document.getElementById('prPkgDocSearch'), document.getElementById('prPkgDocWrap'));
+      }
     })
     .catch(() => {
       host.innerHTML = '<p class="pr-muted">Could not load package.</p>';

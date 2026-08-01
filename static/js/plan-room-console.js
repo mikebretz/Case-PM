@@ -203,6 +203,8 @@
       ${sectionsHtml}
       <div class="mt-4 flex flex-wrap gap-2 items-center">
         <button type="button" id="prcSavePackage" class="prc-btn prc-btn-primary">Save package manifest</button>
+        <button type="button" id="prcSyncEstimating" class="prc-btn prc-btn-ghost">Import from estimating attachments</button>
+        <a href="/estimating" class="prc-btn prc-btn-ghost">Open estimating</a>
         <a href="/plan-room/projects/${ctx.projectId}/packages/${pkg.id}" target="_blank" rel="noopener" class="prc-btn prc-btn-ghost">Preview as bidder</a>
         <span id="prcPkgMsg" class="prc-msg"></span>
       </div>
@@ -268,6 +270,19 @@
     host.querySelectorAll('.prc-doc-row').forEach(bindDocRow);
 
     document.getElementById('prcSavePackage')?.addEventListener('click', savePackageManifest);
+    document.getElementById('prcSyncEstimating')?.addEventListener('click', async () => {
+      if (!selectedPackageId) return;
+      const msg = document.getElementById('prcPkgMsg');
+      try {
+        const out = await api(`/api/bidder-network/admin/bid-packages/${selectedPackageId}/sync-estimating`, { method: 'POST', body: '{}' });
+        if (msg) msg.textContent = `Imported ${out.added || 0} document(s) from estimating.`;
+        await loadConsole();
+        renderPackageList();
+        renderPackageEditor();
+      } catch (e) {
+        alert(e.message);
+      }
+    });
   }
 
   function bindDocRow(row) {
