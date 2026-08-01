@@ -31,17 +31,260 @@ def load_plan_room_settings():
     company = load_company_info()
     return {
         'company_name': company.get('company_name') or 'Our Construction Company',
-        'tagline': 'Partner with us on upcoming bid opportunities',
+        'tagline': 'Electronic plan room & bid opportunities',
         'hero_body': (
-            'Register your firm to receive invitations and view public bid opportunities. '
-            'Our estimating team reviews every application before granting plan room access.'
+            'Browse active projects, download plans and specifications, and submit bids online. '
+            'Register once — our preconstruction team approves your firm before plan access is enabled.'
         ),
-        'primary_color': '#059669',
+        'primary_color': '#2563eb',
         'logo_data_url': company.get('logo_data_url') or '',
         'contact_email': company.get('company_phone') or '',
         'public_path': '/plan-room',
     }
 
+
+def plan_room_meta(project) -> dict:
+    if not project:
+        return {}
+    pr = (project.get_details() if hasattr(project, 'get_details') else {}) or {}
+    if not isinstance(pr, dict):
+        pr = {}
+    block = pr.get('plan_room') if isinstance(pr.get('plan_room'), dict) else {}
+    return {
+        'published': bool(block.get('published')),
+        'summary': (block.get('summary') or '').strip(),
+        'bid_date': block.get('bid_date'),
+        'pre_bid_date': block.get('pre_bid_date'),
+        'contact_name': block.get('contact_name') or '',
+        'contact_email': block.get('contact_email') or '',
+        'document_ids': [int(x) for x in (block.get('document_ids') or []) if str(x).isdigit()],
+    }
+
+
+def save_plan_room_meta(project, patch: dict) -> dict:
+    details = project.get_details() if hasattr(project, 'get_details') else {}
+    if not isinstance(details, dict):
+        details = {}
+    block = details.get('plan_room') if isinstance(details.get('plan_room'), dict) else {}
+    for key in ('published', 'summary', 'bid_date', 'pre_bid_date', 'contact_name', 'contact_email', 'document_ids'):
+        if key in patch:
+            block[key] = patch[key]
+    details['plan_room'] = block
+    project.set_details(details)
+    return block
+
+
+def _project_location(project) -> str:
+    if not project:
+        return ''
+    if hasattr(project, 'location_label'):
+        return project.location_label() or ''
+    parts = [getattr(project, 'city', None), getattr(project, 'state', None)]
+    return ', '.join(p for p in parts if p)
+
+
+def _document_dict(doc) -> dict:
+    return {
+        'id': doc.id,
+        'name': doc.name,
+        'filename': doc.original_filename or doc.filename,
+        'mime_type': doc.mime_type or 'application/octet-stream',
+        'file_size': doc.file_size or 0,
+        'document_type': doc.document_type,
+        'download_url': f'/api/bidder-network/plan-documents/{doc.id}/download',
+    }
+
+
+
+def gather_plan_documents(db, Document, BidPackageAddendum, project, packages: list) -> list:
+    doc_ids = set(plan_room_meta(project).get('document_ids') or [])
+    for pkg in packages:
+        for did in _json_load(getattr(pkg, 'attachments_json', None), []):
+            try:
+                doc_ids.add(int(did))
+            except (TypeError, ValueError):
+                pass
+        for add in BidPackageAddendum.query.filter_by(bid_package_id=pkg.id).all():
+            for did in _json_load(add.document_ids_json, []):
+                try:
+                    doc_ids.add(int(did))
+                except (TypeError, ValueError):
+                    pass
+    if not doc_ids:
+        return []
+    rows = Document.query.filter(
+        Document.id.in_(list(doc_ids)),
+        Document.project_id == project.id,
+        Document.deleted_at.is_(None),
+    ).order_by(Document.name).all()
+    return [_document_dict(d) for d in rows]
+
+
+def _published_packages_for_project(BidPackage, project_id: int) -> list:
+    return BidPackage.query.filter(
+        BidPackage.project_id == int(project_id),
+        BidPackage.network_published.is_(True),
+        BidPackage.status.in_(('Open', 'Sent', 'Bidding', 'Published', 'Draft')),
+    ).order_by(BidPackage.due_date.asc(), BidPackage.id).all()
+
+
+def project_in_plan_room(project, packages: list | None = None) -> bool:
+    if plan_room_meta(project).get('published'):
+        return True
+    if packages is None:
+        return False
+    return len(packages) > 0
+
+
+def _project_card(project, packages: list, *, public_teaser: bool = False) -> dict:
+    meta = plan_room_meta(project)
+    due_dates = [p.due_date for p in packages if p.due_date]
+    bid_date = meta.get('bid_date')
+    if not bid_date and due_dates:
+        bid_date = min(due_dates).isoformat()
+    divisions = sorted({(p.division or p.spec_section or '')[:20] for p in packages if (p.division or p.spec_section)})
+    card = {
+        'id': project.id,
+        'number': project.number or '',
+        'name': project.name,
+        'location': _project_location(project),
+        'project_type': getattr(project, 'project_type', None) or '',
+        'status': 'Bidding',
+        'bid_date': bid_date,
+        'pre_bid_date': meta.get('pre_bid_date'),
+        'summary': (meta.get('summary') or project.description or '')[:500],
+        'package_count': len(packages),
+        'divisions': [d for d in divisions if d],
+        'detail_url': f'/plan-room/projects/{project.id}',
+    }
+    if public_teaser:
+        card.pop('detail_url', None)
+        card['summary'] = (card['summary'] or '')[:160]
+    return card
+
+
+def list_plan_room_projects(db, BidPackage, Project, *, public_teaser: bool = False) -> dict:
+    pkg_rows = BidPackage.query.filter(BidPackage.network_published.is_(True)).all()
+    by_project: dict[int, list] = {}
+    for pkg in pkg_rows:
+        by_project.setdefault(int(pkg.project_id), []).append(pkg)
+
+    projects_out = []
+    seen = set(by_project.keys())
+
+    for pid in seen:
+        project = Project.query.get(pid)
+        if not project:
+            continue
+        packages = by_project.get(pid) or []
+        if not project_in_plan_room(project, packages):
+            continue
+        projects_out.append(_project_card(project, packages, public_teaser=public_teaser))
+
+    # Projects flagged published without packages yet
+    for project in Project.query.filter(Project.status != 'Archived').limit(500).all():
+        if project.id in seen:
+            continue
+        meta = plan_room_meta(project)
+        if not meta.get('published'):
+            continue
+        projects_out.append(_project_card(project, [], public_teaser=public_teaser))
+
+    projects_out.sort(key=lambda x: (x.get('bid_date') or '9999', x.get('name') or ''))
+    return {'projects': projects_out}
+
+
+def plan_room_project_detail(db, models, project_id: int) -> dict:
+    Project = models['Project']
+    BidPackage = models['BidPackage']
+    Document = models['Document']
+    BidPackageAddendum = models['BidPackageAddendum']
+
+    project = Project.query.get(int(project_id))
+    if not project:
+        raise ValueError('Project not found')
+    packages = _published_packages_for_project(BidPackage, project.id)
+    if not project_in_plan_room(project, packages):
+        raise ValueError('Project is not published to the plan room')
+
+    meta = plan_room_meta(project)
+    documents = gather_plan_documents(db, Document, BidPackageAddendum, project, packages)
+    addenda = []
+    for pkg in packages:
+        for add in BidPackageAddendum.query.filter_by(bid_package_id=pkg.id).order_by(BidPackageAddendum.created_at).all():
+            addenda.append({
+                'id': add.id,
+                'package_id': pkg.id,
+                'package_title': pkg.title or pkg.number,
+                'number': add.number,
+                'title': add.title,
+                'description': add.description,
+                'require_rebid': bool(add.require_rebid),
+            })
+
+    pkg_payload = []
+    for p in packages:
+        pkg_payload.append({
+            'id': p.id,
+            'number': p.number,
+            'title': p.title,
+            'spec_section': p.spec_section,
+            'division': p.division,
+            'due_date': p.due_date.isoformat() if p.due_date else None,
+            'summary': (p.network_summary or p.description or p.scope_notes or '')[:3000],
+            'drawing_refs': _json_load(p.drawing_refs_json, []),
+            'spec_refs': _json_load(p.spec_refs_json, []),
+            'portal_url': f'/estimate-portal?project_id={project.id}&package_id={p.id}',
+        })
+
+    return {
+        'project': _project_card(project, packages),
+        'plan_room': meta,
+        'packages': pkg_payload,
+        'documents': documents,
+        'addenda': addenda,
+    }
+
+
+def user_may_access_plan_document(db, models, user, doc_id: int) -> bool:
+    Document = models['Document']
+    BidPackage = models['BidPackage']
+    Project = models['Project']
+    BidPackageAddendum = models['BidPackageAddendum']
+    BidderNetworkRegistration = models['BidderNetworkRegistration']
+
+    doc = Document.query.get(int(doc_id))
+    if not doc or doc.deleted_at:
+        return False
+    packages = _published_packages_for_project(BidPackage, doc.project_id)
+    project = Project.query.get(doc.project_id)
+    if not project or not project_in_plan_room(project, packages):
+        return False
+    allowed_ids = {d['id'] for d in gather_plan_documents(db, Document, BidPackageAddendum, project, packages)}
+    if doc.id not in allowed_ids:
+        return False
+    access = bidder_access_for_user(db, BidderNetworkRegistration, user)
+    return bool(access.get('approved'))
+
+
+def set_project_plan_room(db, Project, BidPackage, project_id: int, body: dict) -> dict:
+    project = Project.query.get(int(project_id))
+    if not project:
+        raise ValueError('Project not found')
+    patch = {}
+    if 'published' in body:
+        patch['published'] = bool(body['published'])
+    for key in ('summary', 'bid_date', 'pre_bid_date', 'contact_name', 'contact_email'):
+        if key in body:
+            patch[key] = body[key]
+    if 'document_ids' in body:
+        patch['document_ids'] = body['document_ids']
+    meta = save_plan_room_meta(project, patch)
+    if body.get('publish_all_packages'):
+        for pkg in BidPackage.query.filter_by(project_id=project.id).all():
+            if (pkg.status or '').lower() in ('draft', 'open', 'sent', 'bidding', 'published', ''):
+                pkg.network_published = bool(body.get('published', True))
+    return {'ok': True, 'project_id': project.id, 'plan_room': meta}
 
 def registration_to_dict(row, *, include_internal=False) -> dict:
     out = {

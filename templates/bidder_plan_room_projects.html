@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ settings.company_name }} — Plan room projects</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bidder-plan-room.css') }}">
+</head>
+<body class="pr-hub" style="--pr-accent: {{ settings.primary_color }}">
+{% with active='projects' %}
+{% include 'partials/bidder_plan_room_nav.html' %}
+{% endwith %}
+<header class="pr-hub-header">
+  <div class="pr-hub-header-inner">
+    <h1>Bid &amp; plan room</h1>
+    <p class="pr-muted">Active construction opportunities — download plans, specifications, and addenda.</p>
+    <div class="pr-toolbar">
+      <input type="search" id="prProjectSearch" placeholder="Search by project name, city, or number…" class="pr-search">
+      <span id="prProjectCount" class="pr-badge">0 projects</span>
+    </div>
+  </div>
+</header>
+<main class="pr-hub-main">
+  <div id="prAccessGate" data-approved="{{ '1' if access.approved else '0' }}" data-reason="{{ access.reason or '' }}"></div>
+  <div id="prProjectGrid" class="pr-project-grid"></div>
+</main>
+<footer class="pr-footer pr-footer-light">&copy; {{ settings.company_name }}</footer>
+<script src="{{ url_for('static', filename='js/bidder-plan-room-projects.js') }}"></script>
+</body>
+</html>

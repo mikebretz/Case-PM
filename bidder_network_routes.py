@@ -20,6 +20,8 @@ def register_bidder_network_routes(app, deps):
     Estimate = deps['Estimate']
     Company = deps['Company']
     User = deps['User']
+    Document = deps['Document']
+    BidPackageAddendum = deps['BidPackageAddendum']
 
     def models():
         return {
@@ -30,6 +32,8 @@ def register_bidder_network_routes(app, deps):
             'BidPackage': BidPackage,
             'Project': Project,
             'Estimate': Estimate,
+            'Document': Document,
+            'BidPackageAddendum': BidPackageAddendum,
         }
 
     def uid():
@@ -62,17 +66,45 @@ def register_bidder_network_routes(app, deps):
             preview=preview,
         )
 
-    @app.route('/plan-room/opportunities')
+    def bidder_or_staff():
+        from bidder_network_services import bidder_access_for_user
+        if staff_estimating_ok():
+            return {'approved': True, 'staff': True}
+        return bidder_access_for_user(db, BidderNetworkRegistration, current_user)
+
+    @app.route('/plan-room/projects')
     @login_required
-    def plan_room_opportunities_page():
+    def plan_room_projects_page():
         from bidder_network_services import load_plan_room_settings, bidder_access_for_user
         access = bidder_access_for_user(db, BidderNetworkRegistration, current_user)
+        if staff_estimating_ok():
+            access = {'approved': True, 'staff': True}
         settings = load_plan_room_settings()
         return render_template(
-            'bidder_plan_room_opportunities.html',
+            'bidder_plan_room_projects.html',
             settings=settings,
             access=access,
         )
+
+    @app.route('/plan-room/projects/<int:project_id>')
+    @login_required
+    def plan_room_project_detail_page(project_id):
+        from bidder_network_services import load_plan_room_settings, bidder_access_for_user
+        access = bidder_access_for_user(db, BidderNetworkRegistration, current_user)
+        if staff_estimating_ok():
+            access = {'approved': True, 'staff': True}
+        settings = load_plan_room_settings()
+        return render_template(
+            'bidder_plan_room_project_detail.html',
+            settings=settings,
+            access=access,
+            project_id=project_id,
+        )
+
+    @app.route('/plan-room/opportunities')
+    @login_required
+    def plan_room_opportunities_redirect():
+        return redirect('/plan-room/projects')
 
     @app.route('/api/public/bidder-network/settings')
     def api_public_bidder_network_settings():
@@ -111,7 +143,60 @@ def register_bidder_network_routes(app, deps):
         from bidder_network_services import bidder_access_for_user
         return jsonify(bidder_access_for_user(db, BidderNetworkRegistration, current_user))
 
-    @app.route('/api/bidder-network/opportunities')
+    @app.route('/api/public/bidder-network/projects')
+    def api_public_plan_room_projects():
+        from bidder_network_services import list_plan_room_projects
+        return jsonify(list_plan_room_projects(db, BidPackage, Project, public_teaser=True))
+
+    @app.route('/api/bidder-network/projects')
+    @login_required
+    def api_bidder_network_projects():
+        from bidder_network_services import list_plan_room_projects
+        access = bidder_or_staff()
+        if not access.get('approved'):
+            return jsonify({'error': 'Plan room access requires approval', 'access': access}), 403
+        return jsonify(list_plan_room_projects(db, BidPackage, Project, public_teaser=False))
+
+    @app.route('/api/bidder-network/projects/<int:project_id>')
+    @login_required
+    def api_bidder_network_project_detail(project_id):
+        from bidder_network_services import plan_room_project_detail
+        access = bidder_or_staff()
+        if not access.get('approved'):
+            return jsonify({'error': 'Plan room access requires approval', 'access': access}), 403
+        try:
+            return jsonify(plan_room_project_detail(db, models(), project_id))
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 404
+
+    @app.route('/api/bidder-network/plan-documents/<int:doc_id>/download')
+    @login_required
+    def api_plan_room_document_download(doc_id):
+        import os
+        from flask import send_from_directory
+        from bidder_network_services import user_may_access_plan_document
+        if not staff_estimating_ok() and not user_may_access_plan_document(db, models(), current_user, doc_id):
+            return jsonify({'error': 'Access denied'}), 403
+        doc = Document.query.get_or_404(doc_id)
+        directory = os.path.join(upload_folder, 'documents', str(doc.project_id))
+        if not os.path.isfile(os.path.join(directory, doc.filename)):
+            return jsonify({'error': 'File not found'}), 404
+        return send_from_directory(
+            directory, doc.filename, as_attachment=True,
+            download_name=doc.original_filename or doc.filename,
+        )
+
+    @app.route('/api/bidder-network/projects/<int:project_id>/publish', methods=['POST', 'PUT'])
+    @login_required
+    def api_plan_room_publish_project(project_id):
+        if not staff_estimating_ok():
+            return jsonify({'error': 'Estimating access required'}), 403
+        from bidder_network_services import set_project_plan_room
+        body = request.get_json(silent=True) or {}
+        out = set_project_plan_room(db, Project, BidPackage, project_id, body)
+        db.session.commit()
+        return jsonify(out)
+
     @login_required
     def api_bidder_network_opportunities():
         from bidder_network_services import bidder_access_for_user, list_network_opportunities

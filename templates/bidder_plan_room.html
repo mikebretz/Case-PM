@@ -31,7 +31,15 @@
       <li><strong>Review</strong> — our estimating team approves your application</li>
       <li><strong>Bid</strong> — view published opportunities and respond in the bid portal</li>
     </ul>
-    <p class="pr-login-hint">Already approved? <a href="/login?next=/plan-room/opportunities">Sign in</a> to view open projects.</p>
+    <p class="pr-login-hint">Already approved? <a href="/login?next=/plan-room/projects">Sign in to the plan room</a> to download plans and bid.</p>
+  </section>
+
+  <section class="pr-form-card pr-teaser-card">
+    <div class="pr-teaser-head">
+      <h2>Projects currently bidding</h2>
+      <p class="pr-muted">Sign in after approval to access full plans, specifications, and addenda.</p>
+    </div>
+    <div id="prPublicProjectList" class="pr-project-grid pr-project-grid-compact"></div>
   </section>
 
   <section class="pr-form-card" id="prRegister">
@@ -66,8 +74,11 @@
 </main>
 
 <footer class="pr-footer">
-  <p>&copy; {{ settings.company_name }}. Plan room powered by Case PM estimating.</p>
+  <p>&copy; {{ settings.company_name }}. Electronic plan room.</p>
 </footer>
+<script>
+  window.PR_PUBLIC_PROJECTS = true;
+</script>
 <script src="{{ url_for('static', filename='js/bidder-plan-room.js') }}"></script>
 </body>
 </html>

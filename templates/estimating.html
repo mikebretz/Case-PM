@@ -185,10 +185,12 @@ window.CASEPM_ESTIMATE_CTX = {
       <div class="flex flex-wrap justify-between gap-3 items-start">
         <div>
           <div class="text-sm font-medium text-white">Subcontractor plan room</div>
-          <p class="text-xs text-zinc-400 mt-1 max-w-xl">Public registration page (no Case PM chrome). Bidders apply, you approve in the queue below, then publish packages to the opportunity list.</p>
+          <p class="text-xs text-zinc-400 mt-1 max-w-xl">BidHub-style plan room: bidders register on the public site, you approve them, publish this project and packages — they download plans/specs and bid online.</p>
         </div>
         <div class="flex flex-wrap gap-2">
-          <a href="/plan-room?preview=1" target="_blank" class="px-3 py-2 bg-emerald-800 hover:bg-emerald-700 rounded-md text-sm">Open public site</a>
+          <a href="/plan-room?preview=1" target="_blank" class="px-3 py-2 bg-emerald-800 hover:bg-emerald-700 rounded-md text-sm">Public registration</a>
+          <a href="/plan-room/projects" target="_blank" class="px-3 py-2 bg-sky-900 hover:bg-sky-800 rounded-md text-sm">Plan room (logged in)</a>
+          <button type="button" id="estPlanRoomPublishProject" class="px-3 py-2 bg-zinc-800 rounded-md text-sm">Publish active project</button>
           <button type="button" id="estPlanRoomRefresh" class="px-3 py-2 bg-zinc-800 rounded-md text-sm">Refresh queue</button>
         </div>
       </div>

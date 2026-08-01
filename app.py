@@ -18650,6 +18650,8 @@ register_bidder_network_routes(app, {
     'Estimate': Estimate,
     'Company': Company,
     'User': User,
+    'Document': Document,
+    'BidPackageAddendum': BidPackageAddendum,
 })
 
 
