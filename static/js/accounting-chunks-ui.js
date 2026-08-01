@@ -25,10 +25,12 @@
     if (!pid) {
       return `<p class="text-zinc-500 text-sm">Select a project in Case PM to view job cost accounting.</p>`;
     }
-    const panel = await api(`/api/accounting/jobcost/${pid}/panel`);
-    const wip = await api(`/api/accounting/jobcost/${pid}/wip`).catch(() => ({}));
-    const retainage = await api(`/api/accounting/jobcost/${pid}/retainage`).catch(() => ({}));
-    const closeout = await api(`/api/accounting/jobcost/${pid}/closeout`).catch(() => ({}));
+    const [panel, wip, retainage, closeout] = await Promise.all([
+      api(`/api/accounting/jobcost/${pid}/panel`),
+      api(`/api/accounting/jobcost/${pid}/wip`).catch(() => ({})),
+      api(`/api/accounting/jobcost/${pid}/retainage`).catch(() => ({})),
+      api(`/api/accounting/jobcost/${pid}/closeout`).catch(() => ({})),
+    ]);
     const rev = panel.revenue_recognition || {};
     const pa = panel.pay_applications || {};
     return `<div class="space-y-4">
@@ -271,19 +273,19 @@
     }
   }
 
-  }
-
   async function renderConstructionSyncPanel() {
     const { api, esc, money, projectId } = H();
     const pid = projectId();
     if (!pid) {
       return `<p class="text-zinc-500 text-sm">Select a project to manage construction ↔ accounting sync.</p>`;
     }
-    const pending = await api(`/api/accounting/construction/pending-dashboard?project_id=${pid}`);
-    const cutover = await api('/api/accounting/sage/cutover-checklist').catch(() => ({}));
-    const parity = await api('/api/accounting/sage/parity-matrix').catch(() => ({}));
-    const gapList = await api('/api/accounting/sage/parity-gaps-prioritized').catch(() => ({}));
-    const alerts = await api('/api/accounting/sage/go-live-alerts').catch(() => ({}));
+    const [pending, cutover, parity, gapList, alerts] = await Promise.all([
+      api(`/api/accounting/construction/pending-dashboard?project_id=${pid}`),
+      api('/api/accounting/sage/cutover-checklist').catch(() => ({})),
+      api('/api/accounting/sage/parity-matrix').catch(() => ({})),
+      api('/api/accounting/sage/parity-gaps-prioritized').catch(() => ({})),
+      api('/api/accounting/sage/go-live-alerts').catch(() => ({})),
+    ]);
     const sections = (pending.sections || []).map((s) =>
       `<div class="border border-zinc-700 rounded p-3"><div class="text-sm text-white font-medium">${esc(s.label)} <span class="text-amber-400">(${s.count})</span></div>
         <ul class="text-xs text-zinc-400 mt-1 max-h-24 overflow-y-auto">${(s.items || []).slice(0, 8).map((it) => `<li class="font-mono">${esc(JSON.stringify(it).slice(0, 120))}</li>`).join('') || '<li>—</li>'}</ul></div>`
