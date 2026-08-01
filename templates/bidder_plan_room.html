@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ settings.company_name }} — Plan Room &amp; Bidder Registration</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bidder-plan-room.css') }}">
+</head>
+<body class="{% if embed %}pr-embed{% endif %}">
+{% if preview %}
+<div class="pr-preview-banner">Staff preview — this is what subcontractors see. <a href="/estimating">← Back to estimating</a></div>
+{% endif %}
+<header class="pr-hero" style="--pr-accent: {{ settings.primary_color }}">
+  <div class="pr-hero-inner">
+    {% if settings.logo_data_url %}
+    <img src="{{ settings.logo_data_url }}" alt="" class="pr-logo">
+    {% endif %}
+    <div>
+      <p class="pr-kicker">Subcontractors &amp; suppliers</p>
+      <h1>{{ settings.company_name }}</h1>
+      <p class="pr-lead">{{ settings.tagline }}</p>
+    </div>
+  </div>
+</header>
+
+<main class="pr-main">
+  <section class="pr-intro">
+    <p>{{ settings.hero_body }}</p>
+    <ul class="pr-steps">
+      <li><strong>Register</strong> — company profile, trades, and qualifications</li>
+      <li><strong>Review</strong> — our estimating team approves your application</li>
+      <li><strong>Bid</strong> — view published opportunities and respond in the bid portal</li>
+    </ul>
+    <p class="pr-login-hint">Already approved? <a href="/login?next=/plan-room/opportunities">Sign in</a> to view open projects.</p>
+  </section>
+
+  <section class="pr-form-card" id="prRegister">
+    <h2>Create your plan room account</h2>
+    <p class="pr-muted">Fields marked * are required. Attach a company brochure or qualification packet if you have one.</p>
+    <form id="prRegisterForm" enctype="multipart/form-data">
+      <div class="pr-grid">
+        <label>Company name *<input name="company_name" required autocomplete="organization"></label>
+        <label>Primary contact *<input name="contact_name" required autocomplete="name"></label>
+        <label>Work email *<input name="email" type="email" required autocomplete="email"></label>
+        <label>Phone<input name="phone" type="tel" autocomplete="tel"></label>
+        <label class="pr-full">Password (min. 8 characters) *<input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
+      </div>
+      <fieldset class="pr-specialties">
+        <legend>What does your company specialize in?</legend>
+        <div class="pr-check-grid">
+          {% for s in specialties %}
+          <label class="pr-check"><input type="checkbox" name="specialty" value="{{ s }}"> {{ s }}</label>
+          {% endfor %}
+        </div>
+      </fieldset>
+      <label class="pr-full">Comments / qualifications
+        <textarea name="comments" rows="4" placeholder="Licenses, bonding capacity, service area, notable projects…"></textarea>
+      </label>
+      <label class="pr-full">Attachments (PDF, images — brochure, safety manual, etc.)
+        <input type="file" name="attachments" multiple accept=".pdf,.png,.jpg,.jpeg,.doc,.docx">
+      </label>
+      <button type="submit" class="pr-btn">Submit application</button>
+      <p id="prRegisterMsg" class="pr-msg" role="status"></p>
+    </form>
+  </section>
+</main>
+
+<footer class="pr-footer">
+  <p>&copy; {{ settings.company_name }}. Plan room powered by Case PM estimating.</p>
+</footer>
+<script src="{{ url_for('static', filename='js/bidder-plan-room.js') }}"></script>
+</body>
+</html>

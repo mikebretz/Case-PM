@@ -1620,6 +1620,8 @@ class BidPackage(db.Model):
     spec_refs_json = db.Column(db.Text)
     attachments_json = db.Column(db.Text)
     email_template_json = db.Column(db.Text)
+    network_published = db.Column(db.Boolean, default=False)
+    network_summary = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -2079,6 +2081,11 @@ MarketingContentBlock = _marketing_models['MarketingContentBlock']
 MarketingLandingPage = _marketing_models['MarketingLandingPage']
 MarketingSpend = _marketing_models['MarketingSpend']
 MarketingCampaignTemplate = _marketing_models['MarketingCampaignTemplate']
+
+from bidder_network_models import define_bidder_network_models
+_bidder_network_models = define_bidder_network_models(db)
+BidderNetworkRegistration = _bidder_network_models['BidderNetworkRegistration']
+BidderNetworkDocument = _bidder_network_models['BidderNetworkDocument']
 
 
 class Company(db.Model):
@@ -18624,6 +18631,27 @@ register_marketing_routes(app, {
     **_marketing_models,
 })
 
+from bidder_network_routes import register_bidder_network_routes
+register_bidder_network_routes(app, {
+    'db': db,
+    'request': request,
+    'jsonify': jsonify,
+    'login_required': login_required,
+    'current_user': current_user,
+    'render_template': render_template,
+    'redirect': redirect,
+    'url_for': url_for,
+    'save_uploaded_file': save_uploaded_file,
+    'upload_folder': app.config['UPLOAD_FOLDER'],
+    'BidderNetworkRegistration': BidderNetworkRegistration,
+    'BidderNetworkDocument': BidderNetworkDocument,
+    'BidPackage': BidPackage,
+    'Project': Project,
+    'Estimate': Estimate,
+    'Company': Company,
+    'User': User,
+})
+
 
 @app.route('/api/stats')
 @login_required
@@ -18853,6 +18881,11 @@ with app.app_context():
             ensure_marketing_schema(db)
         except Exception as _mkt:
             print('Marketing schema:', _mkt)
+        try:
+            from bidder_network_persistence import ensure_bidder_network_schema
+            ensure_bidder_network_schema(db)
+        except Exception as _bn:
+            print('Bidder network schema:', _bn)
         try:
             from document_persistence import ensure_document_schema
             ensure_document_schema(db.engine, db)

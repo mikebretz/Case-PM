@@ -66,6 +66,7 @@
     if (panel) panel.classList.remove('hidden');
     if (tab === 'leveling') renderLeveling();
     if (tab === 'takeoff') loadTakeoffPreview();
+    if (tab === 'rfp' && typeof window.loadPlanRoomPending === 'function') window.loadPlanRoomPending();
   }
 
   function updateSummaryBar(est) {
@@ -255,6 +256,10 @@
           </div>
           ${p.description ? `<p class="text-sm text-zinc-300 mt-2">${esc(p.description)}</p>` : ''}
           ${p.scope_notes ? `<p class="text-sm text-zinc-400 mt-2">${esc(p.scope_notes)}</p>` : ''}
+          <div class="mt-2 flex flex-wrap gap-2 items-center text-xs border-t border-zinc-800 pt-2">
+            <span class="${p.network_published ? 'text-emerald-400' : 'text-zinc-500'}">${p.network_published ? 'On plan room' : 'Not on plan room'}</span>
+            <button type="button" class="px-2 py-1 bg-zinc-800 rounded toggle-planroom" data-id="${p.id}" data-published="${p.network_published ? '1' : '0'}">${p.network_published ? 'Unpublish' : 'Publish to plan room'}</button>
+          </div>
           <table class="w-full text-sm mt-3">
             <thead><tr class="text-zinc-500 text-xs"><th class="text-left">Vendor</th><th class="text-left">Email</th><th class="text-center">Status</th><th class="text-right">Quote</th><th></th></tr></thead>
             <tbody>${invRows || '<tr><td colspan="5" class="py-2 text-zinc-500">No invitations</td></tr>'}</tbody>
@@ -265,6 +270,20 @@
     el.querySelectorAll('.mass-invite').forEach(btn => btn.addEventListener('click', () => massInvite(btn.dataset.id, true)));
     el.querySelectorAll('.send-rfp').forEach(btn => btn.addEventListener('click', () => massInvite(btn.dataset.id, false)));
     el.querySelectorAll('.edit-pkg').forEach(btn => btn.addEventListener('click', () => openPackageModal(parseInt(btn.dataset.id, 10))));
+    el.querySelectorAll('.toggle-planroom').forEach(btn => btn.addEventListener('click', async () => {
+      const published = btn.dataset.published !== '1';
+      let summary = null;
+      if (published) {
+        summary = prompt('Public summary for bidders (optional):') || '';
+      }
+      try {
+        await api(`/api/estimates/bid-packages/${btn.dataset.id}/network-publish`, {
+          method: 'POST',
+          body: JSON.stringify({ published, network_summary: summary }),
+        });
+        await loadCurrent();
+      } catch (e) { estAlert(e.message, 'error'); }
+    }));
     el.querySelectorAll('.award-inv').forEach(btn => btn.addEventListener('click', async () => {
       try {
         await api(`/api/estimates/bid-packages/${btn.dataset.pkg}/award`, {
