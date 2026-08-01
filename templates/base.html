@@ -167,7 +167,7 @@
         #casepmPageHelpModal[open] {
             display: flex;
             flex-direction: column;
-            max-width: 56rem;
+            max-width: 58rem;
             width: calc(100vw - 2rem);
             max-height: min(90vh, 820px);
             overflow: hidden;
@@ -181,13 +181,13 @@
         }
         #casepmPageHelpLayout {
             display: grid;
-            grid-template-columns: 11rem 1fr;
+            grid-template-columns: 13.5rem 1fr;
             gap: 0;
             min-height: 0;
             flex: 1;
         }
         #casepmPageHelpLayout.casepm-help-single { grid-template-columns: 1fr; }
-        #casepmPageHelpBody { overflow-y: auto; max-height: min(68vh, 600px); }
+        #casepmPageHelpBody { overflow-y: auto; max-height: min(72vh, 680px); }
         .casepm-help-prose strong { color: #e4e4e7; font-weight: 600; }
         .casepm-help-step-num {
             cursor: pointer;
@@ -420,6 +420,7 @@
     <script src="{{ static_v('js/casepm-esign.js') }}"></script>
     <script src="{{ static_v('js/casepm-user-profile.js') }}"></script>
     <script src="{{ static_v('js/page-help-guides.js') }}"></script>
+    <script src="{{ static_v('js/page-help-user-guide.js') }}"></script>
     <script src="{{ static_v('js/casepm-page-help.js') }}"></script>
     <script src="{{ static_v('js/casepm-dialog.js') }}"></script>
     {% if current_user.is_authenticated and is_developer %}
@@ -570,9 +571,9 @@
         <!-- Right: Help + User Profile -->
         <div class="flex items-center gap-3 flex-shrink-0">
         {% if show_page_help %}
-        <button type="button" id="casepmPageHelpBtn" class="flex items-center gap-2 px-3 py-2 bg-violet-900/50 hover:bg-violet-800 border border-violet-700/40 rounded-lg text-sm text-violet-100 transition-colors" title="How to use this page">
-            <i class="fa-solid fa-circle-question"></i>
-            <span class="hidden md:inline">How to use</span>
+        <button type="button" id="casepmPageHelpBtn" class="flex items-center gap-2 px-3 py-2 bg-violet-900/50 hover:bg-violet-800 border border-violet-700/40 rounded-lg text-sm text-violet-100 transition-colors" title="Open the Case PM user guide — full instructions for this page and every module">
+            <i class="fa-solid fa-book-open"></i>
+            <span class="hidden md:inline">User guide</span>
         </button>
         {% endif %}
         <button type="button" id="notificationsBell" class="relative flex items-center justify-center w-9 h-9 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors" title="Notifications" aria-haspopup="dialog" aria-controls="notificationsPanel" aria-expanded="false">
@@ -1398,8 +1399,8 @@
         <div class="p-4 border-b border-zinc-800 flex items-center justify-between flex-shrink-0">
             <div class="min-w-0 pr-4">
                 <h2 id="casepmPageHelpTitle" class="text-lg font-semibold flex items-center gap-2 truncate">
-                    <i class="fa-solid fa-circle-question text-violet-400 flex-shrink-0"></i>
-                    <span class="truncate">How to use this page</span>
+                    <i class="fa-solid fa-book-open text-violet-400 flex-shrink-0"></i>
+                    <span class="truncate" id="casepmPageHelpTitleText">User guide</span>
                 </h2>
                 <p id="casepmPageHelpSubtitle" class="text-xs text-zinc-500 mt-0.5 truncate"></p>
             </div>

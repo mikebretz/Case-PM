@@ -94,8 +94,11 @@ ENDPOINT_TO_MODULE = {
     'program_settings': 'program_settings',
     'developer_console': 'developer',
     'notifications': 'notifications',
-    'audit_log_page': 'app',
-    'audit_log': 'app',
+    'audit_log_page': 'audit_log',
+    'audit_log': 'audit_log',
+    'marketing_page': 'marketing',
+    'accounting_page': 'accounting',
+    'plan_room_console_page': 'estimating',
 }
 
 AUDIT_CATEGORIES = [
