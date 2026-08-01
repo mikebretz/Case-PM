@@ -2015,61 +2015,7 @@ global.CasePMPageHelpGuides = {
     'fa-bell'
   ),
 
-  app: singleGuide(
-    'Case PM',
-    'General tips — simple daily entry first, expand when the job or contract requires more detail.',
-    [
-      ['Active project', 'Most tools use the project selected in the header. Switch projects before creating records — otherwise RFIs, logs, and photos attach to the wrong job.', [
-        ['Header picker', 'Click project name in header to switch active project.'],
-        ['Before create', 'Always confirm project before clicking <strong>New</strong> — records attach to active project.'],
-        ['Wrong project', 'If you created on wrong job, contact admin — moving records may not be supported.'],
-        ['Dashboard follows', 'Dashboard tiles and counts reflect active project only.'],
-      ]],
-      ['Navigation', 'Use the left sidebar modules. Collapse the sidebar for more space — preference is saved.', [
-        ['Sidebar', 'Click module names in left sidebar to navigate (RFIs, Budget, Schedule, etc.).'],
-        ['Collapse', 'Click collapse icon to hide sidebar for more screen space.'],
-        ['Preference saved', 'Collapsed state saves per user across sessions.'],
-        ['Active highlight', 'Current module is highlighted in sidebar.'],
-      ]],
-      ['Search & filters', 'Lists usually support search, status filters, and column sort — click headers to sort.', [
-        ['Search box', 'Type in list search to filter by title, number, or keyword.'],
-        ['Status filter', 'Use status dropdown for Open, Closed, Draft, etc.'],
-        ['Sort columns', 'Click column headers to sort ascending/descending.'],
-        ['Combine', 'Search + filter together to find specific records fast.'],
-      ]],
-      ['Create records', 'Primary actions are green buttons top-right: <strong>New</strong>, <strong>Create</strong>, or <strong>+</strong>.', [
-        ['Top-right', 'Look for green <strong>New</strong>, <strong>Create</strong>, or <strong>+</strong> button.'],
-        ['Toolbar', 'Secondary actions (export, filter) sit near the primary create button.'],
-        ['Draft first', 'Many forms save as Draft — you do not have to complete in one sitting.'],
-        ['Required fields', 'Red asterisks or validation messages show required fields before save.'],
-      ]],
-      ['Save drafts', 'Many forms allow Draft until you Submit — save often before leaving the page.', [
-        ['Save Draft', 'Click <strong>Save</strong> or <strong>Save Draft</strong> frequently while filling long forms.'],
-        ['Submit later', 'Submit sends to workflow — draft keeps ball with you for edits.'],
-        ['Navigate away', 'Save before switching modules — unsaved changes may be lost.'],
-        ['Auto-save', 'Some forms auto-save — watch for save indicator if available.'],
-      ]],
-      ['Help', 'Click the <strong>?</strong> help button in the header when available for page-specific steps.', [
-        ['Help button', 'Click <strong>?</strong> in the header on any page with help enabled.'],
-        ['Page-specific', 'Help content matches the module you are on (RFIs, Change Orders, etc.).'],
-        ['Expandable steps', 'Expand sub-steps for detailed click-by-click instructions.'],
-        ['Return anytime', 'Reopen help while working — it does not close your form.'],
-      ]],
-      ['Profile & logout', 'Open your avatar menu for profile, password, and sign out.', [
-        ['Avatar menu', 'Click your name or avatar in the top-right corner.'],
-        ['Profile', 'Update name, email, phone, and notification preferences.'],
-        ['Password', 'Change password or enroll 2FA from profile/security.'],
-        ['Sign out', 'Click <strong>Sign out</strong> on shared computers when finished.'],
-      ]],
-      ['Get access', 'Missing modules? Ask an admin to adjust your role under <strong>Users</strong>.', [
-        ['Missing sidebar item', 'If a module is absent from sidebar, your role lacks access.'],
-        ['Ask admin', 'Request access from admin — they edit your user under <strong>Users</strong>.'],
-        ['Role vs permission', 'Admin may adjust base role or fine-tune module permissions.'],
-        ['Portal users', 'Subs get limited modules — full staff need internal role assignment.'],
-      ]],
-    ],
-    'fa-compass'
-  ),
+  // Full Case PM user guide (all modules) is in page-help-user-guide.js → CasePMPageHelpGuides.app
 };
 
 })(window);

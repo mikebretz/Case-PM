@@ -58,12 +58,30 @@
       nav.innerHTML = '';
       return;
     }
-    nav.innerHTML = sections.map(s => `
+    const pageKey = currentPageKey();
+    let jump = '';
+    if (activePageKey !== 'app' && getGuide('app')) {
+      jump = `<button type="button" data-help-open-app class="casepm-help-nav-btn w-full text-left px-3 py-2 rounded-md text-sm flex items-center gap-2 mb-2 border border-violet-700/40 text-violet-200 hover:bg-violet-900/40">
+        <i class="fa-solid fa-book w-4 text-center"></i><span>Complete user guide (all modules)</span></button>`;
+    } else if (activePageKey === 'app' && pageKey && pageKey !== 'app' && getGuide(pageKey)) {
+      jump = `<button type="button" data-help-open-page="${esc(pageKey)}" class="casepm-help-nav-btn w-full text-left px-3 py-2 rounded-md text-sm flex items-center gap-2 mb-2 border border-zinc-600 text-zinc-200 hover:bg-zinc-800">
+        <i class="fa-solid fa-location-dot w-4 text-center"></i><span>Guide for this page only</span></button>`;
+    }
+    nav.innerHTML = jump + sections.map(s => `
       <button type="button" data-help-section="${esc(s.id)}"
         class="casepm-help-nav-btn w-full text-left px-3 py-2 rounded-md text-sm flex items-center gap-2 ${s.id === selectedId ? 'bg-violet-700 text-white' : 'text-zinc-300 hover:bg-zinc-800'}">
         <i class="fa-solid ${esc(s.icon || 'fa-circle')} w-4 text-center opacity-80"></i>
         <span>${esc(s.title)}</span>
       </button>`).join('');
+    nav.querySelector('[data-help-open-app]')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      selectSection('app', getGuide('app')?.sections?.[0]?.id || 'welcome');
+    });
+    nav.querySelector('[data-help-open-page]')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const pk = e.currentTarget.getAttribute('data-help-open-page');
+      if (pk) openHelp(pk);
+    });
     nav.querySelectorAll('[data-help-section]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.preventDefault();
@@ -95,8 +113,21 @@
     const titleEl = document.getElementById('casepmPageHelpTitle');
     const subEl = document.getElementById('casepmPageHelpSubtitle');
     if (!body || !section) return;
-    if (titleEl) titleEl.textContent = guide.title || 'How to use this page';
-    if (subEl) subEl.textContent = guide.subtitle || section.title || '';
+    if (titleEl) {
+      const titleText = document.getElementById('casepmPageHelpTitleText');
+      const isApp = activePageKey === 'app';
+      const label = isApp
+        ? 'User guide — Case PM'
+        : `User guide · ${guide.title || 'This page'}`;
+      if (titleText) titleText.textContent = label;
+      else titleEl.textContent = label;
+    }
+    if (subEl) {
+      subEl.textContent = guide.subtitle || section.title || '';
+      if (activePageKey !== 'app') {
+        subEl.textContent = (subEl.textContent ? subEl.textContent + ' — ' : '') + 'Use “Complete user guide” in the sidebar for the full manual.';
+      }
+    }
     const hasSubsteps = (section.steps || []).some(s => s.substeps?.length);
     const steps = (section.steps || []).map((step, i) => {
       const subs = step.substeps || [];
