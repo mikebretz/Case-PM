@@ -6,7 +6,7 @@
   <title>{{ settings.company_name }} — Plan room projects</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/bidder-plan-room.css') }}">
 </head>
-<body class="pr-hub" style="--pr-accent: {{ settings.primary_color }}">
+<body class="pr-hub" style="--pr-accent: {{ settings.primary_color or '#059669' }}">
 {% with active='projects' %}
 {% include 'partials/bidder_plan_room_nav.html' %}
 {% endwith %}
@@ -20,7 +20,7 @@
   <div id="prAccessGate" data-approved="{{ '1' if access.approved else '0' }}" data-reason="{{ access.reason or '' }}"></div>
   <div id="prProjectGrid" class="pr-project-grid"></div>
 </main>
-<footer class="pr-footer pr-footer-light">&copy; {{ settings.company_name }}</footer>
+<footer class="pr-footer">&copy; {{ settings.company_name }}</footer>
 <script src="{{ url_for('static', filename='js/bidder-plan-room-projects.js') }}"></script>
 </body>
 </html>

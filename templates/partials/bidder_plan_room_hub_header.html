@@ -1,13 +1,16 @@
-<header class="pr-hub-header">
-  <div class="pr-hub-header-inner pr-hub-brand-row">
-    {% if settings.logo_data_url %}
-    <img src="{{ settings.logo_data_url }}" alt="{{ settings.company_name }}" class="pr-hub-logo">
-    {% endif %}
-    <div>
-      <h1>{{ header_title|default('Bid & plan room') }}</h1>
-      {% if header_subtitle %}
-      <p class="pr-muted">{{ header_subtitle }}</p>
+<header class="pr-hero pr-hero-compact pr-hub-page-hero">
+  <div class="pr-hero-inner pr-hub-header-inner">
+    <div class="pr-hub-brand-row">
+      {% if settings.logo_data_url %}
+      <img src="{{ settings.logo_data_url }}" alt="{{ settings.company_name }}" class="pr-hub-logo pr-logo">
       {% endif %}
+      <div>
+        <p class="pr-kicker">{{ settings.company_name }}</p>
+        <h1>{{ header_title|default('Bid & plan room') }}</h1>
+        {% if header_subtitle %}
+        <p class="pr-lead">{{ header_subtitle }}</p>
+        {% endif %}
+      </div>
     </div>
   </div>
 </header>
