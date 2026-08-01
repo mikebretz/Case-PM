@@ -204,6 +204,7 @@ def ensure_co_schema(engine, db):
             'approval_stage': 'INTEGER DEFAULT 0',
             'plan_pins_json': 'TEXT',
             'approval_history_json': 'TEXT',
+            'comments_json': 'TEXT',
             'approval_signatures_json': 'TEXT',
             'executed_locked': 'INTEGER DEFAULT 0',
             'linked_owner_co_id': 'INTEGER',
@@ -239,6 +240,7 @@ def ensure_co_schema(engine, db):
             'linked_rfi_id': 'INTEGER',
             'linked_commitment_ref': 'VARCHAR(80)',
             'attachments_json': 'TEXT',
+            'comments_json': 'TEXT',
         }
         for name, col_type in pco_additions.items():
             if name not in cols:
@@ -353,6 +355,7 @@ def co_to_dict(co, allocations=None, revisions=None):
         'plan_pins': _parse_json(getattr(co, 'plan_pins_json', None), []),
         'approval_stage': getattr(co, 'approval_stage', 0) or 0,
         'approval_history': _parse_json(getattr(co, 'approval_history_json', None), []),
+        'comments': _parse_json(getattr(co, 'comments_json', None), []),
         'approval_signatures': _parse_json(getattr(co, 'approval_signatures_json', None), []),
         'executed_locked': bool(getattr(co, 'executed_locked', False)),
         'linked_owner_co_id': getattr(co, 'linked_owner_co_id', None),
@@ -438,9 +441,47 @@ def pco_to_dict(pco, allocations=None):
         'linked_cor_id': getattr(pco, 'linked_cor_id', None),
         'has_editable_sov': True,
         'attachments': _parse_json(getattr(pco, 'attachments_json', None), []),
+        'comments': _parse_json(getattr(pco, 'comments_json', None), []),
         'allocations': [_allocation_row(a) for a in (allocs or [])],
         'updated_at': pco.updated_at.isoformat() if pco.updated_at else None,
     }
+
+
+def add_co_review_comment(record, body, user_id, user_name, user_role=None, *, comments_attr='comments_json'):
+    """Append a review discussion comment on a change order or PCO."""
+    comments = _parse_json(getattr(record, comments_attr, None), [])
+    entry = {
+        'id': len(comments) + 1,
+        'body': (body.get('body') if isinstance(body, dict) else str(body or '')).strip(),
+        'user_id': user_id,
+        'user_name': user_name,
+        'user_role': user_role or '',
+        'created_at': datetime.utcnow().isoformat(),
+    }
+    if not entry['body']:
+        raise ValueError('Comment body required')
+    comments.append(entry)
+    setattr(record, comments_attr, json.dumps(comments))
+    if hasattr(record, 'updated_at'):
+        record.updated_at = datetime.utcnow()
+    return entry
+
+
+def clear_co_review_comments(record, *, comments_attr='comments_json'):
+    setattr(record, comments_attr, json.dumps([]))
+    if hasattr(record, 'updated_at'):
+        record.updated_at = datetime.utcnow()
+
+
+def delete_co_review_comment(record, comment_id, *, comments_attr='comments_json'):
+    comments = _parse_json(getattr(record, comments_attr, None), [])
+    cid = int(comment_id)
+    filtered = [c for c in comments if int(c.get('id', -1)) != cid]
+    if len(filtered) == len(comments):
+        raise ValueError('Comment not found')
+    setattr(record, comments_attr, json.dumps(filtered))
+    if hasattr(record, 'updated_at'):
+        record.updated_at = datetime.utcnow()
 
 
 def _parse_json(raw, default):

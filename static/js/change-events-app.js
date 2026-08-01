@@ -709,9 +709,6 @@
     await loadCommitments();
     const e = await api(`/api/change-events/${id}`);
     ext._activeCeDetail = e;
-    document.getElementById('coDetailDrawer').classList.add('open');
-    document.getElementById('coDrawerBackdrop').classList.remove('hidden');
-    document.getElementById('drawerTitle').textContent = `${e.number} — ${e.title || 'Change Event'}`;
     const rfqRows = (e.rfqs || []).map(r => `<tr class="border-b border-zinc-800"><td class="py-1 font-mono text-sky-400">${esc(r.number)}</td><td class="py-1">${esc(r.company_name || '—')}</td><td class="py-1 text-center">${statusBadge(r.status)}</td><td class="py-1 text-right font-mono">${fmt(r.quoted_amount)}</td></tr>`).join('') || '<tr><td colspan="4" class="py-3 text-zinc-500">None</td></tr>';
     const corRows = (e.cors || []).map(c => `<tr class="border-b border-zinc-800"><td class="py-1 font-mono text-indigo-400">${esc(c.number)}</td><td class="py-1">${esc(c.title)}</td><td class="py-1 text-center">${statusBadge(c.status)}</td><td class="py-1 text-right font-mono">${fmt(c.amount)}</td></tr>`).join('') || '<tr><td colspan="4" class="py-3 text-zinc-500">None</td></tr>';
     const pcoRows = (e.pcos || []).map(p => `<tr class="border-b border-zinc-800"><td class="py-1 font-mono text-amber-400">${esc(p.number)}</td><td class="py-1">${esc(p.title)}</td><td class="py-1 text-center">${statusBadge(p.status)}</td><td class="py-1 text-right font-mono">${fmt(p.estimated_amount)}</td></tr>`).join('') || '<tr><td colspan="4" class="py-3 text-zinc-500">None</td></tr>';
@@ -726,8 +723,17 @@
         </div>
         ${reviewButtonHtml(`CasePMChangeOrdersExt.openCeReviewModal(${e.id})`, 'Review & Advance')}
       </div>` : '';
-    document.getElementById('drawerBody').innerHTML = reviewBanner + `
-      <div class="space-y-2">
+    const headerActionsHtml = `
+      ${e.status === 'Open' ? `<button type="button" onclick="CasePMChangeOrdersExt.ceWorkflow(${e.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-semibold">Submit for Pricing</button>` : ''}
+      <button type="button" onclick="CasePMChangeOrdersExt.editChangeEvent(${e.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>`;
+    CO.openExternalDetail({
+      id: e.id,
+      number: e.number,
+      title: e.title || 'Change Event',
+      badgesHtml: statusBadge(e.status),
+      headerActionsHtml,
+      bodyHtml: reviewBanner + `
+      <div class="space-y-2 text-sm">
         <p><span class="text-zinc-500">Status</span><br>${statusBadge(e.status)}</p>
         <p><span class="text-zinc-500">ROM</span><br><span class="font-mono text-lg">${fmt(e.rom_amount)}</span></p>
         <p><span class="text-zinc-500">Schedule impact</span><br>${e.schedule_impact_days || 0} days</p>
@@ -740,11 +746,8 @@
       <div class="mt-4"><div class="text-xs text-zinc-500 uppercase mb-2">CPCOs</div><table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left">#</th><th class="text-left">Sub</th><th class="text-center">Status</th><th class="text-right">ROM</th></tr></thead><tbody>${cpcoRows}</tbody></table></div>
       <div class="mt-4"><div class="text-xs text-zinc-500 uppercase mb-2">Commitment COs (CCO)</div><table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left">#</th><th class="text-left">Sub</th><th class="text-center">Status</th><th class="text-right">Amount</th></tr></thead><tbody>${ccoRows}</tbody></table></div>
       <div class="mt-4"><div class="text-xs text-zinc-500 uppercase mb-2">CORs (owner)</div><table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left">#</th><th class="text-left">Title</th><th class="text-center">Status</th><th class="text-right">Amount</th></tr></thead><tbody>${corRows}</tbody></table></div>
-      <div class="mt-4"><div class="text-xs text-zinc-500 uppercase mb-2">Owner PCOs</div><table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left">#</th><th class="text-left">Title</th><th class="text-center">Status</th><th class="text-right">ROM</th></tr></thead><tbody>${pcoRows}</tbody></table></div>`;
-    document.getElementById('drawerActions').innerHTML = `
-      ${e.status === 'Open' ? `<button type="button" onclick="CasePMChangeOrdersExt.ceWorkflow(${e.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit for Pricing</button>` : ''}
-      <button type="button" onclick="CasePMChangeOrdersExt.editChangeEvent(${e.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
-      <button type="button" onclick="CasePMChangeOrders.closeDrawer()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm text-zinc-400">Close</button>`;
+      <div class="mt-4"><div class="text-xs text-zinc-500 uppercase mb-2">Owner PCOs</div><table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left">#</th><th class="text-left">Title</th><th class="text-center">Status</th><th class="text-right">ROM</th></tr></thead><tbody>${pcoRows}</tbody></table></div>`,
+    });
   }
 
   async function editChangeEvent(id) {
@@ -761,7 +764,7 @@
     await api(`/api/change-events/${id}/workflow`, { method: 'POST', body: JSON.stringify({ action }) });
     await loadChangeEvents();
     if (action !== 'reject') await viewChangeEvent(id);
-    else CasePMChangeOrders.closeDrawer();
+    else CasePMChangeOrders.closeDetail();
   }
 
   async function portalRfqQuote(id) {

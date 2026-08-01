@@ -21,8 +21,85 @@
     box-sizing: border-box;
   }
   .co-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
-  #coDetailDrawer { transition: transform 0.25s ease; }
-  #coDetailDrawer.open { transform: translateX(0); }
+  #coChrome {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  #coChrome.hidden { display: none !important; }
+  #coDetailView.co-detail-fullpage {
+    display: none;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    background: #09090b;
+    width: 100%;
+  }
+  #coDetailView.co-detail-fullpage.is-open {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: 100%;
+  }
+  body.co-detail-active {
+    overflow: hidden !important;
+  }
+  body.co-detail-active #mainContent {
+    overflow: hidden !important;
+    padding: 0 !important;
+  }
+  body.co-detail-active .co-page {
+    padding: 0 !important;
+    height: 100%;
+    min-height: 0;
+    max-height: 100%;
+  }
+  body.co-detail-active .co-stack {
+    height: 100%;
+    min-height: 0;
+    flex: 1;
+  }
+  body.co-detail-active .co-bottom-bar {
+    display: none !important;
+  }
+  #coDetailView .co-detail-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  #coDetailMainCol {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  #coDetailMainCol #coDetailContent {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 1.5rem;
+  }
+  #coReviewChatCol {
+    width: 380px;
+    min-width: 320px;
+    border-left: 1px solid #3f3f46;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: #0c0c0e;
+  }
+  #coReviewChatCol.hidden { display: none !important; }
+  #coReviewCommentsList .review-comment-entry {
+    border: 1px solid #3f3f46;
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    font-size: 0.875rem;
+  }
   #coPrintSheet { display: none; }
   .modal {
     border-radius: 6px !important;
@@ -89,8 +166,10 @@
 <div id="coPrintSheet" aria-hidden="true"></div>
 
 <div class="co-page">
-<div id="coBillingVarianceBanner" class="hidden mb-3 px-4 py-2 rounded-md border border-amber-800/50 bg-amber-950/30 text-xs text-zinc-300"></div>
 <div class="co-stack">
+
+<div id="coChrome">
+<div id="coBillingVarianceBanner" class="hidden mb-3 px-4 py-2 rounded-md border border-amber-800/50 bg-amber-950/30 text-xs text-zinc-300"></div>
 
 <!-- TOOLBAR (title left — matches Pay Apps / Schedule) -->
 <div class="flex items-center justify-between flex-shrink-0 mb-4">
@@ -319,19 +398,42 @@
     </div>
 </div>
 
-</div>
+</div><!-- /coChrome -->
+
+<div id="coDetailView" class="co-detail-fullpage">
+    <div class="bg-zinc-900 flex flex-col flex-1 min-h-0 w-full h-full">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700 bg-zinc-950 flex-shrink-0 gap-3">
+            <div class="flex items-center gap-3 min-w-0">
+                <button type="button" onclick="CasePMChangeOrders.closeDetail()" class="px-3 py-2 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-lg flex items-center gap-2 flex-shrink-0">
+                    <i class="fa-solid fa-arrow-left"></i> Back to Log
+                </button>
+                <div id="coDetailNumber" class="font-mono text-xl font-bold text-emerald-400 flex-shrink-0"></div>
+                <div id="coDetailTitle" class="text-lg font-semibold text-white truncate min-w-0"></div>
+                <div id="coDetailBadges" class="flex flex-wrap gap-2 flex-shrink-0"></div>
+            </div>
+            <div id="coDetailHeaderActions" class="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end"></div>
+        </div>
+        <div class="co-detail-body">
+            <div id="coDetailMainCol">
+                <div id="coDetailContent"></div>
+            </div>
+            <aside id="coReviewChatCol">
+                <div class="px-4 py-3 border-b border-zinc-700 font-semibold text-white flex-shrink-0 flex items-center justify-between gap-2">
+                    <span>Review Comments</span>
+                    <button type="button" id="coClearCommentsDevBtn" onclick="CasePMChangeOrders.clearCommentsDev()" class="hidden px-2 py-1 text-[10px] uppercase tracking-wide bg-red-950/60 hover:bg-red-900 text-red-300 border border-red-800 rounded" title="Developer: clear all review comments">Clear</button>
+                </div>
+                <div id="coReviewCommentsList" class="flex-1 overflow-auto p-4 space-y-3"></div>
+                <div class="p-4 border-t border-zinc-700 flex-shrink-0">
+                    <textarea id="coReviewCommentInput" rows="3" placeholder="Ask a question or add a note for the project team…" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm mb-2"></textarea>
+                    <button type="button" id="coPostCommentBtn" onclick="CasePMChangeOrders.postComment()" class="w-full px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold">Post Comment</button>
+                </div>
+            </aside>
+        </div>
+    </div>
 </div>
 
-<!-- DETAIL DRAWER -->
-<div id="coDetailDrawer" class="fixed top-0 right-0 h-full w-full max-w-lg bg-zinc-900 border-l border-zinc-700 z-[55] transform translate-x-full shadow-2xl flex flex-col">
-    <div class="flex items-center justify-between px-5 py-4 border-b border-zinc-800 flex-shrink-0">
-        <h3 id="drawerTitle" class="text-lg font-semibold">Details</h3>
-        <button type="button" onclick="CasePMChangeOrders.closeDrawer()" class="text-zinc-400 hover:text-white text-xl">&times;</button>
-    </div>
-    <div id="drawerBody" class="flex-1 overflow-auto p-5 text-sm space-y-4"></div>
-    <div id="drawerActions" class="p-4 border-t border-zinc-800 flex flex-wrap gap-2 flex-shrink-0"></div>
 </div>
-<div id="coDrawerBackdrop" class="fixed inset-0 bg-black/40 z-[54] hidden" onclick="CasePMChangeOrders.closeDrawer()"></div>
+</div>
 
 <!-- APPROVAL MODAL (approver-focused workflow) -->
 <dialog id="coApprovalModal" class="modal bg-zinc-900 border border-zinc-700 rounded-lg w-full max-w-lg p-0 text-white">
@@ -360,7 +462,7 @@
 </dialog>
 
 <!-- BOTTOM BAR -->
-<div class="fixed bottom-0 left-56 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60] no-print">
+<div class="co-bottom-bar fixed bottom-0 left-56 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60] no-print">
     <div class="flex items-center gap-4">
         <span id="coSageStatusText">Sage 300 PCO/CO · Loading…</span>
         <button type="button" onclick="CasePMChangeOrders.openSageLog()" class="text-emerald-400 hover:text-emerald-300 underline">Sage Log</button>
