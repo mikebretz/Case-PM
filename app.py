@@ -2087,6 +2087,9 @@ from bidder_network_models import define_bidder_network_models
 _bidder_network_models = define_bidder_network_models(db)
 BidderNetworkRegistration = _bidder_network_models['BidderNetworkRegistration']
 BidderNetworkDocument = _bidder_network_models['BidderNetworkDocument']
+PlanRoomClarification = _bidder_network_models['PlanRoomClarification']
+PlanRoomAddendumAck = _bidder_network_models['PlanRoomAddendumAck']
+PlanRoomExternalSyncLog = _bidder_network_models['PlanRoomExternalSyncLog']
 
 
 class Company(db.Model):
@@ -18646,6 +18649,9 @@ register_bidder_network_routes(app, {
     'upload_folder': app.config['UPLOAD_FOLDER'],
     'BidderNetworkRegistration': BidderNetworkRegistration,
     'BidderNetworkDocument': BidderNetworkDocument,
+    'PlanRoomClarification': PlanRoomClarification,
+    'PlanRoomAddendumAck': PlanRoomAddendumAck,
+    'PlanRoomExternalSyncLog': PlanRoomExternalSyncLog,
     'BidPackage': BidPackage,
     'Project': Project,
     'Estimate': Estimate,

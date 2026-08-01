@@ -24,6 +24,9 @@ def register_bidder_network_routes(app, deps):
     User = deps['User']
     Document = deps['Document']
     BidPackageAddendum = deps['BidPackageAddendum']
+    PlanRoomClarification = deps['PlanRoomClarification']
+    PlanRoomAddendumAck = deps['PlanRoomAddendumAck']
+    PlanRoomExternalSyncLog = deps['PlanRoomExternalSyncLog']
 
     def models():
         return {
@@ -36,6 +39,9 @@ def register_bidder_network_routes(app, deps):
             'Estimate': Estimate,
             'Document': Document,
             'BidPackageAddendum': BidPackageAddendum,
+            'PlanRoomClarification': PlanRoomClarification,
+            'PlanRoomAddendumAck': PlanRoomAddendumAck,
+            'PlanRoomExternalSyncLog': PlanRoomExternalSyncLog,
         }
 
     def uid():
@@ -192,7 +198,19 @@ def register_bidder_network_routes(app, deps):
             return jsonify({'error': 'Plan room access requires approval', 'access': access}), 403
         try:
             staff = staff_estimating_ok()
-            return jsonify(plan_room_project_detail(db, models(), project_id, staff_access=staff))
+            from plan_room_advanced_services import (
+                enrich_addenda_with_acks,
+                list_clarifications,
+                user_addendum_ack_ids,
+            )
+            data = plan_room_project_detail(db, models(), project_id, staff_access=staff)
+            add_ids = [a['id'] for a in data.get('addenda') or []]
+            acked = user_addendum_ack_ids(db, PlanRoomAddendumAck, uid(), add_ids) if uid() else set()
+            data['addenda'] = enrich_addenda_with_acks(data.get('addenda') or [], acked)
+            data['clarifications'] = list_clarifications(db, PlanRoomClarification, project_id)['clarifications']
+            data['documents_zip_url'] = f'/api/bidder-network/projects/{project_id}/documents.zip'
+            data['pending_addendum_acks'] = sum(1 for a in data['addenda'] if not a.get('acknowledged'))
+            return jsonify(data)
         except ValueError as exc:
             return jsonify({'error': str(exc)}), 404
 
@@ -205,7 +223,13 @@ def register_bidder_network_routes(app, deps):
             return jsonify({'error': 'Plan room access requires approval', 'access': access}), 403
         try:
             staff = staff_estimating_ok()
-            return jsonify(plan_room_package_detail(db, models(), project_id, package_id, staff_access=staff))
+            from plan_room_advanced_services import enrich_addenda_with_acks, user_addendum_ack_ids
+            data = plan_room_package_detail(db, models(), project_id, package_id, staff_access=staff)
+            add_ids = [a['id'] for a in data.get('addenda') or []]
+            acked = user_addendum_ack_ids(db, PlanRoomAddendumAck, uid(), add_ids) if uid() else set()
+            data['addenda'] = enrich_addenda_with_acks(data.get('addenda') or [], acked)
+            data['documents_zip_url'] = f'/api/bidder-network/projects/{project_id}/packages/{package_id}/documents.zip'
+            return jsonify(data)
         except ValueError as exc:
             return jsonify({'error': str(exc)}), 404
 
@@ -492,6 +516,139 @@ def register_bidder_network_routes(app, deps):
         )
         db.session.commit()
         return jsonify(out)
+
+    @app.route('/api/bidder-network/projects/<int:project_id>/clarifications', methods=['GET', 'POST'])
+    @login_required
+    def api_plan_room_clarifications(project_id):
+        from plan_room_advanced_services import list_clarifications, submit_clarification
+        if request.method == 'GET':
+            access = bidder_or_staff()
+            if not access.get('approved'):
+                return jsonify({'error': 'Access denied'}), 403
+            return jsonify(list_clarifications(db, PlanRoomClarification, project_id))
+        if staff_estimating_ok():
+            return jsonify({'error': 'Staff answer questions from the plan room console Q&A tab'}), 400
+        access = bidder_or_staff()
+        if not access.get('approved'):
+            return jsonify({'error': 'Access denied'}), 403
+        body = request.get_json(silent=True) or {}
+        try:
+            out = submit_clarification(db, models(), project_id, current_user, body)
+            db.session.commit()
+            return jsonify(out), 201
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/bidder-network/clarifications/<int:clarification_id>/answer', methods=['POST', 'PUT'])
+    @login_required
+    def api_plan_room_answer_clarification(clarification_id):
+        if not staff_estimating_ok():
+            return jsonify({'error': 'Estimating access required'}), 403
+        from plan_room_advanced_services import answer_clarification
+        body = request.get_json(silent=True) or {}
+        try:
+            out = answer_clarification(db, PlanRoomClarification, clarification_id, uid(), body)
+            db.session.commit()
+            return jsonify(out)
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/bidder-network/addenda/<int:addendum_id>/acknowledge', methods=['POST'])
+    @login_required
+    def api_plan_room_ack_addendum(addendum_id):
+        from plan_room_advanced_services import acknowledge_addendum
+        if not uid():
+            return jsonify({'error': 'Login required'}), 401
+        try:
+            out = acknowledge_addendum(db, PlanRoomAddendumAck, uid(), addendum_id)
+            db.session.commit()
+            return jsonify(out)
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/bidder-network/projects/<int:project_id>/documents.zip')
+    @login_required
+    def api_plan_room_project_zip(project_id):
+        import io
+        from flask import send_file
+        from plan_room_advanced_services import zip_plan_documents
+        access = bidder_or_staff()
+        if not access.get('approved'):
+            return jsonify({'error': 'Access denied'}), 403
+        try:
+            data, fname = zip_plan_documents(db, models(), project_id, package_id=None, upload_folder=upload_folder)
+            return send_file(
+                io.BytesIO(data),
+                mimetype='application/zip',
+                as_attachment=True,
+                download_name=fname,
+            )
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/bidder-network/projects/<int:project_id>/packages/<int:package_id>/documents.zip')
+    @login_required
+    def api_plan_room_package_zip(project_id, package_id):
+        from flask import send_file
+        import io
+        from plan_room_advanced_services import zip_plan_documents
+        access = bidder_or_staff()
+        if not access.get('approved'):
+            return jsonify({'error': 'Access denied'}), 403
+        try:
+            data, fname = zip_plan_documents(db, models(), project_id, package_id=package_id, upload_folder=upload_folder)
+            return send_file(
+                io.BytesIO(data),
+                mimetype='application/zip',
+                as_attachment=True,
+                download_name=fname,
+            )
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/bidder-network/admin/projects/<int:project_id>/broadcast-itb', methods=['POST'])
+    @login_required
+    def api_plan_room_broadcast_itb(project_id):
+        if not staff_estimating_ok():
+            return jsonify({'error': 'Estimating access required'}), 403
+        from plan_room_advanced_services import broadcast_plan_room_itb
+        body = request.get_json(silent=True) or {}
+        try:
+            out = broadcast_plan_room_itb(
+                db, models(), project_id,
+                package_id=body.get('package_id'),
+                notify_mode=body.get('notify_mode', 'both'),
+            )
+            db.session.commit()
+            return jsonify(out)
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/bidder-network/admin/projects/<int:project_id>/external-sync', methods=['POST'])
+    @login_required
+    def api_plan_room_external_sync(project_id):
+        if not staff_estimating_ok():
+            return jsonify({'error': 'Estimating access required'}), 403
+        from plan_room_advanced_services import export_external_network
+        body = request.get_json(silent=True) or {}
+        try:
+            out = export_external_network(db, models(), project_id, body.get('provider', 'buildingconnected'), staff_user_id=uid())
+            db.session.commit()
+            return jsonify(out)
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+
+    @app.route('/api/bidder-network/admin/projects/<int:project_id>/external-sync/logs')
+    @login_required
+    def api_plan_room_external_sync_logs(project_id):
+        if not staff_estimating_ok():
+            return jsonify({'error': 'Estimating access required'}), 403
+        from plan_room_advanced_services import list_external_sync_logs
+        return jsonify(list_external_sync_logs(db, PlanRoomExternalSyncLog, project_id))
 
     @app.route('/estimating/plan-room-preview')
     @login_required
