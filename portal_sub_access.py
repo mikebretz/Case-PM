@@ -110,6 +110,12 @@ def is_sub_vendor_portal_user(user) -> bool:
     """Sub users with pay-app portal only (no GC pay app / job-wide financials)."""
     if not user or not getattr(user, 'is_authenticated', False):
         return False
+    try:
+        from portal_plan_room_access import is_plan_room_portal_user
+        if is_plan_room_portal_user(user):
+            return False
+    except Exception:
+        pass
     flags = user_global_flags(user)
     if flags.get('sub_vendor_portal_only'):
         return True
@@ -983,6 +989,12 @@ def get_sub_vendor_project_ids(user, Project=None, ProjectMembership=None, Commi
 
 def portal_home_endpoint_for_user(user) -> str:
     """Default landing page after login or when a module is blocked."""
+    try:
+        from portal_plan_room_access import is_plan_room_portal_user
+        if is_plan_room_portal_user(user):
+            return 'plan_room_projects_page'
+    except Exception:
+        pass
     if is_sub_vendor_portal_user(user):
         return 'pay_applications_page'
     return 'dashboard'
@@ -991,6 +1003,12 @@ def portal_home_endpoint_for_user(user) -> str:
 def portal_home_redirect(user):
     """Flask redirect to the appropriate home for this user."""
     from flask import redirect, url_for
+    try:
+        from portal_plan_room_access import is_plan_room_portal_user, plan_room_home_redirect
+        if is_plan_room_portal_user(user):
+            return plan_room_home_redirect(user)
+    except Exception:
+        pass
     return redirect(url_for(portal_home_endpoint_for_user(user)))
 
 

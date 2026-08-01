@@ -19,3 +19,8 @@ def ensure_bidder_network_schema(db):
         if 'network_manifest_json' not in existing:
             db.session.execute(text('ALTER TABLE bid_package ADD COLUMN network_manifest_json TEXT'))
     db.session.commit()
+    try:
+        from portal_plan_room_access import normalize_approved_plan_room_user_accounts
+        normalize_approved_plan_room_user_accounts(db)
+    except Exception:
+        db.session.rollback()

@@ -27,6 +27,7 @@ PORTAL_TYPES = [
     ('field', 'Field / Superintendent'),
     ('consultant', 'Consultant (Owner / Architect)'),
     ('sub', 'Subcontractor Portal'),
+    ('plan_room', 'Plan Room / Bidder Only'),
     ('client', 'Client View Only'),
 ]
 
@@ -527,6 +528,19 @@ ROLE_TEMPLATES = {
             'schedule': ('view', 'none'),
             'email': ('edit', 'none'),
             'operations_center': ('edit', 'approve_reject'),
+        }),
+    },
+    'Plan Room Bidder': {
+        'portal': 'plan_room',
+        'description': 'Electronic plan room only — ITBs, plans, specs, and bid packages (no PM or accounting)',
+        'global': {
+            'plan_room_portal_only': True,
+            'hide_financials': True,
+            'client_portal_only': True,
+            'email_internal_only': True,
+        },
+        'modules': _set_modules(default_module_perms('none', 'none'), **{
+            'notifications': ('view', 'none'),
         }),
     },
     'Subcontractor Accountant': {
