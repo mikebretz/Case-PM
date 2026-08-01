@@ -557,6 +557,7 @@ ROLE_TEMPLATES = {
             'pay_applications_lien_waivers': ('entry', 'none'),
             'pay_applications_gc': ('none', 'none'),
             'change_orders_rfq': ('entry', 'submit'),
+            'submittals': ('entry', 'submit'),
             'estimating': ('view', 'none'),
             'documents': ('view', 'none'),
             'internal_messages': ('view', 'none'),
@@ -565,7 +566,7 @@ ROLE_TEMPLATES = {
     },
     'Subcontractor Contact': {
         'portal': 'sub',
-        'description': 'Sub/vendor main contact — RFQ portal, bid portal, internal messages',
+        'description': 'Sub/vendor main contact — RFQ portal, bid portal, submittals, internal messages',
         'global': {
             'client_portal_only': True,
             'sub_vendor_portal_only': True,
@@ -573,6 +574,7 @@ ROLE_TEMPLATES = {
         },
         'modules': _set_modules(default_module_perms('none', 'none'), **{
             'change_orders_rfq': ('entry', 'submit'),
+            'submittals': ('entry', 'submit'),
             'estimating': ('view', 'none'),
             'documents': ('view', 'none'),
             'internal_messages': ('edit', 'none'),

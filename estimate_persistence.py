@@ -144,7 +144,7 @@ def estimate_to_dict(est, lines=None, bid_packages=None, settings=None):
     return payload
 
 
-def apply_estimate_fields(est, data):
+def apply_estimate_fields(est, data, **_ignored):
     for field in ('title', 'description', 'status', 'estimate_type'):
         if field in data and data[field] is not None:
             setattr(est, field, data[field])
@@ -283,6 +283,8 @@ def award_estimate_to_budget(
     user_id=None,
     use_bid_awards=False,
     EstimateBudgetMapping=None,
+    Project=None,
+    sync_contract_value=True,
 ):
     """
     Push finalized estimate into project budget original_budget lines.
@@ -363,7 +365,26 @@ def award_estimate_to_budget(
     })
     state['budgetLines'] = budget_lines
     state['budgetAuditLog'] = audit
+    sell_total = float(est.total_amount or 0)
+    direct_total = float(est.direct_cost_total or 0)
+    if sell_total > 0:
+        state['budgetContractAmount'] = sell_total
+        state['estimateSellTotal'] = sell_total
+    if direct_total > 0:
+        state['estimateDirectCostTotal'] = direct_total
     save_budget_state(BudgetProjectState, db, est.project_id, state, user_id)
+
+    if Project is not None and sync_contract_value and sell_total > 0:
+        project = Project.query.get(est.project_id)
+        if project is not None:
+            project.contract_value = sell_total
+            if hasattr(project, 'get_details') and hasattr(project, 'set_details'):
+                details = project.get_details() or {}
+                if isinstance(details, dict):
+                    details['original_contract_amount'] = str(sell_total)
+                    details['estimate_direct_cost'] = str(direct_total)
+                    project.set_details(details)
+            project.updated_at = datetime.utcnow()
 
     est.awarded_at = est.awarded_at or datetime.utcnow()
     est.pushed_to_budget_at = datetime.utcnow()
@@ -371,7 +392,13 @@ def award_estimate_to_budget(
     est.status = 'Awarded'
     est.updated_at = datetime.utcnow()
     db.session.commit()
-    return {'updated': updated, 'created': created, 'lines_pushed': updated + created}
+    return {
+        'updated': updated,
+        'created': created,
+        'lines_pushed': updated + created,
+        'contract_value_synced': sell_total if sell_total > 0 else None,
+        'direct_cost_total': direct_total if direct_total > 0 else None,
+    }
 
 
 def bid_leveling_matrix(BidPackage, BidInvitation, estimate_id):

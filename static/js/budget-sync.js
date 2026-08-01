@@ -48,6 +48,25 @@
     });
   }
 
+  function fmtUsd(n) {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n || 0);
+  }
+
+  function renderChangeOrderSummary(summary) {
+    const el = document.getElementById('coChangeSummary');
+    if (!el) return;
+    if (!summary) {
+      el.classList.add('hidden');
+      return;
+    }
+    el.classList.remove('hidden');
+    el.innerHTML = `
+      <div class="bg-zinc-900 border border-zinc-700 rounded-md p-3"><div class="text-zinc-500">Approved CO (gross)</div><div class="text-emerald-400 font-semibold mt-1">${fmtUsd(summary.approved_gross)}</div><div class="text-zinc-600">${summary.approved_count || 0} CO(s) · net ${fmtUsd(summary.approved_net)}</div></div>
+      <div class="bg-zinc-900 border border-zinc-700 rounded-md p-3"><div class="text-zinc-500">Pending CO (gross)</div><div class="text-amber-400 font-semibold mt-1">${fmtUsd(summary.pending_gross)}</div><div class="text-zinc-600">${summary.pending_count || 0} in workflow · net ${fmtUsd(summary.pending_net)}</div></div>
+      <div class="bg-zinc-900 border border-zinc-700 rounded-md p-3"><div class="text-zinc-500">Deductive (approved)</div><div class="text-sky-300 font-semibold mt-1">${fmtUsd(summary.deductive_approved)}</div></div>
+      <div class="bg-zinc-900 border border-zinc-700 rounded-md p-3"><div class="text-zinc-500">Deductive (pending)</div><div class="text-sky-300/80 font-semibold mt-1">${fmtUsd(summary.deductive_pending)}</div></div>`;
+  }
+
   async function loadFromServer() {
     const pid = projectId();
     if (!pid || !enabled) return null;
@@ -58,6 +77,7 @@
       if (!json.data) return null;
       serverVersion = json.version || 0;
       applyBundleToLocal(json.data);
+      renderChangeOrderSummary(json.change_order_summary);
       return json;
     } catch (e) {
       console.warn('[BudgetSync] load failed', e);

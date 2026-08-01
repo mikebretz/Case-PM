@@ -46,6 +46,12 @@ def get_budget_state(BudgetProjectState, project_id):
     return record, _parse_state(record)
 
 
+def get_budget_state_dict(BudgetProjectState, project_id):
+    """Return parsed budget JSON only (common caller mistake is unpacking wrong)."""
+    _record, data = get_budget_state(BudgetProjectState, project_id)
+    return data or {}
+
+
 def save_budget_state(BudgetProjectState, db, project_id, data, user_id=None):
     if not isinstance(data, dict):
         raise ValueError('data must be a dict')
@@ -98,14 +104,10 @@ def apply_co_amount_to_budget_line(line, amount, mode):
         line['pending'] = float(line.get('pending') or 0) + amt
     elif mode == 'approved':
         pending = float(line.get('pending') or 0)
-        if pending >= amt:
-            line['pending'] = pending - amt
-        else:
-            line['pending'] = 0
+        line['pending'] = pending - amt
         line['approved_changes'] = float(line.get('approved_changes') or 0) + amt
     elif mode == 'reject':
-        pending = float(line.get('pending') or 0)
-        line['pending'] = max(0.0, pending - amt)
+        line['pending'] = float(line.get('pending') or 0) - amt
     return line
 
 
@@ -261,3 +263,52 @@ def push_budget_contract_to_project(project, budget_contract_amount):
     project.contract_value = amt
     project.updated_at = datetime.utcnow()
     return True
+
+
+def summarize_change_orders_for_budget(ChangeOrder, ChangeOrderAllocation, project_id, *, owner_only=True):
+    """
+    Roll up owner CO dollars for budget UI: gross approved/pending, net (signed), deductives.
+    Uses allocation rows when present (supports deductive CO lines).
+    """
+    from co_persistence import is_subcontract_co
+
+    q = ChangeOrder.query.filter_by(project_id=int(project_id))
+    cos = q.all()
+    approved_gross = pending_gross = deductive_approved = deductive_pending = 0.0
+    approved_net = pending_net = 0.0
+    approved_count = pending_count = 0
+
+    for co in cos:
+        if owner_only and is_subcontract_co(co):
+            continue
+        st = (co.status or '').strip()
+        allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
+        if allocs:
+            signed = sum(float(a.amount or 0) for a in allocs)
+            gross = sum(abs(float(a.amount or 0)) for a in allocs)
+        else:
+            signed = float(co.amount or 0)
+            gross = abs(signed)
+        is_ded = signed < 0
+        if st == APPROVED_CO_STATUS:
+            approved_count += 1
+            approved_gross += gross
+            approved_net += signed
+            if is_ded:
+                deductive_approved += gross
+        elif st not in (REJECTED_CO_STATUS, 'Void', 'Draft'):
+            pending_count += 1
+            pending_gross += gross
+            pending_net += signed
+            if is_ded:
+                deductive_pending += gross
+    return {
+        'approved_gross': round(approved_gross, 2),
+        'approved_net': round(approved_net, 2),
+        'pending_gross': round(pending_gross, 2),
+        'pending_net': round(pending_net, 2),
+        'deductive_approved': round(deductive_approved, 2),
+        'deductive_pending': round(deductive_pending, 2),
+        'approved_count': approved_count,
+        'pending_count': pending_count,
+    }
