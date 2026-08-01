@@ -3,6 +3,15 @@
 
   const ctx = window.CASEPM_MARKETING_CTX || {};
   const STAGES = ['inquiry', 'qualification', 'proposal', 'negotiation', 'won', 'lost'];
+  const STAGE_LABELS = {
+    inquiry: 'Inquiry',
+    qualification: 'Qualified',
+    proposal: 'Proposal',
+    negotiation: 'Negotiation',
+    won: 'Won',
+    lost: 'Lost',
+  };
+  const QUICKSTART_KEY = 'casepm_mk_quickstart_dismissed';
   let leads = [];
   let stagesMeta = [];
   let marketCatalog = [];
@@ -48,7 +57,6 @@
       portfolio: 'mkPanelPortfolio',
       campaigns: 'mkPanelCampaigns',
       reviews: 'mkPanelReviews',
-      assets: 'mkPanelAssets',
       capture: 'mkPanelCapture',
       proposals: 'mkPanelProposals',
       web: 'mkPanelWeb',
@@ -58,10 +66,9 @@
     document.getElementById(id)?.classList.remove('hidden');
     const loader = {
       pipeline: loadLeads,
-      portfolio: loadCaseStudies,
+      portfolio: loadPortfolioPanel,
       campaigns: loadCampaigns,
       reviews: loadReviews,
-      assets: loadAssets,
       capture: () => loadCapturePanel(),
       proposals: loadProposals,
       web: loadWebPanel,
@@ -75,11 +82,37 @@
     const el = document.getElementById('mkActiveProject');
     if (!el) return;
     if (ctx.projectId) {
-      el.textContent = `Active project: ${ctx.projectName || '#' + ctx.projectId} — case studies, assets, and reviews use this project.`;
-      el.classList.remove('hidden');
+      el.textContent = `Active project: ${ctx.projectName || '#' + ctx.projectId} — case studies, photos, and review requests use this job.`;
+      el.classList.add('mk-ok');
     } else {
-      el.textContent = 'No active project — pick a project in the header to enable project-scoped actions.';
-      el.classList.remove('hidden');
+      el.textContent = 'Tip: Select a project in the header to enable case studies, photo sync, and review requests.';
+      el.classList.remove('mk-ok');
+    }
+    el.classList.remove('hidden');
+  }
+
+  function initQuickStart() {
+    const box = document.getElementById('mkQuickStart');
+    const list = document.getElementById('mkQuickStartList');
+    if (!box || !list) return;
+    if (localStorage.getItem(QUICKSTART_KEY) === '1') {
+      box.classList.add('hidden');
+      return;
+    }
+    list.innerHTML = [
+      'Open <strong>Construction market profile</strong> above and apply a scheme for your trade.',
+      'Add a lead in <strong>Pipeline</strong> or connect your site under <strong>Website leads</strong>.',
+      'Publish work in <strong>Portfolio &amp; photos</strong> (pick an active project first).',
+      'Use <strong>Website &amp; SEO</strong> to create a landing page and run the SEO checklist.',
+    ].map((line) => `<li>${line}</li>`).join('');
+    box.classList.remove('hidden');
+    const dismiss = document.getElementById('mkDismissQuickStart');
+    if (dismiss && !dismiss.dataset.bound) {
+      dismiss.dataset.bound = '1';
+      dismiss.addEventListener('click', () => {
+        localStorage.setItem(QUICKSTART_KEY, '1');
+        box.classList.add('hidden');
+      });
     }
   }
 
@@ -87,13 +120,31 @@
     const host = document.getElementById('mkDashboard');
     if (!host) return;
     const cards = [
-      ['Forecast (history)', `$${Number(d.forecast_with_history || d.pipeline_weighted_value || 0).toLocaleString()}`],
+      ['Weighted pipeline', `$${Number(d.forecast_with_history || d.pipeline_weighted_value || 0).toLocaleString()}`],
       ['Marketing spend', `$${Number(d.marketing_spend_total || 0).toLocaleString()}`],
-      ['Campaign opens/clicks', `${d.campaign_opens || 0} / ${d.campaign_clicks || 0}`],
-      ['Portfolio views', d.portfolio_page_views || 0],
+      ['Email opens / clicks', `${d.campaign_opens || 0} / ${d.campaign_clicks || 0}`],
+      ['Portfolio views', Number(d.portfolio_page_views || 0).toLocaleString()],
     ];
     host.innerHTML = cards.map(([label, val]) => `
-      <div class="mk-card"><div class="mk-stat">${esc(val)}</div><div class="mk-stat-label">${esc(label)}</div></div>`).join('');
+      <div class="mk-stat-card"><div class="mk-stat-value">${esc(val)}</div><div class="mk-stat-label">${esc(label)}</div></div>`).join('');
+    renderAnalyticsSummary(d);
+    const detail = document.getElementById('mkAnalyticsDetail');
+    if (detail) detail.textContent = JSON.stringify(d, null, 2);
+  }
+
+  function renderAnalyticsSummary(d) {
+    const host = document.getElementById('mkAnalyticsSummary');
+    if (!host) return;
+    const open = d.lead_count != null && d.by_stage
+      ? STAGES.filter((s) => s !== 'won' && s !== 'lost').reduce((n, s) => n + (d.by_stage[s] || 0), 0)
+      : '—';
+    const items = [
+      ['Leads in pipeline', open],
+      ['Won revenue (est.)', d.won_revenue_attributed != null ? `$${Number(d.won_revenue_attributed).toLocaleString()}` : '—'],
+      ['Campaigns sent', d.campaigns_sent != null ? d.campaigns_sent : '—'],
+      ['Win rate', d.win_rate != null ? `${Math.round(Number(d.win_rate) * 100)}%` : '—'],
+    ];
+    host.innerHTML = items.map(([k, v]) => `<div><span class="text-zinc-500">${esc(k)}</span><strong>${esc(String(v))}</strong></div>`).join('');
   }
 
   function renderPipeline() {
@@ -101,7 +152,7 @@
     if (!host) return;
     host.innerHTML = STAGES.map(stage => {
       const items = leads.filter(l => (l.stage || 'inquiry') === stage);
-      return `<div class="mk-col" data-stage="${esc(stage)}"><h3>${esc(stage)}</h3>
+      return `<div class="mk-col" data-stage="${esc(stage)}"><h3>${esc(STAGE_LABELS[stage] || stage)}</h3>
         ${items.map(l => `<div class="mk-lead" data-id="${l.id}">
           <div class="font-medium text-white">${esc(l.title)}</div>
           <div class="text-zinc-500">${esc(l.contact_name || l.email || '')}</div>
@@ -117,7 +168,10 @@
   async function openLeadMenu(id) {
     const lead = leads.find(l => l.id === id);
     if (!lead) return;
-    const next = prompt(`Stage for "${lead.title}" (${STAGES.join(', ')}):`, lead.stage || 'inquiry');
+    const next = prompt(
+      `Move "${lead.title}" to stage:\n${STAGES.map((s) => `${s} (${STAGE_LABELS[s]})`).join(', ')}`,
+      lead.stage || 'inquiry',
+    );
     if (!next || !STAGES.includes(next)) return;
     await api(`/api/marketing/leads/${id}/stage`, { method: 'POST', body: JSON.stringify({ stage: next }) });
     await loadLeads();
@@ -125,6 +179,10 @@
       const out = await api(`/api/marketing/leads/${id}/convert-estimate`, { method: 'POST', body: '{}' });
       alert(`Estimate #${out.estimate_id} on project #${out.project_id}`);
     }
+  }
+
+  async function loadPortfolioPanel() {
+    await Promise.all([loadCaseStudies(), loadAssets()]);
   }
 
   async function loadLeads() {
@@ -137,8 +195,6 @@
   async function loadDashboard() {
     const d = await api('/api/marketing/dashboard');
     renderDashboard(d);
-    const detail = document.getElementById('mkAnalyticsDetail');
-    if (detail) detail.textContent = JSON.stringify(d, null, 2);
   }
 
   async function loadAnalyticsPanel() {
@@ -378,6 +434,7 @@
 
   async function loadAll() {
     renderActiveProject();
+    initQuickStart();
     try {
       await loadMarketProfile();
     } catch (e) {
@@ -508,7 +565,15 @@
     await api('/api/marketing/proposals', { method: 'POST', body: JSON.stringify({ estimate_id: parseInt(estId, 10) }) });
     loadProposals();
   });
-  document.getElementById('mkSeedLanding')?.addEventListener('click', () => loadWebPanel());
+  document.getElementById('mkSeedLanding')?.addEventListener('click', async () => {
+    try {
+      await api('/api/marketing/landing-pages');
+      await loadLanding();
+      alert('Default landing page is ready. Open the link under “Your pages” or share it from Website leads.');
+    } catch (e) {
+      alert(e.message || 'Could not create landing page.');
+    }
+  });
   document.getElementById('mkRunSeoAudit')?.addEventListener('click', () => runSeoAudit().catch(e => alert(e.message)));
   document.getElementById('mkNewReferral')?.addEventListener('click', async () => {
     const refId = prompt('Referrer lead ID (optional):');
