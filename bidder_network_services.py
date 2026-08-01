@@ -14,6 +14,130 @@ SPECIALTY_OPTIONS = (
     'Earthwork / sitework', 'Paving', 'Landscaping', 'Demolition', 'Other',
 )
 
+MANIFEST_DOCUMENT_CATEGORIES = (
+    ('plans', 'Plans & drawings'),
+    ('specifications', 'Specifications'),
+    ('geotechnical', 'Geotechnical & environmental'),
+    ('schedules', 'Schedules & equipment lists'),
+    ('bid_forms', 'Bid forms & exhibits'),
+    ('insurance', 'Insurance, bonds & certifications'),
+    ('general', 'General conditions & ITB'),
+)
+
+MANIFEST_DOC_KEYS = tuple(k for k, _ in MANIFEST_DOCUMENT_CATEGORIES)
+
+
+def _default_meeting_block():
+    return {
+        'date': '',
+        'time': '',
+        'location': '',
+        'mandatory': False,
+        'virtual_url': '',
+        'notes': '',
+    }
+
+
+def _default_bonding_block():
+    return {
+        'bid_bond_percent': '',
+        'performance_bond': '',
+        'payment_bond': '',
+        'notes': '',
+    }
+
+
+def default_package_manifest() -> dict:
+    return {
+        'itb': {
+            'scope_summary_html': '',
+            'instructions_html': '',
+            'bid_due_time': '',
+            'timezone': 'America/Denver',
+            'pre_bid_meeting': _default_meeting_block(),
+            'job_walk': _default_meeting_block(),
+            'bonding': _default_bonding_block(),
+            'qualifications_html': '',
+            'wage_requirements': '',
+            'subs_to_include': '',
+            'subs_to_exclude': '',
+        },
+        'documents': {key: [] for key in MANIFEST_DOC_KEYS},
+    }
+
+
+def parse_package_manifest(pkg) -> dict:
+    base = default_package_manifest()
+    raw = _json_load(getattr(pkg, 'network_manifest_json', None), None)
+    if not isinstance(raw, dict):
+        return base
+    itb = raw.get('itb') if isinstance(raw.get('itb'), dict) else {}
+    for key in base['itb']:
+        if key in ('pre_bid_meeting', 'job_walk'):
+            block = itb.get(key) if isinstance(itb.get(key), dict) else {}
+            base['itb'][key].update({k: block.get(k, base['itb'][key].get(k)) for k in base['itb'][key]})
+        elif key == 'bonding':
+            block = itb.get('bonding') if isinstance(itb.get('bonding'), dict) else {}
+            base['itb']['bonding'].update({k: block.get(k, base['itb']['bonding'].get(k)) for k in base['itb']['bonding']})
+        elif key in itb:
+            base['itb'][key] = itb[key]
+    docs = raw.get('documents') if isinstance(raw.get('documents'), dict) else {}
+    for key in MANIFEST_DOC_KEYS:
+        entries = docs.get(key)
+        if isinstance(entries, list):
+            base['documents'][key] = [e for e in entries if isinstance(e, dict)]
+    return base
+
+
+def save_package_manifest(pkg, manifest: dict) -> dict:
+    if not isinstance(manifest, dict):
+        manifest = default_package_manifest()
+    cleaned = default_package_manifest()
+    itb_in = manifest.get('itb') if isinstance(manifest.get('itb'), dict) else {}
+    for key in cleaned['itb']:
+        if key in ('pre_bid_meeting', 'job_walk', 'bonding'):
+            block = itb_in.get(key) if isinstance(itb_in.get(key), dict) else {}
+            cleaned['itb'][key].update({k: block.get(k, cleaned['itb'][key].get(k)) for k in cleaned['itb'][key]})
+        elif key in itb_in:
+            cleaned['itb'][key] = itb_in[key]
+    docs_in = manifest.get('documents') if isinstance(manifest.get('documents'), dict) else {}
+    for key in MANIFEST_DOC_KEYS:
+        entries = docs_in.get(key) if isinstance(docs_in.get(key), list) else []
+        norm = []
+        for i, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                continue
+            did = entry.get('document_id')
+            try:
+                did = int(did)
+            except (TypeError, ValueError):
+                continue
+            norm.append({
+                'document_id': did,
+                'title': (entry.get('title') or '').strip(),
+                'sort_order': int(entry.get('sort_order', i)),
+                'sheet': (entry.get('sheet') or '').strip(),
+            })
+        norm.sort(key=lambda x: x.get('sort_order', 0))
+        cleaned['documents'][key] = norm
+    pkg.network_manifest_json = json.dumps(cleaned)
+    return cleaned
+
+
+def manifest_document_ids(manifest: dict) -> set:
+    ids = set()
+    if not isinstance(manifest, dict):
+        return ids
+    docs = manifest.get('documents') if isinstance(manifest.get('documents'), dict) else {}
+    for key in MANIFEST_DOC_KEYS:
+        for entry in docs.get(key) or []:
+            if isinstance(entry, dict) and entry.get('document_id'):
+                try:
+                    ids.add(int(entry['document_id']))
+                except (TypeError, ValueError):
+                    pass
+    return ids
+
 
 def _json_load(raw, default=None):
     if default is None:
@@ -54,9 +178,20 @@ def plan_room_meta(project) -> dict:
         'published': bool(block.get('published')),
         'summary': (block.get('summary') or '').strip(),
         'bid_date': block.get('bid_date'),
+        'bid_due_time': block.get('bid_due_time') or '',
+        'timezone': block.get('timezone') or 'America/Denver',
         'pre_bid_date': block.get('pre_bid_date'),
+        'pre_bid_meeting': block.get('pre_bid_meeting') if isinstance(block.get('pre_bid_meeting'), dict) else _default_meeting_block(),
+        'job_walk': block.get('job_walk') if isinstance(block.get('job_walk'), dict) else _default_meeting_block(),
+        'bonding': block.get('bonding') if isinstance(block.get('bonding'), dict) else _default_bonding_block(),
+        'instructions_html': block.get('instructions_html') or '',
+        'owner_name': block.get('owner_name') or '',
+        'architect_name': block.get('architect_name') or '',
+        'engineer_name': block.get('engineer_name') or '',
+        'project_address': block.get('project_address') or '',
         'contact_name': block.get('contact_name') or '',
         'contact_email': block.get('contact_email') or '',
+        'contact_phone': block.get('contact_phone') or '',
         'document_ids': [int(x) for x in (block.get('document_ids') or []) if str(x).isdigit()],
     }
 
@@ -66,9 +201,20 @@ def save_plan_room_meta(project, patch: dict) -> dict:
     if not isinstance(details, dict):
         details = {}
     block = details.get('plan_room') if isinstance(details.get('plan_room'), dict) else {}
-    for key in ('published', 'summary', 'bid_date', 'pre_bid_date', 'contact_name', 'contact_email', 'document_ids'):
+    scalar_keys = (
+        'published', 'summary', 'bid_date', 'bid_due_time', 'timezone', 'pre_bid_date',
+        'contact_name', 'contact_email', 'contact_phone', 'document_ids',
+        'instructions_html', 'owner_name', 'architect_name', 'engineer_name', 'project_address',
+    )
+    dict_keys = ('pre_bid_meeting', 'job_walk', 'bonding')
+    for key in scalar_keys:
         if key in patch:
             block[key] = patch[key]
+    for key in dict_keys:
+        if key in patch and isinstance(patch[key], dict):
+            cur = block.get(key) if isinstance(block.get(key), dict) else {}
+            cur.update(patch[key])
+            block[key] = cur
     details['plan_room'] = block
     project.set_details(details)
     return block
@@ -104,6 +250,7 @@ def gather_plan_documents(db, Document, BidPackageAddendum, project, packages: l
                 doc_ids.add(int(did))
             except (TypeError, ValueError):
                 pass
+        doc_ids |= manifest_document_ids(parse_package_manifest(pkg))
         for add in BidPackageAddendum.query.filter_by(bid_package_id=pkg.id).all():
             for did in _json_load(add.document_ids_json, []):
                 try:
@@ -120,7 +267,62 @@ def gather_plan_documents(db, Document, BidPackageAddendum, project, packages: l
     return [_document_dict(d) for d in rows]
 
 
-def _published_packages_for_project(BidPackage, project_id: int) -> list:
+def _documents_by_id(db, Document, project_id: int, doc_ids: set) -> dict:
+    if not doc_ids:
+        return {}
+    rows = Document.query.filter(
+        Document.id.in_(list(doc_ids)),
+        Document.project_id == int(project_id),
+        Document.deleted_at.is_(None),
+    ).all()
+    return {d.id: _document_dict(d) for d in rows}
+
+
+def manifest_document_sections(manifest: dict, doc_by_id: dict) -> list:
+    sections = []
+    docs = manifest.get('documents') if isinstance(manifest.get('documents'), dict) else {}
+    for key, label in MANIFEST_DOCUMENT_CATEGORIES:
+        entries = docs.get(key) or []
+        items = []
+        for entry in sorted(entries, key=lambda e: e.get('sort_order', 0)):
+            if not isinstance(entry, dict):
+                continue
+            did = entry.get('document_id')
+            base = doc_by_id.get(did)
+            if not base:
+                continue
+            items.append({
+                **base,
+                'title': (entry.get('title') or base.get('name')),
+                'sheet': entry.get('sheet') or '',
+            })
+        if items:
+            sections.append({'key': key, 'label': label, 'documents': items})
+    return sections
+
+
+def _package_public_dict(project, pkg, *, include_manifest: bool = False) -> dict:
+    manifest = parse_package_manifest(pkg)
+    payload = {
+        'id': pkg.id,
+        'number': pkg.number,
+        'title': pkg.title,
+        'spec_section': pkg.spec_section,
+        'division': pkg.division,
+        'due_date': pkg.due_date.isoformat() if pkg.due_date else None,
+        'summary': (pkg.network_summary or pkg.description or pkg.scope_notes or '')[:3000],
+        'drawing_refs': _json_load(pkg.drawing_refs_json, []),
+        'spec_refs': _json_load(pkg.spec_refs_json, []),
+        'network_published': bool(pkg.network_published),
+        'detail_url': f'/plan-room/projects/{project.id}/packages/{pkg.id}',
+        'portal_url': f'/estimate-portal?project_id={project.id}&package_id={pkg.id}',
+    }
+    if include_manifest:
+        payload['manifest'] = manifest
+        payload['itb'] = manifest.get('itb') or {}
+    return payload
+
+
     return BidPackage.query.filter(
         BidPackage.project_id == int(project_id),
         BidPackage.network_published.is_(True),
@@ -209,9 +411,33 @@ def plan_room_project_detail(db, models, project_id: int) -> dict:
 
     meta = plan_room_meta(project)
     documents = gather_plan_documents(db, Document, BidPackageAddendum, project, packages)
+    doc_by_id = {d['id']: d for d in documents}
+    document_sections = []
+    seen_section_keys = set()
+    for pkg in packages:
+        for sec in manifest_document_sections(parse_package_manifest(pkg), doc_by_id):
+            if sec['key'] not in seen_section_keys:
+                document_sections.append(sec)
+                seen_section_keys.add(sec['key'])
+            else:
+                for existing in document_sections:
+                    if existing['key'] == sec['key']:
+                        existing_ids = {d['id'] for d in existing['documents']}
+                        for doc in sec['documents']:
+                            if doc['id'] not in existing_ids:
+                                existing['documents'].append(doc)
+                        break
     addenda = []
     for pkg in packages:
         for add in BidPackageAddendum.query.filter_by(bid_package_id=pkg.id).order_by(BidPackageAddendum.created_at).all():
+            add_docs = []
+            for did in _json_load(add.document_ids_json, []):
+                try:
+                    did = int(did)
+                except (TypeError, ValueError):
+                    continue
+                if did in doc_by_id:
+                    add_docs.append(doc_by_id[did])
             addenda.append({
                 'id': add.id,
                 'package_id': pkg.id,
@@ -220,29 +446,157 @@ def plan_room_project_detail(db, models, project_id: int) -> dict:
                 'title': add.title,
                 'description': add.description,
                 'require_rebid': bool(add.require_rebid),
+                'documents': add_docs,
             })
 
-    pkg_payload = []
-    for p in packages:
-        pkg_payload.append({
-            'id': p.id,
-            'number': p.number,
-            'title': p.title,
-            'spec_section': p.spec_section,
-            'division': p.division,
-            'due_date': p.due_date.isoformat() if p.due_date else None,
-            'summary': (p.network_summary or p.description or p.scope_notes or '')[:3000],
-            'drawing_refs': _json_load(p.drawing_refs_json, []),
-            'spec_refs': _json_load(p.spec_refs_json, []),
-            'portal_url': f'/estimate-portal?project_id={project.id}&package_id={p.id}',
-        })
+    pkg_payload = [_package_public_dict(project, p) for p in packages]
 
     return {
         'project': _project_card(project, packages),
         'plan_room': meta,
         'packages': pkg_payload,
         'documents': documents,
+        'document_sections': document_sections,
         'addenda': addenda,
+        'manifest_categories': [{'key': k, 'label': v} for k, v in MANIFEST_DOCUMENT_CATEGORIES],
+    }
+
+
+def plan_room_package_detail(db, models, project_id: int, package_id: int) -> dict:
+    Project = models['Project']
+    BidPackage = models['BidPackage']
+    Document = models['Document']
+    BidPackageAddendum = models['BidPackageAddendum']
+
+    project = Project.query.get(int(project_id))
+    if not project:
+        raise ValueError('Project not found')
+    pkg = BidPackage.query.get(int(package_id))
+    if not pkg or int(pkg.project_id) != int(project.id):
+        raise ValueError('Bid package not found')
+    if not pkg.network_published:
+        raise ValueError('Package is not published to the plan room')
+
+    packages = _published_packages_for_project(BidPackage, project.id)
+    if not project_in_plan_room(project, packages):
+        raise ValueError('Project is not published to the plan room')
+
+    meta = plan_room_meta(project)
+    manifest = parse_package_manifest(pkg)
+    doc_ids = manifest_document_ids(manifest)
+    for did in _json_load(pkg.attachments_json, []):
+        try:
+            doc_ids.add(int(did))
+        except (TypeError, ValueError):
+            pass
+    doc_by_id = _documents_by_id(db, Document, project.id, doc_ids)
+    sections = manifest_document_sections(manifest, doc_by_id)
+    legacy = []
+    for did in _json_load(pkg.attachments_json, []):
+        try:
+            did = int(did)
+        except (TypeError, ValueError):
+            continue
+        if did in doc_by_id and not any(d['id'] == did for s in sections for d in s['documents']):
+            legacy.append(doc_by_id[did])
+    if legacy:
+        sections.insert(0, {'key': 'legacy', 'label': 'Package attachments', 'documents': legacy})
+
+    addenda = []
+    for add in BidPackageAddendum.query.filter_by(bid_package_id=pkg.id).order_by(BidPackageAddendum.created_at).all():
+        add_docs = []
+        for did in _json_load(add.document_ids_json, []):
+            try:
+                did = int(did)
+            except (TypeError, ValueError):
+                continue
+            row = Document.query.get(did)
+            if row and row.project_id == project.id and not row.deleted_at:
+                add_docs.append(_document_dict(row))
+        addenda.append({
+            'id': add.id,
+            'number': add.number,
+            'title': add.title,
+            'description': add.description,
+            'require_rebid': bool(add.require_rebid),
+            'documents': add_docs,
+        })
+
+    return {
+        'project': _project_card(project, packages),
+        'plan_room': meta,
+        'package': _package_public_dict(project, pkg, include_manifest=True),
+        'document_sections': sections,
+        'addenda': addenda,
+        'manifest_categories': [{'key': k, 'label': v} for k, v in MANIFEST_DOCUMENT_CATEGORIES],
+    }
+
+
+def list_project_documents_for_console(db, Document, project_id: int, *, limit=500) -> list:
+    rows = Document.query.filter_by(project_id=int(project_id)).filter(
+        Document.deleted_at.is_(None),
+    ).order_by(Document.name).limit(limit).all()
+    return [{
+        'id': d.id,
+        'name': d.name,
+        'filename': d.original_filename or d.filename,
+        'document_type': d.document_type,
+        'file_size': d.file_size or 0,
+    } for d in rows]
+
+
+def admin_plan_room_console(db, models, project_id: int) -> dict:
+    Project = models['Project']
+    BidPackage = models['BidPackage']
+    Document = models['Document']
+    BidPackageAddendum = models['BidPackageAddendum']
+
+    project = Project.query.get(int(project_id))
+    if not project:
+        raise ValueError('Project not found')
+    packages = BidPackage.query.filter_by(project_id=project.id).order_by(
+        BidPackage.due_date.asc(), BidPackage.id,
+    ).all()
+    meta = plan_room_meta(project)
+    pkg_rows = []
+    for pkg in packages:
+        manifest = parse_package_manifest(pkg)
+        addenda_count = BidPackageAddendum.query.filter_by(bid_package_id=pkg.id).count()
+        pkg_rows.append({
+            **_package_public_dict(project, pkg, include_manifest=True),
+            'status': pkg.status,
+            'addenda_count': addenda_count,
+            'manifest_document_count': len(manifest_document_ids(manifest)),
+        })
+    return {
+        'project': {
+            'id': project.id,
+            'number': project.number,
+            'name': project.name,
+            'location': _project_location(project),
+        },
+        'plan_room': meta,
+        'packages': pkg_rows,
+        'project_documents': list_project_documents_for_console(db, Document, project.id),
+        'manifest_categories': [{'key': k, 'label': v} for k, v in MANIFEST_DOCUMENT_CATEGORIES],
+    }
+
+
+def update_bid_package_manifest(db, BidPackage, package_id: int, body: dict) -> dict:
+    pkg = BidPackage.query.get(int(package_id))
+    if not pkg:
+        raise ValueError('Bid package not found')
+    manifest = body.get('manifest') if isinstance(body.get('manifest'), dict) else body
+    saved = save_package_manifest(pkg, manifest)
+    if 'network_summary' in body:
+        pkg.network_summary = (body.get('network_summary') or '').strip() or None
+    if 'network_published' in body:
+        pkg.network_published = bool(body['network_published'])
+    return {
+        'id': pkg.id,
+        'network_published': bool(pkg.network_published),
+        'network_summary': pkg.network_summary,
+        'manifest': saved,
     }
 
 
@@ -274,11 +628,27 @@ def set_project_plan_room(db, Project, BidPackage, project_id: int, body: dict) 
     patch = {}
     if 'published' in body:
         patch['published'] = bool(body['published'])
-    for key in ('summary', 'bid_date', 'pre_bid_date', 'contact_name', 'contact_email'):
+    scalar_keys = (
+        'summary', 'bid_date', 'bid_due_time', 'timezone', 'pre_bid_date',
+        'contact_name', 'contact_email', 'contact_phone', 'document_ids',
+        'instructions_html', 'owner_name', 'architect_name', 'engineer_name', 'project_address',
+    )
+    for key in scalar_keys:
         if key in body:
             patch[key] = body[key]
-    if 'document_ids' in body:
-        patch['document_ids'] = body['document_ids']
+    for key in ('pre_bid_meeting', 'job_walk', 'bonding'):
+        if key in body and isinstance(body[key], dict):
+            patch[key] = body[key]
+    if 'plan_room' in body and isinstance(body['plan_room'], dict):
+        pr = body['plan_room']
+        for key in scalar_keys:
+            if key in pr:
+                patch[key] = pr[key]
+        for key in ('pre_bid_meeting', 'job_walk', 'bonding'):
+            if key in pr and isinstance(pr[key], dict):
+                patch[key] = pr[key]
+        if 'published' in pr:
+            patch['published'] = bool(pr['published'])
     meta = save_plan_room_meta(project, patch)
     if body.get('publish_all_packages'):
         for pkg in BidPackage.query.filter_by(project_id=project.id).all():
@@ -522,15 +892,19 @@ def list_network_opportunities(db, BidPackage, Project, Estimate) -> dict:
     return {'opportunities': opportunities}
 
 
-def set_package_network_publish(db, BidPackage, package_id: int, *, published: bool, summary: str | None = None) -> dict:
+def set_package_network_publish(db, BidPackage, package_id: int, *, published: bool, summary: str | None = None, manifest: dict | None = None) -> dict:
     pkg = BidPackage.query.get(int(package_id))
     if not pkg:
         raise ValueError('Bid package not found')
     pkg.network_published = bool(published)
     if summary is not None:
         pkg.network_summary = summary.strip() or None
+    saved_manifest = parse_package_manifest(pkg)
+    if manifest is not None:
+        saved_manifest = save_package_manifest(pkg, manifest)
     return {
         'id': pkg.id,
         'network_published': bool(pkg.network_published),
         'network_summary': pkg.network_summary,
+        'manifest': saved_manifest,
     }

@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}Plan Room Console{% endblock %}
+
+{% block content %}
+<script>
+window.CASEPM_PLAN_ROOM_CTX = {
+  projectId: {{ active_project.id if active_project else 'null' }},
+  projectName: {{ (active_project.name if active_project else '')|tojson }},
+};
+</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bidder-plan-room.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/plan-room-console.css') }}">
+<script src="{{ url_for('static', filename='js/plan-room-console.js') }}"></script>
+
+<div class="prc-page">
+  <header class="prc-header">
+    <div>
+      <h1 class="text-xl font-semibold text-white">Plan Room console</h1>
+      <p class="text-sm text-zinc-400 mt-1">Publish ITBs, organize plans &amp; specs by trade package, and manage bidder access — BidHub-style.</p>
+    </div>
+    <div class="prc-header-actions">
+      <a href="/plan-room?preview=1" target="_blank" rel="noopener" class="prc-btn prc-btn-ghost">Preview public site</a>
+      <a href="/plan-room/projects" target="_blank" rel="noopener" class="prc-btn prc-btn-ghost">Bidder project list</a>
+    </div>
+  </header>
+
+  <div id="prcNoProject" class="prc-banner hidden">
+    Select an active project in the header to configure the plan room for that job.
+  </div>
+
+  <div id="prcApp" class="hidden">
+    <nav class="prc-tabs" id="prcTabs">
+      <button type="button" data-tab="project" class="active">Project ITB</button>
+      <button type="button" data-tab="packages">Bid packages</button>
+      <button type="button" data-tab="bidders">Bidder registrations</button>
+    </nav>
+
+    <section id="prcTabProject" class="prc-tab-panel">
+      <form id="prcProjectForm" class="prc-form-grid">
+        <fieldset class="prc-fieldset prc-span-2">
+          <legend>Publication</legend>
+          <label class="prc-check-row">
+            <input type="checkbox" name="published" id="prcPublished">
+            <span>Project visible in plan room (even before all packages are published)</span>
+          </label>
+        </fieldset>
+        <label>Public summary<textarea name="summary" rows="3" placeholder="Shown on project card and overview"></textarea></label>
+        <label>Instructions to bidders (HTML allowed)<textarea name="instructions_html" rows="4"></textarea></label>
+        <label>Bid date<input type="date" name="bid_date"></label>
+        <label>Bid due time<input type="text" name="bid_due_time" placeholder="e.g. 2:00 PM"></label>
+        <label>Time zone<input type="text" name="timezone" value="America/Denver"></label>
+        <label>Pre-bid date<input type="date" name="pre_bid_date"></label>
+        <label>Owner<input type="text" name="owner_name"></label>
+        <label>Architect<input type="text" name="architect_name"></label>
+        <label>Engineer<input type="text" name="engineer_name"></label>
+        <label class="prc-span-2">Project address<textarea name="project_address" rows="2"></textarea></label>
+        <label>Bid contact name<input type="text" name="contact_name"></label>
+        <label>Bid contact email<input type="email" name="contact_email"></label>
+        <label>Bid contact phone<input type="text" name="contact_phone"></label>
+        <fieldset class="prc-fieldset prc-span-2">
+          <legend>Pre-bid meeting</legend>
+          <div class="prc-form-grid">
+            <label>Date<input type="date" name="pre_bid_meeting_date"></label>
+            <label>Time<input type="text" name="pre_bid_meeting_time"></label>
+            <label class="prc-span-2">Location<input type="text" name="pre_bid_meeting_location"></label>
+            <label class="prc-span-2">Virtual link<input type="url" name="pre_bid_meeting_virtual_url"></label>
+            <label class="prc-check-row prc-span-2"><input type="checkbox" name="pre_bid_meeting_mandatory"> Mandatory attendance</label>
+            <label class="prc-span-2">Notes<textarea name="pre_bid_meeting_notes" rows="2"></textarea></label>
+          </div>
+        </fieldset>
+        <fieldset class="prc-fieldset prc-span-2">
+          <legend>Job walk</legend>
+          <div class="prc-form-grid">
+            <label>Date<input type="date" name="job_walk_date"></label>
+            <label>Time<input type="text" name="job_walk_time"></label>
+            <label class="prc-span-2">Location<input type="text" name="job_walk_location"></label>
+            <label class="prc-check-row prc-span-2"><input type="checkbox" name="job_walk_mandatory"> Mandatory</label>
+            <label class="prc-span-2">Notes<textarea name="job_walk_notes" rows="2"></textarea></label>
+          </div>
+        </fieldset>
+        <fieldset class="prc-fieldset prc-span-2">
+          <legend>Bonding &amp; qualifications</legend>
+          <div class="prc-form-grid">
+            <label>Bid bond %<input type="text" name="bid_bond_percent"></label>
+            <label>Performance bond<input type="text" name="performance_bond"></label>
+            <label>Payment bond<input type="text" name="payment_bond"></label>
+            <label class="prc-span-2">Bonding notes<textarea name="bonding_notes" rows="2"></textarea></label>
+          </div>
+        </fieldset>
+        <div class="prc-span-2 prc-form-actions">
+          <button type="submit" class="prc-btn prc-btn-primary">Save project ITB</button>
+          <button type="button" id="prcPublishAll" class="prc-btn">Publish all packages</button>
+          <span id="prcProjectMsg" class="prc-msg"></span>
+        </div>
+      </form>
+    </section>
+
+    <section id="prcTabPackages" class="prc-tab-panel hidden">
+      <div class="prc-split">
+        <aside class="prc-package-list" id="prcPackageList"></aside>
+        <div class="prc-package-editor" id="prcPackageEditor">
+          <p class="text-zinc-500 text-sm">Select a bid package to edit its plan room manifest.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="prcTabBidders" class="prc-tab-panel hidden">
+      <div class="flex justify-between items-center mb-3">
+        <h2 class="text-sm font-medium text-zinc-300">Pending registrations</h2>
+        <button type="button" id="prcBiddersRefresh" class="prc-btn prc-btn-ghost text-xs">Refresh</button>
+      </div>
+      <div id="prcBiddersPending" class="space-y-2"></div>
+    </section>
+  </div>
+</div>
+{% endblock %}

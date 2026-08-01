@@ -710,6 +710,11 @@
                     <span>Estimating</span>
                 </a>
 
+                <a href="{{ url_for('plan_room_console_page') }}" data-nav-module="estimating" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'plan_room_console_page' %}active{% endif %}">
+                    <i class="fa-solid fa-folder-open w-5"></i>
+                    <span>Plan Room</span>
+                </a>
+
                 <a href="{{ url_for('estimate_portal_page', project_id=active_project.id) if active_project else url_for('estimate_portal_page') }}" data-nav-module="estimating" class="nav-link nav-sub-only nav-hide-architect hidden flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'estimate_portal_page' %}active{% endif %}">
                     <i class="fa-solid fa-envelope-open-text w-5"></i>
                     <span>Bid Portal</span>
