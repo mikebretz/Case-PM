@@ -3,7 +3,7 @@
 {% block title %}Schedule{% endblock %}
 
 {% block content %}
-<link rel="stylesheet" href="https://cdn.dhtmlx.com/gantt/edge/dhtmlxgantt.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dhtmlxgantt-casepm.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/schedule-gantt.css') }}">
 
 <div class="schedule-page-root schedule-theme-dark" data-schedule-theme="dark">

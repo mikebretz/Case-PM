@@ -40,6 +40,10 @@ class PluginSecurityTests(unittest.TestCase):
         csp = build_content_security_policy()
         self.assertIn('cdn.jsdelivr.net', csp)
         self.assertIn("object-src 'none'", csp)
+        font_idx = csp.index('font-src')
+        font_clause = csp[font_idx:].split(';', 1)[0]
+        self.assertIn('data:', font_clause)
+        self.assertIn('https://fonts.gstatic.com', font_clause)
         connect_idx = csp.index('connect-src')
         connect_clause = csp[connect_idx:].split(';', 1)[0]
         self.assertIn('https://cdn.jsdelivr.net', connect_clause)
