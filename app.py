@@ -5385,22 +5385,45 @@ def _save_spec_book_bytes(project_id, file_bytes, display_name, original_filenam
 
     meta['ok'] = True
     meta['found'] = True
-    meta['url'] = url_for('serve_spec_book_pdf', project_id=int(project_id))
+    meta['url'] = url_for('api_spec_book_pdf', project_id=int(project_id))
     return meta
+
+
+def _spec_book_pdf_directory(project_id: int) -> str:
+    return os.path.join(app.config['UPLOAD_FOLDER'], 'spec_books', str(int(project_id)))
+
+
+@app.route('/api/submittals/spec-book/pdf')
+@login_required
+def api_spec_book_pdf():
+    """Serve specifications book PDF (same auth as metadata; avoids /uploads guard mismatch)."""
+    from document_module_security import assert_spec_book_project_access
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    try:
+        assert_spec_book_project_access(current_user, project_id, Project=Project)
+    except PermissionError as exc:
+        return jsonify({'error': str(exc)}), 403
+    directory = _spec_book_pdf_directory(project_id)
+    pdf_path = os.path.join(directory, 'spec_book.pdf')
+    if not os.path.isfile(pdf_path):
+        return jsonify({'error': 'Specifications book not found'}), 404
+    return send_from_directory(directory, 'spec_book.pdf', mimetype='application/pdf')
 
 
 @app.route('/api/submittals/spec-book', methods=['GET'])
 @login_required
 def api_get_spec_book():
-    from document_module_security import assert_submittal_spec_book_read_allowed
-    try:
-        assert_submittal_spec_book_read_allowed(current_user)
-    except PermissionError as exc:
-        return jsonify({'error': str(exc)}), 403
+    from document_module_security import assert_spec_book_project_access
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
-    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'spec_books', str(project_id))
+    try:
+        assert_spec_book_project_access(current_user, project_id, Project=Project)
+    except PermissionError as exc:
+        return jsonify({'error': str(exc)}), 403
+    folder = _spec_book_pdf_directory(project_id)
     meta_path = os.path.join(folder, 'meta.json')
     pdf_path = os.path.join(folder, 'spec_book.pdf')
     if not os.path.isfile(meta_path) or not os.path.isfile(pdf_path):
@@ -5411,7 +5434,7 @@ def api_get_spec_book():
     except (OSError, json.JSONDecodeError):
         return jsonify({'found': False})
     meta['found'] = True
-    meta['url'] = url_for('serve_spec_book_pdf', project_id=int(project_id))
+    meta['url'] = url_for('api_spec_book_pdf', project_id=int(project_id))
     return jsonify(meta)
 
 
@@ -5818,15 +5841,15 @@ def serve_project_logo(project_id):
 @app.route('/uploads/spec_books/<int:project_id>/spec_book.pdf')
 @login_required
 def serve_spec_book_pdf(project_id):
-    from document_module_security import assert_submittal_spec_book_read_allowed
-    from project_access import user_can_access_project
+    """Legacy /uploads URL — same auth and bytes as api_spec_book_pdf."""
+    from document_module_security import assert_spec_book_project_access
     try:
-        assert_submittal_spec_book_read_allowed(current_user)
-        if not user_can_access_project(current_user, project_id, Project=Project):
-            abort(403)
+        assert_spec_book_project_access(current_user, project_id, Project=Project)
     except PermissionError:
         abort(403)
-    directory = os.path.join(app.config['UPLOAD_FOLDER'], 'spec_books', str(project_id))
+    directory = _spec_book_pdf_directory(project_id)
+    if not os.path.isfile(os.path.join(directory, 'spec_book.pdf')):
+        abort(404)
     return send_from_directory(directory, 'spec_book.pdf', mimetype='application/pdf')
 
 

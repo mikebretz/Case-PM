@@ -164,6 +164,17 @@ class DocumentModuleSecurityTests(unittest.TestCase):
         }, portal='consultant')
         assert_submittal_spec_book_read_allowed(user)
 
+    def test_spec_book_project_access_requires_project_scope(self):
+        from document_module_security import assert_spec_book_project_access
+        from unittest.mock import patch
+
+        user = self._user('Architect', {
+            'submittals': {'access': 'view', 'approve': 'none'},
+        }, portal='consultant')
+        with patch('project_access.user_can_access_project', return_value=False):
+            with self.assertRaises(PermissionError):
+                assert_spec_book_project_access(user, 1, Project=object())
+
     def test_sub_workflow_allowed_from_draft(self):
         from document_module_security import assert_submittal_workflow_allowed
 

@@ -208,6 +208,23 @@ def assert_submittal_spec_book_read_allowed(user) -> None:
     assert_submittal_read_allowed(user)
 
 
+def assert_spec_book_project_access(user, project_id, *, Project=None) -> None:
+    """Submittals read permission plus project scope (matches spec-book API and PDF routes)."""
+    assert_submittal_spec_book_read_allowed(user)
+    if project_id is None:
+        raise PermissionError('project_id required')
+    try:
+        pid = int(project_id)
+    except (TypeError, ValueError) as exc:
+        raise PermissionError('Invalid project') from exc
+    try:
+        from project_access import user_can_access_project
+    except Exception as exc:
+        raise PermissionError('Project access check unavailable') from exc
+    if not user_can_access_project(user, pid, Project=Project):
+        raise PermissionError('You do not have access to this project specifications book.')
+
+
 def assert_submittal_signature_allowed(user, submittal, *, Company=None, db=None) -> None:
     """Anyone who can view the submittal may apply their own profile signature."""
     if _is_privileged(user):
