@@ -84,6 +84,24 @@
       alert(e.message);
     }
   });
+  document.getElementById('estPlanRoomBroadcastItb')?.addEventListener('click', async () => {
+    const pid = window.CASEPM_ESTIMATE_CTX?.projectId;
+    if (!pid) {
+      alert('Select an active project in the header first.');
+      return;
+    }
+    if (!confirm('Send ITB email/notification to all approved plan room bidders?')) return;
+    try {
+      const out = await api(`/api/bidder-network/admin/projects/${pid}/broadcast-itb`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notify_mode: 'both' }),
+      });
+      alert(`Sent to ${out.emails_sent || 0} of ${out.recipients || 0} approved bidders.`);
+    } catch (e) {
+      alert(e.message);
+    }
+  });
   document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('estPlanRoomPending')) loadPlanRoomPending();
   });
