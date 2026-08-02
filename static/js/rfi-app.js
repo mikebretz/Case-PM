@@ -1857,6 +1857,8 @@
       renderTable();
       const newBtn = document.querySelector('[onclick="CasePMRfis.newRfi()"]');
       if (newBtn) newBtn.classList.toggle('hidden', !canEnterRfis());
+      const hint = document.querySelector('.dev-unlock-rfi-hint');
+      if (hint) hint.classList.toggle('hidden', !devEditActive());
     });
     const params = new URLSearchParams(window.location.search);
     if (params.get('respond') === '1' && params.get('rfi_id')) {
@@ -1876,6 +1878,8 @@
     if (typeof global.CasePMDevActions !== 'undefined') {
       global.CasePMDevActions.consume('rfis-clear-comments', clearCommentsDevFromQueue);
     }
+    const hint = document.querySelector('.dev-unlock-rfi-hint');
+    if (hint) hint.classList.toggle('hidden', !devEditActive());
   }
 
   global.CasePMRfis = {
