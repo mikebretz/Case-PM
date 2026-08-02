@@ -96,6 +96,9 @@
     setBannerVisible(active);
     updateToggleControls(active);
     sweep(document);
+    if (global.CasePMDevEdit && global.CasePMDevEdit.installCanAccessPatch) {
+      global.CasePMDevEdit.installCanAccessPatch();
+    }
     global.dispatchEvent(new CustomEvent('casepm:developer-unlock-changed', { detail: { active } }));
   }
 

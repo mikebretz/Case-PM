@@ -40,6 +40,7 @@
   }
 
   function canDeleteRfi() {
+    if (devEditActive()) return true;
     if (global.CASEPM_IS_DEVELOPER) return true;
     if (document.body?.dataset?.isDeveloper === '1') return true;
     if (document.body?.dataset?.isAdmin === '1') return true;
@@ -54,7 +55,13 @@
     return p.role === 'Developer';
   }
 
+  function devEditActive() {
+    if (typeof global.CasePMDeveloperUnlock === 'undefined' || !global.CasePMDeveloperUnlock.isActive()) return false;
+    return !!(global.CASEPM_IS_DEVELOPER || document.body?.dataset?.isDeveloper === '1' || isDeveloper());
+  }
+
   function canEnterRfis() {
+    if (devEditActive()) return true;
     if (typeof global.canAccessModule === 'function') {
       return global.canAccessModule('rfis', 'entry');
     }
@@ -62,6 +69,7 @@
   }
 
   function canEditRfis() {
+    if (devEditActive()) return true;
     if (typeof global.canAccessModule === 'function') {
       return global.canAccessModule('rfis', 'edit');
     }
@@ -871,6 +879,43 @@
     return errors;
   }
 
+  function rfiInlineText(r, field, value, className) {
+    return `<input type="text" class="casepm-dev-inline-input w-full bg-zinc-950 border rounded px-1 py-0.5 text-xs ${className || ''}"
+      data-rfi-id="${r.id}" data-rfi-field="${field}" value="${esc(value || '')}"
+      onclick="event.stopPropagation()" onchange="CasePMRfis.inlineFieldSave(this)">`;
+  }
+
+  function rfiInlineStatus(r) {
+    const opts = STATUSES.map((s) => `<option value="${esc(s)}" ${r.status === s ? 'selected' : ''}>${esc(s)}</option>`).join('');
+    return `<select class="casepm-dev-inline-select text-xs bg-zinc-950 border rounded px-1 py-0.5 max-w-[9rem]"
+      data-rfi-id="${r.id}" data-rfi-field="status" onclick="event.stopPropagation()" onchange="CasePMRfis.inlineFieldSave(this)">${opts}</select>`;
+  }
+
+  function rfiInlinePriority(r) {
+    const opts = PRIORITIES.map((p) => `<option value="${esc(p)}" ${r.priority === p ? 'selected' : ''}>${esc(p)}</option>`).join('');
+    return `<select class="casepm-dev-inline-select text-xs bg-zinc-950 border rounded px-1 py-0.5"
+      data-rfi-id="${r.id}" data-rfi-field="priority" onclick="event.stopPropagation()" onchange="CasePMRfis.inlineFieldSave(this)">${opts}</select>`;
+  }
+
+  async function inlineFieldSave(el) {
+    const id = parseInt(el.dataset.rfiId, 10);
+    const field = el.dataset.rfiField;
+    if (!id || !field) return;
+    let value = el.value;
+    if (field === 'cost_impact_amount') {
+      value = parseFloat(String(value).replace(/[^0-9.-]/g, '')) || 0;
+    } else if (field === 'schedule_impact_days') {
+      value = parseInt(value, 10) || 0;
+    }
+    try {
+      await api(`/api/rfis/${id}`, { method: 'PUT', body: JSON.stringify({ [field]: value }) });
+      toast('Saved');
+      await loadRfis();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
   function renderTable() {
     const tbody = document.getElementById('rfiTableBody');
     if (!tbody) return;
@@ -886,22 +931,27 @@
         : '<span class="text-zinc-600">—</span>';
       const assigneeLabel = (r.assignee_names || r.assignees || []).map(a => typeof a === 'string' ? a : a.name).filter(Boolean).join(', ') || r.to_party || '—';
       const daysOut = r.days_outstanding != null ? r.days_outstanding : '—';
+      const inline = devEditActive();
+      const rowClick = inline
+        ? `onclick="if(!event.target.closest('.casepm-dev-inline-input,.casepm-dev-inline-select')) CasePMRfis.view(${r.id})"`
+        : `onclick="CasePMRfis.view(${r.id})"`;
       return `
-      <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer ${r.is_overdue ? 'bg-red-950/10' : ''}" onclick="CasePMRfis.view(${r.id})">
-        <td class="px-4 py-3 font-mono text-sky-400 whitespace-nowrap">${esc(r.number)}</td>
+      <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer ${r.is_overdue ? 'bg-red-950/10' : ''}" ${rowClick}>
+        <td class="px-4 py-3 font-mono text-sky-400 whitespace-nowrap">${inline ? rfiInlineText(r, 'number', r.number, 'font-mono text-sky-400') : esc(r.number)}</td>
         <td class="px-4 py-3 max-w-[280px]">
-          <div class="font-medium truncate">${esc(r.subject)}</div>
-          <div class="text-[10px] text-zinc-500 truncate">${esc(r.question || '')}</div>
+          ${inline ? rfiInlineText(r, 'subject', r.subject, 'font-medium') : `<div class="font-medium truncate">${esc(r.subject)}</div>
+          <div class="text-[10px] text-zinc-500 truncate">${esc(r.question || '')}</div>`}
+          ${inline ? `<div class="mt-1">${rfiInlineText(r, 'question', r.question, 'text-[10px] text-zinc-400')}</div>` : ''}
         </td>
-        <td class="px-4 py-3 text-xs text-zinc-400">${esc(r.received_from_company || r.from_party || '—')}</td>
-        <td class="px-4 py-3 text-xs text-zinc-400">${esc(assigneeLabel)}</td>
-        <td class="px-4 py-3 text-xs font-mono">${esc(r.drawing_reference || '—')}</td>
-        <td class="px-4 py-3 text-xs font-mono">${esc(r.spec_reference || '—')}</td>
-        <td class="px-4 py-3 text-xs text-zinc-300">${esc(r.rfi_manager_user_name || r.rfi_manager_name || '—')}</td>
-        <td class="px-4 py-3 text-xs text-zinc-400">${esc(r.responsible_contractor || '—')}</td>
+        <td class="px-4 py-3 text-xs text-zinc-400">${inline ? rfiInlineText(r, 'received_from_company', r.received_from_company || r.from_party, '') : esc(r.received_from_company || r.from_party || '—')}</td>
+        <td class="px-4 py-3 text-xs text-zinc-400">${inline ? rfiInlineText(r, 'to_party', assigneeLabel, '') : esc(assigneeLabel)}</td>
+        <td class="px-4 py-3 text-xs font-mono">${inline ? rfiInlineText(r, 'drawing_reference', r.drawing_reference, 'font-mono') : esc(r.drawing_reference || '—')}</td>
+        <td class="px-4 py-3 text-xs font-mono">${inline ? rfiInlineText(r, 'spec_reference', r.spec_reference, 'font-mono') : esc(r.spec_reference || '—')}</td>
+        <td class="px-4 py-3 text-xs text-zinc-300">${inline ? rfiInlineText(r, 'rfi_manager_name', r.rfi_manager_user_name || r.rfi_manager_name, '') : esc(r.rfi_manager_user_name || r.rfi_manager_name || '—')}</td>
+        <td class="px-4 py-3 text-xs text-zinc-400">${inline ? rfiInlineText(r, 'responsible_contractor', r.responsible_contractor, '') : esc(r.responsible_contractor || '—')}</td>
         <td class="px-4 py-3 text-center text-xs text-zinc-400">${esc(daysOut)}</td>
-        <td class="px-4 py-3 text-center">${priorityBadge(r.priority)}</td>
-        <td class="px-4 py-3 text-center">${statusBadge(r.status)}</td>
+        <td class="px-4 py-3 text-center">${inline ? rfiInlinePriority(r) : priorityBadge(r.priority)}</td>
+        <td class="px-4 py-3 text-center">${inline ? rfiInlineStatus(r) : statusBadge(r.status)}</td>
         <td class="px-4 py-3 text-center">${ballBadge(r.ball_in_court_role, r.ball_in_court_user_name)}</td>
         <td class="px-4 py-3 text-center text-xs whitespace-nowrap ${r.is_overdue ? 'text-red-400 font-semibold' : 'text-zinc-400'}">${fmtDate(r.due_date)}</td>
         <td class="px-4 py-3 text-center text-xs">${attCell}</td>
@@ -1803,6 +1853,11 @@
     const newBtn = document.querySelector('[onclick="CasePMRfis.newRfi()"]');
     if (newBtn && !canEnterRfis()) newBtn.classList.add('hidden');
     global.addEventListener('casepm:approval-responded', () => refresh());
+    global.addEventListener('casepm:developer-unlock-changed', () => {
+      renderTable();
+      const newBtn = document.querySelector('[onclick="CasePMRfis.newRfi()"]');
+      if (newBtn) newBtn.classList.toggle('hidden', !canEnterRfis());
+    });
     const params = new URLSearchParams(window.location.search);
     if (params.get('respond') === '1' && params.get('rfi_id')) {
       const id = parseInt(params.get('rfi_id'), 10);
@@ -1825,6 +1880,8 @@
 
   global.CasePMRfis = {
     init,
+    devEditActive,
+    inlineFieldSave,
     newRfi: () => openModal('create'),
     saveModal,
     saveAsOpen: () => saveModal(true),

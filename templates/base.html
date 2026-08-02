@@ -447,6 +447,18 @@
         html.dev-unlock-active .dev-unlock-toggle {
             box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.35);
         }
+        html.dev-unlock-active .casepm-dev-inline-input,
+        html.dev-unlock-active .casepm-dev-inline-select,
+        html.dev-unlock-active .dev-inline-cell {
+            border-color: rgba(248, 113, 113, 0.45) !important;
+            background: #0c0a09 !important;
+        }
+        html.dev-unlock-active .casepm-dev-inline-input:focus,
+        html.dev-unlock-active .casepm-dev-inline-select:focus,
+        html.dev-unlock-active .dev-inline-cell:focus {
+            outline: 1px solid rgba(248, 113, 113, 0.7);
+            border-color: rgba(248, 113, 113, 0.85) !important;
+        }
 
     </style>
     <link rel="stylesheet" href="{{ static_v('css/casepm-simple-view.css') }}">
@@ -489,6 +501,7 @@
         window.CASEPM_DEVELOPER_UNLOCK = {{ 'true' if developer_unlock_mode else 'false' }};
     </script>
     <script src="{{ static_v('js/developer-unlock.js') }}"></script>
+    <script src="{{ static_v('js/casepm-dev-edit.js') }}"></script>
     <script src="{{ static_v('js/developer-actions.js') }}"></script>
     {% endif %}
 </head>
@@ -559,7 +572,7 @@
     {% if is_developer and developer_unlock_mode %}
     <div id="devUnlockBanner" class="flex items-center justify-center flex-wrap gap-2 px-4 py-1.5 bg-red-950 border-b border-red-800 text-red-200 text-xs z-[90]">
         <i class="fa-solid fa-unlock"></i>
-        <span><strong>Edit mode is ON</strong> — click cells and fields on this page like a spreadsheet. Server saves bypass normal lock rules.</span>
+        <span><strong>Edit mode is ON</strong> — edit cells directly in grids (budget, RFIs, submittals). Changes save to the server and bypass normal lock rules when allowed.</span>
         <button type="button" data-dev-unlock-toggle class="dev-unlock-toggle dev-unlock-toggle--on ml-1" aria-pressed="true" title="Turn off developer edit mode">
             <i class="fa-solid fa-lock-open" data-dev-unlock-icon></i>
             <span data-dev-unlock-label>Edit mode: ON</span>
@@ -569,7 +582,7 @@
     {% elif is_developer %}
     <div id="devUnlockBanner" class="hidden flex items-center justify-center flex-wrap gap-2 px-4 py-1.5 bg-red-950 border-b border-red-800 text-red-200 text-xs z-[90]">
         <i class="fa-solid fa-unlock"></i>
-        <span><strong>Edit mode is ON</strong> — click cells and fields on this page like a spreadsheet. Server saves bypass normal lock rules.</span>
+        <span><strong>Edit mode is ON</strong> — edit cells directly in grids (budget, RFIs, submittals). Changes save to the server and bypass normal lock rules when allowed.</span>
         <button type="button" data-dev-unlock-toggle class="dev-unlock-toggle dev-unlock-toggle--on ml-1" aria-pressed="true" title="Turn off developer edit mode">
             <i class="fa-solid fa-lock-open" data-dev-unlock-icon></i>
             <span data-dev-unlock-label>Edit mode: ON</span>
@@ -1273,6 +1286,9 @@
             const level = (accessLevels || {})[moduleKey] || 'none';
             return (ACCESS_RANK[level] || 0) >= (ACCESS_RANK[minAccess] || 0);
         };
+        if (typeof CasePMDevEdit !== 'undefined' && CasePMDevEdit.installCanAccessPatch) {
+            CasePMDevEdit.installCanAccessPatch();
+        }
         if (!allowed || Object.keys(allowed).length === 0) return;
         document.querySelectorAll('[data-nav-module]').forEach(el => {
             const mod = el.getAttribute('data-nav-module');

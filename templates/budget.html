@@ -163,7 +163,7 @@
 <!-- TABLE CONTAINER -->
 <div class="flex-1 min-h-0 flex flex-col border border-zinc-700 rounded-md bg-zinc-900 mb-20 overflow-hidden">
     <div class="flex-1 overflow-auto min-h-0" id="tableScrollContainer">
-        <table class="w-full text-sm min-w-[2000px]">
+        <table class="w-full text-sm min-w-[2000px]" id="budgetWorksheetTable" data-casepm-spreadsheet="1">
             <thead class="bg-zinc-800 sticky z-20 border-b border-zinc-700" style="top: 0; position: sticky;">
                 <tr>
                     <th class="px-4 py-3 text-center font-medium text-zinc-400 w-12 budget-sticky-0">#</th>
@@ -470,6 +470,65 @@
     let collapsedDivisions = new Set();
     let hasUnsavedChanges = false;
 
+    function budgetDevEdit() {
+        return typeof CasePMDeveloperUnlock !== 'undefined' && CasePMDeveloperUnlock.isActive();
+    }
+
+    function budgetIsLocked() {
+        return budgetLocked && !budgetDevEdit();
+    }
+
+    function budgetAttr(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;');
+    }
+
+    let budgetInlineSaveTimer = null;
+    function scheduleBudgetInlinePersist() {
+        casepmStore.setItem('budgetLines', JSON.stringify(budgetLines));
+        if (typeof showUnsavedIndicator === 'function') showUnsavedIndicator();
+        if (budgetInlineSaveTimer) clearTimeout(budgetInlineSaveTimer);
+        budgetInlineSaveTimer = setTimeout(() => {
+            if (typeof CasePMBudgetSync !== 'undefined' && CasePMBudgetSync.flushSave) {
+                CasePMBudgetSync.flushSave().catch(() => {});
+            }
+        }, 700);
+    }
+
+    function budgetInlineChange(input) {
+        const id = parseInt(input.dataset.budgetLine, 10);
+        const field = input.dataset.budgetField;
+        const line = budgetLines.find(l => l.id === id);
+        if (!line || !field) return;
+        const moneyFields = ['original_budget', 'approved_changes', 'pending', 'committed', 'actual'];
+        if (moneyFields.includes(field)) {
+            line[field] = typeof parseMoneyInput === 'function' ? parseMoneyInput(input) : (parseFloat(String(input.value).replace(/[^0-9.-]/g, '')) || 0);
+        } else if (field === 'percent_complete') {
+            line.percent_complete = parseFloat(input.value) || 0;
+        } else {
+            line[field] = (input.value || '').trim();
+        }
+        scheduleBudgetInlinePersist();
+        updateTotals();
+    }
+
+    function budgetInlineCostTypeSelect(line) {
+        const opts = costTypes.map(t => `<option value="${budgetAttr(t)}" ${line.cost_type === t ? 'selected' : ''}>${budgetAttr(t)}</option>`).join('');
+        return `<select class="casepm-dev-inline-select dev-inline-cell w-full bg-zinc-950 border rounded px-1 py-0.5 text-xs text-center"
+            data-budget-line="${line.id}" data-budget-field="cost_type" onclick="event.stopPropagation()" onchange="budgetInlineChange(this)">${opts}</select>`;
+    }
+
+    function budgetInlineTextInput(line, field, value, extraClass) {
+        const display = (field === 'original_budget' || field === 'approved_changes' || field === 'pending' || field === 'committed' || field === 'actual')
+            ? moneyInputValue(value)
+            : (value ?? '');
+        return `<input type="text" class="casepm-dev-inline-input dev-inline-cell w-full bg-zinc-950 border rounded px-1 py-0.5 text-sm ${extraClass || ''}"
+            data-budget-line="${line.id}" data-budget-field="${field}" value="${budgetAttr(display)}"
+            onclick="event.stopPropagation()" onchange="budgetInlineChange(this)">`;
+    }
+
     function isBudgetApprover() {
         if (typeof CasePMWorkflow !== 'undefined' && window.CASEPM_PORTAL) {
             return CasePMWorkflow.canApprove('Budget');
@@ -770,7 +829,37 @@
 
                 const row = document.createElement('tr');
                 row.className = 'hover:bg-zinc-800/60 transition-colors cursor-pointer';
-                row.ondblclick = () => editBudgetLine(line.id);
+                const inline = budgetDevEdit();
+                if (inline) {
+                    row.classList.add('dev-budget-inline-row');
+                } else {
+                    row.ondblclick = () => editBudgetLine(line.id);
+                }
+                if (inline) {
+                    row.innerHTML = `
+                    <td class="px-4 py-1.5 text-center font-mono text-xs text-zinc-500 budget-sticky-0">${index + 1}</td>
+                    <td class="px-4 py-1.5 font-mono text-emerald-400 budget-sticky-1">${budgetInlineTextInput(line, 'cost_code', line.cost_code, 'font-mono text-emerald-400')}</td>
+                    <td class="px-4 py-1.5">${budgetInlineTextInput(line, 'description', line.description, '')}</td>
+                    <td class="px-4 py-1.5 text-center w-32 whitespace-nowrap">${budgetInlineCostTypeSelect(line)}</td>
+                    <td class="px-4 py-1.5 text-center w-28">${budgetInlineTextInput(line, 'original_budget', line.original_budget, 'text-right font-mono')}</td>
+                    <td class="px-4 py-1.5 text-center w-24">${budgetInlineTextInput(line, 'approved_changes', line.approved_changes, 'text-right font-mono text-amber-400')}</td>
+                    <td class="px-4 py-1.5 text-center w-24">${budgetInlineTextInput(line, 'pending', pending, 'text-right font-mono text-orange-400')}</td>
+                    <td class="px-4 py-1.5 text-center w-24">${budgetInlineTextInput(line, 'committed', committed, 'text-right font-mono text-violet-400')}</td>
+                    <td class="px-4 py-1.5 text-center font-semibold text-emerald-400 w-28">${formatCurrency(revised)}</td>
+                    <td class="px-4 py-1.5 text-center w-28">${budgetInlineTextInput(line, 'actual', actual, 'text-right font-mono text-sky-400 font-semibold')}</td>
+                    <td class="px-4 py-1.5 text-center font-semibold w-28 ${varianceColorClass(variance)}">${formatCurrency(variance)}</td>
+                    <td class="px-4 py-1.5 text-center w-20">${budgetInlineTextInput(line, 'percent_complete', percentComplete, 'text-center font-mono text-xs')}</td>
+                    <td class="px-6 py-1.5 text-center w-24">${syncBadge}</td>
+                    <td class="px-6 py-1.5 text-center w-24">${healthBadge}</td>
+                    <td class="px-4 py-1.5 text-sm text-zinc-400 w-[320px]">${budgetInlineTextInput(line, 'notes', line.notes || '', 'text-zinc-300')}</td>
+                    <td class="px-4 py-1.5 w-20">
+                        <div class="flex gap-1 justify-center">
+                            <button onclick="event.stopImmediatePropagation(); showLineHistory(${line.id})" class="text-sky-400 hover:text-sky-300 p-1" title="View Line History"><i class="fa-solid fa-history"></i></button>
+                            <button onclick="event.stopImmediatePropagation(); deleteBudgetLine(${line.id})" class="text-red-400 hover:text-red-300 p-1" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                        </div>
+                    </td>
+                `;
+                } else {
                 row.innerHTML = `
                     <td class="px-4 py-1.5 text-center font-mono text-xs text-zinc-500 budget-sticky-0">${index + 1}</td>
                     <td class="px-6 py-1.5 font-mono text-emerald-400 budget-sticky-1">${line.cost_code}</td>
@@ -796,6 +885,7 @@
                         </div>
                     </td>
                 `;
+                }
                 tbody.appendChild(row);
             }
         });
@@ -874,7 +964,7 @@
         const importBtn = document.getElementById('importBtn');
         const saveBtn = document.querySelector('button[onclick="saveBudget()"]');
 
-        if (budgetLocked) {
+        if (budgetIsLocked()) {
             if (addBtn) { addBtn.disabled = true; addBtn.classList.add('opacity-50', 'cursor-not-allowed'); }
             if (publishBtn) { publishBtn.disabled = true; publishBtn.classList.add('opacity-50', 'cursor-not-allowed'); }
             if (importBtn) { importBtn.disabled = true; importBtn.classList.add('opacity-50', 'cursor-not-allowed'); }
@@ -889,7 +979,7 @@
 
     // ==================== CREATE NEW REVISION (UNLOCK) ====================
     function createNewRevision() {
-        if (!budgetLocked) {
+        if (!budgetIsLocked()) {
             showCenteredAlert("Budget is already unlocked under the current revision. No need to create a new revision.");
             return;
         }
@@ -1148,7 +1238,7 @@
 
     // ==================== ADD / EDIT / DELETE ====================
     function showAddBudgetLineModal() {
-        if (budgetLocked) {
+        if (budgetIsLocked()) {
             showCenteredAlert("Budget is locked after publishing. Create a new revision to add lines.");
             return;
         }
@@ -1170,7 +1260,7 @@
     }
 
     function editBudgetLine(id) {
-        if (budgetLocked) {
+        if (budgetIsLocked()) {
             showCenteredAlert("Budget is locked. Create a new revision to edit.");
             return;
         }
@@ -1324,7 +1414,7 @@
     }
 
     function deleteBudgetLine(id) {
-        if (budgetLocked) {
+        if (budgetIsLocked()) {
             showCenteredAlert("Budget is locked. Create a new revision to delete lines.");
             return;
         }
@@ -1981,7 +2071,7 @@
 
         container.innerHTML += `<button onclick="stayAndEdit()" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Stay and Edit</button>`;
 
-        if (!budgetLocked) {
+        if (!budgetIsLocked()) {
             container.innerHTML += `
                 <button onclick="publishAndLeave()" class="w-full px-5 py-3 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Publish & Leave</button>
                 <button onclick="leaveWithoutPublishing()" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Leave without Publishing</button>
@@ -2098,7 +2188,7 @@
         }
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
             e.preventDefault();
-            if (!budgetLocked) {
+            if (!budgetIsLocked()) {
                 showAddBudgetLineModal();
             } else {
                 showCenteredAlert("Budget is locked. Create a new revision first.");
@@ -2831,6 +2921,11 @@
             const typeFilter = document.getElementById('costTypeFilter');
             if (searchInput) searchInput.addEventListener('input', filterBudgetLines);
             if (typeFilter) typeFilter.addEventListener('change', filterBudgetLines);
+
+            window.addEventListener('casepm:developer-unlock-changed', () => {
+                updateButtonStates();
+                renderBudgetTable(budgetLines);
+            });
 
             window.addEventListener('casepm:accounting-reconciled', () => {
                 reloadBudgetStateFromStorage();
