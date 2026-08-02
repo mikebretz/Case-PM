@@ -4517,7 +4517,7 @@ def api_update_rfi(rfi_id):
     try:
         assert_rfi_edit_allowed(current_user)
         require_financial_project_access(current_user, rfi.project_id, Project)
-        assert_mutable_rfi(rfi)
+        assert_mutable_rfi(rfi, developer_unlock=_developer_unlock_bypass())
     except (ValueError, PermissionError) as exc:
         return jsonify({'error': str(exc)}), 403
     body = strip_workflow_fields(request.get_json(silent=True) or {})
@@ -4631,7 +4631,7 @@ def api_rfi_upload_attachment(rfi_id):
     try:
         assert_rfi_edit_allowed(current_user)
         require_financial_project_access(current_user, rfi.project_id, Project)
-        assert_mutable_rfi(rfi)
+        assert_mutable_rfi(rfi, developer_unlock=_developer_unlock_bypass())
     except (ValueError, PermissionError) as exc:
         return jsonify({'error': str(exc)}), 403
     if 'file' not in request.files:
@@ -5276,7 +5276,7 @@ def api_submittal_upload_attachment(submittal_id):
     submittal = Submittal.query.get_or_404(submittal_id)
     try:
         require_financial_project_access(current_user, submittal.project_id, Project)
-        assert_mutable_submittal(submittal)
+        assert_mutable_submittal(submittal, developer_unlock=_developer_unlock_bypass())
         assert_submittal_edit_allowed(current_user, submittal, Company=Company, db=db)
     except (ValueError, PermissionError) as exc:
         return jsonify({'error': str(exc)}), 403 if isinstance(exc, PermissionError) else 400
@@ -10690,7 +10690,7 @@ def api_submittal_sync():
         db.session.add(submittal)
     else:
         try:
-            assert_mutable_submittal(submittal)
+            assert_mutable_submittal(submittal, developer_unlock=_developer_unlock_bypass())
             assert_submittal_edit_allowed(current_user, submittal, Company=Company, db=db)
         except (ValueError, PermissionError) as exc:
             return jsonify({'error': str(exc)}), 400 if isinstance(exc, ValueError) else 403
@@ -11336,7 +11336,7 @@ def api_submittal_delete_attachment(submittal_id):
         require_financial_project_access(current_user, submittal.project_id, Project)
         if not submittal_visible_to_user(submittal, current_user, Company=Company, db=db):
             return jsonify({'error': 'Permission denied'}), 403
-        assert_mutable_submittal(submittal)
+        assert_mutable_submittal(submittal, developer_unlock=_developer_unlock_bypass())
     except (ValueError, PermissionError) as exc:
         return jsonify({'error': str(exc)}), 403 if isinstance(exc, PermissionError) else 400
 
@@ -18757,6 +18757,7 @@ register_change_event_routes(app, {
     'PayAppProjectState': PayAppProjectState,
     'User': User,
     'user_portal_type_fn': lambda u: __import__('case_workflow').user_portal_type(u),
+    'developer_unlock_bypass': _developer_unlock_bypass,
 })
 
 from estimate_routes import register_estimate_routes

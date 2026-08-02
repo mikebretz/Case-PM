@@ -22,6 +22,9 @@ window.SUBMITTAL_ACCESS = {
     companyName: {{ (resolved_vendor_company_name or current_user.company or '')|tojson }},
     isSubPortal: {{ is_sub_portal|default(false)|tojson }},
 };
+function submittalDevUnlockActive() {
+    return typeof CasePMDeveloperUnlock !== 'undefined' && CasePMDeveloperUnlock.isActive();
+}
 function submittalAccessLevel() {
     if (typeof canAccessModule === 'function') {
         if (canAccessModule('submittals', 'edit')) return 'edit';
@@ -33,13 +36,16 @@ function submittalAccessLevel() {
     return 'entry';
 }
 function submittalCanManageLog() {
+    if (submittalDevUnlockActive()) return true;
     const level = submittalAccessLevel();
     return level === 'entry' || level === 'edit';
 }
 function submittalIsViewOnly() {
+    if (submittalDevUnlockActive()) return false;
     return submittalAccessLevel() === 'view';
 }
 function submittalIsApprovedLocked(item) {
+    if (submittalDevUnlockActive()) return false;
     if (!item) return false;
     if (item.approvedLocked) return true;
     const st = (item.status || '').trim();
@@ -77,6 +83,7 @@ function submittalCanViewSpecBook(item) {
     return !submittalIsViewOnly();
 }
 function submittalCanModifyItem(item) {
+    if (submittalDevUnlockActive()) return true;
     if (submittalIsApprovedLocked(item)) return false;
     if (submittalCanFillAsAssignee(item)) return true;
     const level = submittalAccessLevel();
@@ -5779,5 +5786,11 @@ async function initialize() {
 
 initialize();
 window.addEventListener('load', refreshSubmittalActionButtons);
+window.addEventListener('casepm:developer-unlock-changed', () => {
+    refreshSubmittalActionButtons();
+    if (typeof submittals !== 'undefined' && typeof renderSubmittalsTable === 'function') {
+        renderSubmittalsTable(submittals);
+    }
+});
 </script>
 {% endblock %}

@@ -418,6 +418,36 @@
             height: 2.25rem;
         }
 
+        .dev-unlock-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.4rem 0.75rem;
+            border-radius: 0.5rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border: 1px solid #52525b;
+            background: #27272a;
+            color: #a1a1aa;
+            transition: background 0.15s, border-color 0.15s, color 0.15s;
+        }
+        .dev-unlock-toggle:hover {
+            background: #3f3f46;
+            color: #e4e4e7;
+        }
+        .dev-unlock-toggle--on {
+            border-color: #b91c1c;
+            background: #450a0a;
+            color: #fecaca;
+        }
+        .dev-unlock-toggle--on:hover {
+            background: #7f1d1d;
+            color: #fff;
+        }
+        html.dev-unlock-active .dev-unlock-toggle {
+            box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.35);
+        }
+
     </style>
     <link rel="stylesheet" href="{{ static_v('css/casepm-simple-view.css') }}">
     {% if current_user.is_authenticated and allowed_modules %}
@@ -527,16 +557,24 @@
     {% endif %}
 
     {% if is_developer and developer_unlock_mode %}
-    <div id="devUnlockBanner" class="flex items-center justify-center gap-2 px-4 py-1.5 bg-red-950 border-b border-red-800 text-red-200 text-xs z-[90]">
+    <div id="devUnlockBanner" class="flex items-center justify-center flex-wrap gap-2 px-4 py-1.5 bg-red-950 border-b border-red-800 text-red-200 text-xs z-[90]">
         <i class="fa-solid fa-unlock"></i>
-        <span><strong>Developer unlock mode</strong> — locked fields are editable. Changes bypass normal business rules.</span>
-        <a href="{{ url_for('developer_console') }}" class="underline hover:text-white ml-1">Console</a>
+        <span><strong>Edit mode is ON</strong> — click cells and fields on this page like a spreadsheet. Server saves bypass normal lock rules.</span>
+        <button type="button" data-dev-unlock-toggle class="dev-unlock-toggle dev-unlock-toggle--on ml-1" aria-pressed="true" title="Turn off developer edit mode">
+            <i class="fa-solid fa-lock-open" data-dev-unlock-icon></i>
+            <span data-dev-unlock-label>Edit mode: ON</span>
+        </button>
+        <a href="{{ url_for('developer_console') }}" class="underline hover:text-white">Console</a>
     </div>
     {% elif is_developer %}
-    <div id="devUnlockBanner" class="hidden flex items-center justify-center gap-2 px-4 py-1.5 bg-red-950 border-b border-red-800 text-red-200 text-xs z-[90]">
+    <div id="devUnlockBanner" class="hidden flex items-center justify-center flex-wrap gap-2 px-4 py-1.5 bg-red-950 border-b border-red-800 text-red-200 text-xs z-[90]">
         <i class="fa-solid fa-unlock"></i>
-        <span><strong>Developer unlock mode</strong> — locked fields are editable. Changes bypass normal business rules.</span>
-        <a href="{{ url_for('developer_console') }}" class="underline hover:text-white ml-1">Console</a>
+        <span><strong>Edit mode is ON</strong> — click cells and fields on this page like a spreadsheet. Server saves bypass normal lock rules.</span>
+        <button type="button" data-dev-unlock-toggle class="dev-unlock-toggle dev-unlock-toggle--on ml-1" aria-pressed="true" title="Turn off developer edit mode">
+            <i class="fa-solid fa-lock-open" data-dev-unlock-icon></i>
+            <span data-dev-unlock-label>Edit mode: ON</span>
+        </button>
+        <a href="{{ url_for('developer_console') }}" class="underline hover:text-white">Console</a>
     </div>
     {% endif %}
     
@@ -610,6 +648,17 @@
 
         <!-- Right: Help + User Profile -->
         <div class="flex items-center gap-3 flex-shrink-0">
+        {% if is_developer %}
+        <button type="button"
+                id="devUnlockHeaderToggle"
+                data-dev-unlock-toggle
+                class="dev-unlock-toggle {% if developer_unlock_mode %}dev-unlock-toggle--on{% endif %}"
+                aria-pressed="{{ 'true' if developer_unlock_mode else 'false' }}"
+                title="Developer edit mode — unlock locked fields on this page (spreadsheet-style). Click to turn on or off.">
+            <i class="fa-solid {% if developer_unlock_mode %}fa-lock-open{% else %}fa-pen-to-square{% endif %}" data-dev-unlock-icon></i>
+            <span data-dev-unlock-label class="hidden sm:inline">{{ 'Edit mode: ON' if developer_unlock_mode else 'Edit mode: OFF' }}</span>
+        </button>
+        {% endif %}
         {% if show_page_help %}
         <button type="button" id="casepmPageHelpBtn" class="flex items-center gap-2 px-3 py-2 bg-violet-900/50 hover:bg-violet-800 border border-violet-700/40 rounded-lg text-sm text-violet-100 transition-colors" title="Open the Case PM user guide — full instructions for this page and every module">
             <i class="fa-solid fa-book-open"></i>
@@ -935,6 +984,12 @@
                     {% endif %}
                 </div>
                 <div class="flex items-center gap-4 flex-shrink-0">
+                    {% if is_developer %}
+                    <button type="button" data-dev-unlock-toggle class="dev-unlock-toggle text-[10px] py-1 px-2 {% if developer_unlock_mode %}dev-unlock-toggle--on{% endif %}" aria-pressed="{{ 'true' if developer_unlock_mode else 'false' }}" title="Developer page edit mode">
+                        <i class="fa-solid {% if developer_unlock_mode %}fa-lock-open{% else %}fa-pen-to-square{% endif %}" data-dev-unlock-icon></i>
+                        <span data-dev-unlock-label>{{ 'Edit: ON' if developer_unlock_mode else 'Edit: OFF' }}</span>
+                    </button>
+                    {% endif %}
                     <div class="flex items-center gap-1.5">
                         <div class="w-2 h-2 bg-emerald-500 rounded-full status-dot"></div>
                         <span>Connected</span>
@@ -1066,6 +1121,10 @@
                     <span>My Profile</span>
                 </button>
                 {% if is_developer %}
+                <button type="button" data-dev-unlock-toggle class="flex items-center gap-3 px-4 py-2.5 hover:bg-red-950/40 text-red-300 rounded-2xl text-sm w-full text-left">
+                    <i class="fa-solid fa-pen-to-square w-4" data-dev-unlock-icon></i>
+                    <span data-dev-unlock-label>Page edit mode: {{ 'ON' if developer_unlock_mode else 'OFF' }}</span>
+                </button>
                 <a href="{{ url_for('developer_console') }}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-red-950/30 text-red-400 rounded-2xl text-sm">
                     <i class="fa-solid fa-code w-4"></i>
                     <span>Developer Console</span>

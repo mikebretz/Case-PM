@@ -23,6 +23,7 @@ def register_change_event_routes(app, deps):
     Commitment = deps['Commitment']
     PayAppProjectState = deps['PayAppProjectState']
     ChangeEventLineItem = deps.get('ChangeEventLineItem')
+    developer_unlock_bypass = deps.get('developer_unlock_bypass', lambda: False)
 
     @app.route('/api/change-events', methods=['GET'])
     @login_required
@@ -128,7 +129,7 @@ def register_change_event_routes(app, deps):
         ce = ChangeEvent.query.get_or_404(event_id)
         try:
             require_financial_project_access(current_user, ce.project_id, Project)
-            assert_mutable_change_event(ce)
+            assert_mutable_change_event(ce, developer_unlock=developer_unlock_bypass())
         except (ValueError, PermissionError) as exc:
             return deps['jsonify']({'error': str(exc)}), 403
         body = strip_workflow_fields(deps['request'].get_json(silent=True) or {})
@@ -188,7 +189,7 @@ def register_change_event_routes(app, deps):
         ce = ChangeEvent.query.get_or_404(event_id)
         try:
             require_financial_project_access(current_user, ce.project_id, Project)
-            assert_mutable_change_event(ce)
+            assert_mutable_change_event(ce, developer_unlock=developer_unlock_bypass())
         except (ValueError, PermissionError) as exc:
             return deps['jsonify']({'error': str(exc)}), 403
         body = deps['request'].get_json(silent=True) or {}
@@ -206,7 +207,7 @@ def register_change_event_routes(app, deps):
         ce = ChangeEvent.query.get_or_404(event_id)
         try:
             require_financial_project_access(current_user, ce.project_id, Project)
-            assert_mutable_change_event(ce)
+            assert_mutable_change_event(ce, developer_unlock=developer_unlock_bypass())
         except (ValueError, PermissionError) as exc:
             return deps['jsonify']({'error': str(exc)}), 403
         body = deps['request'].get_json(silent=True) or {}
@@ -237,7 +238,7 @@ def register_change_event_routes(app, deps):
         ce = ChangeEvent.query.get_or_404(event_id)
         try:
             require_financial_project_access(current_user, ce.project_id, Project)
-            assert_mutable_change_event(ce)
+            assert_mutable_change_event(ce, developer_unlock=developer_unlock_bypass())
         except (ValueError, PermissionError) as exc:
             return deps['jsonify']({'error': str(exc)}), 403
         body = deps['request'].get_json(silent=True) or {}
@@ -275,7 +276,7 @@ def register_change_event_routes(app, deps):
         ce = ChangeEvent.query.get_or_404(event_id)
         try:
             require_financial_project_access(current_user, ce.project_id, Project)
-            assert_mutable_change_event(ce)
+            assert_mutable_change_event(ce, developer_unlock=developer_unlock_bypass())
         except (ValueError, PermissionError) as exc:
             return deps['jsonify']({'error': str(exc)}), 403
         body = deps['request'].get_json(silent=True) or {}
@@ -346,7 +347,7 @@ def register_change_event_routes(app, deps):
         rfq = SubcontractorRFQ.query.get_or_404(rfq_id)
         try:
             require_financial_project_access(current_user, rfq.project_id, Project)
-            assert_mutable_rfq(rfq)
+            assert_mutable_rfq(rfq, developer_unlock=developer_unlock_bypass())
         except (ValueError, PermissionError) as exc:
             return deps['jsonify']({'error': str(exc)}), 403
         body = strip_workflow_fields(deps['request'].get_json(silent=True) or {})
