@@ -319,7 +319,7 @@
 <!-- TABLE CONTAINER -->
 <div id="payAppTablePanel" class="pay-app-table-panel border border-zinc-700 rounded-md bg-zinc-900">
     <div id="payAppTableScrollContainer">
-        <table class="w-full text-sm min-w-[1900px]">
+        <table class="w-full text-sm min-w-[1900px]" data-casepm-spreadsheet="1">
             <thead class="bg-zinc-800 sticky z-20 border-b border-zinc-700" style="top: 0; position: sticky;" id="payAppTableHead">
                 <!-- Populated dynamically -->
             </thead>
@@ -669,7 +669,89 @@ let allowZeroDollarSubPayApps = casepmStore.getItem('allowZeroDollarSubPayApps')
 let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPayAppsBeforeG702Submit') !== 'false'; // Default ON (true)
 
     function devUnlockActive() {
-        return typeof CasePMDeveloperUnlock !== 'undefined' && CasePMDeveloperUnlock.isActive();
+        if (typeof CasePMDeveloperUnlock === 'undefined' || !CasePMDeveloperUnlock.isActive()) return false;
+        return !!(window.CASEPM_IS_DEVELOPER || document.body?.dataset?.isDeveloper === '1');
+    }
+
+    function payAppCanEditG702Billing() {
+        if (devUnlockActive()) return true;
+        return !!(currentPayAppPeriod && currentPayAppPeriod.status === 'Draft');
+    }
+
+    function payAppAttr(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;');
+    }
+
+    let payAppInlineSaveTimer = null;
+    function schedulePayAppInlinePersist() {
+        casepmStore.setItem('contractorSOV', JSON.stringify(contractorSOV));
+        casepmStore.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
+        casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+        if (payAppInlineSaveTimer) clearTimeout(payAppInlineSaveTimer);
+        payAppInlineSaveTimer = setTimeout(() => {
+            persistPayAppStateNow({ silent: true }).catch(() => {});
+        }, 800);
+    }
+
+    function payAppInlineMoneyInput(datasetAttrs, value, extraClass, onchangeHandler) {
+        return `<input type="text" class="casepm-dev-inline-input dev-inline-cell w-full bg-zinc-950 border rounded px-1 py-0.5 text-sm text-right font-mono ${extraClass || ''}"
+            ${datasetAttrs} value="${payAppAttr(moneyInputValue(value))}" onclick="event.stopPropagation()" onchange="${onchangeHandler}">`;
+    }
+
+    function payAppInlineTextInput(datasetAttrs, value, extraClass, onchangeHandler) {
+        return `<input type="text" class="casepm-dev-inline-input dev-inline-cell w-full bg-zinc-950 border rounded px-1 py-0.5 text-sm ${extraClass || ''}"
+            ${datasetAttrs} value="${payAppAttr(value)}" onclick="event.stopPropagation()" onchange="${onchangeHandler}">`;
+    }
+
+    function contractorSovInlineChange(input) {
+        const id = parseInt(input.dataset.sovLine, 10);
+        const field = input.dataset.sovField;
+        const line = contractorSOV.find(l => l.id === id);
+        if (!line || !field) return;
+        if (field === 'original' || field === 'co_amount') {
+            line[field] = parseMoneyInput(input);
+        } else {
+            line[field] = (input.value || '').trim();
+        }
+        schedulePayAppInlinePersist();
+    }
+
+    function g702BillingInlineChange(input) {
+        if (!payAppCanEditG702Billing()) {
+            showCenteredAlert('Turn on Developer Edit mode to change billing when the period is not in Draft.', 'warning');
+            return;
+        }
+        const id = input.dataset.sovLine;
+        const field = input.dataset.billingField;
+        const line = contractorSOV.find(l => String(l.id) === String(id));
+        if (!line || !field) return;
+        const val = parseMoneyInput(input);
+        const billing = payAppBillingLines[line.id] || {};
+        if (field === 'workThisPeriod') billing.workThisPeriod = val;
+        else if (field === 'materialsStored') billing.materialsStored = val;
+        else if (field === 'coWorkThisPeriod') billing.coWorkThisPeriod = val;
+        payAppBillingLines[line.id] = billing;
+        schedulePayAppInlinePersist();
+    }
+
+    function subSovInlineChange(companyId, input) {
+        const lineId = input.dataset.subLine;
+        const field = input.dataset.subField;
+        const lines = getSubCompanyMapEntry(subcontractorSOV, companyId) || [];
+        const line = lines.find(l => String(l.id) === String(lineId));
+        if (!line || !field) return;
+        const moneyFields = ['original_commitment', 'change_orders', 'work_this_period', 'materials_stored', 'billed_to_date'];
+        if (moneyFields.includes(field)) {
+            line[field] = parseMoneyInput(input);
+        } else {
+            line[field] = (input.value || '').trim();
+        }
+        setSubSOVLinesForCompany(companyId, lines);
+        casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+        schedulePayAppInlinePersist();
     }
 
     /** Safe literal for inline onclick/oninput inside double-quoted HTML attributes. */
@@ -4781,8 +4863,33 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
                 const row = document.createElement('tr');
                 row.className = 'sov-line-row hover:bg-zinc-800/60 cursor-pointer';
-                row.ondblclick = () => editPayAppBillingLine(line.id);
+                const g702Inline = devUnlockActive() && payAppCanEditG702Billing();
+                if (!g702Inline) {
+                    row.ondblclick = () => editPayAppBillingLine(line.id);
+                }
 
+                if (g702Inline) {
+                    row.innerHTML = `
+                    <td class="px-3 py-2 text-center font-mono text-xs text-zinc-500">${index + 1}</td>
+                    <td class="px-4 py-2 font-mono text-emerald-400 text-sm">${line.cost_code || ''}</td>
+                    <td class="px-4 py-2 text-sm">${line.description || ''}</td>
+                    <td class="px-4 py-2 text-right font-mono text-[15px]">${formatCurrency(line.original || 0)}</td>
+                    <td class="px-4 py-2 text-right font-mono text-amber-400 text-[15px]">${formatCurrency(coAmount)}</td>
+                    <td class="px-4 py-2 text-right font-mono text-emerald-400 text-[15px] font-semibold">${formatCurrency(currentAmount)}</td>
+                    <td class="px-3 py-2 text-center font-mono text-xs">${percentComplete}%</td>
+                    <td class="px-4 py-2 text-right text-emerald-400 font-mono text-[15px]">${formatCurrency(totalBilled)}</td>
+                    <td class="px-4 py-2 text-right">${payAppInlineMoneyInput(`data-sov-line="${line.id}" data-billing-field="workThisPeriod"`, workThis, 'text-emerald-400 font-semibold', 'g702BillingInlineChange(this)')}</td>
+                    <td class="px-3 py-2 text-right">${payAppInlineMoneyInput(`data-sov-line="${line.id}" data-billing-field="coWorkThisPeriod"`, coWorkThis, 'text-amber-300', 'g702BillingInlineChange(this)')}</td>
+                    <td class="px-3 py-2 text-right">${payAppInlineMoneyInput(`data-sov-line="${line.id}" data-billing-field="materialsStored"`, materials, 'text-sky-400', 'g702BillingInlineChange(this)')}</td>
+                    <td class="px-3 py-2 text-right text-red-400 font-mono text-[15px]">${formatCurrency(retainage)}</td>
+                    <td class="px-4 py-2 text-sm">${payAppInlineTextInput(`data-sov-line="${line.id}" data-sov-field="notes"`, line.notes || '', 'text-zinc-400', 'contractorSovInlineChange(this)')}</td>
+                    <td class="px-3 py-2.5 text-center">
+                        <div class="inline-flex items-center gap-1.5">
+                            <button onclick="event.stopImmediatePropagation(); showPayAppLineHistory(${line.id})" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
+                        </div>
+                    </td>
+                `;
+                } else {
                 row.innerHTML = `
                     <td class="px-3 py-2 text-center font-mono text-xs text-zinc-500">${index + 1}</td>
                     <td class="px-4 py-2 font-mono text-emerald-400 text-sm">${line.cost_code || ''}</td>
@@ -4803,6 +4910,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                         </div>
                     </td>
                 `;
+                }
                 tbody.appendChild(row);
             }
         });
@@ -5139,11 +5247,13 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         const subMinimum = getCurrentSubBilledThisPeriodForCode(line.cost_code);
         const totalThisPeriodEntered = workThisPeriod + materialsStored;
         if (totalThisPeriodEntered < subMinimum - 0.01) {
+            if (!devUnlockActive()) {
             showCenteredAlert(
                 `BLOCKED: For cost code ${line.cost_code}, you entered ${formatCurrency(totalThisPeriodEntered)} but the approved Sub Pay Apps in the Tracker have already billed ${formatCurrency(subMinimum)} for this code this period.\n\nPer AIA billing flow, the GC G702 cannot show less than what subcontractors have claimed. You may enter MORE than the sub amount (for GC self-perform work), but you cannot go below it.`,
                 'warning'
             );
             return; // Block save
+            }
         }
 
         // === DRAFT SAVE ONLY (User Request) ===
@@ -5643,8 +5753,29 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
             const row = document.createElement('tr');
             row.className = 'sov-line-row hover:bg-zinc-800/60 cursor-pointer';
-            row.ondblclick = () => editContractorSOVLine(line.id);
+            const sovInline = devUnlockActive();
+            if (!sovInline) {
+                row.ondblclick = () => editContractorSOVLine(line.id);
+            }
 
+            if (sovInline) {
+                row.innerHTML = `
+                <td class="px-3 py-2 text-center font-mono text-xs text-zinc-500">${visibleIndex}</td>
+                <td class="px-4 py-2 font-mono text-emerald-400 text-sm">${payAppInlineTextInput(`data-sov-line="${line.id}" data-sov-field="cost_code"`, line.cost_code, 'font-mono text-emerald-400', 'contractorSovInlineChange(this)')}</td>
+                <td class="px-4 py-2 text-sm">${payAppInlineTextInput(`data-sov-line="${line.id}" data-sov-field="description"`, line.description, '', 'contractorSovInlineChange(this)')}</td>
+                <td class="px-4 py-2 text-right">${payAppInlineMoneyInput(`data-sov-line="${line.id}" data-sov-field="original"`, line.original || 0, '', 'contractorSovInlineChange(this)')}</td>
+                <td class="px-3 py-2 text-right">${payAppInlineMoneyInput(`data-sov-line="${line.id}" data-sov-field="co_amount"`, line.co_amount || 0, 'text-amber-400', 'contractorSovInlineChange(this)')}</td>
+                <td class="px-4 py-2 text-right font-semibold text-emerald-400 font-mono text-[15px]">${formatCurrency(current)}</td>
+                <td class="px-4 py-2 text-right font-mono text-emerald-400 text-[15px]">${formatCurrency(subCostToDate)}</td>
+                <td class="px-3 py-2 text-center font-mono text-xs">${pct}%</td>
+                <td class="px-4 py-2 text-right font-mono text-amber-400 text-[15px]">${formatCurrency(variance)}</td>
+                <td class="px-4 py-2 text-sm">${payAppInlineTextInput(`data-sov-line="${line.id}" data-sov-field="notes"`, line.notes || '', 'text-zinc-400', 'contractorSovInlineChange(this)')}</td>
+                <td class="px-3 py-2 text-center">
+                    <button onclick="event.stopImmediatePropagation(); showSOVLineAudit(${jsArg(line.id)}, 'contractor')" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
+                    <button onclick="event.stopImmediatePropagation(); deleteContractorSOVLine(${jsArg(line.id)})" class="text-red-400 hover:text-red-300 p-1 ml-1" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                </td>
+            `;
+            } else {
             row.innerHTML = `
                 <td class="px-3 py-2 text-center font-mono text-xs text-zinc-500">${visibleIndex}</td>
                 <td class="px-4 py-2 font-mono text-emerald-400 text-sm">${line.cost_code}</td>
@@ -5661,6 +5792,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                     ${!isLocked ? `<button onclick="event.stopImmediatePropagation(); deleteContractorSOVLine(${jsArg(line.id)})" class="text-red-400 hover:text-red-300 p-1 ml-1" title="Delete"><i class="fa-solid fa-trash"></i></button>` : ''}
                 </td>
             `;
+            }
             tbody.appendChild(row);
         });
     }
@@ -6958,7 +7090,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         const isPrimaryContact = company && isUserPrimaryContactForCompany(company);
         const subStatus = getSubSOVStatus(selectedSubCompanyId);
         const revisionDraft = isSubSOVRevisionDraft(selectedSubCompanyId);
-        const isSubApprovedLocked = isSubSOVApprovedStatus(subStatus) && !revisionDraft;
+        const isSubApprovedLocked = isSubSOVApprovedStatus(subStatus) && !revisionDraft && !devUnlockActive();
 
         // Header
         thead.innerHTML = `
@@ -7046,16 +7178,19 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
             const row = document.createElement('tr');
             row.className = 'sov-line-row hover:bg-zinc-800/60 cursor-pointer';
-            if (isSubApprovedLocked) {
-                row.ondblclick = () => editSubSOVBillingLine(selectedSubCompanyId, line.id);
-            } else if (revisionDraft && isRevisionLockedLine(selectedSubCompanyId, line.id)) {
-                row.ondblclick = () => showCenteredAlert('This line has billed-to-date amounts and cannot be modified. Add a new line instead.', 'warning');
-                row.classList.add('opacity-80');
-            } else {
-                row.ondblclick = () => editSubSOVLine(selectedSubCompanyId, line.id);
+            const subInline = devUnlockActive();
+            if (!subInline) {
+                if (isSubApprovedLocked) {
+                    row.ondblclick = () => editSubSOVBillingLine(selectedSubCompanyId, line.id);
+                } else if (revisionDraft && isRevisionLockedLine(selectedSubCompanyId, line.id)) {
+                    row.ondblclick = () => showCenteredAlert('This line has billed-to-date amounts and cannot be modified. Add a new line instead.', 'warning');
+                    row.classList.add('opacity-80');
+                } else {
+                    row.ondblclick = () => editSubSOVLine(selectedSubCompanyId, line.id);
+                }
             }
 
-            const lineDeleteBlocked = revisionDraft && isRevisionLockedLine(selectedSubCompanyId, line.id);
+            const lineDeleteBlocked = !subInline && revisionDraft && isRevisionLockedLine(selectedSubCompanyId, line.id);
 
             // Calculate Current = Original + Change Orders
             const coAmount = line.change_orders || 0;
@@ -7063,6 +7198,27 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             // Retainage: use 10% of (This Period + Stored Materials) for display, or a stored field if available
             const retainageAmount = (thisPeriod + (line.materials_stored || 0) + (line.co_billed_this_period || 0)) * getRetainageRate();
 
+            if (subInline) {
+                const cid = selectedSubCompanyId;
+                row.innerHTML = `
+                <td class="px-3 py-2 text-center font-mono text-xs text-zinc-500">${visibleIdxSub}</td>
+                <td class="px-4 py-2 font-mono text-emerald-400 text-sm">${payAppInlineTextInput(`data-sub-line="${line.id}" data-sub-field="cost_code"`, line.cost_code, 'font-mono', `subSovInlineChange(${jsArg(cid)}, this)`)}</td>
+                <td class="px-4 py-2 text-sm">${payAppInlineTextInput(`data-sub-line="${line.id}" data-sub-field="description"`, line.description, '', `subSovInlineChange(${jsArg(cid)}, this)`)}</td>
+                <td class="px-4 py-2 text-right">${payAppInlineMoneyInput(`data-sub-line="${line.id}" data-sub-field="original_commitment"`, current, '', `subSovInlineChange(${jsArg(cid)}, this)`)}</td>
+                <td class="px-3 py-2 text-right">${payAppInlineMoneyInput(`data-sub-line="${line.id}" data-sub-field="change_orders"`, coAmount, 'text-amber-400', `subSovInlineChange(${jsArg(cid)}, this)`)}</td>
+                <td class="px-3 py-2 text-right font-mono text-emerald-400 text-[15px]">${formatCurrency(currentTotal)}</td>
+                <td class="px-3 py-2 text-center font-mono text-xs">${pct}%</td>
+                <td class="px-4 py-2 text-right text-emerald-400 font-mono text-[15px]">${formatCurrency(billed)}</td>
+                <td class="px-3 py-2 text-right">${payAppInlineMoneyInput(`data-sub-line="${line.id}" data-sub-field="work_this_period"`, line.work_this_period || 0, 'text-emerald-400', `subSovInlineChange(${jsArg(cid)}, this)`)}</td>
+                <td class="px-3 py-2 text-right">${payAppInlineMoneyInput(`data-sub-line="${line.id}" data-sub-field="materials_stored"`, line.materials_stored || 0, 'text-sky-400', `subSovInlineChange(${jsArg(cid)}, this)`)}</td>
+                <td class="px-3 py-2 text-right text-red-400 font-mono text-sm">${formatCurrency(retainageAmount)}</td>
+                <td class="px-4 py-2 text-sm">${payAppInlineTextInput(`data-sub-line="${line.id}" data-sub-field="notes"`, line.notes || '', 'text-zinc-400', `subSovInlineChange(${jsArg(cid)}, this)`)}</td>
+                <td class="px-3 py-2 text-center">
+                    <button onclick="event.stopImmediatePropagation(); showSOVLineAudit(${jsArg(line.id)}, 'sub', ${jsArg(cid)})" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
+                    <button onclick="event.stopImmediatePropagation(); deleteSubSOVLine(${jsArg(cid)}, ${jsArg(line.id)})" class="text-red-400 hover:text-red-300 p-1 ml-1" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                </td>
+            `;
+            } else {
             row.innerHTML = `
                 <td class="px-3 py-2 text-center font-mono text-xs text-zinc-500">${visibleIdxSub}</td>
                 <td class="px-4 py-2 font-mono text-emerald-400 text-sm">${line.cost_code || ''}</td>
@@ -7081,6 +7237,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                     ${!isSubApprovedLocked && !lineDeleteBlocked ? `<button onclick="event.stopImmediatePropagation(); deleteSubSOVLine(${jsArg(selectedSubCompanyId)}, ${jsArg(line.id)})" class="text-red-400 hover:text-red-300 p-1 ml-1" title="Delete"><i class="fa-solid fa-trash"></i></button>` : ''}
                 </td>
             `;
+            }
             tbody.appendChild(row);
         });
 
@@ -10921,6 +11078,9 @@ function printSubcontractorG703(companyId) {
     }
 
     function initializePayApplications() {
+        window.addEventListener('casepm:developer-unlock-changed', () => {
+            if (typeof renderPayAppContent === 'function') renderPayAppContent();
+        });
         if (!SUB_VENDOR_COMPANY_LINKED) return;
         const boot = async () => {
             if (isSubVendorPayPortalUser() && document.body) {
