@@ -522,6 +522,47 @@
     </div>
 </dialog>
 
+<dialog id="payAppPrintOptionsModal" class="bg-zinc-900 border border-zinc-700 rounded-lg text-white p-0 max-w-lg w-full shadow-xl backdrop:bg-black/60">
+    <div class="p-6">
+        <div class="flex justify-between items-start mb-4">
+            <div>
+                <h3 class="text-lg font-semibold">Print pay application package</h3>
+                <p class="text-xs text-zinc-400 mt-1" id="payAppPrintOptionsSubtitle">Choose AIA forms and change order backup to include.</p>
+            </div>
+            <button type="button" onclick="document.getElementById('payAppPrintOptionsModal').close()" class="text-zinc-400 hover:text-white">
+                <i class="fa-solid fa-times text-xl"></i>
+            </button>
+        </div>
+        <div class="space-y-3 text-sm">
+            <label class="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" id="payAppPrintOptG702" class="w-4 h-4 accent-emerald-600" checked>
+                <span>AIA G702 — Application and Certificate for Payment</span>
+            </label>
+            <label class="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" id="payAppPrintOptG703" class="w-4 h-4 accent-emerald-600" checked>
+                <span>AIA G703 — Continuation Sheet (contractor SOV)</span>
+            </label>
+            <div class="border-t border-zinc-700 pt-3 mt-2">
+                <div class="text-xs text-zinc-500 uppercase tracking-wide mb-2">Change orders (approved, owner scope)</div>
+                <label class="flex items-center gap-3 cursor-pointer mb-2">
+                    <input type="checkbox" id="payAppPrintOptCoListing" class="w-4 h-4 accent-emerald-600" checked>
+                    <span>Change order summary &amp; log (AIA-style recap through this period)</span>
+                </label>
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" id="payAppPrintOptCoBackup" class="w-4 h-4 accent-emerald-600" checked>
+                    <span>Change order backup sheets (detail + allocations + attachments list)</span>
+                </label>
+            </div>
+        </div>
+        <div class="mt-6 flex justify-end gap-3">
+            <button type="button" onclick="document.getElementById('payAppPrintOptionsModal').close()" class="px-5 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Cancel</button>
+            <button type="button" id="payAppPrintOptionsConfirmBtn" onclick="confirmPayAppPrintOptions()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold flex items-center gap-2">
+                <i class="fa-solid fa-print"></i> Print
+            </button>
+        </div>
+    </div>
+</dialog>
+
 <script>
     const SUB_VENDOR_COMPANY_LINKED = {{ sub_vendor_company_linked|default(true)|tojson }};
 
@@ -765,6 +806,15 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             .replace(/\r/g, '')
             .replace(/\n/g, '\\n');
         return `'${s}'`;
+    }
+
+    function htmlEscape(str) {
+        if (str == null) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
     }
 
     function getMonthPeriodBounds(date) {
@@ -1764,6 +1814,11 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         table.change-order-table { width: 100%; border-collapse: collapse; font-size: 8.5px; margin-top: 6px; table-layout: auto; }
         table.change-order-table td, table.change-order-table th { border: 1px solid #000; padding: 2px 6px; text-align: center; }
         table.change-order-table td.money { min-width: 5.5em; }
+        table.co-log-table { width: 100%; border-collapse: collapse; font-size: 8px; margin-top: 8px; }
+        table.co-log-table th, table.co-log-table td { border: 1px solid #000; padding: 3px 5px; vertical-align: top; }
+        table.co-log-table th { background: #eee; font-weight: 700; }
+        .print-page-break { page-break-before: always; break-before: page; }
+        .co-backup-sheet { page-break-before: always; break-before: page; margin-top: 12px; border: 1px solid #000; padding: 10px; font-size: 9px; }
     `;
 
     function buildG703PrintRow(cells) {
@@ -1807,7 +1862,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         return rows;
     }
 
-    function withPayAppPrintSnapshot(snapshot, printFn) {
+    function withPayAppPrintSnapshot(snapshot, printFn, printOpts) {
         const originalPeriod = currentPayAppPeriod;
         const originalBilling = payAppBillingLines;
         const originalSOV = contractorSOV;
@@ -1819,7 +1874,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
                     contractorSOV = snapshot.contractorSOVSnapshot;
                 }
             }
-            printFn();
+            printFn(printOpts);
         } finally {
             currentPayAppPeriod = originalPeriod;
             payAppBillingLines = originalBilling;
@@ -4528,48 +4583,50 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
 
     // Helper functions to print historical periods (temporarily load snapshot into globals)
     function printHistoricalG702(periodId) {
+        openPayAppPrintOptionsDialog({ historicalPeriodId: periodId, defaults: { g702: true, g703: false } });
+    }
+
+    function printHistoricalG703(periodId) {
+        openPayAppPrintOptionsDialog({ historicalPeriodId: periodId, defaults: { g702: false, g703: true } });
+    }
+
+    function _printHistoricalG703WithLien(periodId) {
+        const periodData = payAppHistory.find(p => p.id == periodId);
+        if (!periodData || !periodData.snapshot) return;
+        const subId = periodData.snapshot.selectedSubId || selectedSubCompanyId;
+        const waiverInfo = subId ? (lienWaivers[subId] || {}) : {};
+        if (!waiverInfo.filename) return;
+        setTimeout(() => {
+            const lienPrintWindow = window.open('', '_blank');
+            if (!lienPrintWindow) return;
+            lienPrintWindow.document.write(`
+                <html><head><title>Lien Waiver - ${periodData.snapshot.period.periodNumber}</title>
+                <style>body { font-family: Arial, sans-serif; padding: 40px; } .header { border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }</style>
+                </head><body>
+                    <div class="header">
+                        <h2>Lien Waiver Record</h2>
+                        <p><strong>Period:</strong> ${periodData.snapshot.period.periodNumber} (${periodData.snapshot.period.periodStart} to ${periodData.snapshot.period.periodEnd})</p>
+                        <p><strong>Subcontractor:</strong> ${getCompanyName(subId)}</p>
+                    </div>
+                    <p><strong>Lien Waiver File:</strong> ${htmlEscape(waiverInfo.filename)}</p>
+                    <p><strong>Uploaded:</strong> ${waiverInfo.uploadedAt ? new Date(waiverInfo.uploadedAt).toLocaleDateString() : 'N/A'}</p>
+                    <hr style="margin: 30px 0;">
+                    <p style="color: #666; font-size: 12px;">This document confirms that the lien waiver listed above was received and is on file for the referenced pay application period.</p>
+                </body></html>
+            `);
+            lienPrintWindow.document.close();
+            setTimeout(() => { lienPrintWindow.print(); }, 500);
+        }, 1500);
+    }
+
+    /** @deprecated use openPayAppPrintOptionsDialog — kept for any stale onclick references */
+    function _legacyPrintHistoricalG702(periodId) {
         const periodData = payAppHistory.find(p => p.id == periodId);
         if (!periodData || !periodData.snapshot) {
             showCenteredAlert("No historical snapshot data available for printing.", "warning");
             return;
         }
         withPayAppPrintSnapshot(periodData.snapshot, printG702);
-    }
-
-    function printHistoricalG703(periodId) {
-        const periodData = payAppHistory.find(p => p.id == periodId);
-        if (!periodData || !periodData.snapshot) {
-            showCenteredAlert("No historical snapshot data available for printing.", "warning");
-            return;
-        }
-
-        const subId = periodData.snapshot.selectedSubId || selectedSubCompanyId;
-        const waiverInfo = subId ? (lienWaivers[subId] || {}) : {};
-
-        withPayAppPrintSnapshot(periodData.snapshot, printG703);
-
-        setTimeout(() => {
-            if (waiverInfo.filename) {
-                const lienPrintWindow = window.open('', '_blank');
-                lienPrintWindow.document.write(`
-                    <html><head><title>Lien Waiver - ${periodData.snapshot.period.periodNumber}</title>
-                    <style>body { font-family: Arial, sans-serif; padding: 40px; } .header { border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }</style>
-                    </head><body>
-                        <div class="header">
-                            <h2>Lien Waiver Record</h2>
-                            <p><strong>Period:</strong> ${periodData.snapshot.period.periodNumber} (${periodData.snapshot.period.periodStart} to ${periodData.snapshot.period.periodEnd})</p>
-                            <p><strong>Subcontractor:</strong> ${getCompanyName(subId)}</p>
-                        </div>
-                        <p><strong>Lien Waiver File:</strong> ${waiverInfo.filename}</p>
-                        <p><strong>Uploaded:</strong> ${waiverInfo.uploadedAt ? new Date(waiverInfo.uploadedAt).toLocaleDateString() : 'N/A'}</p>
-                        <hr style="margin: 30px 0;">
-                        <p style="color: #666; font-size: 12px;">This document confirms that the lien waiver listed above was received and is on file for the referenced pay application period. The actual signed PDF is stored in the project document management system.</p>
-                    </body></html>
-                `);
-                lienPrintWindow.document.close();
-                setTimeout(() => { lienPrintWindow.print(); }, 500);
-            }
-        }, 1500);
     }
 
     // View historical main lien waiver from Previous Pay Apps tab
@@ -9059,20 +9116,287 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     }
 
     // ==================== PRINT AIA G702 / G703 ====================
-    function printCurrentPayApp() {
-        if (currentPayAppTab === 'payapp') {
-            // On G702 tab, print G702 first, then G703 as the continuation sheet (per user request)
-            printG702();
-            // Small delay so the first print dialog can be handled, then print G703
-            setTimeout(() => {
-                printG703();
-            }, 1200);
-        } else if (currentPayAppTab === 'contractor-sov') {
-            printG703();
-        } else if (currentPayAppTab === 'sub-sov' && selectedSubCompanyId) {
+    let _payAppPrintDialogContext = null;
+
+    function parseChangeOrderApprovalDate(co) {
+        const raw = co.approved_at || co.date || co.created_at;
+        if (!raw) return null;
+        const d = new Date(raw);
+        return Number.isNaN(d.getTime()) ? null : d;
+    }
+
+    function coApprovalDateIso(co) {
+        const d = parseChangeOrderApprovalDate(co);
+        return d ? d.toISOString().split('T')[0] : '—';
+    }
+
+    function isDateOnOrBeforeDay(dateObj, endIso) {
+        if (!dateObj || !endIso) return false;
+        const end = new Date(endIso + 'T23:59:59');
+        return dateObj.getTime() <= end.getTime();
+    }
+
+    function isDateInPayPeriod(dateObj, periodStart, periodEnd) {
+        if (!dateObj || !periodStart || !periodEnd) return false;
+        const start = new Date(periodStart + 'T00:00:00').getTime();
+        const end = new Date(periodEnd + 'T23:59:59').getTime();
+        const t = dateObj.getTime();
+        return t >= start && t <= end;
+    }
+
+    function sumCoAmountsBySign(cos) {
+        let additions = 0;
+        let deductions = 0;
+        (cos || []).forEach(co => {
+            const amt = Number(co.amount) || 0;
+            if (amt >= 0) additions += amt;
+            else deductions += Math.abs(amt);
+        });
+        return {
+            additions: Math.round(additions * 100) / 100,
+            deductions: Math.round(deductions * 100) / 100,
+            net: Math.round((additions - deductions) * 100) / 100,
+        };
+    }
+
+    function partitionChangeOrdersForPayPeriod(cos, period) {
+        const periodStart = period.periodStart || '';
+        const periodEnd = period.periodEnd || '';
+        const approved = (cos || []).filter(c => String(c.status || '').toLowerCase() === 'approved');
+        const throughPeriodEnd = [];
+        const thisPeriod = [];
+        const previousPeriods = [];
+        approved.forEach(co => {
+            const d = parseChangeOrderApprovalDate(co);
+            if (!isDateOnOrBeforeDay(d, periodEnd)) return;
+            throughPeriodEnd.push(co);
+            if (isDateInPayPeriod(d, periodStart, periodEnd)) {
+                thisPeriod.push(co);
+            } else {
+                previousPeriods.push(co);
+            }
+        });
+        throughPeriodEnd.sort((a, b) => {
+            const da = parseChangeOrderApprovalDate(a);
+            const db = parseChangeOrderApprovalDate(b);
+            return (da ? da.getTime() : 0) - (db ? db.getTime() : 0);
+        });
+        return {
+            throughPeriodEnd,
+            thisPeriod,
+            previousPeriods,
+            totalsThrough: sumCoAmountsBySign(throughPeriodEnd),
+            totalsThisPeriod: sumCoAmountsBySign(thisPeriod),
+            totalsPrevious: sumCoAmountsBySign(previousPeriods),
+        };
+    }
+
+    async function fetchApprovedChangeOrdersForPrint() {
+        const projectId = resolvePayAppProjectId();
+        if (!projectId) return [];
+        const url = `/api/change-orders?project_id=${encodeURIComponent(projectId)}&status=Approved&scope=owner`;
+        try {
+            const res = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+            if (!res.ok) {
+                console.warn('[PayApp print] change orders fetch failed', res.status);
+                return [];
+            }
+            const data = await res.json();
+            return data.change_orders || [];
+        } catch (e) {
+            console.warn('[PayApp print] change orders fetch error', e);
+            return [];
+        }
+    }
+
+    function buildChangeOrderListingAppendixHtml(partition, period, g702) {
+        if (!partition) return '';
+        const original = g702.g702Original;
+        const netThrough = partition.totalsThrough.net;
+        const contractSum = original + netThrough;
+        const prev = partition.totalsPrevious;
+        const thisMo = partition.totalsThisPeriod;
+
+        let logRows = '';
+        (partition.throughPeriodEnd || []).forEach((co, idx) => {
+            const amt = Number(co.amount) || 0;
+            const add = amt >= 0 ? amt : '';
+            const ded = amt < 0 ? Math.abs(amt) : '';
+            logRows += `<tr>
+                <td style="text-align:center;">${idx + 1}</td>
+                <td style="text-align:left;">${htmlEscape(co.number || co.id)}</td>
+                <td style="text-align:left;">${htmlEscape(co.title || co.description || '')}</td>
+                <td>${htmlEscape(coApprovalDateIso(co))}</td>
+                <td class="money">${add !== '' ? formatCurrency(add) : ''}</td>
+                <td class="money">${ded !== '' ? formatCurrency(ded) : ''}</td>
+            </tr>`;
+        });
+        if (!logRows) {
+            logRows = `<tr><td colspan="6" style="text-align:center; font-style:italic;">No approved owner change orders through this period.</td></tr>`;
+        }
+
+        return `
+            <div class="print-page-break"></div>
+            <div class="section-title">CHANGE ORDER LOG — PAY APPLICATION #${htmlEscape(String(period.periodNumber || ''))}</div>
+            <div style="font-size:8px; margin-bottom:6px;">Period through ${htmlEscape(period.periodEnd || '')}. Approved owner change orders included on this application.</div>
+            <table class="summary" style="margin-bottom:10px;">
+                <tr><td class="label">1. ORIGINAL CONTRACT SUM (per G702 Line 1)</td><td class="money">${formatCurrency(original)}</td></tr>
+                <tr><td class="label">2. Net change by change orders approved in previous application periods</td><td class="money">${formatCurrency(prev.net)}</td></tr>
+                <tr><td class="label" style="padding-left:12px;">Additions (prior periods)</td><td class="money">${formatCurrency(prev.additions)}</td></tr>
+                <tr><td class="label" style="padding-left:12px;">Deductions (prior periods)</td><td class="money">${formatCurrency(prev.deductions)}</td></tr>
+                <tr><td class="label">3. Change orders approved this period</td><td class="money">${formatCurrency(thisMo.net)}</td></tr>
+                <tr><td class="label" style="padding-left:12px;">Additions this period</td><td class="money">${formatCurrency(thisMo.additions)}</td></tr>
+                <tr><td class="label" style="padding-left:12px;">Deductions this period</td><td class="money">${formatCurrency(thisMo.deductions)}</td></tr>
+                <tr class="bold"><td class="label">4. CONTRACT SUM TO DATE (Line 1 + cumulative net change orders)</td><td class="money bold">${formatCurrency(contractSum)}</td></tr>
+            </table>
+            <table class="co-log-table">
+                <thead>
+                    <tr>
+                        <th style="width:28px;">#</th>
+                        <th style="width:72px;">CO No.</th>
+                        <th>Description</th>
+                        <th style="width:72px;">Approved</th>
+                        <th style="width:80px;">Additions</th>
+                        <th style="width:80px;">Deductions</th>
+                    </tr>
+                </thead>
+                <tbody>${logRows}</tbody>
+                <tfoot>
+                    <tr class="bold">
+                        <td colspan="4" style="text-align:right;">Totals (through this period)</td>
+                        <td class="money">${formatCurrency(partition.totalsThrough.additions)}</td>
+                        <td class="money">${formatCurrency(partition.totalsThrough.deductions)}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        `;
+    }
+
+    function buildChangeOrderBackupPagesHtml(partition, period) {
+        const cos = partition && partition.throughPeriodEnd ? partition.throughPeriodEnd : [];
+        if (!cos.length) {
+            return `
+                <div class="print-page-break"></div>
+                <div class="section-title">CHANGE ORDER BACKUP</div>
+                <p style="font-size:9px;">No approved owner change orders on file for this pay application period.</p>
+            `;
+        }
+        return cos.map(co => {
+            const amt = Number(co.amount) || 0;
+            const allocRows = (co.allocations || []).map(a => `
+                <tr>
+                    <td>${htmlEscape(a.cost_code || '')}</td>
+                    <td>${htmlEscape(a.description || a.cost_type || '')}</td>
+                    <td class="money">${formatCurrency(a.amount)}</td>
+                </tr>
+            `).join('') || `<tr><td colspan="3" style="font-style:italic;">No line allocations recorded.</td></tr>`;
+            const attachments = co.attachments || [];
+            const attachList = attachments.length
+                ? `<ul style="margin:4px 0; padding-left:18px;">${attachments.map(att => `<li>${htmlEscape(att.filename || att.name || 'Attachment')}</li>`).join('')}</ul>`
+                : '<p style="font-style:italic; margin:4px 0;">No attachments on file.</p>';
+            return `
+                <div class="co-backup-sheet">
+                    <div style="font-weight:700; font-size:11px; border-bottom:1px solid #000; padding-bottom:4px; margin-bottom:8px;">
+                        CHANGE ORDER BACKUP — ${htmlEscape(co.number || ('CO-' + co.id))}
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:9px;">
+                        <div><strong>Title:</strong> ${htmlEscape(co.title || co.description || '')}</div>
+                        <div><strong>Status:</strong> ${htmlEscape(co.status || '')}</div>
+                        <div><strong>Amount:</strong> ${formatCurrency(amt)} (${amt >= 0 ? 'Addition' : 'Deduction'})</div>
+                        <div><strong>Date approved:</strong> ${htmlEscape(coApprovalDateIso(co))}</div>
+                        <div><strong>Pay app period:</strong> #${htmlEscape(String(period.periodNumber || ''))} through ${htmlEscape(period.periodEnd || '')}</div>
+                        <div><strong>Reason:</strong> ${htmlEscape(co.reason || '—')}</div>
+                    </div>
+                    ${co.notes ? `<p style="margin-top:8px; font-size:8.5px;"><strong>Notes:</strong> ${htmlEscape(co.notes)}</p>` : ''}
+                    <div class="section-title" style="margin-top:10px;">Cost allocations</div>
+                    <table class="co-log-table">
+                        <thead><tr><th>Cost code</th><th>Description</th><th>Amount</th></tr></thead>
+                        <tbody>${allocRows}</tbody>
+                    </table>
+                    <div class="section-title" style="margin-top:10px;">Attachments</div>
+                    ${attachList}
+                    <p style="font-size:7.5px; color:#444; margin-top:10px;">Executed change order forms may be printed from CasePM (Change Orders → Print). API: /api/change-orders/${co.id}/print-template</p>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function buildCoPrintAppendixHtml(printOpts, period, g702) {
+        let html = '';
+        if (printOpts && printOpts.includeCoListing && printOpts.coPartition) {
+            html += buildChangeOrderListingAppendixHtml(printOpts.coPartition, period, g702);
+        }
+        if (printOpts && printOpts.includeCoBackup && printOpts.coPartition) {
+            html += buildChangeOrderBackupPagesHtml(printOpts.coPartition, period);
+        }
+        return html;
+    }
+
+    function openPayAppPrintOptionsDialog(ctx) {
+        ctx = ctx || {};
+        const modal = document.getElementById('payAppPrintOptionsModal');
+        if (!modal) {
+            executePayAppPrintPackage({ g702: true, g703: true, coListing: true, coBackup: true }, ctx);
+            return;
+        }
+        _payAppPrintDialogContext = ctx;
+
+        const defaults = ctx.defaults || {};
+        const onPayappTab = currentPayAppTab === 'payapp';
+        const onG703Tab = currentPayAppTab === 'contractor-sov';
+        const g702El = document.getElementById('payAppPrintOptG702');
+        const g703El = document.getElementById('payAppPrintOptG703');
+        const coListEl = document.getElementById('payAppPrintOptCoListing');
+        const coBackEl = document.getElementById('payAppPrintOptCoBackup');
+        const sub = document.getElementById('payAppPrintOptionsSubtitle');
+
+        const g702Default = defaults.g702 != null ? defaults.g702 : (onPayappTab || ctx.historicalPeriodId);
+        const g703Default = defaults.g703 != null ? defaults.g703 : (onPayappTab || onG703Tab || ctx.historicalPeriodId);
+        if (g702El) g702El.checked = !!g702Default;
+        if (g703El) g703El.checked = !!g703Default;
+        if (coListEl) coListEl.checked = defaults.coListing != null ? !!defaults.coListing : true;
+        if (coBackEl) coBackEl.checked = defaults.coBackup != null ? !!defaults.coBackup : true;
+
+        if (currentPayAppTab === 'sub-sov' && !ctx.historicalPeriodId) {
+            if (g702El) g702El.checked = false;
+            if (g703El) g703El.checked = false;
+            if (sub) sub.textContent = 'Subcontractor G703 uses the tab print action; open options from G702/G703 tabs for AIA package.';
+        } else if (ctx.historicalPeriodId) {
+            const pd = payAppHistory.find(p => p.id == ctx.historicalPeriodId);
+            if (sub && pd) sub.textContent = `Historical period ${pd.periodNumber} (${pd.periodStart} → ${pd.periodEnd}).`;
+        } else {
+            if (sub) sub.textContent = 'Choose AIA forms and change order backup to include.';
+        }
+
+        modal.showModal();
+    }
+
+    async function confirmPayAppPrintOptions() {
+        const modal = document.getElementById('payAppPrintOptionsModal');
+        const opts = {
+            g702: document.getElementById('payAppPrintOptG702')?.checked,
+            g703: document.getElementById('payAppPrintOptG703')?.checked,
+            coListing: document.getElementById('payAppPrintOptCoListing')?.checked,
+            coBackup: document.getElementById('payAppPrintOptCoBackup')?.checked,
+        };
+        if (!opts.g702 && !opts.g703 && !opts.coListing && !opts.coBackup) {
+            showCenteredAlert('Select at least one item to print.', 'warning');
+            return;
+        }
+        const ctx = _payAppPrintDialogContext || {};
+        _payAppPrintDialogContext = null;
+        if (modal) modal.close();
+        await executePayAppPrintPackage(opts, ctx);
+    }
+
+    async function executePayAppPrintPackage(opts, ctx) {
+        ctx = ctx || {};
+
+        if (currentPayAppTab === 'sub-sov' && selectedSubCompanyId && !ctx.historicalPeriodId && !opts.g702 && !opts.g703 && !opts.coListing && !opts.coBackup) {
             printSubcontractorG703(selectedSubCompanyId);
-        } else if (currentPayAppTab === 'previous-sub-payapps') {
-            // For Previous Sub Pay Apps tab, use the historical combined print if data available
+            return;
+        }
+        if (currentPayAppTab === 'previous-sub-payapps' && !ctx.historicalPeriodId) {
             const subId = getPreviousSubFilterCompanyId();
             const periodIdx = document.getElementById('prevSubPeriodSelect') ? document.getElementById('prevSubPeriodSelect').value : null;
             if (subId && periodIdx) {
@@ -9080,9 +9404,127 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             } else {
                 showCenteredAlert("Please select a subcontractor and period in Previous Sub Pay Apps tab first.", "warning");
             }
-        } else {
-            printG703(); // fallback
+            return;
         }
+
+        let snapshot = null;
+        let period = currentPayAppPeriod;
+        if (ctx.historicalPeriodId) {
+            const periodData = payAppHistory.find(p => p.id == ctx.historicalPeriodId);
+            if (!periodData || !periodData.snapshot) {
+                showCenteredAlert("No historical snapshot data available for printing.", "warning");
+                return;
+            }
+            snapshot = periodData.snapshot;
+            period = snapshot.period || period;
+        }
+
+        const needCos = opts.coListing || opts.coBackup;
+        let coPartition = null;
+        if (needCos) {
+            const cos = await fetchApprovedChangeOrdersForPrint();
+            coPartition = partitionChangeOrdersForPayPeriod(cos, period);
+        }
+
+        const printOptsCoOnly = {
+            includeCoListing: !!opts.coListing,
+            includeCoBackup: !!opts.coBackup,
+            coPartition,
+        };
+        const printOpts = {
+            includeCoListing: !!opts.g702 && !!opts.coListing,
+            includeCoBackup: !!opts.g702 && !!opts.coBackup,
+            coPartition,
+        };
+        const printOptsG703 = {
+            includeCoListing: !opts.g702 && !!opts.coListing,
+            includeCoBackup: !opts.g702 && !!opts.coBackup,
+            coPartition,
+        };
+
+        const run = (fn, po) => {
+            if (snapshot) withPayAppPrintSnapshot(snapshot, fn, po || printOpts);
+            else fn(po || printOpts);
+        };
+
+        let delayMs = 0;
+        const schedule = (fn, po) => {
+            const delay = delayMs;
+            setTimeout(() => run(fn, po), delay);
+            delayMs += 1200;
+        };
+
+        if (opts.g702) run(printG702, printOpts);
+        if (opts.g703) schedule(printG703, printOptsG703);
+        if (!opts.g702 && !opts.g703 && (opts.coListing || opts.coBackup)) {
+            schedule(printChangeOrderPackageOnly, printOptsCoOnly);
+        }
+
+        if (ctx.historicalPeriodId && opts.g703) {
+            _printHistoricalG703WithLien(ctx.historicalPeriodId);
+        }
+
+        logPayAppAudit('PAY_APP_PRINT_PACKAGE', {
+            g702: !!opts.g702,
+            g703: !!opts.g703,
+            coListing: !!opts.coListing,
+            coBackup: !!opts.coBackup,
+            historical: !!ctx.historicalPeriodId,
+        });
+    }
+
+    function printChangeOrderPackageOnly(printOpts) {
+        const period = currentPayAppPeriod || { periodNumber: 1, periodEnd: '' };
+        const rollup = computeG703Rollup();
+        const g702 = computeG702CertificationAmounts(rollup);
+        const appendix = buildCoPrintAppendixHtml(printOpts, period, g702);
+        if (!appendix.trim()) return;
+
+        const printHTML = `
+            <html><head><title>Change Order Backup — Pay App #${period.periodNumber}</title>
+            <style>
+                @page { size: letter landscape; margin: 0.25in; }
+                body { font-family: "Times New Roman", Times, serif; font-size: 9pt; padding: 8px; color: #000; }
+                ${G702_G703_PRINT_STYLES}
+                .section-title { font-weight: bold; font-size: 10px; margin: 8px 0 4px; }
+            </style></head><body>
+                ${appendix}
+            </body></html>
+        `;
+        if (typeof CasePMPrint !== 'undefined' && CasePMPrint.printHtmlInIframe) {
+            CasePMPrint.printHtmlInIframe(printHTML, { landscape: true, delay: 500 });
+        } else {
+            const iframe = document.createElement('iframe');
+            iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:11in;height:8.5in;border:0;visibility:hidden';
+            document.body.appendChild(iframe);
+            const doc = iframe.contentWindow.document;
+            doc.open();
+            doc.write(printHTML);
+            doc.close();
+            setTimeout(() => {
+                iframe.contentWindow.focus();
+                iframe.contentWindow.print();
+                setTimeout(() => document.body.removeChild(iframe), 900);
+            }, 500);
+        }
+    }
+
+    function printCurrentPayApp() {
+        if (currentPayAppTab === 'sub-sov' && selectedSubCompanyId) {
+            printSubcontractorG703(selectedSubCompanyId);
+            return;
+        }
+        if (currentPayAppTab === 'previous-sub-payapps') {
+            const subId = getPreviousSubFilterCompanyId();
+            const periodIdx = document.getElementById('prevSubPeriodSelect') ? document.getElementById('prevSubPeriodSelect').value : null;
+            if (subId && periodIdx) {
+                printCombinedG703AndLienWaiver(subId, periodIdx);
+            } else {
+                showCenteredAlert("Please select a subcontractor and period in Previous Sub Pay Apps tab first.", "warning");
+            }
+            return;
+        }
+        openPayAppPrintOptionsDialog();
     }
 
     // New: Print filtered G703 for the currently focused subcontractor (with their Pay App #)
@@ -9201,11 +9643,12 @@ function printSubcontractorG703(companyId) {
     logPayAppAudit('SUB_G703_PRINTED', { company: companyName, payAppNumber: appNum });
 }
 
-    function printG702() {
+    function printG702(printOpts) {
         const period = currentPayAppPeriod || { periodNumber: 1, periodStart: '2026-07-01', periodEnd: '2026-07-31', status: 'Draft' };
         const rollup = computeG703Rollup();
         const g702 = computeG702CertificationAmounts(rollup);
         const coSummary = computeChangeOrderSummaryForPrint(contractorSOV, { periodNumber: period.periodNumber });
+        const coAppendix = buildCoPrintAppendixHtml(printOpts || {}, period, g702);
 
         const printHTML = `
             <html>
@@ -9373,6 +9816,7 @@ function printSubcontractorG703(companyId) {
                 <div class="footer-note">
                     This Certificate is not negotiable. The AMOUNT CERTIFIED is payable only to the Contractor named herein. Issuance, payment and acceptance of payment are without prejudice to any rights of the Owner or Contractor under this Contract.
                 </div>
+                ${coAppendix}
             </body>
             </html>
         `;
@@ -9397,10 +9841,12 @@ function printSubcontractorG703(companyId) {
         logPayAppAudit('G702_PRINTED', { period: period.periodNumber });
     }
 
-    function printG703() {
+    function printG703(printOpts) {
         const period = currentPayAppPeriod || { periodNumber: 1, periodStart: '2026-07-01', periodEnd: '2026-07-31' };
         const rollup = computeG703Rollup();
         const rows = buildContractorG703LineRows(rollup);
+        const g702 = computeG702CertificationAmounts(rollup);
+        const coAppendix = buildCoPrintAppendixHtml(printOpts || {}, period, g702);
 
         const c = rollup.contract;
         const co = rollup.changeOrders;
@@ -9493,6 +9939,7 @@ function printSubcontractorG703(companyId) {
                 <div style="margin-top:10px; font-size:8px; color:#555; text-align:center;">
                     This is a system-generated preview matching AIA G703 layout. Retainage calculated at ${Math.round(rollup.retainageRate*100)}% from project settings.
                 </div>
+                ${coAppendix}
             </body></html>
         `;
 
