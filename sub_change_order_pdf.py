@@ -9,6 +9,10 @@ import fitz
 
 from co_persistence import is_subcontract_co
 
+# Approximate overlay for left "DATE: ___/___/___" (no AcroForm field on template).
+ACCEPTANCE_DATE_RECT = fitz.Rect(268, 710, 338, 728)
+SIGNATURE_IMAGE_RECT = fitz.Rect(362, 702, 580, 744)
+
 
 def _fmt_money_plain(value) -> str:
     try:
@@ -21,18 +25,49 @@ def _fmt_money_plain(value) -> str:
     return f'-{text}' if negative else text
 
 
-def _fmt_date_short(value) -> str:
+def _fmt_date_compact(value) -> str:
+    """Short date for narrow PDF fields (e.g. 8/3/26)."""
+    if not value:
+        return ''
+    dt = None
+    if hasattr(value, 'strftime'):
+        dt = value
+    else:
+        raw = str(value).strip()[:19]
+        for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%m-%d-%Y', '%Y-%m-%dT%H:%M:%S'):
+            try:
+                dt = datetime.strptime(raw[:10] if 'T' not in fmt else raw.replace('Z', ''), fmt)
+                break
+            except ValueError:
+                continue
+    if not dt:
+        return str(value).strip()[:10]
+    try:
+        return dt.strftime('%-m/%-d/%y') if os.name != 'nt' else dt.strftime('%#m/%#d/%y')
+    except ValueError:
+        return dt.strftime('%m/%d/%y')
+
+
+def _fmt_date_acceptance(value) -> str:
     if not value:
         return ''
     if hasattr(value, 'strftime'):
-        return value.strftime('%m/%d/%Y')
-    raw = str(value).strip()[:10]
-    for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%m-%d-%Y'):
-        try:
-            return datetime.strptime(raw, fmt).strftime('%m/%d/%Y')
-        except ValueError:
-            continue
-    return raw
+        dt = value
+    else:
+        raw = str(value).strip()[:10]
+        dt = None
+        for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%m-%d-%Y'):
+            try:
+                dt = datetime.strptime(raw, fmt)
+                break
+            except ValueError:
+                continue
+        if not dt:
+            return raw
+    try:
+        return dt.strftime('%-m/%-d/%Y') if os.name != 'nt' else dt.strftime('%#m/%#d/%Y')
+    except ValueError:
+        return dt.strftime('%m/%d/%Y')
 
 
 def _order_number_for_form(co) -> str:
@@ -147,6 +182,61 @@ def _to_subcontractor_block(co, commitment=None) -> str:
     return '\n'.join(lines)
 
 
+def _set_widget(widget, value, *, font_size: float | None = None) -> None:
+    if font_size is not None:
+        try:
+            widget.text_fontsize = font_size
+        except Exception:
+            pass
+    widget.field_value = '' if value is None else str(value)
+    widget.update()
+
+
+def _apply_signature_block(
+    page,
+    *,
+    mode: str,
+    signer_name: str = '',
+    signer_title: str = '',
+    signature_image_bytes: bytes | None = None,
+    acceptance_date: str = '',
+) -> None:
+    mode = (mode or 'blank').strip().lower()
+    name = (signer_name or '').strip()
+    title = (signer_title or '').strip()
+
+    for widget in page.widgets() or []:
+        if widget.field_name == 'ComboBox1':
+            if mode == 'name':
+                _set_widget(widget, name[:80], font_size=9)
+            elif mode == 'esign' and name:
+                _set_widget(widget, name[:80], font_size=9)
+            else:
+                _set_widget(widget, '', font_size=9)
+        elif widget.field_name == 'ComboBox2':
+            if mode == 'name':
+                _set_widget(widget, title[:120], font_size=8)
+            elif mode == 'esign' and title:
+                _set_widget(widget, title[:120], font_size=8)
+            else:
+                _set_widget(widget, '', font_size=8)
+
+    if mode == 'esign' and signature_image_bytes:
+        try:
+            page.insert_image(SIGNATURE_IMAGE_RECT, stream=signature_image_bytes, keep_proportion=True, overlay=True)
+        except Exception:
+            pass
+
+    if acceptance_date:
+        page.insert_textbox(
+            ACCEPTANCE_DATE_RECT,
+            acceptance_date,
+            fontsize=8,
+            fontname='helv',
+            align=fitz.TEXT_ALIGN_LEFT,
+        )
+
+
 def fill_sub_change_order_pdf(
     co,
     *,
@@ -156,10 +246,12 @@ def fill_sub_change_order_pdf(
     allocations=None,
     Commitment=None,
     ChangeOrder=None,
+    print_options: dict | None = None,
 ) -> bytes:
     if not os.path.isfile(template_path):
         raise FileNotFoundError('Subcontract change order template PDF is missing.')
 
+    opts = print_options or {}
     commitment = _resolve_commitment(co, Commitment)
     original = float(getattr(commitment, 'original_amount', 0) or 0) if commitment else 0.0
     previous = _sum_prior_approved_sub_cos(co, ChangeOrder)
@@ -167,9 +259,13 @@ def fill_sub_change_order_pdf(
     total = round(original + previous + this_amount, 2)
 
     co_date = getattr(co, 'date', None) or getattr(co, 'approved_at', None)
+    order_date = opts.get('order_date') or co_date
+    acceptance_raw = opts.get('acceptance_date') or opts.get('signed_date')
+    acceptance_date = _fmt_date_acceptance(acceptance_raw) if acceptance_raw else ''
+
     field_values = {
         'Text7': _order_number_for_form(co),
-        'Text8': _fmt_date_short(co_date),
+        'Text8': _fmt_date_compact(order_date),
         'Text1': _to_subcontractor_block(co, commitment),
         'Text2': _project_label(project),
         'Text9': _fmt_money_plain(original),
@@ -179,16 +275,43 @@ def fill_sub_change_order_pdf(
         'Text5': _build_description(co, allocations),
         'Text6': _fmt_money_plain(this_amount),
     }
+    widget_fonts = {
+        'Text8': 7,
+        'Text7': 8,
+    }
 
     doc = fitz.open(template_path)
     try:
         page = doc[0]
+        text8_rect = None
+        order_date_text = field_values.get('Text8') or ''
         for widget in page.widgets() or []:
+            if widget.field_name == 'Text8':
+                text8_rect = fitz.Rect(widget.rect)
+                _set_widget(widget, '', font_size=7)
+                continue
             val = field_values.get(widget.field_name)
             if val is None:
                 continue
-            widget.field_value = val
-            widget.update()
+            _set_widget(widget, val, font_size=widget_fonts.get(widget.field_name))
+
+        if text8_rect and order_date_text:
+            page.insert_textbox(
+                text8_rect,
+                order_date_text,
+                fontsize=7,
+                fontname='helv',
+                align=fitz.TEXT_ALIGN_CENTER,
+            )
+
+        _apply_signature_block(
+            page,
+            mode=opts.get('signature_mode') or 'blank',
+            signer_name=opts.get('signer_name') or '',
+            signer_title=opts.get('signer_title') or '',
+            signature_image_bytes=opts.get('signature_image_bytes'),
+            acceptance_date=acceptance_date,
+        )
         return doc.tobytes(deflate=True)
     finally:
         doc.close()

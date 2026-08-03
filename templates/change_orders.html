@@ -461,6 +461,53 @@
     </div>
 </dialog>
 
+<dialog id="subCoPrintModal" class="modal bg-zinc-900 border border-zinc-700 rounded-lg w-full max-w-md p-0 text-white">
+    <div class="p-6">
+        <div class="flex justify-between items-start mb-4">
+            <div>
+                <h2 class="text-lg font-semibold">Print subcontract change order</h2>
+                <p class="text-xs text-zinc-400 mt-1">Case Contracting SCO form — choose signature options before opening the PDF.</p>
+            </div>
+            <button type="button" onclick="document.getElementById('subCoPrintModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
+        </div>
+        <div class="space-y-4 text-sm">
+            <div>
+                <div class="text-xs text-zinc-500 uppercase tracking-wide mb-2">GC signature (bottom right)</div>
+                <label class="flex items-start gap-2 cursor-pointer mb-2">
+                    <input type="radio" name="subCoSigMode" value="blank" class="mt-1 accent-emerald-600" checked>
+                    <span><strong>Leave blank</strong> — print and sign physically</span>
+                </label>
+                <label class="flex items-start gap-2 cursor-pointer mb-2">
+                    <input type="radio" name="subCoSigMode" value="name" class="mt-1 accent-emerald-600">
+                    <span><strong>Type name &amp; title</strong> on the form</span>
+                </label>
+                <label class="flex items-start gap-2 cursor-pointer">
+                    <input type="radio" name="subCoSigMode" value="esign" class="mt-1 accent-emerald-600">
+                    <span><strong>Use my electronic signature</strong> (from your user profile)</span>
+                </label>
+            </div>
+            <div class="grid grid-cols-1 gap-3">
+                <div>
+                    <label for="subCoPrintSignerName" class="block text-xs text-zinc-400 mb-1">Signer name</label>
+                    <input type="text" id="subCoPrintSignerName" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm" placeholder="e.g. Stephen Spack">
+                </div>
+                <div>
+                    <label for="subCoPrintSignerTitle" class="block text-xs text-zinc-400 mb-1">Title / line under signature</label>
+                    <input type="text" id="subCoPrintSignerTitle" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm" placeholder="e.g. V.P. of Operations">
+                </div>
+                <div>
+                    <label for="subCoPrintAcceptDate" class="block text-xs text-zinc-400 mb-1">Acceptance date (bottom left)</label>
+                    <input type="date" id="subCoPrintAcceptDate" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
+                </div>
+            </div>
+        </div>
+        <div class="mt-6 flex justify-end gap-3">
+            <button type="button" onclick="document.getElementById('subCoPrintModal').close()" class="px-5 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Cancel</button>
+            <button type="button" onclick="CasePMChangeOrders.confirmSubCoPrint()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold"><i class="fa-solid fa-file-pdf mr-1"></i> Open PDF</button>
+        </div>
+    </div>
+</dialog>
+
 <!-- BOTTOM BAR -->
 <div class="co-bottom-bar fixed bottom-0 left-56 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60] no-print">
     <div class="flex items-center gap-4">

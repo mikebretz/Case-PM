@@ -509,6 +509,7 @@ def build_change_order_template_pdf(
     ChangeEventLineItem=None,
     ChangeOrder=None,
     Commitment=None,
+    print_options=None,
 ) -> bytes:
     from change_order_template_persistence import resolve_template_pdf_path
     import json
@@ -544,5 +545,6 @@ def build_change_order_template_pdf(
             allocations=allocations,
             Commitment=Commitment,
             ChangeOrder=ChangeOrder,
+            print_options=print_options,
         )
     raise ValueError(f'Unsupported change order template engine: {engine}')
