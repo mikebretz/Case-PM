@@ -1426,14 +1426,22 @@
     document.getElementById('coDetailTitle').textContent = co.title || co.description || 'Change Order';
     document.getElementById('coDetailBadges').innerHTML = `${statusBadge(co.status)} ${ballBadge(co.ball_in_court_role)}`;
     document.getElementById('coDetailContent').innerHTML = reviewBanner + bodyHtml;
-    document.getElementById('coDetailHeaderActions').innerHTML = `
+    document.getElementById('coDetailHeaderActions').innerHTML = isSubCo(co) ? `
+      <button type="button" onclick="CasePMChangeOrders.openSubCoPrintDialog(${co.id})" class="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-md text-sm font-semibold"><i class="fa-solid fa-file-pdf mr-1"></i> Print SCO Form</button>
+      ${showSubmit ? `<button type="button" onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-semibold">Submit</button>` : ''}
+      ${canApprove() ? `<button type="button" onclick="CasePMChangeOrders.editSubCo(${co.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
+      <button type="button" onclick="CasePMChangeOrders.deleteCo(${co.id})" class="px-4 py-2 bg-red-950 hover:bg-red-900 border border-red-800 rounded-md text-sm text-red-300">Delete</button>` : ''}` : `
       <select id="coPrintTemplateSelect" onchange="CasePMChangeOrders.selectPrintTemplate(parseInt(this.value,10))" class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm min-w-[140px]"></select>
       <button type="button" onclick="CasePMChangeOrders.printDetailWithTemplate(${co.id})" class="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-md text-sm font-semibold"><i class="fa-solid fa-file-pdf mr-1"></i> Print Form</button>
       <button type="button" onclick="CasePMChangeOrders.printDetailStandard(${co.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm"><i class="fa-solid fa-print mr-1"></i> Print</button>
       ${showSubmit ? `<button type="button" onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-semibold">Submit</button>` : ''}
-      ${canApprove() ? `<button type="button" onclick="CasePMChangeOrders.${isSubCo(co) ? 'editSubCo' : 'editCo'}(${co.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
+      ${canApprove() ? `<button type="button" onclick="CasePMChangeOrders.editCo(${co.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
       <button type="button" onclick="CasePMChangeOrders.deleteCo(${co.id})" class="px-4 py-2 bg-red-950 hover:bg-red-900 border border-red-800 rounded-md text-sm text-red-300">Delete</button>` : ''}`;
-    populateTemplateSelectors();
+    if (!isSubCo(co)) populateTemplateSelectors();
+    else {
+      const subId = subCoPrintTemplateId();
+      if (subId) state.selectedPrintTemplateId = subId;
+    }
     openDetailView({ showComments: true });
   }
 
@@ -1925,6 +1933,8 @@
     }
   }
 
+  let subCoPrintPendingId = null;
+
   function subCoPrintTemplateId() {
     const subTpl = state.coTemplates.find(
       (t) => t.engine === 'sub_co_v1' || t.slug === 'sub_co',
@@ -1943,10 +1953,93 @@
       || state.coTemplates[0]?.id;
   }
 
-  function printTemplateUrl(coId, templateId) {
+  function printTemplateUrl(coId, templateId, extraParams) {
     const tid = templateId || state.selectedPrintTemplateId;
-    const qs = tid ? `?template_id=${encodeURIComponent(tid)}` : '';
-    return `/api/change-orders/${coId}/print-template${qs}`;
+    const qs = new URLSearchParams();
+    if (tid) qs.set('template_id', String(tid));
+    if (extraParams && typeof extraParams === 'object') {
+      Object.entries(extraParams).forEach(([k, v]) => {
+        if (v != null && String(v).trim() !== '') qs.set(k, String(v));
+      });
+    }
+    const q = qs.toString();
+    return `/api/change-orders/${coId}/print-template${q ? `?${q}` : ''}`;
+  }
+
+  async function prefetchSubCoPrintDefaults() {
+    const today = new Date().toISOString().slice(0, 10);
+    let signerName = '';
+    let signerTitle = '';
+    try {
+      const Esign = global.CasePMEsign;
+      if (Esign?.fetchMySignature) {
+        const sig = await Esign.fetchMySignature();
+        if (sig?.legal_name) signerName = sig.legal_name;
+      }
+    } catch (_) { /* optional */ }
+    return { signerName, signerTitle, acceptanceDate: today };
+  }
+
+  async function openSubCoPrintDialog(coId) {
+    const targetId = coId || state.drawerRecord?.id || approvalContext?.coId;
+    if (!targetId) return;
+    if (!state.coTemplates.length) await loadCoTemplates();
+    subCoPrintPendingId = targetId;
+    const defaults = await prefetchSubCoPrintDefaults();
+    const modal = document.getElementById('subCoPrintModal');
+    if (!modal) {
+      window.open(printTemplateUrl(targetId, resolvePrintTemplateId(state.drawerRecord)), '_blank', 'noopener');
+      return;
+    }
+    const blank = modal.querySelector('input[name="subCoSigMode"][value="blank"]');
+    if (blank) blank.checked = true;
+    const nameEl = document.getElementById('subCoPrintSignerName');
+    const titleEl = document.getElementById('subCoPrintSignerTitle');
+    const dateEl = document.getElementById('subCoPrintAcceptDate');
+    if (nameEl) nameEl.value = defaults.signerName || '';
+    if (titleEl) titleEl.value = defaults.signerTitle || '';
+    if (dateEl) dateEl.value = defaults.acceptanceDate || '';
+    modal.showModal();
+  }
+
+  async function confirmSubCoPrint() {
+    const coId = subCoPrintPendingId;
+    if (!coId) return;
+    const modal = document.getElementById('subCoPrintModal');
+    const mode = document.querySelector('input[name="subCoSigMode"]:checked')?.value || 'blank';
+    const signerName = document.getElementById('subCoPrintSignerName')?.value?.trim() || '';
+    const signerTitle = document.getElementById('subCoPrintSignerTitle')?.value?.trim() || '';
+    const acceptanceDate = document.getElementById('subCoPrintAcceptDate')?.value || '';
+    if (mode === 'name' && !signerName) {
+      alert('Enter a signer name, or choose Leave blank / electronic signature.');
+      return;
+    }
+    if (mode === 'esign') {
+      try {
+        const sig = await global.CasePMEsign?.fetchMySignature?.(true);
+        if (!sig?.has_signature) {
+          alert('Set up your electronic signature under your user profile first, or choose another signature option.');
+          return;
+        }
+      } catch (err) {
+        alert(err.message || 'Could not verify your electronic signature.');
+        return;
+      }
+    }
+    let co = state.changeOrders.find((c) => c.id == coId) || (state.drawerRecord?.id == coId ? state.drawerRecord : null);
+    const tid = resolvePrintTemplateId(co);
+    if (!tid) {
+      alert('No subcontract change order print template is configured.');
+      return;
+    }
+    subCoPrintPendingId = null;
+    if (modal) modal.close();
+    window.open(printTemplateUrl(coId, tid, {
+      signature_mode: mode,
+      signer_name: signerName,
+      signer_title: signerTitle,
+      acceptance_date: acceptanceDate,
+    }), '_blank', 'noopener');
   }
 
   async function printDetailWithTemplate(id, templateId) {
@@ -1962,11 +2055,12 @@
         return;
       }
     }
+    if (isSubCo(co)) {
+      return openSubCoPrintDialog(targetId);
+    }
     const tid = resolvePrintTemplateId(co, templateId);
     if (!tid) {
-      alert(isSubCo(co)
-        ? 'No subcontract change order print template is configured.'
-        : 'No change order print template is configured. Upload one on the CO Templates tab.');
+      alert('No change order print template is configured. Upload one on the CO Templates tab.');
       return;
     }
     window.open(printTemplateUrl(targetId, tid), '_blank', 'noopener');
@@ -2119,10 +2213,9 @@
   }
 
   async function printDetailStandard(id) {
-    if (typeof global.CasePMPrint === 'undefined') { alert('Print module not loaded'); return; }
-    let co = state.drawerRecord;
-    const targetId = id || co?.id || approvalContext?.coId;
+    const targetId = id || state.drawerRecord?.id || approvalContext?.coId;
     if (!targetId) return;
+    let co = state.drawerRecord;
     if (!co || co.id !== targetId) {
       try {
         co = await api(`/api/change-orders/${targetId}`);
@@ -2131,6 +2224,10 @@
         return;
       }
     }
+    if (isSubCo(co)) {
+      return openSubCoPrintDialog(targetId);
+    }
+    if (typeof global.CasePMPrint === 'undefined') { alert('Print module not loaded'); return; }
     const printOpts = {
       signatures: true,
       allocations: true,
@@ -2152,6 +2249,20 @@
   }
 
   async function printDetail(id) {
+    const targetId = id || state.drawerRecord?.id || approvalContext?.coId;
+    if (!targetId) return;
+    let co = state.changeOrders.find((c) => c.id == targetId) || (state.drawerRecord?.id == targetId ? state.drawerRecord : null);
+    if (!co) {
+      try {
+        co = await api(`/api/change-orders/${targetId}`);
+      } catch (err) {
+        alert(err.message || 'Could not load change order.');
+        return;
+      }
+    }
+    if (isSubCo(co)) {
+      return openSubCoPrintDialog(targetId);
+    }
     return printDetailWithTemplate(id);
   }
 
@@ -2458,7 +2569,7 @@
     uploadPcoAttachment, uploadPcoDrawerAttachment,
     addAllocRow: () => { state.allocationRows.push({ cost_code: '', cost_type: '', amount: 0, description: '' }); renderAllocationRows(); },
     removeAllocRow: idx => { state.allocationRows.splice(idx, 1); renderAllocationRows(); },
-    onCompanyChange, onContactChange, onAllocCostCodeChange, updateAllocationTotal, exportExcel, printLog, printDetail, printDetailStandard, printDetailWithTemplate, openSageLog,
+    onCompanyChange, onContactChange, onAllocCostCodeChange, updateAllocationTotal, exportExcel, printLog, printDetail, printDetailStandard, printDetailWithTemplate, openSubCoPrintDialog, confirmSubCoPrint, openSageLog,
     loadCoTemplates, openTemplateUpload, saveTemplateUpload, setDefaultTemplate, selectPrintTemplate, previewTemplate, deleteTemplate, browseCoTemplateDocuments, clearCoTemplateDocument,
     newPco: () => openModal('pco', null),
     newCo: () => openModal('co', null),

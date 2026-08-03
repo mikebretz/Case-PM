@@ -18368,6 +18368,36 @@ def api_change_order_print_template(co_id):
     linked_sub_cos = co_dict.get('linked_sub_change_orders') or []
     project = Project.query.get(co.project_id)
 
+    print_options = None
+    from co_persistence import is_subcontract_co
+    if is_subcontract_co(co):
+        sig_mode = (request.args.get('signature_mode') or 'blank').strip().lower()
+        if sig_mode not in ('blank', 'name', 'esign'):
+            sig_mode = 'blank'
+        print_options = {
+            'signature_mode': sig_mode,
+            'signer_name': (request.args.get('signer_name') or '').strip(),
+            'signer_title': (request.args.get('signer_title') or '').strip(),
+            'acceptance_date': (request.args.get('acceptance_date') or request.args.get('signed_date') or '').strip(),
+            'order_date': (request.args.get('order_date') or '').strip() or None,
+        }
+        if sig_mode == 'esign':
+            from user_signature_persistence import ensure_user_signature_schema
+            ensure_user_signature_schema(db)
+            sig_path = getattr(current_user, 'signature_path', None)
+            if sig_path and os.path.isfile(sig_path):
+                try:
+                    with open(sig_path, 'rb') as fh:
+                        print_options['signature_image_bytes'] = fh.read()
+                except OSError:
+                    pass
+            if not print_options.get('signer_name'):
+                print_options['signer_name'] = (
+                    getattr(current_user, 'signature_legal_name', None)
+                    or getattr(current_user, 'full_name', None)
+                    or ''
+                )
+
     try:
         pdf_bytes = build_change_order_template_pdf(
             co,
@@ -18381,6 +18411,7 @@ def api_change_order_print_template(co_id):
             ChangeEventLineItem=ChangeEventLineItem,
             ChangeOrder=ChangeOrder,
             Commitment=Commitment,
+            print_options=print_options,
         )
     except FileNotFoundError as exc:
         return jsonify({'error': str(exc)}), 500
