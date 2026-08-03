@@ -508,6 +508,7 @@ def build_change_order_template_pdf(
     ChangeEvent=None,
     ChangeEventLineItem=None,
     ChangeOrder=None,
+    Commitment=None,
 ) -> bytes:
     from change_order_template_persistence import resolve_template_pdf_path
     import json
@@ -532,5 +533,16 @@ def build_change_order_template_pdf(
             ChangeEventLineItem=ChangeEventLineItem,
             ChangeOrder=ChangeOrder,
             page_layout=layout,
+        )
+    if engine in ('sub_co', 'sub_co_v1', 'subcontract_co'):
+        from sub_change_order_pdf import fill_sub_change_order_pdf
+        return fill_sub_change_order_pdf(
+            co,
+            template_path=template_path,
+            project=project,
+            company_info=company_info,
+            allocations=allocations,
+            Commitment=Commitment,
+            ChangeOrder=ChangeOrder,
         )
     raise ValueError(f'Unsupported change order template engine: {engine}')

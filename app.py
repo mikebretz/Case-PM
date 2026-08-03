@@ -18356,11 +18356,8 @@ def api_change_order_print_template(co_id):
         return jsonify({'error': str(exc)}), 403
 
     template_id = request.args.get('template_id', type=int)
-    template_row = ChangeOrderTemplate.query.get(template_id) if template_id else None
-    if not template_row:
-        template_row = ChangeOrderTemplate.query.filter_by(is_active=True, is_default=True).first()
-    if not template_row:
-        template_row = ChangeOrderTemplate.query.filter_by(is_active=True).order_by(ChangeOrderTemplate.id.asc()).first()
+    from change_order_template_persistence import resolve_print_template_for_co
+    template_row = resolve_print_template_for_co(co, ChangeOrderTemplate, template_id=template_id)
     if not template_row:
         return jsonify({'error': 'No change order print template is configured.'}), 404
 
@@ -18383,13 +18380,14 @@ def api_change_order_print_template(co_id):
             ChangeEvent=ChangeEvent,
             ChangeEventLineItem=ChangeEventLineItem,
             ChangeOrder=ChangeOrder,
+            Commitment=Commitment,
         )
     except FileNotFoundError as exc:
         return jsonify({'error': str(exc)}), 500
     except Exception as exc:
         return jsonify({'error': f'Could not generate change order form: {exc}'}), 500
 
-    filename = f'CO_{co.number or co_id}_{template_row.slug}.pdf'
+    filename = f'{"SCO" if co_dict.get("is_subcontract") else "CO"}_{co.number or co_id}_{template_row.slug}.pdf'
     return send_file(
         io.BytesIO(pdf_bytes),
         mimetype='application/pdf',

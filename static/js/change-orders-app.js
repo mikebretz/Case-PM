@@ -1925,6 +1925,24 @@
     }
   }
 
+  function subCoPrintTemplateId() {
+    const subTpl = state.coTemplates.find(
+      (t) => t.engine === 'sub_co_v1' || t.slug === 'sub_co',
+    );
+    return subTpl ? subTpl.id : null;
+  }
+
+  function resolvePrintTemplateId(co, templateId) {
+    if (templateId) return templateId;
+    if (co && isSubCo(co)) {
+      const subId = subCoPrintTemplateId();
+      if (subId) return subId;
+    }
+    return state.selectedPrintTemplateId
+      || state.coTemplates.find((t) => t.is_default)?.id
+      || state.coTemplates[0]?.id;
+  }
+
   function printTemplateUrl(coId, templateId) {
     const tid = templateId || state.selectedPrintTemplateId;
     const qs = tid ? `?template_id=${encodeURIComponent(tid)}` : '';
@@ -1935,9 +1953,20 @@
     const targetId = id || state.drawerRecord?.id || approvalContext?.coId;
     if (!targetId) return;
     if (!state.coTemplates.length) await loadCoTemplates();
-    const tid = templateId || state.selectedPrintTemplateId || state.coTemplates.find(t => t.is_default)?.id || state.coTemplates[0]?.id;
+    let co = state.changeOrders.find((c) => c.id == targetId) || (state.drawerRecord?.id == targetId ? state.drawerRecord : null);
+    if (!co) {
+      try {
+        co = await api(`/api/change-orders/${targetId}`);
+      } catch (err) {
+        alert(err.message || 'Could not load change order.');
+        return;
+      }
+    }
+    const tid = resolvePrintTemplateId(co, templateId);
     if (!tid) {
-      alert('No change order print template is configured. Upload one on the CO Templates tab.');
+      alert(isSubCo(co)
+        ? 'No subcontract change order print template is configured.'
+        : 'No change order print template is configured. Upload one on the CO Templates tab.');
       return;
     }
     window.open(printTemplateUrl(targetId, tid), '_blank', 'noopener');

@@ -7,6 +7,8 @@ from datetime import datetime
 
 ALDI_TEMPLATE_SLUG = 'aldi_co'
 ALDI_COMPANY_KEY = 'ALDI'
+SUB_CO_TEMPLATE_SLUG = 'sub_co'
+SUB_CO_ENGINE = 'sub_co_v1'
 
 
 def ensure_change_order_template_schema(engine, db, ChangeOrderTemplate):
@@ -35,6 +37,30 @@ def ensure_change_order_template_schema(engine, db, ChangeOrderTemplate):
         '''))
         db.session.commit()
     seed_default_templates(db, ChangeOrderTemplate)
+    seed_sub_co_template_if_missing(db, ChangeOrderTemplate)
+
+
+def seed_sub_co_template_if_missing(db, ChangeOrderTemplate):
+    """Backfill sub CO print template on existing databases."""
+    if not os.path.isfile(_sub_co_template_pdf_path()):
+        return
+    if ChangeOrderTemplate.query.filter_by(slug=SUB_CO_TEMPLATE_SLUG).first():
+        return
+    sub_tpl = ChangeOrderTemplate(
+        slug=SUB_CO_TEMPLATE_SLUG,
+        name='Subcontract Change Order (Case Contracting)',
+        company_key='CASE',
+        description='Official subcontract change order form — CONTRACT CHANGE ORDER for general contractors.',
+        template_pdf_path='static/templates/change_orders/sub_co_template.pdf',
+        engine=SUB_CO_ENGINE,
+        page_layout_json=json.dumps({'pages': 1}),
+        is_active=True,
+        is_default=False,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.session.add(sub_tpl)
+    db.session.commit()
 
 
 def _base_dir():
@@ -45,34 +71,74 @@ def _aldi_template_pdf_path():
     return os.path.join(_base_dir(), 'static', 'templates', 'change_orders', 'aldi_co_template.pdf')
 
 
+def _sub_co_template_pdf_path():
+    return os.path.join(_base_dir(), 'static', 'templates', 'change_orders', 'sub_co_template.pdf')
+
+
 def seed_default_templates(db, ChangeOrderTemplate):
-    if not os.path.isfile(_aldi_template_pdf_path()):
-        return
-    existing = ChangeOrderTemplate.query.filter_by(slug=ALDI_TEMPLATE_SLUG).first()
-    if existing:
-        return
-    layout = {
-        'summary_page': 0,
-        'sub_pages': [1, 2, 3, 4, 5],
-        'gc_material_page': 7,
-        'max_subs': 5,
-        'max_sub_rows_summary': 8,
-    }
-    tpl = ChangeOrderTemplate(
-        slug=ALDI_TEMPLATE_SLUG,
-        name='ALDI Change Order Form',
-        company_key=ALDI_COMPANY_KEY,
-        description='Official ALDI Change Order Form (CO) — summary plus subcontractor breakdown pages.',
-        template_pdf_path='static/templates/change_orders/aldi_co_template.pdf',
-        engine='aldi_v1',
-        page_layout_json=json.dumps(layout),
-        is_active=True,
-        is_default=True,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-    )
-    db.session.add(tpl)
-    db.session.commit()
+    if os.path.isfile(_aldi_template_pdf_path()):
+        existing = ChangeOrderTemplate.query.filter_by(slug=ALDI_TEMPLATE_SLUG).first()
+        if not existing:
+            layout = {
+                'summary_page': 0,
+                'sub_pages': [1, 2, 3, 4, 5],
+                'gc_material_page': 7,
+                'max_subs': 5,
+                'max_sub_rows_summary': 8,
+            }
+            tpl = ChangeOrderTemplate(
+                slug=ALDI_TEMPLATE_SLUG,
+                name='ALDI Change Order Form',
+                company_key=ALDI_COMPANY_KEY,
+                description='Official ALDI Change Order Form (CO) — summary plus subcontractor breakdown pages.',
+                template_pdf_path='static/templates/change_orders/aldi_co_template.pdf',
+                engine='aldi_v1',
+                page_layout_json=json.dumps(layout),
+                is_active=True,
+                is_default=True,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+            db.session.add(tpl)
+            db.session.commit()
+
+    if os.path.isfile(_sub_co_template_pdf_path()):
+        sub_existing = ChangeOrderTemplate.query.filter_by(slug=SUB_CO_TEMPLATE_SLUG).first()
+        if not sub_existing:
+            sub_tpl = ChangeOrderTemplate(
+                slug=SUB_CO_TEMPLATE_SLUG,
+                name='Subcontract Change Order (Case Contracting)',
+                company_key='CASE',
+                description='Official subcontract change order form — CONTRACT CHANGE ORDER for general contractors.',
+                template_pdf_path='static/templates/change_orders/sub_co_template.pdf',
+                engine=SUB_CO_ENGINE,
+                page_layout_json=json.dumps({'pages': 1}),
+                is_active=True,
+                is_default=False,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+            db.session.add(sub_tpl)
+            db.session.commit()
+
+
+def resolve_print_template_for_co(co, ChangeOrderTemplate, template_id=None):
+    """Pick PDF template: subcontract COs use the sub form unless template_id overrides."""
+    from co_persistence import is_subcontract_co
+
+    if template_id:
+        return ChangeOrderTemplate.query.get(template_id)
+    if is_subcontract_co(co):
+        row = ChangeOrderTemplate.query.filter_by(is_active=True, engine=SUB_CO_ENGINE).first()
+        if row:
+            return row
+        row = ChangeOrderTemplate.query.filter_by(is_active=True, slug=SUB_CO_TEMPLATE_SLUG).first()
+        if row:
+            return row
+    row = ChangeOrderTemplate.query.filter_by(is_active=True, is_default=True).first()
+    if row:
+        return row
+    return ChangeOrderTemplate.query.filter_by(is_active=True).order_by(ChangeOrderTemplate.id.asc()).first()
 
 
 def template_to_dict(row):
