@@ -16,6 +16,19 @@ def file_content_hash(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def document_storage_stem(name: str, original_filename: str | None, ext: str) -> str:
+    """Single-extension stem for stored document filenames (avoids name.pdf.pdf)."""
+    from werkzeug.utils import secure_filename
+
+    raw = (name or original_filename or 'file').strip()
+    stem = secure_filename(raw).replace(' ', '_')
+    ext_l = (ext or 'bin').lower().lstrip('.')
+    if stem.lower().endswith(f'.{ext_l}'):
+        stem = stem[: -(len(ext_l) + 1)]
+    stem = stem.rstrip('.')[:80]
+    return stem or 'file'
+
+
 def _program_document_defaults() -> dict[str, Any]:
     try:
         from program_settings_persistence import load_document_defaults
