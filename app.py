@@ -7,7 +7,7 @@
 # Cleaned & Completed Full Version (vFinal)
 # ============================================================
 
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, send_from_directory, send_file
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, send_from_directory, send_file, abort
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -394,6 +394,20 @@ def _guard_upload_downloads():
     path = request.path or ''
     if not path.startswith('/uploads/'):
         return
+    if path.startswith('/uploads/documents/'):
+        import re
+        from urllib.parse import unquote
+        m = re.match(r'^/uploads/documents/(\d+)/(.+)$', path.split('?', 1)[0])
+        if m:
+            pid = int(m.group(1))
+            safe_name = os.path.basename(unquote(m.group(2)).replace('\\', '/'))
+            doc = _document_by_storage_name(pid, safe_name)
+            if doc:
+                try:
+                    _assert_document_view(doc)
+                    return
+                except PermissionError as exc:
+                    return jsonify({'error': str(exc)}), 403
     try:
         from project_security import guard_upload_request
         blocked = guard_upload_request(current_user, path)
@@ -8538,6 +8552,57 @@ def _folder_access(folder, required='view'):
     return bool(user_perm.can_view or user_perm.can_upload or user_perm.can_manage)
 
 
+def _document_storage_stem(name: str, original_filename: str | None, ext: str) -> str:
+    from document_features import document_storage_stem
+    return document_storage_stem(name, original_filename, ext)
+
+
+def _document_by_storage_name(project_id: int, filename: str):
+    safe = os.path.basename(str(filename or '').replace('\\', '/'))
+    if not safe:
+        return None
+    return _active_documents().filter_by(project_id=int(project_id), filename=safe).first()
+
+
+def _assert_document_view(doc) -> None:
+    if not doc or getattr(doc, 'deleted_at', None):
+        raise PermissionError('Document not found')
+    from project_access import user_can_access_project
+    if not user_can_access_project(current_user, doc.project_id, Project):
+        raise PermissionError('You do not have access to this project.')
+    if doc.folder_id:
+        folder = DocumentFolder.query.get(doc.folder_id)
+        if folder and not _folder_access(folder, 'view'):
+            raise PermissionError('You do not have permission to view this folder.')
+
+
+def _require_document_view(doc) -> None:
+    try:
+        _assert_document_view(doc)
+    except PermissionError as exc:
+        abort(403, description=str(exc))
+
+
+def _send_document_bytes(doc, *, as_attachment: bool = False):
+    directory = os.path.join(app.config['UPLOAD_FOLDER'], 'documents', str(doc.project_id))
+    disk_name = doc.filename
+    path = os.path.join(directory, disk_name)
+    if not os.path.isfile(path) and disk_name.lower().endswith('.pdf.pdf'):
+        alt = disk_name[:-4]
+        alt_path = os.path.join(directory, alt)
+        if os.path.isfile(alt_path):
+            disk_name = alt
+            path = alt_path
+    if not os.path.isfile(path):
+        abort(404)
+    return send_from_directory(
+        directory,
+        disk_name,
+        as_attachment=as_attachment,
+        download_name=doc.original_filename or doc.name,
+    )
+
+
 def _archive_document_version(doc, notes=None):
     from document_persistence import version_storage_path
     import shutil
@@ -8906,7 +8971,8 @@ def _save_document_bytes(
             file_path = os.path.join(folder_path, stored_name)
     else:
         stamp = datetime.utcnow().strftime('%Y%m%d%H%M%S%f')
-        stored_name = f'{stamp}_{secure_filename(name).replace(" ", "_")[:80]}.{ext}'
+        stem = _document_storage_stem(name, original_filename, ext)
+        stored_name = f'{stamp}_{stem}.{ext}'
         file_path = os.path.join(folder_path, stored_name)
     with open(file_path, 'wb') as fh:
         fh.write(file_bytes)
@@ -9112,7 +9178,7 @@ def _folder_preview_thumbs(folder_id, project_id, limit=3):
         if mime.startswith('image/') or any(name.endswith(x) for x in ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp')):
             thumbs.append({
                 'type': 'image',
-                'url': f'/uploads/documents/{doc.project_id}/{doc.filename}',
+                'url': f'/api/documents/{doc.id}/file',
                 'name': doc.name,
             })
         elif 'pdf' in mime or name.endswith('.pdf'):
@@ -9723,24 +9789,21 @@ def api_documents_force_unlock(doc_id):
     return jsonify({'ok': True, 'document': _document_dict_with_user(doc)})
 
 
+@app.route('/api/documents/<int:doc_id>/file', methods=['GET'])
+@login_required
+def api_documents_file(doc_id):
+    """Inline document bytes for viewer (PDF preview, etc.)."""
+    doc = Document.query.get_or_404(doc_id)
+    _require_document_view(doc)
+    return _send_document_bytes(doc, as_attachment=False)
+
+
 @app.route('/api/documents/<int:doc_id>/download')
 @login_required
 def api_documents_download(doc_id):
-    from financial_security import require_financial_project_access
     doc = Document.query.get_or_404(doc_id)
-    try:
-        require_financial_project_access(current_user, doc.project_id, Project)
-    except (ValueError, PermissionError) as exc:
-        return jsonify({'error': str(exc)}), 403
-    directory = os.path.join(app.config['UPLOAD_FOLDER'], 'documents', str(doc.project_id))
-    if not os.path.isfile(os.path.join(directory, doc.filename)):
-        return jsonify({'error': 'File not found'}), 404
-    return send_from_directory(
-        directory,
-        doc.filename,
-        as_attachment=True,
-        download_name=doc.original_filename or doc.name,
-    )
+    _require_document_view(doc)
+    return _send_document_bytes(doc, as_attachment=True)
 
 
 @app.route('/api/documents/<int:doc_id>/share-links', methods=['GET'])
@@ -9796,10 +9859,20 @@ def api_documents_delete(doc_id):
 @app.route('/uploads/documents/<int:project_id>/<path:filename>')
 @login_required
 def serve_document_file(project_id, filename):
+    safe_name = os.path.basename(str(filename or '').replace('\\', '/'))
+    doc = _document_by_storage_name(project_id, safe_name)
+    if doc:
+        _require_document_view(doc)
+    else:
+        from project_security import _check_general_project_access
+        try:
+            _check_general_project_access(current_user, int(project_id))
+        except PermissionError:
+            abort(403)
     directory = os.path.join(app.config['UPLOAD_FOLDER'], 'documents', str(project_id))
-    if not os.path.isfile(os.path.join(directory, filename)):
-        return 'Not found', 404
-    return send_from_directory(directory, filename)
+    if not os.path.isfile(os.path.join(directory, safe_name)):
+        abort(404)
+    return send_from_directory(directory, safe_name)
 
 
 # ==================== DOCUMENTS — SEARCH, TRASH, VERSIONS, COMMENTS, FOLDER SHARES ====================

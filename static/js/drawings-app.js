@@ -3126,7 +3126,12 @@
 
   function getViewerPdfUrl() {
     if (state.openDocument) {
-      return state.openDocument.file_url || `/api/documents/${state.openDocument.id}/download`;
+      const docId = state.openDocument.id;
+      if (docId) {
+        return `/api/documents/${docId}/file`;
+      }
+      return state.openDocument.file_url
+        || `/api/documents/${state.openDocument.id}/download`;
     }
     if (!state.openDrawing) return null;
     const current = state.revisions.find(r => r.is_current);

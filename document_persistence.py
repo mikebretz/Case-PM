@@ -631,7 +631,7 @@ def document_to_dict(
         'created_at': doc.created_at.isoformat() if doc.created_at else None,
         'updated_at': doc.updated_at.isoformat() if getattr(doc, 'updated_at', None) else None,
         'deleted_at': doc.deleted_at.isoformat() if getattr(doc, 'deleted_at', None) else None,
-        'file_url': f'/uploads/documents/{doc.project_id}/{doc.filename}',
+        'file_url': f'/api/documents/{doc.id}/file',
         'download_url': f'/api/documents/{doc.id}/download',
         'editor_kind': _editor_kind_for(doc),
     }
