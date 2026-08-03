@@ -1,17 +1,22 @@
 """Fill the Case Contracting subcontract change order PDF (AcroForm)."""
 from __future__ import annotations
 
+import json
 import os
 from datetime import datetime
-from typing import Any
 
 import fitz
 
 from co_persistence import is_subcontract_co
 
-# Approximate overlay for left "DATE: ___/___/___" (no AcroForm field on template).
-ACCEPTANCE_DATE_RECT = fitz.Rect(268, 710, 338, 728)
-SIGNATURE_IMAGE_RECT = fitz.Rect(362, 702, 580, 744)
+# Layout tuned to match the SCO PDF (not pixel-perfect AcroForm bounds).
+ORDER_DATE_RECT = fitz.Rect(388, 178, 492, 198)
+ACCEPTANCE_DATE_COVER = fitz.Rect(226, 708, 342, 728)
+ACCEPTANCE_DATE_TEXT_RECT = fitz.Rect(268, 709, 340, 727)
+SIG_BLOCK_COVER = fitz.Rect(360, 700, 582, 746)
+SIG_NAME_RECT = fitz.Rect(366, 704, 578, 722)
+SIG_TITLE_RECT = fitz.Rect(366, 724, 578, 742)
+SIGNATURE_IMAGE_RECT = fitz.Rect(366, 700, 578, 738)
 
 
 def _fmt_money_plain(value) -> str:
@@ -25,45 +30,25 @@ def _fmt_money_plain(value) -> str:
     return f'-{text}' if negative else text
 
 
-def _fmt_date_compact(value) -> str:
-    """Short date for narrow PDF fields (e.g. 8/3/26)."""
+def _parse_date(value):
     if not value:
-        return ''
-    dt = None
+        return None
     if hasattr(value, 'strftime'):
-        dt = value
-    else:
-        raw = str(value).strip()[:19]
-        for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%m-%d-%Y', '%Y-%m-%dT%H:%M:%S'):
-            try:
-                dt = datetime.strptime(raw[:10] if 'T' not in fmt else raw.replace('Z', ''), fmt)
-                break
-            except ValueError:
-                continue
+        return value
+    raw = str(value).strip()[:19]
+    for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%m-%d-%Y', '%Y-%m-%dT%H:%M:%S'):
+        try:
+            chunk = raw[:10] if 'T' not in fmt else raw.replace('Z', '')
+            return datetime.strptime(chunk, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _fmt_date_display(value) -> str:
+    dt = _parse_date(value)
     if not dt:
-        return str(value).strip()[:10]
-    try:
-        return dt.strftime('%-m/%-d/%y') if os.name != 'nt' else dt.strftime('%#m/%#d/%y')
-    except ValueError:
-        return dt.strftime('%m/%d/%y')
-
-
-def _fmt_date_acceptance(value) -> str:
-    if not value:
-        return ''
-    if hasattr(value, 'strftime'):
-        dt = value
-    else:
-        raw = str(value).strip()[:10]
-        dt = None
-        for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%m-%d-%Y'):
-            try:
-                dt = datetime.strptime(raw, fmt)
-                break
-            except ValueError:
-                continue
-        if not dt:
-            return raw
+        return str(value).strip()[:10] if value else ''
     try:
         return dt.strftime('%-m/%-d/%Y') if os.name != 'nt' else dt.strftime('%#m/%#d/%Y')
     except ValueError:
@@ -88,6 +73,79 @@ def _resolve_commitment(co, Commitment=None):
     if not ref:
         return None
     return Commitment.query.filter_by(project_id=co.project_id, number=ref).first()
+
+
+def _resolve_vendor_company(co, Company=None, commitment=None):
+    if Company is None:
+        return None
+    cid = getattr(co, 'company_id', None)
+    if cid is not None and str(cid).strip() != '':
+        try:
+            row = Company.query.get(int(cid))
+            if row:
+                return row
+        except (TypeError, ValueError):
+            pass
+    name = (getattr(co, 'company_name', None) or '').strip()
+    if not name and commitment:
+        name = (getattr(commitment, 'company_name', None) or '').strip()
+    if name:
+        return Company.query.filter_by(name=name).first()
+    return None
+
+
+def _company_address_lines(company) -> list[str]:
+    if not company:
+        return []
+    lines: list[str] = []
+    raw = getattr(company, 'details_json', None)
+    if raw:
+        try:
+            data = json.loads(raw) if isinstance(raw, str) else (raw or {})
+        except (TypeError, json.JSONDecodeError):
+            data = {}
+        if isinstance(data, dict):
+            for key in ('address', 'street', 'mailing_address', 'address_line1', 'address_line2'):
+                val = (data.get(key) or '').strip()
+                if val and val not in lines:
+                    lines.append(val)
+            city = (data.get('city') or '').strip()
+            state = (data.get('state') or '').strip()
+            postal = (data.get('zip') or data.get('postal_code') or '').strip()
+            city_line = city
+            if city and state:
+                city_line = f'{city}, {state}'
+            elif state:
+                city_line = state
+            if postal:
+                city_line = f'{city_line} {postal}'.strip() if city_line else postal
+            if city_line and city_line not in lines:
+                lines.append(city_line)
+    return lines
+
+
+def _to_subcontractor_block(co, commitment=None, vendor_company=None) -> str:
+    """TO: company name and mailing address only."""
+    name = (getattr(co, 'company_name', None) or '').strip()
+    if not name and commitment:
+        name = (getattr(commitment, 'company_name', None) or '').strip()
+    if not name and vendor_company:
+        name = (getattr(vendor_company, 'name', None) or '').strip()
+    lines = []
+    if name:
+        lines.append(name)
+    lines.extend(_company_address_lines(vendor_company))
+    return '\n'.join(lines)
+
+
+def _project_label(project) -> str:
+    if not project:
+        return ''
+    name = (getattr(project, 'name', None) or '').strip()
+    number = (getattr(project, 'number', None) or '').strip()
+    if name and number:
+        return f'{name}  {number}'
+    return name or number
 
 
 def _matches_sub_co_scope(candidate, co) -> bool:
@@ -147,39 +205,20 @@ def _build_description(co, allocations=None) -> str:
     return '\n'.join(parts)
 
 
-def _project_label(project) -> str:
-    if not project:
-        return ''
-    name = (getattr(project, 'name', None) or '').strip()
-    number = (getattr(project, 'number', None) or '').strip()
-    if name and number:
-        return f'{name} {number}'
-    return name or number
+def _paint_white(page, rect: fitz.Rect) -> None:
+    page.draw_rect(rect, color=(1, 1, 1), fill=(1, 1, 1), overlay=True)
 
 
-def _to_subcontractor_block(co, commitment=None) -> str:
-    lines = []
-    sub_name = (getattr(co, 'company_name', None) or '').strip()
-    if not sub_name and commitment:
-        sub_name = (getattr(commitment, 'company_name', None) or '').strip()
-    if sub_name:
-        lines.append(sub_name)
-    contact = (getattr(co, 'contact_name', None) or '').strip()
-    if not contact and commitment:
-        contact = (getattr(commitment, 'contact_name', None) or '').strip()
-    if contact:
-        lines.append(f'Attn: {contact}')
-    email = (getattr(co, 'contact_email', None) or '').strip()
-    if not email and commitment:
-        email = (getattr(commitment, 'contact_email', None) or '').strip()
-    if email:
-        lines.append(email)
-    phone = (getattr(co, 'contact_phone', None) or '').strip()
-    if not phone and commitment:
-        phone = (getattr(commitment, 'contact_phone', None) or '').strip()
-    if phone:
-        lines.append(phone)
-    return '\n'.join(lines)
+def _overlay_text(page, rect: fitz.Rect, text: str, *, fontsize: float = 9, align: int = fitz.TEXT_ALIGN_LEFT) -> None:
+    if not text:
+        return
+    page.insert_textbox(
+        rect,
+        text,
+        fontsize=fontsize,
+        fontname='helv',
+        align=align,
+    )
 
 
 def _set_widget(widget, value, *, font_size: float | None = None) -> None:
@@ -190,6 +229,12 @@ def _set_widget(widget, value, *, font_size: float | None = None) -> None:
             pass
     widget.field_value = '' if value is None else str(value)
     widget.update()
+
+
+def _clear_signature_widgets(page) -> None:
+    for widget in page.widgets() or []:
+        if widget.field_name in ('ComboBox1', 'ComboBox2'):
+            _set_widget(widget, '')
 
 
 def _apply_signature_block(
@@ -205,36 +250,39 @@ def _apply_signature_block(
     name = (signer_name or '').strip()
     title = (signer_title or '').strip()
 
-    for widget in page.widgets() or []:
-        if widget.field_name == 'ComboBox1':
-            if mode == 'name':
-                _set_widget(widget, name[:80], font_size=9)
-            elif mode == 'esign' and name:
-                _set_widget(widget, name[:80], font_size=9)
-            else:
-                _set_widget(widget, '', font_size=9)
-        elif widget.field_name == 'ComboBox2':
-            if mode == 'name':
-                _set_widget(widget, title[:120], font_size=8)
-            elif mode == 'esign' and title:
-                _set_widget(widget, title[:120], font_size=8)
-            else:
-                _set_widget(widget, '', font_size=8)
+    _clear_signature_widgets(page)
+    _paint_white(page, SIG_BLOCK_COVER)
 
-    if mode == 'esign' and signature_image_bytes:
-        try:
-            page.insert_image(SIGNATURE_IMAGE_RECT, stream=signature_image_bytes, keep_proportion=True, overlay=True)
-        except Exception:
-            pass
+    if mode == 'name' and (name or title):
+        if name:
+            _overlay_text(page, SIG_NAME_RECT, name, fontsize=10, align=fitz.TEXT_ALIGN_LEFT)
+        if title:
+            _overlay_text(page, SIG_TITLE_RECT, title, fontsize=9, align=fitz.TEXT_ALIGN_LEFT)
+    elif mode == 'esign':
+        if signature_image_bytes:
+            try:
+                page.insert_image(SIGNATURE_IMAGE_RECT, stream=signature_image_bytes, keep_proportion=True, overlay=True)
+            except Exception:
+                pass
+        if name:
+            _overlay_text(page, SIG_NAME_RECT, name, fontsize=10, align=fitz.TEXT_ALIGN_LEFT)
+        if title:
+            _overlay_text(page, SIG_TITLE_RECT, title, fontsize=9, align=fitz.TEXT_ALIGN_LEFT)
 
     if acceptance_date:
-        page.insert_textbox(
-            ACCEPTANCE_DATE_RECT,
-            acceptance_date,
-            fontsize=8,
-            fontname='helv',
-            align=fitz.TEXT_ALIGN_LEFT,
-        )
+        _paint_white(page, ACCEPTANCE_DATE_COVER)
+        _overlay_text(page, ACCEPTANCE_DATE_TEXT_RECT, acceptance_date, fontsize=10, align=fitz.TEXT_ALIGN_LEFT)
+
+
+def _overlay_multiline_field(page, widget_name: str, text: str, *, fontsize: float = 9) -> None:
+    rect = None
+    for widget in page.widgets() or []:
+        if widget.field_name == widget_name:
+            rect = fitz.Rect(widget.rect)
+            _set_widget(widget, '')
+            break
+    if rect and text:
+        _overlay_text(page, rect, text, fontsize=fontsize, align=fitz.TEXT_ALIGN_LEFT)
 
 
 def fill_sub_change_order_pdf(
@@ -246,6 +294,7 @@ def fill_sub_change_order_pdf(
     allocations=None,
     Commitment=None,
     ChangeOrder=None,
+    Company=None,
     print_options: dict | None = None,
 ) -> bytes:
     if not os.path.isfile(template_path):
@@ -253,6 +302,7 @@ def fill_sub_change_order_pdf(
 
     opts = print_options or {}
     commitment = _resolve_commitment(co, Commitment)
+    vendor_company = _resolve_vendor_company(co, Company, commitment)
     original = float(getattr(commitment, 'original_amount', 0) or 0) if commitment else 0.0
     previous = _sum_prior_approved_sub_cos(co, ChangeOrder)
     this_amount = float(getattr(co, 'amount', 0) or 0)
@@ -261,13 +311,14 @@ def fill_sub_change_order_pdf(
     co_date = getattr(co, 'date', None) or getattr(co, 'approved_at', None)
     order_date = opts.get('order_date') or co_date
     acceptance_raw = opts.get('acceptance_date') or opts.get('signed_date')
-    acceptance_date = _fmt_date_acceptance(acceptance_raw) if acceptance_raw else ''
+    acceptance_date = _fmt_date_display(acceptance_raw) if acceptance_raw else ''
+
+    order_date_text = _fmt_date_display(order_date)
+    to_text = _to_subcontractor_block(co, commitment, vendor_company)
+    project_text = _project_label(project)
 
     field_values = {
         'Text7': _order_number_for_form(co),
-        'Text8': _fmt_date_compact(order_date),
-        'Text1': _to_subcontractor_block(co, commitment),
-        'Text2': _project_label(project),
         'Text9': _fmt_money_plain(original),
         'Text10': _fmt_money_plain(previous),
         'Text11': _fmt_money_plain(this_amount),
@@ -275,34 +326,26 @@ def fill_sub_change_order_pdf(
         'Text5': _build_description(co, allocations),
         'Text6': _fmt_money_plain(this_amount),
     }
-    widget_fonts = {
-        'Text8': 7,
-        'Text7': 8,
-    }
 
     doc = fitz.open(template_path)
     try:
         page = doc[0]
-        text8_rect = None
-        order_date_text = field_values.get('Text8') or ''
+        skip_widget_fill = {'Text1', 'Text2', 'Text8', 'ComboBox1', 'ComboBox2'}
         for widget in page.widgets() or []:
-            if widget.field_name == 'Text8':
-                text8_rect = fitz.Rect(widget.rect)
-                _set_widget(widget, '', font_size=7)
+            if widget.field_name in skip_widget_fill:
+                _set_widget(widget, '')
                 continue
             val = field_values.get(widget.field_name)
             if val is None:
                 continue
-            _set_widget(widget, val, font_size=widget_fonts.get(widget.field_name))
+            _set_widget(widget, val, font_size=9)
 
-        if text8_rect and order_date_text:
-            page.insert_textbox(
-                text8_rect,
-                order_date_text,
-                fontsize=7,
-                fontname='helv',
-                align=fitz.TEXT_ALIGN_CENTER,
-            )
+        if order_date_text:
+            _paint_white(page, ORDER_DATE_RECT)
+            _overlay_text(page, ORDER_DATE_RECT, order_date_text, fontsize=10, align=fitz.TEXT_ALIGN_RIGHT)
+
+        _overlay_multiline_field(page, 'Text1', to_text, fontsize=9)
+        _overlay_multiline_field(page, 'Text2', project_text, fontsize=9)
 
         _apply_signature_block(
             page,

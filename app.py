@@ -18369,6 +18369,7 @@ def api_change_order_print_template(co_id):
     project = Project.query.get(co.project_id)
 
     print_options = None
+    vendor_company = None
     from co_persistence import is_subcontract_co
     if is_subcontract_co(co):
         sig_mode = (request.args.get('signature_mode') or 'blank').strip().lower()
@@ -18398,6 +18399,15 @@ def api_change_order_print_template(co_id):
                     or ''
                 )
 
+        cid = getattr(co, 'company_id', None)
+        if cid is not None and str(cid).strip() != '':
+            try:
+                vendor_company = Company.query.get(int(cid))
+            except (TypeError, ValueError):
+                vendor_company = None
+        if vendor_company is None and (co.company_name or '').strip():
+            vendor_company = Company.query.filter_by(name=(co.company_name or '').strip()).first()
+
     try:
         pdf_bytes = build_change_order_template_pdf(
             co,
@@ -18411,6 +18421,7 @@ def api_change_order_print_template(co_id):
             ChangeEventLineItem=ChangeEventLineItem,
             ChangeOrder=ChangeOrder,
             Commitment=Commitment,
+            Company=vendor_company if is_subcontract_co(co) else None,
             print_options=print_options,
         )
     except FileNotFoundError as exc:
