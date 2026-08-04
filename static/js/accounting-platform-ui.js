@@ -12,7 +12,7 @@
 
   const MODULE_ROUTES = [
     'dashboard', 'gl', 'ap', 'ar', 'bank', 'tax', 'assets', 'inventory', 'oe', 'po',
-    'jobcost', 'payroll', 'payments', 'reports', 'consolidation', 'admin',
+    'jobcost', 'cost-codes', 'payroll', 'payments', 'reports', 'consolidation', 'admin',
   ];
 
   async function render() {

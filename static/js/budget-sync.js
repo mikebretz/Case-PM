@@ -116,6 +116,7 @@
         return { ok: false, error: json.error || `Save failed (HTTP ${res.status})` };
       }
       serverVersion = json.version || serverVersion;
+      if (global.CasePMCostCodeLibrary?.invalidate) global.CasePMCostCodeLibrary.invalidate(pid);
       return { ok: true, ...json };
     } catch (e) {
       console.warn('[BudgetSync] save failed', e);

@@ -271,7 +271,10 @@
 <dialog id="settingsModal" class="modal rounded-md w-full max-w-2xl p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
     <div class="p-6">
         <div class="flex justify-between items-center mb-6">
-            <h3 class="text-xl font-semibold">Budget Settings</h3>
+            <div>
+                <h3 class="text-xl font-semibold">Budget Settings</h3>
+                <p class="text-[11px] text-zinc-500 mt-1">Cost codes &amp; types are managed in <a href="/accounting?module=cost-codes" class="text-emerald-400 hover:underline">Accounting → Cost Code Library</a> (shared with pay apps &amp; COs).</p>
+            </div>
             <button onclick="document.getElementById('settingsModal').close()" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-times text-xl"></i></button>
         </div>
 

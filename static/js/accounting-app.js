@@ -127,6 +127,14 @@
           root.innerHTML = renderJobCost();
         }
       }
+      else if (route === 'cost-codes') {
+        if (global.CasePMAcctCostCodesUI) {
+          global.CasePMAcctCostCodesUI.init({ api, esc, money, switchModule, AD: () => global.CasePMAccountingDialog || {}, projectId });
+          root.innerHTML = await global.CasePMAcctCostCodesUI.render();
+        } else {
+          root.innerHTML = '<p class="text-zinc-500 text-sm">Cost code library UI failed to load.</p>';
+        }
+      }
       else if (route === 'construction-sync') {
         if (global.CasePMAcctChunksUI?.renderConstructionSyncPanel) {
           root.innerHTML = await global.CasePMAcctChunksUI.renderConstructionSyncPanel();
@@ -198,6 +206,9 @@
       }
       if (route === 'jobcost' && global.CasePMAcctChunksUI?.bindJobCostPanel) {
         global.CasePMAcctChunksUI.bindJobCostPanel();
+      }
+      if (route === 'cost-codes' && global.CasePMAcctCostCodesUI?.bindHandlers) {
+        global.CasePMAcctCostCodesUI.bindHandlers();
       }
       if (route === 'construction-sync' && global.CasePMAcctChunksUI?.bindConstructionSyncPanel) {
         global.CasePMAcctChunksUI.bindConstructionSyncPanel();
