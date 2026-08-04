@@ -35,6 +35,9 @@
     state.summary = data.summary || {};
     state.budget_url = data.budget_url;
     state.version = data.version;
+    if (state.library) {
+      state.library.activeCostCodeList = 'custom';
+    }
   }
 
   function renderTypesEditor() {
@@ -52,16 +55,16 @@
   function renderCustomCodes() {
     const rows = state.library?.customCostCodes || [];
     if (!rows.length) {
-      return '<p class="text-xs text-zinc-500">No custom library codes — budget line codes still appear in the picker.</p>';
+      return '<p class="text-xs text-zinc-500">No cost codes in the library yet. Upload Excel/CSV or add codes below.</p>';
     }
-    return `<div class="overflow-x-auto max-h-56 overflow-y-auto border border-zinc-700 rounded">
+    return `<div class="overflow-x-auto max-h-72 overflow-y-auto border border-zinc-700 rounded">
       <table class="w-full text-xs">
-        <thead class="text-zinc-500 sticky top-0 bg-zinc-900"><tr><th class="text-left p-2">Code</th><th class="text-left p-2">Description</th><th class="text-left p-2">Type</th><th></th></tr></thead>
+        <thead class="text-zinc-500 sticky top-0 bg-zinc-900"><tr><th class="text-left p-2">Code</th><th class="text-left p-2">Description</th><th class="text-left p-2">Type</th><th class="text-right p-2 w-16"></th></tr></thead>
         <tbody>${rows.map((r, i) => `<tr class="border-t border-zinc-800">
           <td class="p-2 font-mono text-emerald-400">${esc(r.code)}</td>
           <td class="p-2">${esc(r.description || '')}</td>
           <td class="p-2 text-zinc-400">${esc(r.cost_type || '')}</td>
-          <td class="p-2"><button type="button" class="text-red-400" data-cc-remove-code="${i}">×</button></td>
+          <td class="p-2 text-right"><button type="button" class="text-red-400 hover:text-red-300" data-cc-remove-code="${i}" title="Remove">Remove</button></td>
         </tr>`).join('')}</tbody>
       </table>
     </div>`;
@@ -101,29 +104,24 @@
     }
     await load();
     const sum = state.summary || {};
-    const active = state.library?.activeCostCodeList || 'csi';
+    const libCount = (state.library?.customCostCodes || []).length;
     return `<div class="space-y-5 max-w-4xl">
       <div>
         <h2 class="text-lg font-semibold text-white">Cost Code Library</h2>
-        <p class="text-xs text-zinc-400 mt-1">Central job cost catalog for this project (like Procore cost codes or Sage job phases). Pay applications, budget, commitments, and change orders pull from this list.</p>
+        <p class="text-xs text-zinc-400 mt-1">Your project cost code list for pay apps, budget, commitments, and change orders. Upload your company or Sage/Procore export — no built-in CSI master list.</p>
       </div>
       <div class="grid md:grid-cols-3 gap-2 text-sm">
-        <div class="bg-zinc-800 border border-zinc-700 rounded p-3"><span class="text-zinc-500 text-xs">Picker codes</span><br><strong>${sum.picker_count || 0}</strong></div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded p-3"><span class="text-zinc-500 text-xs">Library codes</span><br><strong>${libCount}</strong></div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded p-3"><span class="text-zinc-500 text-xs">Picker total</span><br><strong>${sum.picker_count || 0}</strong></div>
         <div class="bg-zinc-800 border border-zinc-700 rounded p-3"><span class="text-zinc-500 text-xs">From budget lines</span><br><strong>${sum.budget_line_codes || 0}</strong></div>
-        <div class="bg-zinc-800 border border-zinc-700 rounded p-3"><span class="text-zinc-500 text-xs">Custom library</span><br><strong>${sum.custom_codes || 0}</strong></div>
       </div>
       <div class="flex flex-wrap gap-2 text-xs">
-        <a href="${esc(state.budget_url || '/budget')}" class="px-3 py-2 bg-zinc-800 border border-zinc-600 rounded hover:bg-zinc-700">Open Budget (lines &amp; CSI lists)</a>
-        <a href="/program-settings?tab=sage" class="px-3 py-2 bg-zinc-800 border border-zinc-600 rounded hover:bg-zinc-700">Sage cost code prefix → Settings</a>
+        <button type="button" id="ccLibUpload" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md font-semibold"><i class="fa-solid fa-upload mr-1"></i> Upload Excel / CSV</button>
+        <button type="button" id="ccLibClearAll" class="px-4 py-2 bg-red-900/80 hover:bg-red-900 rounded-md border border-red-800">Clear library</button>
+        <a href="${esc(state.budget_url || '/budget')}" class="px-3 py-2 bg-zinc-800 border border-zinc-600 rounded hover:bg-zinc-700 inline-flex items-center">Open Budget</a>
+        <a href="/program-settings?tab=sage" class="px-3 py-2 bg-zinc-800 border border-zinc-600 rounded hover:bg-zinc-700 inline-flex items-center">Sage prefix → Settings</a>
       </div>
-      <div class="border border-zinc-700 rounded-lg p-4 space-y-3">
-        <h3 class="text-sm font-medium text-zinc-200">Active code list</h3>
-        <select id="ccLibActiveList" class="w-full max-w-md bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm">
-          <option value="csi" ${active === 'csi' ? 'selected' : ''}>CSI Master (built-in)</option>
-          <option value="custom" ${active === 'custom' ? 'selected' : ''}>Custom library codes</option>
-        </select>
-        <p class="text-[10px] text-zinc-500">Budget page uses this when adding lines from the master list. Budget dollar amounts always come from budget lines.</p>
-      </div>
+      <p class="text-[10px] text-zinc-500 -mt-2">Spreadsheet columns: <span class="font-mono">Cost Code</span>, <span class="font-mono">Description</span> (optional <span class="font-mono">Cost Type</span>). Combined cells like <span class="font-mono">03-3000 - Concrete</span> are supported.</p>
       <div class="border border-zinc-700 rounded-lg p-4 space-y-3">
         <div class="flex justify-between items-center">
           <h3 class="text-sm font-medium text-zinc-200">Cost types</h3>
@@ -133,31 +131,30 @@
       </div>
       <div class="border border-zinc-700 rounded-lg p-4 space-y-3">
         <div class="flex justify-between items-center">
-          <h3 class="text-sm font-medium text-zinc-200">Custom cost codes</h3>
+          <h3 class="text-sm font-medium text-zinc-200">Cost codes</h3>
           <button type="button" id="ccLibAddCode" class="text-xs px-2 py-1 bg-emerald-800 rounded">Add code</button>
         </div>
         <div id="ccLibCustomWrap">${renderCustomCodes()}</div>
       </div>
       <div class="border border-zinc-700 rounded-lg p-4 space-y-3">
-        <h3 class="text-sm font-medium text-zinc-200">Effective picker (budget + library)</h3>
+        <h3 class="text-sm font-medium text-zinc-200">Effective picker (library + budget lines)</h3>
         <input type="search" id="ccLibPickerFilter" placeholder="Filter codes…" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm">
         <div id="ccLibPickerWrap">${renderPickerPreview()}</div>
       </div>
       <button type="button" id="ccLibSave" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded text-sm font-semibold">Save library to server</button>
-      <p class="text-[10px] text-zinc-500">Version ${state.version || 0} · Changes sync to the same project budget state used across modules.</p>
+      <p class="text-[10px] text-zinc-500">Version ${state.version || 0} · Save after upload or edits so pay apps and COs see your list.</p>
     </div>`;
   }
 
   async function saveLibrary() {
     const { api, projectId, AD, switchModule } = H();
     const pid = projectId();
-    const active = document.getElementById('ccLibActiveList')?.value || state.library?.activeCostCodeList || 'csi';
     const payload = {
       project_id: pid,
       library: {
         costTypes: state.library?.costTypes || [],
         customCostCodes: state.library?.customCostCodes || [],
-        activeCostCodeList: active,
+        activeCostCodeList: 'custom',
         costCodeLists: state.library?.costCodeLists || {},
       },
     };
@@ -181,9 +178,79 @@
     if (pw) pw.innerHTML = renderPickerPreview(filter);
   }
 
+  async function runUpload() {
+    const { AD } = H();
+    if (!global.CasePMCostCodeImport) {
+      await AD().alert('Upload helper not loaded. Refresh the page.', 'error');
+      return;
+    }
+    const mode = await new Promise((resolve) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'space-y-2 text-sm';
+      wrap.innerHTML = `
+        <p class="text-zinc-400 mb-2">Append adds/updates codes. Replace clears the library first.</p>
+        <button type="button" class="w-full px-3 py-2 rounded bg-emerald-700" data-m="append">Append / update</button>
+        <button type="button" class="w-full px-3 py-2 rounded bg-red-900" data-m="replace">Replace entire library</button>
+        <button type="button" class="w-full px-3 py-2 rounded bg-zinc-700" data-m="">Cancel</button>`;
+      AD().form({
+        title: 'Import cost codes',
+        bodyNode: wrap,
+        hideDefaultActions: true,
+      }).then((submitted) => {
+        if (!submitted) resolve(null);
+      });
+      wrap.querySelectorAll('button').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const m = btn.getAttribute('data-m');
+          if (AD().closeTop) AD().closeTop(m || null);
+          else resolve(m || null);
+        });
+      });
+    }).catch(() => null);
+
+    if (!mode) return;
+    try {
+      const result = await global.CasePMCostCodeImport.pickAndImportCostCodes({
+        existing: mode === 'replace' ? [] : (state.library?.customCostCodes || []),
+        mode: mode === 'replace' ? 'replace' : 'append',
+      });
+      if (!result) return;
+      state.library = state.library || {};
+      state.library.customCostCodes = result.list;
+      state.library.activeCostCodeList = 'custom';
+      refreshDomSections();
+      const msg = mode === 'replace'
+        ? `Replaced library with ${result.list.length} code(s).`
+        : `Added ${result.added}, updated ${result.updated}.`;
+      await AD().alert(`${msg} Click Save library to server.`, 'success');
+    } catch (e) {
+      await AD().alert(e.message || 'Import failed', 'error');
+    }
+  }
+
+  async function clearLibrary() {
+    const { AD } = H();
+    const ok = await AD().confirm('Remove every code in the project library? Budget dollar lines are not deleted.', {
+      title: 'Clear library',
+      confirmLabel: 'Clear all',
+    });
+    if (!ok) return;
+    state.library = state.library || {};
+    state.library.customCostCodes = [];
+    state.library.activeCostCodeList = 'custom';
+    refreshDomSections();
+    await AD().alert('Library cleared locally. Save to server to apply.', 'info');
+  }
+
   function bindHandlers() {
     document.getElementById('ccLibSave')?.addEventListener('click', () => {
       saveLibrary().catch((e) => H().AD().alert(e.message, 'error'));
+    });
+    document.getElementById('ccLibUpload')?.addEventListener('click', () => {
+      runUpload().catch((e) => H().AD().alert(e.message, 'error'));
+    });
+    document.getElementById('ccLibClearAll')?.addEventListener('click', () => {
+      clearLibrary().catch((e) => H().AD().alert(e.message, 'error'));
     });
     document.getElementById('ccLibAddType')?.addEventListener('click', async () => {
       const name = await H().AD().promptRequired('Cost type name', '', { title: 'Add cost type' });
@@ -205,7 +272,6 @@
       const list = state.library.customCostCodes || [];
       list.push({ code: String(code).trim(), description: String(desc).trim() });
       state.library.customCostCodes = list;
-      state.cost_codes = [...state.cost_codes, { code: String(code).trim(), description: String(desc).trim() }];
       refreshDomSections();
     });
     document.getElementById('ccLibPickerFilter')?.addEventListener('input', (e) => {
