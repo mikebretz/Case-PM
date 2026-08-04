@@ -55,6 +55,8 @@ def main():
     }
     pdf = generate_aldi_pay_application_pdf(payload)
     assert pdf[:4] == b'%PDF', 'not a PDF'
+    from aldi_pay_application_pdf import _fmt_date_mdy
+    assert _fmt_date_mdy('2026-07-31') == '7/31/2026'
     out = os.path.join(os.path.dirname(__file__), '_aldi_pay_app_test_out.pdf')
     with open(out, 'wb') as fh:
         fh.write(pdf)
