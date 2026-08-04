@@ -141,13 +141,14 @@
         <input type="search" id="ccLibPickerFilter" placeholder="Filter codes…" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm">
         <div id="ccLibPickerWrap">${renderPickerPreview()}</div>
       </div>
-      <button type="button" id="ccLibSave" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded text-sm font-semibold">Save library to server</button>
-      <p class="text-[10px] text-zinc-500">Version ${state.version || 0} · Save after upload or edits so pay apps and COs see your list.</p>
+      <button type="button" id="ccLibSave" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded text-sm">Save changes</button>
+      <p class="text-[10px] text-zinc-500">Version ${state.version || 0} · Upload saves automatically. Use Save after add/remove edits.</p>
     </div>`;
   }
 
-  async function saveLibrary() {
+  async function saveLibrary(options) {
     const { api, projectId, AD, switchModule } = H();
+    const silent = options && options.silent;
     const pid = projectId();
     const payload = {
       project_id: pid,
@@ -164,8 +165,10 @@
       body: JSON.stringify(payload),
     });
     if (global.CasePMCostCodeLibrary) global.CasePMCostCodeLibrary.invalidate(pid);
-    await AD().alert('Cost code library saved.', 'success');
-    if (switchModule) switchModule('cost-codes');
+    if (!silent) {
+      await AD().alert('Cost code library saved.', 'success');
+      if (switchModule) switchModule('cost-codes');
+    }
   }
 
   function refreshDomSections() {
@@ -180,49 +183,48 @@
 
   async function runUpload() {
     const { AD } = H();
-    if (!global.CasePMCostCodeImport) {
+    if (!global.CasePMCostCodeImport?.pickCostCodeFile) {
       await AD().alert('Upload helper not loaded. Refresh the page.', 'error');
       return;
     }
-    const mode = await new Promise((resolve) => {
-      const wrap = document.createElement('div');
-      wrap.className = 'space-y-2 text-sm';
-      wrap.innerHTML = `
-        <p class="text-zinc-400 mb-2">Append adds/updates codes. Replace clears the library first.</p>
-        <button type="button" class="w-full px-3 py-2 rounded bg-emerald-700" data-m="append">Append / update</button>
-        <button type="button" class="w-full px-3 py-2 rounded bg-red-900" data-m="replace">Replace entire library</button>
-        <button type="button" class="w-full px-3 py-2 rounded bg-zinc-700" data-m="">Cancel</button>`;
-      AD().form({
-        title: 'Import cost codes',
-        bodyNode: wrap,
-        hideDefaultActions: true,
-      }).then((submitted) => {
-        if (!submitted) resolve(null);
-      });
-      wrap.querySelectorAll('button').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const m = btn.getAttribute('data-m');
-          if (AD().closeTop) AD().closeTop(m || null);
-          else resolve(m || null);
-        });
-      });
-    }).catch(() => null);
-
-    if (!mode) return;
+    let picked;
     try {
-      const result = await global.CasePMCostCodeImport.pickAndImportCostCodes({
-        existing: mode === 'replace' ? [] : (state.library?.customCostCodes || []),
-        mode: mode === 'replace' ? 'replace' : 'append',
-      });
-      if (!result) return;
+      picked = await global.CasePMCostCodeImport.pickCostCodeFile();
+    } catch (e) {
+      await AD().alert(e.message || 'Import failed', 'error');
+      return;
+    }
+    if (!picked || !picked.incoming?.length) return;
+
+    const existing = state.library?.customCostCodes || [];
+    let mode = 'append';
+    if (existing.length > 0) {
+      const replace = await AD().confirm(
+        `Found ${picked.incoming.length} code(s) in “${picked.fileName}”.\n\nReplace your entire library with this file?`,
+        {
+          title: 'Import cost codes',
+          confirmLabel: 'Replace all',
+          cancelLabel: 'Append / update',
+        },
+      );
+      mode = replace ? 'replace' : 'append';
+    }
+
+    try {
+      const result = global.CasePMCostCodeImport.mergeCostCodes(
+        mode === 'replace' ? [] : existing,
+        picked.incoming,
+        mode,
+      );
       state.library = state.library || {};
       state.library.customCostCodes = result.list;
       state.library.activeCostCodeList = 'custom';
       refreshDomSections();
+      await saveLibrary({ silent: true });
       const msg = mode === 'replace'
         ? `Replaced library with ${result.list.length} code(s).`
-        : `Added ${result.added}, updated ${result.updated}.`;
-      await AD().alert(`${msg} Click Save library to server.`, 'success');
+        : `Imported ${result.added} new and updated ${result.updated} code(s).`;
+      await AD().alert(msg, 'success');
     } catch (e) {
       await AD().alert(e.message || 'Import failed', 'error');
     }
@@ -239,7 +241,12 @@
     state.library.customCostCodes = [];
     state.library.activeCostCodeList = 'custom';
     refreshDomSections();
-    await AD().alert('Library cleared locally. Save to server to apply.', 'info');
+    try {
+      await saveLibrary({ silent: true });
+      await AD().alert('Library cleared.', 'success');
+    } catch (e) {
+      await AD().alert(e.message || 'Clear failed', 'error');
+    }
   }
 
   function bindHandlers() {
