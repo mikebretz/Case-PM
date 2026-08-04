@@ -527,7 +527,7 @@
         <div class="flex justify-between items-start mb-4">
             <div>
                 <h3 class="text-lg font-semibold">Print pay application package</h3>
-                <p class="text-xs text-zinc-400 mt-1" id="payAppPrintOptionsSubtitle">Choose AIA forms and change order backup to include.</p>
+                <p class="text-xs text-zinc-400 mt-1" id="payAppPrintOptionsSubtitle">Uses the ALDI PDF template for G702/G703 and retainage. Change order summary pages attach per pay app when approved owner COs are fully billed this period.</p>
             </div>
             <button type="button" onclick="document.getElementById('payAppPrintOptionsModal').close()" class="text-zinc-400 hover:text-white">
                 <i class="fa-solid fa-times text-xl"></i>
@@ -9209,6 +9209,165 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         }
     }
 
+    function isOwnerCoFullyBilled(co) {
+        const amt = Math.abs(Number(co.amount) || 0);
+        if (amt < 0.01) return true;
+        const billed = Math.abs(Number(co.billed_amount) || 0);
+        return billed >= amt - 0.01;
+    }
+
+    function changeOrdersFullyBilledForAttachment(partition) {
+        return (partition?.thisPeriod || []).filter(isOwnerCoFullyBilled);
+    }
+
+    function countPriorCoSummarySlots(periodNum, allCos) {
+        let count = 0;
+        const sorted = [...(payAppHistory || [])].sort((a, b) => (a.periodNumber || 0) - (b.periodNumber || 0));
+        for (const p of sorted) {
+            const pn = Number(p.periodNumber || 0);
+            if (!pn || pn >= Number(periodNum || 0)) break;
+            if (p.coSummarySlot) {
+                count = Math.max(count, Number(p.coSummarySlot));
+                continue;
+            }
+            const start = p.periodStart || p.snapshot?.period?.periodStart;
+            const end = p.periodEnd || p.snapshot?.period?.periodEnd;
+            if (!start || !end || !allCos) continue;
+            const part = partitionChangeOrdersForPayPeriod(allCos, { periodStart: start, periodEnd: end });
+            if (changeOrdersFullyBilledForAttachment(part).length) count += 1;
+        }
+        return count;
+    }
+
+    function resolvePayAppProjectMeta() {
+        const p = JSON.parse(casepmStore.getItem('currentProject') || 'null') || {};
+        const details = (typeof p.get_details === 'function' ? p.get_details() : p.details) || {};
+        const addr = [p.address, p.city, p.state, p.zip].filter(Boolean).join(', ')
+            || details.address || '';
+        return {
+            owner: details.owner_name || details.owner || 'ALDI',
+            name: p.name || p.project_name || '',
+            project_numbers: p.sage_job_number || p.accounting_project_number || details.project_number || '',
+            address: addr,
+            contract_for: details.contract_for || '',
+            contract_date: details.contract_date || '',
+        };
+    }
+
+    function buildAldiCoSummaryBlock(partition) {
+        if (!partition) return null;
+        return {
+            prev_additions: partition.totalsPrevious?.additions || 0,
+            prev_deductions: partition.totalsPrevious?.deductions || 0,
+            this_additions: partition.totalsThisPeriod?.additions || 0,
+            this_deductions: partition.totalsThisPeriod?.deductions || 0,
+            total_additions: partition.totalsThrough?.additions || 0,
+            total_deductions: partition.totalsThrough?.deductions || 0,
+        };
+    }
+
+    function buildAldiG703Lines(attachCos) {
+        const retainageRate = getRetainageRate();
+        return (contractorSOV || []).map(line => {
+            const b = getG702BillingForLine(line);
+            const coAmt = getContractorLineCoAmount(line);
+            const scheduled = (line.original || 0) + coAmt;
+            const prevWork = (line.billed_to_date || 0) + (line.co_billed_to_date || 0);
+            const work = b.workThis + b.coWorkThis;
+            const mat = b.materials;
+            const completed = prevWork + work + mat;
+            const coAffected = (attachCos || []).some(co => (co.allocations || []).some(a => String(a.cost_code || '').trim() === String(line.cost_code || '').trim()));
+            return {
+                cost_code: line.cost_code,
+                description: line.description,
+                division: line.division,
+                scheduled,
+                prev_work: prevWork,
+                work_this_period: work,
+                materials_stored: mat,
+                completed_to_date: completed,
+                retainage: (work + mat) * retainageRate,
+                co_affected: coAffected,
+            };
+        });
+    }
+
+    async function printAldiPayAppPdfPackage(opts, ctx, snapshot, coPartition, allCos) {
+        const restore = {
+            period: currentPayAppPeriod,
+            billing: payAppBillingLines,
+            sov: contractorSOV,
+        };
+        try {
+            if (snapshot) {
+                currentPayAppPeriod = snapshot.period || restore.period;
+                payAppBillingLines = snapshot.billingLines || restore.billing;
+                if (snapshot.contractorSOVSnapshot?.length) {
+                    contractorSOV = snapshot.contractorSOVSnapshot;
+                }
+            }
+            const period = currentPayAppPeriod || { periodNumber: 1 };
+            const rollup = computeG703Rollup();
+            const g702 = computeG702CertificationAmounts(rollup);
+            const partition = coPartition || { thisPeriod: [], totalsPrevious: {}, totalsThisPeriod: {}, totalsThrough: {} };
+            const attachCos = (opts.coListing && opts.g702) ? changeOrdersFullyBilledForAttachment(partition) : [];
+            const priorSlots = attachCos.length ? countPriorCoSummarySlots(period.periodNumber, allCos) : 0;
+            const coSummarySlot = attachCos.length ? priorSlots + 1 : 0;
+            const payload = {
+                period,
+                project: resolvePayAppProjectMeta(),
+                g702: { ...g702, retainageRate: getRetainageRate() },
+                co_summary: buildAldiCoSummaryBlock(partition),
+                co_summary_slot: coSummarySlot,
+                change_orders_this_period: attachCos,
+                g703_lines: buildAldiG703Lines(attachCos),
+            };
+            const projectId = resolvePayAppProjectId();
+            const res = await fetch('/api/pay-applications/aldi-print', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json', Accept: 'application/pdf' },
+                body: JSON.stringify({ project_id: projectId, payload }),
+            });
+            if (!res.ok) {
+                let msg = 'ALDI PDF generation failed';
+                try {
+                    const err = await res.json();
+                    msg = err.error || msg;
+                } catch { /* ignore */ }
+                console.warn('[PayApp print]', msg);
+                return false;
+            }
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const w = window.open(url, '_blank');
+            if (!w) {
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Pay_Application_${period.periodNumber || 1}.pdf`;
+                a.click();
+            }
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+            if (coSummarySlot > 0 && currentPayAppPeriod) {
+                currentPayAppPeriod.coSummarySlot = coSummarySlot;
+                casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
+            }
+            logPayAppAudit('PAY_APP_ALDI_PDF', {
+                period: period.periodNumber,
+                coSummarySlot,
+                coCount: attachCos.length,
+            });
+            return true;
+        } catch (e) {
+            console.warn('[PayApp print] ALDI PDF error', e);
+            return false;
+        } finally {
+            currentPayAppPeriod = restore.period;
+            payAppBillingLines = restore.billing;
+            contractorSOV = restore.sov;
+        }
+    }
+
     function buildChangeOrderListingAppendixHtml(partition, period, g702) {
         if (!partition) return '';
         const original = g702.g702Original;
@@ -9419,11 +9578,17 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             period = snapshot.period || period;
         }
 
-        const needCos = opts.coListing || opts.coBackup;
+        const needCos = opts.coListing || opts.coBackup || opts.g702 || opts.g703;
         let coPartition = null;
+        let allCos = [];
         if (needCos) {
-            const cos = await fetchApprovedChangeOrdersForPrint();
-            coPartition = partitionChangeOrdersForPayPeriod(cos, period);
+            allCos = await fetchApprovedChangeOrdersForPrint();
+            coPartition = partitionChangeOrdersForPayPeriod(allCos, period);
+        }
+
+        let aldiPrinted = false;
+        if (opts.g702 || opts.g703) {
+            aldiPrinted = await printAldiPayAppPdfPackage(opts, ctx, snapshot, coPartition, allCos);
         }
 
         const printOptsCoOnly = {
@@ -9454,13 +9619,21 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             delayMs += 1200;
         };
 
-        if (opts.g702) run(printG702, printOpts);
-        if (opts.g703) schedule(printG703, printOptsG703);
-        if (!opts.g702 && !opts.g703 && (opts.coListing || opts.coBackup)) {
-            schedule(printChangeOrderPackageOnly, printOptsCoOnly);
+        if (!aldiPrinted) {
+            if (opts.g702) run(printG702, printOpts);
+            if (opts.g703) schedule(printG703, printOptsG703);
+            if (!opts.g702 && !opts.g703 && (opts.coListing || opts.coBackup)) {
+                schedule(printChangeOrderPackageOnly, printOptsCoOnly);
+            }
+        } else if (opts.coBackup) {
+            schedule(() => printChangeOrderPackageOnly({
+                includeCoListing: false,
+                includeCoBackup: true,
+                coPartition,
+            }), printOptsCoOnly);
         }
 
-        if (ctx.historicalPeriodId && opts.g703) {
+        if (ctx.historicalPeriodId && opts.g703 && !aldiPrinted) {
             _printHistoricalG703WithLien(ctx.historicalPeriodId);
         }
 
