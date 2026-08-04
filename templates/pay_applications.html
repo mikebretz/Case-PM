@@ -9244,8 +9244,17 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         const details = (typeof p.get_details === 'function' ? p.get_details() : p.details) || {};
         const addr = [p.address, p.city, p.state, p.zip].filter(Boolean).join(', ')
             || details.address || '';
+        const clientName = (
+            details.client_name
+            || details.client
+            || p.client
+            || details.owner_name
+            || details.owner
+            || ''
+        ).trim();
         return {
-            owner: details.owner_name || details.owner || 'ALDI',
+            client_name: clientName,
+            owner: clientName || details.owner_name || details.owner || '',
             name: p.name || p.project_name || '',
             project_numbers: p.sage_job_number || p.accounting_project_number || details.project_number || '',
             address: addr,
