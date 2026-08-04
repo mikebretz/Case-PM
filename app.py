@@ -16880,6 +16880,67 @@ def api_import_budget_local():
     return jsonify({'ok': True, 'version': record.version})
 
 
+@app.route('/api/accounting/cost-code-library', methods=['GET'])
+@login_required
+def api_get_cost_code_library():
+    from cost_code_library import library_slice_from_state, picker_cost_codes, library_summary
+    from co_persistence import get_budget_cost_types
+    from financial_security import require_financial_project_access
+
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    try:
+        project_id = require_financial_project_access(current_user, project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    from budget_persistence import get_budget_state as load_state
+
+    record, data = load_state(BudgetProjectState, int(project_id))
+    data = data or {}
+    picker = picker_cost_codes(data)
+    return jsonify({
+        'project_id': int(project_id),
+        'version': record.version if record else 0,
+        'summary': library_summary(data),
+        'library': library_slice_from_state(data),
+        'cost_codes': [{k: v for k, v in row.items() if k != 'source'} for row in picker],
+        'cost_types': get_budget_cost_types(BudgetProjectState, int(project_id)),
+        'manage_url': url_for('accounting_page', _external=False) + '?module=cost-codes',
+        'budget_url': url_for('budget_page'),
+    })
+
+
+@app.route('/api/accounting/cost-code-library', methods=['PUT'])
+@login_required
+def api_put_cost_code_library():
+    from cost_code_library import merge_library_patch, library_slice_from_state, library_summary
+    from budget_persistence import get_budget_state as load_state, save_budget_state as persist_state
+    from financial_security import require_financial_project_access
+
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    try:
+        project_id = require_financial_project_access(current_user, project_id, Project)
+    except (ValueError, PermissionError) as exc:
+        return jsonify({'error': str(exc)}), 403
+    patch = body.get('library') or body.get('patch') or body.get('data') or {}
+    if not isinstance(patch, dict):
+        return jsonify({'error': 'library patch must be an object'}), 400
+    record, existing = load_state(BudgetProjectState, int(project_id))
+    merged = merge_library_patch(existing or {}, patch)
+    record = persist_state(BudgetProjectState, db, int(project_id), merged, current_user.id)
+    return jsonify({
+        'ok': True,
+        'project_id': int(project_id),
+        'version': record.version,
+        'library': library_slice_from_state(merged),
+        'summary': library_summary(merged),
+    })
+
+
 @app.route('/api/accounting/reconcile', methods=['POST'])
 @login_required
 def api_accounting_reconcile():

@@ -5,6 +5,7 @@
 <script src="{{ static_v('js/casepm-workflow.js') }}"></script>
 <script src="{{ static_v('js/pay-app-sync.js') }}"></script>
 <script src="{{ static_v('js/pay-app-workflow.js') }}"></script>
+<script src="{{ static_v('js/cost-code-library.js') }}"></script>
 <script src="{{ static_v('js/accounting-reconcile.js') }}"></script>
 
 <style>
@@ -421,6 +422,7 @@
         <div class="flex justify-between items-center mb-6">
             <h3 class="text-xl font-semibold">Pay Applications Settings</h3>
             <div class="flex items-center gap-2">
+                <a href="/accounting?module=cost-codes" class="text-xs text-emerald-400 hover:underline">Cost code library</a>
                 <a href="/program-settings?tab=payapps" class="text-xs text-emerald-400 hover:underline">Edit program defaults</a>
                 <button onclick="document.getElementById('settingsModal').close()" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-times text-xl"></i></button>
             </div>
@@ -5854,12 +5856,16 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         });
     }
 
-    function populateSOVCostCodeDatalist() {
+    async function populateSOVCostCodeDatalist() {
         const datalist = document.getElementById('sovCostCodeList');
         if (!datalist) return;
         datalist.innerHTML = '';
-        const budgetLinesData = JSON.parse(casepmStore.getItem('budgetLines')) || [];
-        // Unique by cost_code
+        let budgetLinesData = JSON.parse(casepmStore.getItem('budgetLines')) || [];
+        if (typeof CasePMCostCodeLibrary !== 'undefined') {
+            try {
+                budgetLinesData = await CasePMCostCodeLibrary.budgetLinesForPicker();
+            } catch (e) { /* use local storage */ }
+        }
         const seen = new Set();
         budgetLinesData.forEach(b => {
             if (b.cost_code && !seen.has(b.cost_code)) {
@@ -5871,7 +5877,7 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         });
     }
 
-    function viewBudgetCostCodesForSOV(source = 'budget') {
+    async function viewBudgetCostCodesForSOV(source = 'budget') {
         let sourceData = [];
         let title = 'Select Cost Code';
         if (source === 'contractor-sov') {
@@ -5883,10 +5889,18 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
             title = 'Select from Contractor SOV (G703)';
         } else {
             sourceData = JSON.parse(casepmStore.getItem('budgetLines')) || [];
-            title = 'Select from Budget Cost Codes';
+            if (typeof CasePMCostCodeLibrary !== 'undefined') {
+                try {
+                    sourceData = await CasePMCostCodeLibrary.budgetLinesForPicker();
+                } catch (e) { /* keep local */ }
+            }
+            title = 'Select from Project Cost Codes';
         }
         if (sourceData.length === 0) {
-            showCenteredAlert(source === 'contractor-sov' ? "No Contractor SOV lines yet. Add lines in G703 tab first." : "No budget cost codes found. Add lines in the Budget page first.");
+            const msg = source === 'contractor-sov'
+                ? "No Contractor SOV lines yet. Add lines in G703 tab first."
+                : "No cost codes found. Add budget lines or open Accounting → Cost Code Library.";
+            showCenteredAlert(msg);
             return;
         }
 

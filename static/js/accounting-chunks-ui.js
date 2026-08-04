@@ -51,6 +51,7 @@
       <div class="text-xs text-zinc-400 border border-zinc-800 rounded p-2">WIP: ${wip.status || '—'} · contract ${money(wip.contract_value)} · ${wip.completion_method || ''} · ${wip.percent_complete || 0}% · over/under <strong>${money(wip.over_under_billing)}</strong></div>
       <div class="flex flex-wrap gap-2 text-xs">
         <a href="${esc(panel.links?.budget || '#')}" class="text-emerald-400 underline">Budget</a>
+        <a href="/accounting?module=cost-codes" class="text-emerald-400 underline">Cost code library</a>
         <a href="${esc(panel.links?.pay_apps || '#')}" class="text-emerald-400 underline">Pay applications</a>
         <a href="${esc(panel.links?.commitments || '#')}" class="text-emerald-400 underline">Commitments</a>
       </div>

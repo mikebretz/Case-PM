@@ -799,35 +799,14 @@ def get_budget_cost_types(BudgetProjectState, project_id):
 
 def get_budget_cost_codes(BudgetProjectState, project_id):
     from budget_persistence import get_budget_state
+    from cost_code_library import picker_cost_codes
+
     _, state = get_budget_state(BudgetProjectState, project_id)
-    lines = state.get('budgetLines') or []
-    custom = state.get('customCostCodes') or []
     codes = []
-    seen = set()
-    for line in lines:
-        code = line.get('cost_code')
-        if code and code not in seen:
-            seen.add(code)
-            codes.append({
-                'code': code,
-                'description': line.get('description', ''),
-                'cost_type': line.get('cost_type', ''),
-                'original_budget': line.get('original_budget', 0),
-                'approved_changes': line.get('approved_changes', 0),
-                'pending': line.get('pending', 0),
-            })
-    for item in custom:
-        code = item.get('code')
-        if code and code not in seen:
-            seen.add(code)
-            codes.append({
-                'code': code,
-                'description': item.get('description', ''),
-                'cost_type': item.get('cost_type', ''),
-                'original_budget': 0,
-                'approved_changes': 0,
-                'pending': 0,
-            })
+    for row in picker_cost_codes(state):
+        item = dict(row)
+        item.pop('source', None)
+        codes.append(item)
     return codes
 
 

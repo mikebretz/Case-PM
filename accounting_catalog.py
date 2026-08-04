@@ -160,6 +160,20 @@ ACCOUNTING_MODULES = [
         ],
     },
     {
+        'id': 'cost_codes',
+        'code': 'CC',
+        'name': 'Cost Code Library',
+        'status': 'live',
+        'route': 'cost-codes',
+        'summary': 'Project cost codes and types — used by budget, pay apps, commitments, and change orders.',
+        'features': [
+            'Custom cost code lists and CSI master selection',
+            'Cost types (labor, material, subcontract, etc.)',
+            'Merged picker from budget lines + library',
+            'Same catalog Sage / Procore job cost codes feed',
+        ],
+    },
+    {
         'id': 'construction_sync',
         'code': 'CS',
         'name': 'Construction sync',
