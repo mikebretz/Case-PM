@@ -10755,6 +10755,12 @@ function printSubcontractorG703(companyId) {
     }
 
     // ==================== PIXEL-PERFECT / FORM-STRUCTURED EXCEL EXPORT + CONDITIONAL FORMATTING ====================
+    function xlsxMergeRange(ws, range) {
+        if (!ws || !range || typeof XLSX === 'undefined' || !XLSX.utils.decode_range) return;
+        if (!ws['!merges']) ws['!merges'] = [];
+        ws['!merges'].push(XLSX.utils.decode_range(range));
+    }
+
     function exportPayApplications() {
         if (typeof XLSX === 'undefined') {
             showCenteredAlert("Excel library (XLSX) not loaded. Please hard refresh the page (Ctrl+Shift+R).", 'warning');
@@ -10764,23 +10770,28 @@ function printSubcontractorG703(companyId) {
         const period = currentPayAppPeriod || buildFreshPayAppPeriod(1);
         const retainageRate = (typeof defaultRetainagePercent !== 'undefined' ? defaultRetainagePercent : 10) / 100;
 
-        if (currentPayAppTab === 'payapp') {
-            exportG702Styled(period, retainageRate);
-        } else if (currentPayAppTab === 'contractor-sov') {
-            exportG703Styled(period, retainageRate);
-        } else if (currentPayAppTab === 'sub-sov' && selectedSubCompanyId) {
-            exportSubcontractorG703Styled(period, retainageRate, selectedSubCompanyId);
-        } else {
-            // Fallback: export raw contractor SOV
-            const data = contractorSOV.map((line, i) => ({
-                "#": i+1, "Cost Code": line.cost_code, "Description": line.description,
-                "Original": line.original || 0, "CO Amount": line.co_amount || 0,
-                "Billed to Date": line.billed_to_date || 0, "% Complete": line.percent_complete || 0
-            }));
-            const ws = XLSX.utils.json_to_sheet(data);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Contractor SOV");
-            XLSX.writeFile(wb, `PayApp_Raw_SOV_${period.periodNumber}.xlsx`);
+        try {
+            if (currentPayAppTab === 'payapp') {
+                exportG702Styled(period, retainageRate);
+            } else if (currentPayAppTab === 'contractor-sov') {
+                exportG703Styled(period, retainageRate);
+            } else if (currentPayAppTab === 'sub-sov' && selectedSubCompanyId) {
+                exportSubcontractorG703Styled(period, retainageRate, selectedSubCompanyId);
+            } else {
+                // Fallback: export raw contractor SOV
+                const data = contractorSOV.map((line, i) => ({
+                    "#": i+1, "Cost Code": line.cost_code, "Description": line.description,
+                    "Original": line.original || 0, "CO Amount": line.co_amount || 0,
+                    "Billed to Date": line.billed_to_date || 0, "% Complete": line.percent_complete || 0
+                }));
+                const ws = XLSX.utils.json_to_sheet(data);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Contractor SOV");
+                XLSX.writeFile(wb, `PayApp_Raw_SOV_${period.periodNumber}.xlsx`);
+            }
+        } catch (e) {
+            console.error('[PayApp export]', e);
+            showCenteredAlert(e.message || 'Export failed. See browser console for details.', 'error');
         }
     }
 
@@ -10803,7 +10814,8 @@ function printSubcontractorG703(companyId) {
         ], { origin: "A1" });
 
         // Merge header rows
-        ws.mergeCells('A1:I1'); ws.mergeCells('A2:I2');
+        xlsxMergeRange(ws, 'A1:I1');
+        xlsxMergeRange(ws, 'A2:I2');
 
         // Style header
         ws['A1'].s = { font: { bold: true, size: 14 }, alignment: { horizontal: 'center' } };
@@ -10876,6 +10888,7 @@ function printSubcontractorG703(companyId) {
             };
         });
         const ws2 = XLSX.utils.json_to_sheet(detailData);
+        XLSX.utils.book_append_sheet(wb, ws, 'G702 Application');
         XLSX.utils.book_append_sheet(wb, ws2, "Line Item Detail");
 
         XLSX.writeFile(wb, `G702_PayApp_Period${period.periodNumber}_ALDI_Lakeland.xlsx`);
@@ -10896,7 +10909,7 @@ function printSubcontractorG703(companyId) {
             ["ITEM No.", "DESCRIPTION OF WORK", "SCHEDULED VALUE", "WORK COMPLETED FROM PREVIOUS", "WORK COMPLETED THIS PERIOD", "MATERIALS PRESENTLY STORED", "TOTAL COMPLETED & STORED TO DATE", "%", "BALANCE TO FINISH", "RETAINAGE"],
         ], { origin: "A1" });
 
-        ws.mergeCells('A1:J1');
+        xlsxMergeRange(ws, 'A1:J1');
         ws['A1'].s = { font: { bold: true, size: 14 }, alignment: { horizontal: 'center' } };
         ws['A5'].s = { font: { bold: true, size: 9 }, fill: { fgColor: { rgb: "E5E7EB" } } };
 
@@ -10991,7 +11004,7 @@ function printSubcontractorG703(companyId) {
             ["ITEM No.", "DESCRIPTION OF WORK", "SCHEDULED VALUE", "WORK COMPLETED FROM PREVIOUS", "WORK COMPLETED THIS PERIOD", "MATERIALS PRESENTLY STORED", "TOTAL COMPLETED & STORED TO DATE", "%", "BALANCE TO FINISH", "RETAINAGE"],
         ], { origin: "A1" });
 
-        ws.mergeCells('A1:J1');
+        xlsxMergeRange(ws, 'A1:J1');
         ws['A1'].s = { font: { bold: true, size: 13 }, alignment: { horizontal: 'center' } };
         ws['E2'].s = { font: { bold: true, color: { rgb: "059669" } } };
 
