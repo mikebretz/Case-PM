@@ -78,6 +78,25 @@
     });
   }
 
+  function mountAccountingShell() {
+    const mc = document.getElementById('mainContent');
+    if (mc && !mc.classList.contains('accounting-main-host')) {
+      mc.classList.add('accounting-main-host');
+    }
+  }
+
+  function normalizePanel(root) {
+    if (!root || !root.firstChild) return;
+    const first = root.firstElementChild;
+    if (first && (first.classList.contains('acct-module-root') || first.classList.contains('acct-reports-layout'))) {
+      return;
+    }
+    const wrap = document.createElement('div');
+    wrap.className = 'acct-module-root acct-module-scroll';
+    while (root.firstChild) wrap.appendChild(root.firstChild);
+    root.appendChild(wrap);
+  }
+
   async function switchModule(route) {
     activeModule = route || 'dashboard';
     const allowed = catalog?.allowed_screens;
@@ -181,6 +200,7 @@
         const mod = (catalog?.modules || []).find((m) => m.route === route);
         root.innerHTML = mod ? renderPlannedModule(route, mod) : '<p class="text-zinc-500">Module not found.</p>';
       }
+      normalizePanel(root);
       bindPanelHandlers(route);
       if (route === 'gl' && global.CasePMAcctGLUI?.bindHandlers) {
         global.CasePMAcctGLUI.bindHandlers();
@@ -1306,6 +1326,7 @@
   }
 
   async function init() {
+    mountAccountingShell();
     document.getElementById('acctRefreshBtn')?.addEventListener('click', refresh);
     const params = new URLSearchParams(global.location.search);
     const m = params.get('module');

@@ -49,7 +49,7 @@
     const rtype = data.report || '';
     if (rtype === 'trial_balance') {
       const rows = data.rows || [];
-      return `<div class="overflow-x-auto border border-zinc-700 rounded-lg max-h-96 overflow-y-auto">
+      return `<div class="overflow-x-auto border border-zinc-700 rounded-lg acct-report-table-wrap">
         <table class="w-full text-xs"><thead class="sticky top-0 bg-zinc-800"><tr>
           <th class="text-left px-2 py-1">Account</th><th class="text-left px-2 py-1">Description</th>
           <th class="text-right px-2 py-1">Debit</th><th class="text-right px-2 py-1">Credit</th><th class="text-right px-2 py-1">Balance</th>
@@ -96,7 +96,7 @@
     if (rtype === 'journal_register') {
       const lines = data.lines || [];
       return `<p class="text-xs text-zinc-500 mb-2">${lines.length} posted line(s)</p>
-        <div class="overflow-x-auto border border-zinc-700 rounded-lg max-h-96 overflow-y-auto">
+        <div class="overflow-x-auto border border-zinc-700 rounded-lg acct-report-table-wrap">
         <table class="w-full text-xs"><thead class="sticky top-0 bg-zinc-800"><tr>
           <th class="text-left px-2 py-1">Date</th><th class="text-left px-2 py-1">Batch</th><th class="text-left px-2 py-1">Account</th>
           <th class="text-left px-2 py-1">Description</th><th class="text-right px-2 py-1">Debit</th><th class="text-right px-2 py-1">Credit</th>
@@ -112,7 +112,7 @@
       return `<div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4 text-xs">
         ${Object.entries(buckets).map(([k, v]) => `<div class="bg-zinc-800 border border-zinc-700 rounded p-2"><div class="text-zinc-500">${esc(k)}</div><div class="font-semibold">${money(v)}</div></div>`).join('')}
       </div>
-      <div class="overflow-x-auto border border-zinc-700 rounded-lg max-h-64 overflow-y-auto">
+      <div class="overflow-x-auto border border-zinc-700 rounded-lg acct-report-table-wrap">
         <table class="w-full text-xs"><thead><tr><th class="text-left px-2 py-1">Doc</th><th class="text-right px-2 py-1">Open</th><th class="text-left px-2 py-1">Due</th></tr></thead><tbody>
         ${docs.slice(0, 100).map((d) => `<tr class="border-t border-zinc-800"><td class="px-2 py-1 font-mono">${esc(d.document_number || d.id)}</td>
           <td class="px-2 py-1 text-right">${money(d.open_amount ?? d.balance)}</td><td class="px-2 py-1">${esc(d.due_date)}</td></tr>`).join('')}
@@ -201,8 +201,8 @@
       </li>`
     ).join('');
 
-    return `<div class="flex flex-col lg:flex-row gap-4">
-      <div class="lg:w-72 flex-shrink-0 space-y-4">
+    return `<div class="acct-reports-layout">
+      <div class="acct-reports-sidebar space-y-4">
         <div class="border border-zinc-700 rounded-lg p-3 bg-zinc-800/50">
           <h3 class="text-sm font-medium text-white mb-2">Run report</h3>
           <label class="block text-xs text-zinc-400 mb-1">Report type</label>
@@ -240,9 +240,9 @@
           ${Object.keys(byCat).map((c) => `<div><span class="text-zinc-400">${esc(catLabel[c] || c)}:</span> ${byCat[c].map((t) => esc(t.name)).join(', ')}</div>`).join('')}
         </div>
       </div>
-      <div class="flex-1 min-w-0">
-        <h2 class="text-lg font-semibold text-white mb-1">Reporting & Analytics</h2>
-        <p class="text-xs text-zinc-500 mb-3">Standard financials, construction bridge audit, and saved custom layouts. Data comes from posted journals and open documents in the built-in ledger.</p>
+      <div class="acct-reports-main">
+        <h2 class="text-lg font-semibold text-white mb-1 flex-shrink-0">Reporting & Analytics</h2>
+        <p class="text-xs text-zinc-500 mb-3 flex-shrink-0">Standard financials, construction bridge audit, and saved custom layouts. Data comes from posted journals and open documents in the built-in ledger.</p>
         <div id="acctReportOutput" class="text-sm text-zinc-300"><p class="text-zinc-500">Choose a report and click Run.</p></div>
       </div>
     </div>`;
