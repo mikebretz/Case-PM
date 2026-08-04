@@ -2053,6 +2053,32 @@ def register_accounting_routes(app, deps):
         from accounting_reports import report_catalog
         return jsonify(report_catalog())
 
+    @app.route('/api/accounting/reports/projects', methods=['GET'])
+    @login_required
+    def api_acct_report_projects():
+        """Projects the user can filter reports by (same jobs as PM, one project id in the ledger)."""
+        from project_access import filter_projects_for_user
+        from geocode_service import ACTIVE_JOB_STATUSES
+        status = (request.args.get('status') or 'active').strip().lower()
+        q = Project.query.order_by(Project.number.asc(), Project.name.asc())
+        if status == 'active':
+            q = q.filter(Project.status.in_(list(ACTIVE_JOB_STATUSES)))
+        elif status != 'all':
+            q = q.filter(Project.status == status)
+        projects = filter_projects_for_user(current_user, q.all(), Project)
+        rows = []
+        for p in projects:
+            num = (p.number or p.accounting_project_number or '').strip()
+            rows.append({
+                'id': p.id,
+                'number': num or str(p.id),
+                'name': p.name or '',
+                'accounting_project_number': (p.accounting_project_number or '').strip() or None,
+                'status': p.status,
+                'label': f'{num or p.id} — {p.name}' if (num and p.name) else (p.name or num or f'Project {p.id}'),
+            })
+        return jsonify({'projects': rows})
+
     @app.route('/api/accounting/reports/run', methods=['GET', 'POST'])
     @login_required
     def api_acct_report_run():

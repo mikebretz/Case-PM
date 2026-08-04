@@ -166,13 +166,15 @@
   }
 
   async function renderShell() {
-    const [catalog, custom] = await Promise.all([
+    const [catalog, custom, projectResp] = await Promise.all([
       api('/api/accounting/reports/catalog'),
       api('/api/accounting/reports/custom'),
+      api('/api/accounting/reports/projects?status=active').catch(() => ({ projects: [] })),
     ]);
     const types = catalog.types || [];
     const dates = defaultDates();
     const pid = projectId();
+    const projects = projectResp.projects || [];
     const byCat = {};
     types.forEach((t) => {
       const c = t.category || 'other';
@@ -182,6 +184,15 @@
     const catLabel = { financial: 'Financial', gl: 'General Ledger', ap: 'Payables', ar: 'Receivables', job: 'Job / Construction', bank: 'Bank' };
 
     const typeOptions = types.map((t) => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
+    const projectOptions = [
+      '<option value="">All projects</option>',
+      ...projects.map((p) => {
+        const selected = pid && p.id === pid ? ' selected' : '';
+        const num = p.number || String(p.id);
+        const label = p.name ? `${num} — ${p.name}` : num;
+        return `<option value="${esc(String(p.id))}"${selected}>${esc(label)}</option>`;
+      }),
+    ].join('');
     const savedList = (custom.reports || []).map((r) =>
       `<li class="flex items-center justify-between gap-2 py-2 border-b border-zinc-800">
         <button type="button" class="text-left text-sm text-emerald-400 hover:underline acct-run-saved" data-id="${r.id}">${esc(r.name)}</button>
@@ -200,8 +211,11 @@
             <div><label class="text-xs text-zinc-400">Start</label><input type="date" id="acctReportStart" value="${dates.start}" class="w-full bg-zinc-900 border border-zinc-600 rounded px-2 py-1 text-sm"></div>
             <div><label class="text-xs text-zinc-400">End</label><input type="date" id="acctReportEnd" value="${dates.end}" class="w-full bg-zinc-900 border border-zinc-600 rounded px-2 py-1 text-sm"></div>
           </div>
-          <div class="mb-2"><label class="text-xs text-zinc-400">Project filter (optional)</label>
-            <input type="number" id="acctReportProject" placeholder="Project id" value="${pid || ''}" class="w-full bg-zinc-900 border border-zinc-600 rounded px-2 py-1 text-sm font-mono"></div>
+          <div class="mb-2"><label class="text-xs text-zinc-400">Project (optional)</label>
+            <select id="acctReportProject" class="w-full bg-zinc-900 border border-zinc-600 rounded px-2 py-1.5 text-sm">
+              ${projectOptions}
+            </select>
+            <p class="text-[10px] text-zinc-500 mt-0.5">Same jobs as Project Management — filter job cost and project-scoped reports.</p></div>
           <div class="flex flex-wrap gap-2">
             <button type="button" id="acctRunReportBtn" class="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 rounded text-sm">Run</button>
             <button type="button" id="acctExportCsvBtn" class="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded text-sm">Export CSV</button>
@@ -241,7 +255,10 @@
     const projectRaw = document.getElementById('acctReportProject')?.value;
     if (start) filters.start_date = start;
     if (end) filters.end_date = end;
-    if (projectRaw) filters.project_id = parseInt(projectRaw, 10);
+    if (projectRaw) {
+      const id = parseInt(projectRaw, 10);
+      if (!Number.isNaN(id)) filters.project_id = id;
+    }
     return filters;
   }
 
