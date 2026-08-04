@@ -17523,42 +17523,6 @@ def api_clear_all_subcontractors_program():
     return jsonify({'ok': True, 'projects': results, 'count': len(results)})
 
 
-@app.route('/api/pay-applications/aldi-print', methods=['POST'])
-@login_required
-def api_pay_applications_aldi_print():
-    """Generate ALDI pay application PDF (G702, G703, retainage, CO summary pages)."""
-    from financial_security import require_financial_project_access
-
-    body = request.get_json(silent=True) or {}
-    project_id = body.get('project_id') or get_current_project_id()
-    if not project_id:
-        return jsonify({'error': 'project_id required'}), 400
-    try:
-        require_financial_project_access(current_user, project_id, Project)
-    except (ValueError, PermissionError) as exc:
-        return jsonify({'error': str(exc)}), 403
-
-    payload = body.get('payload')
-    if not isinstance(payload, dict):
-        return jsonify({'error': 'payload object required'}), 400
-    try:
-        from aldi_pay_application_pdf import generate_aldi_pay_application_pdf
-        pdf_bytes = generate_aldi_pay_application_pdf(payload)
-    except FileNotFoundError as exc:
-        return jsonify({'error': str(exc)}), 404
-    except Exception as exc:
-        return jsonify({'error': 'Could not generate pay application PDF.', 'detail': str(exc)}), 500
-
-    period_no = (payload.get('period') or {}).get('periodNumber') or 'payapp'
-    fname = f'Pay_Application_{period_no}.pdf'
-    return send_file(
-        io.BytesIO(pdf_bytes),
-        mimetype='application/pdf',
-        as_attachment=False,
-        download_name=fname,
-    )
-
-
 @app.route('/api/pay-applications/workflow', methods=['POST'])
 @login_required
 def api_pay_app_workflow():
