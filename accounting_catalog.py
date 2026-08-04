@@ -167,10 +167,10 @@ ACCOUNTING_MODULES = [
         'route': 'cost-codes',
         'summary': 'Project cost codes and types — used by budget, pay apps, commitments, and change orders.',
         'features': [
-            'Custom cost code lists and CSI master selection',
+            'Upload and maintain your project cost code list',
             'Cost types (labor, material, subcontract, etc.)',
             'Merged picker from budget lines + library',
-            'Same catalog Sage / Procore job cost codes feed',
+            'Used by pay apps, commitments, and change orders',
         ],
     },
     {

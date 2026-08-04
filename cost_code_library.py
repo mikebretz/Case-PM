@@ -7,6 +7,13 @@ from __future__ import annotations
 
 from budget_persistence import BUDGET_STATE_KEYS, merge_state_patch, normalize_cost_code
 
+def _normalize_active_list(value):
+    v = (value or '').strip() if value is not None else ''
+    if not v or v == 'csi':
+        return 'custom'
+    return v
+
+
 LIBRARY_PATCH_KEYS = frozenset({
     'costTypes',
     'customCostCodes',
@@ -21,7 +28,7 @@ def library_slice_from_state(state: dict | None) -> dict:
     return {
         'costTypes': list(data.get('costTypes') or []),
         'customCostCodes': list(data.get('customCostCodes') or []),
-        'activeCostCodeList': data.get('activeCostCodeList') or 'csi',
+        'activeCostCodeList': _normalize_active_list(data.get('activeCostCodeList')),
         'costCodeLists': dict(data.get('costCodeLists') or {}),
     }
 
