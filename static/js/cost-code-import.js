@@ -104,9 +104,51 @@
     return { list: base, added, updated, replaced: replace };
   }
 
+  function pickCostCodeFile() {
+    return new Promise((resolve, reject) => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.xlsx,.xls,.csv';
+      input.onchange = (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) {
+          resolve(null);
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          try {
+            let rows = [];
+            const lower = file.name.toLowerCase();
+            if (lower.endsWith('.csv')) {
+              rows = parseCsvText(ev.target.result);
+            } else {
+              const XLSX = global.XLSX;
+              if (!XLSX) throw new Error('Excel library not loaded — refresh the Accounting page.');
+              const data = new Uint8Array(ev.target.result);
+              const wb = XLSX.read(data, { type: 'array' });
+              const sheet = wb.Sheets[wb.SheetNames[0]];
+              const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+              rows = parseSheetRowsFromArray(json);
+            }
+            const incoming = parseObjectsFromRows(rows);
+            if (!incoming.length) throw new Error('No cost codes found in file');
+            resolve({ incoming, fileName: file.name });
+          } catch (err) {
+            reject(err);
+          }
+        };
+        reader.onerror = () => reject(new Error('Could not read file'));
+        if (file.name.toLowerCase().endsWith('.csv')) reader.readAsText(file);
+        else reader.readAsArrayBuffer(file);
+      };
+      input.click();
+    });
+  }
+
   /**
    * Open file picker, parse xlsx/csv, return { list, added, updated, replaced }.
-   * options: { existing, mode: 'append'|'replace', readFile }
+   * options: { existing, mode: 'append'|'replace' }
    */
   function pickAndImportCostCodes(options) {
     const opts = options || {};
@@ -155,6 +197,7 @@
   global.CasePMCostCodeImport = {
     parseObjectsFromRows,
     mergeCostCodes,
+    pickCostCodeFile,
     pickAndImportCostCodes,
     rowToCostCode,
   };

@@ -3,6 +3,7 @@
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="{{ static_v('js/cost-code-import.js') }}"></script>
+<script src="{{ static_v('js/cost-code-library.js') }}"></script>
 <script src="{{ static_v('js/budget-sync.js') }}"></script>
 <script src="{{ static_v('js/accounting-reconcile.js') }}"></script>
 
@@ -279,40 +280,12 @@
             <button onclick="document.getElementById('settingsModal').close()" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-times text-xl"></i></button>
         </div>
 
-        <div class="mb-6">
-            <div class="flex items-center justify-between mb-3">
-                <div class="font-medium">Project Cost Codes</div>
-                <div class="flex flex-wrap gap-2 justify-end">
-                    <button onclick="uploadCostCodesExcel()" class="px-4 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 rounded-md flex items-center gap-2">
-                        <i class="fa-solid fa-upload"></i> Upload Excel / CSV
-                    </button>
-                    <button onclick="addNewCostCodeModal()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md flex items-center gap-2">
-                        <i class="fa-solid fa-plus"></i> Add Code
-                    </button>
-                    <button onclick="viewActiveCostCodeList()" class="px-4 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded-md flex items-center gap-2">
-                        <i class="fa-solid fa-list"></i> View / Remove
-                    </button>
-                    <button onclick="clearAllProjectCostCodes()" class="px-4 py-1.5 text-xs bg-red-900/70 hover:bg-red-900 text-red-300 rounded-md flex items-center gap-2">
-                        <i class="fa-solid fa-eraser"></i> Clear all
-                    </button>
-                </div>
-            </div>
-            <p class="text-[11px] text-zinc-500">Upload a spreadsheet with <span class="font-mono text-zinc-400">Cost Code</span> and <span class="font-mono text-zinc-400">Description</span> columns (optional <span class="font-mono text-zinc-400">Cost Type</span>). You can also manage codes in <a href="/accounting?module=cost-codes" class="text-emerald-400 hover:underline">Accounting → Cost Code Library</a>.</p>
-        </div>
-
-        <div class="mb-6">
-            <div class="flex items-center justify-between mb-3">
-                <div class="font-medium">Cost Types</div>
-                <div class="flex gap-2">
-                    <button onclick="addNewCostTypeModal()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md flex items-center gap-2">
-                        <i class="fa-solid fa-plus"></i> New Item
-                    </button>
-                    <button onclick="uploadCostTypesExcel()" class="px-4 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 rounded-md flex items-center gap-2">
-                        <i class="fa-solid fa-upload"></i> Upload Excel
-                    </button>
-                </div>
-            </div>
-            <div id="costTypesList" class="bg-zinc-800 rounded-md p-2 text-sm max-h-32 overflow-auto text-white"></div>
+        <div class="mb-6 rounded-lg border border-zinc-700 bg-zinc-800/40 p-4">
+            <div class="font-medium mb-2">Cost codes &amp; types</div>
+            <p class="text-sm text-zinc-400 mb-3">Manage the project cost code library and cost types only in Accounting. Budget uses that list when you add lines.</p>
+            <a href="/accounting?module=cost-codes" class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">
+                <i class="fa-solid fa-book"></i> Open Cost Code Library
+            </a>
         </div>
 
         <div class="pt-4 border-t border-zinc-700 space-y-3">
@@ -324,7 +297,7 @@
                 <i class="fa-solid fa-sync"></i>
                 <span>Sync All Budget Settings with Sage 300</span>
             </button>
-            <p class="text-[10px] text-center text-zinc-500">Cost codes, types, and active list are saved to the project on the server.</p>
+            <p class="text-[10px] text-center text-zinc-500">Sage sync and contract settings are saved to the project on the server. Cost codes are managed in Accounting.</p>
         </div>
     </div>
 </dialog>
@@ -441,6 +414,23 @@
     let customCostCodes = [];
     let costTypes = ["Labor", "Material", "Subcontract", "Equipment", "General Conditions", "Other"];
     let activeCostCodeList = 'custom';
+
+    async function pullCostCodesFromAccountingLibrary() {
+        if (typeof CasePMCostCodeLibrary === 'undefined') return;
+        try {
+            const data = await CasePMCostCodeLibrary.fetchLibrary(null, { force: true });
+            if (data.library && Array.isArray(data.library.customCostCodes)) {
+                customCostCodes = data.library.customCostCodes;
+                casepmStore.setItem('customCostCodes', JSON.stringify(customCostCodes));
+            }
+            if (Array.isArray(data.cost_types) && data.cost_types.length) {
+                costTypes = data.cost_types;
+                casepmStore.setItem('costTypes', JSON.stringify(costTypes));
+            }
+        } catch (e) {
+            console.warn('[Budget] cost code library refresh failed', e);
+        }
+    }
 
     function projectCostCodes() {
         return customCostCodes;
@@ -1269,11 +1259,12 @@
     }
 
     // ==================== ADD / EDIT / DELETE ====================
-    function showAddBudgetLineModal() {
+    async function showAddBudgetLineModal() {
         if (budgetIsLocked()) {
             showCenteredAlert("Budget is locked after publishing. Create a new revision to add lines.");
             return;
         }
+        await pullCostCodesFromAccountingLibrary();
         document.getElementById('budgetLineForm').reset();
         document.getElementById('budgetLineId').value = '';
         document.getElementById('modalTitle').innerText = 'Add Budget Line Item';
@@ -2243,12 +2234,12 @@
 
     // ==================== SETTINGS HELPERS (FIXED New List + Upload + View List) ====================
     function showSettingsModal() {
-        renderCostTypesList();
         document.getElementById('settingsModal').showModal();
     }
 
     function renderCostTypesList() {
         const container = document.getElementById('costTypesList');
+        if (!container) return;
         container.innerHTML = '';
         costTypes.forEach((type, index) => {
             const div = document.createElement('div');
@@ -2476,7 +2467,7 @@
         modal.style.width = 'min(620px, 95vw)';
         modal.style.maxHeight = '72vh';
 
-        const showRemove = !selectMode;
+        const showRemove = false;
         const colSpan = (hideCostType ? 2 : 3) + (showRemove ? 1 : 0);
 
         let html = `
