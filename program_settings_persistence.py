@@ -752,6 +752,11 @@ def integrations_status():
         microsoft_mail = microsoft_mail_info()
     except Exception:
         microsoft_mail = {'configured': False}
+    try:
+        from google_gmail_service import integration_info as google_mail_info
+        google_mail = google_mail_info()
+    except Exception:
+        google_mail = {'configured': False}
     return {
         'sage_api_url_set': bool(sage_url),
         'sage_api_key_set': sage_key,
@@ -759,6 +764,7 @@ def integrations_status():
         'aia': aia,
         'docusign': docusign,
         'microsoft_mail': microsoft_mail,
+        'google_mail': google_mail,
         'secret_key_from_env': bool(os.environ.get('CASEPM_SECRET_KEY', '').strip()),
         'deployment_env': (os.environ.get('CASEPM_DEPLOYMENT') or '').strip() or None,
     }

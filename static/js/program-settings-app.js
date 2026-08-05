@@ -707,6 +707,11 @@
           ${i.microsoft_mail?.tenant_id ? `<div class="text-zinc-500 text-[10px] mt-1">Tenant: ${escapeHtml(i.microsoft_mail.tenant_id)}</div>` : ''}
         </div>
         <div class="settings-card">
+          <div class="font-medium text-white mb-2">Google Gmail</div>
+          <div class="text-xs">${integrationStatusBadge(i.google_mail?.configured, i.google_mail?.configured ? 'OAuth app configured' : 'Not configured')}</div>
+          ${i.google_mail?.redirect_note ? `<div class="text-zinc-500 text-[10px] mt-1">${escapeHtml(i.google_mail.redirect_note)}</div>` : ''}
+        </div>
+        <div class="settings-card">
           <div class="font-medium text-white mb-2">DocuSign</div>
           <div class="text-xs">${integrationStatusBadge(docusign.configured, docusign.configured ? 'Configured' : 'Not configured')}</div>
           ${docusign.base_url ? `<div class="text-xs text-zinc-500 mt-1">${escapeHtml(docusign.base_url)}</div>` : ''}
@@ -912,16 +917,21 @@
       return;
     }
     if (connection?.connected) {
+      const prov = (connection.provider || 'microsoft').toLowerCase();
+      const isGoogle = prov === 'google';
+      const label = isGoogle ? 'Gmail connected' : 'Outlook connected';
+      const icon = isGoogle ? 'fa-google' : 'fa-microsoft';
+      const titleCls = isGoogle ? 'text-amber-300' : 'text-emerald-300';
       host.innerHTML = `
-        <div class="text-emerald-300 font-medium text-sm"><i class="fa-brands fa-microsoft mr-2"></i>Outlook connected</div>
+        <div class="${titleCls} font-medium text-sm"><i class="fa-brands ${icon} mr-2"></i>${label}</div>
         <div class="text-zinc-300">${escapeHtml(connection.display_name || user.name)}</div>
         <div class="text-zinc-500 text-xs font-mono">${escapeHtml(connection.email_address || user.email)}</div>
         ${connection.last_sync_at ? `<div class="text-zinc-600 text-[10px] mt-1">Last sync ${escapeHtml(connection.last_sync_at.replace('T', ' ').slice(0, 19))}</div>` : ''}`;
     } else {
       host.innerHTML = `
-        <div class="text-zinc-400 text-sm">Not connected to Microsoft 365</div>
+        <div class="text-zinc-400 text-sm">No Google or Microsoft mailbox connected</div>
         <div class="text-zinc-500 text-xs">Login email: ${escapeHtml(user.email)}</div>
-        <div class="text-zinc-600 text-[10px] mt-1">Use Connect Outlook to sign in as this user (admin-assisted setup).</div>`;
+        <div class="text-zinc-600 text-[10px] mt-1">Use Connect Gmail or Connect Outlook to sign in as this user (admin-assisted setup).</div>`;
     }
   }
 
@@ -975,7 +985,11 @@
     const picker = document.getElementById('emailAdminUserPicker');
     if (picker) {
       picker.innerHTML = emailAdminUsers.map((u) => {
-        const status = u.connection?.connected ? ' · Outlook ✓' : '';
+        let status = '';
+        if (u.connection?.connected) {
+          const p = (u.connection.provider || 'microsoft').toLowerCase();
+          status = p === 'google' ? ' · Gmail ✓' : ' · Outlook ✓';
+        }
         return `<option value="${u.id}">${escapeHtml(u.name)} (${escapeHtml(u.email)})${status}</option>`;
       }).join('');
       if (!picker.value && emailAdminUsers.length) picker.value = String(emailAdminUsers[0].id);
@@ -988,6 +1002,22 @@
       CasePMDialog?.alert('Microsoft Outlook connected successfully. Inbox sync has started.', 'success');
     } else if (params.get('outlook') === 'error') {
       CasePMDialog?.alert(`Outlook connection failed: ${params.get('reason') || 'unknown error'}`, 'error');
+    }
+    if (params.get('gmail') === 'connected') {
+      CasePMDialog?.alert('Google Gmail connected successfully. Inbox sync has started.', 'success');
+    } else if (params.get('gmail') === 'error') {
+      CasePMDialog?.alert(`Gmail connection failed: ${params.get('reason') || 'unknown error'}`, 'error');
+    }
+  }
+
+  async function connectGmailForUser() {
+    if (!emailAdminSelectedUserId) {
+      CasePMDialog?.alert('Select a user first.', 'warning');
+      return;
+    }
+    if (global.CasePMEmailSettingsUI) {
+      CasePMEmailSettingsUI.setRenderOptions({ mode: 'user', userId: emailAdminSelectedUserId, admin: true });
+      await CasePMEmailSettingsUI.connectGoogle();
     }
   }
 
@@ -1004,10 +1034,10 @@
 
   async function disconnectOutlookForUser() {
     if (!emailAdminSelectedUserId) return;
-    const ok = await CasePMDialog?.confirm('Disconnect this user from Microsoft 365?', { title: 'Disconnect Outlook', confirmLabel: 'Disconnect', danger: true });
+    const ok = await CasePMDialog?.confirm('Disconnect this user\'s connected mailbox (Google or Microsoft)?', { title: 'Disconnect mailbox', confirmLabel: 'Disconnect', danger: true });
     if (!ok) return;
     await api(`/api/email/users/${emailAdminSelectedUserId}/connection`, { method: 'DELETE' });
-    CasePMDialog?.alert('Outlook disconnected.', 'success');
+    CasePMDialog?.alert('Mailbox disconnected.', 'success');
     await onEmailUserSelected();
   }
 
@@ -1038,6 +1068,6 @@
     loadWorkflowForm, saveWorkflowForm,
     loadIntegrationsPanel,
     renderEmailAdminTab, onEmailUserSelected,
-    connectOutlookForUser, disconnectOutlookForUser, syncOutlookForUser,
+    connectGmailForUser, connectOutlookForUser, disconnectOutlookForUser, syncOutlookForUser,
   };
 })(window);
