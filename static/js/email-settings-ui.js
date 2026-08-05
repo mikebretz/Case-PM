@@ -16,14 +16,20 @@
   function connectionBanner(connection) {
     if (!connection) return '';
     if (connection.connected) {
-      return `<div class="mb-4 rounded-md border border-emerald-900/50 bg-emerald-950/30 px-4 py-3 text-sm">
-        <div class="text-emerald-300 font-medium"><i class="fa-brands fa-microsoft mr-2"></i>Connected to Microsoft 365</div>
+      const provider = (connection.provider || 'microsoft').toLowerCase();
+      const isGoogle = provider === 'google';
+      const label = isGoogle ? 'Connected to Google Gmail' : 'Connected to Microsoft 365';
+      const icon = isGoogle ? 'fa-google' : 'fa-microsoft';
+      const border = isGoogle ? 'border-amber-900/50 bg-amber-950/30' : 'border-emerald-900/50 bg-emerald-950/30';
+      const title = isGoogle ? 'text-amber-300' : 'text-emerald-300';
+      return `<div class="mb-4 rounded-md border ${border} px-4 py-3 text-sm">
+        <div class="${title} font-medium"><i class="fa-brands ${icon} mr-2"></i>${label}</div>
         <div class="text-zinc-400 text-xs mt-1">${escText(connection.display_name || '')} · ${escText(connection.email_address || '')}</div>
         ${connection.last_sync_at ? `<div class="text-zinc-500 text-[10px] mt-1">Last sync: ${escText(connection.last_sync_at.replace('T', ' ').slice(0, 19))}</div>` : ''}
       </div>`;
     }
     return `<div class="mb-4 rounded-md border border-zinc-700 bg-zinc-900/50 px-4 py-3 text-sm text-zinc-400">
-      <i class="fa-solid fa-plug-circle-xmark mr-2 text-zinc-500"></i>Not connected to Microsoft 365. Click <strong class="text-zinc-300">Connect Microsoft / Outlook</strong> to sign in.
+      <i class="fa-solid fa-plug-circle-xmark mr-2 text-zinc-500"></i>Not connected. Use <strong class="text-zinc-300">Connect Google / Gmail</strong> or <strong class="text-zinc-300">Connect Microsoft / Outlook</strong> below, or enter IMAP/SMTP for other providers.
     </div>`;
   }
 
@@ -416,8 +422,10 @@
           const json = await connRes.json();
           renderOptions.connection = json.connection || null;
           if (json.connection?.connected) {
-            settings.microsoftConnected = true;
-            settings.provider = json.connection.provider || 'microsoft';
+            const prov = (json.connection.provider || 'microsoft').toLowerCase();
+            settings.provider = prov;
+            settings.microsoftConnected = prov === 'microsoft';
+            settings.googleConnected = prov === 'google';
             settings.emailAddress = json.connection.email_address || settings.emailAddress;
             settings.displayName = json.connection.display_name || settings.displayName;
           }
@@ -445,12 +453,27 @@
     return S();
   }
 
-  function connectGoogle() {
-    if (global.CasePMDialog) global.CasePMDialog.alert(
-      'Google Gmail sign-in is not available yet. Connect Microsoft Outlook, or enter IMAP/SMTP credentials below. Your admin can document Gmail as IMAP in Program Settings → Email.',
-      'info',
-    );
-    else alert('Google Gmail OAuth is planned for a future release.');
+  async function connectGoogle() {
+    const uid = renderOptions.userId;
+    const params = new URLSearchParams();
+    if (uid) params.set('user_id', String(uid));
+    params.set('return_to', window.location.pathname + window.location.search);
+    try {
+      const res = await fetch(`/api/email/oauth/google/start?${params}`, { credentials: 'same-origin' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const setup = json.setup ? `\n\nSet environment variables:\n${(json.setup.required_env || []).join('\n')}` : '';
+        throw new Error((json.error || res.statusText) + setup);
+      }
+      if (json.authorization_url) {
+        window.location.href = json.authorization_url;
+        return;
+      }
+      throw new Error('No authorization URL returned.');
+    } catch (err) {
+      if (global.CasePMDialog) global.CasePMDialog.alert(err.message || 'Could not start Google sign-in.', 'error');
+      else alert(err.message || 'Could not start Google sign-in.');
+    }
   }
 
   async function connectMicrosoft() {
@@ -490,7 +513,9 @@
       if (!res.ok) throw new Error(json.error || res.statusText);
       const msg = json.mode === 'microsoft_graph'
         ? `Microsoft 365 connected as ${json.email_address || json.display_name || 'account'}.`
-        : (json.message || 'Connection settings look valid.');
+        : json.mode === 'google_gmail'
+          ? `Google Gmail connected as ${json.email_address || json.display_name || 'account'}.`
+          : (json.message || 'Connection settings look valid.');
       if (global.CasePMDialog) global.CasePMDialog.alert(msg, 'success');
       else alert(msg);
     } catch (err) {

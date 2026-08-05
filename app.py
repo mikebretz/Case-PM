@@ -15990,12 +15990,37 @@ def api_email_user_connection(user_id):
     disconnect_connection(uid, db=db, UserEmailConnection=UserEmailConnection)
     write_audit(
         'Disconnected email mailbox',
-        f'User #{uid} Microsoft/Outlook disconnected',
+        f'User #{uid} email OAuth disconnected',
         module='email',
         category='settings',
         commit=True,
     )
     return jsonify({'ok': True, 'user_id': uid, 'disconnected': True})
+
+
+def _sync_connected_mailbox(uid: int, *, limit: int = 40) -> dict:
+    from user_email_connection_persistence import connection_status
+    conn = connection_status(uid, UserEmailConnection=UserEmailConnection, User=User)
+    provider = (conn.get('provider') or 'microsoft').lower()
+    if provider == 'google':
+        from google_gmail_service import sync_inbox_messages as sync_google
+        return sync_google(
+            uid,
+            db=db,
+            UserEmailConnection=UserEmailConnection,
+            UserEmailMailbox=UserEmailMailbox,
+            UserEmailSecurity=UserEmailSecurity,
+            limit=limit,
+        )
+    from microsoft_graph_mail_service import sync_inbox_messages as sync_microsoft
+    return sync_microsoft(
+        uid,
+        db=db,
+        UserEmailConnection=UserEmailConnection,
+        UserEmailMailbox=UserEmailMailbox,
+        UserEmailSecurity=UserEmailSecurity,
+        limit=limit,
+    )
 
 
 @app.route('/api/email/oauth/microsoft/start')
@@ -16066,12 +16091,7 @@ def api_email_oauth_microsoft_callback():
             db=db,
             UserEmailConnection=UserEmailConnection,
         )
-        sync_inbox_messages(
-            int(user_id),
-            db=db,
-            UserEmailConnection=UserEmailConnection,
-            UserEmailMailbox=UserEmailMailbox,
-        )
+        _sync_connected_mailbox(int(user_id))
         write_audit(
             'Connected Outlook mailbox',
             f'User #{user_id} connected as {email}',
@@ -16085,10 +16105,105 @@ def api_email_oauth_microsoft_callback():
         return redirect(return_to + ('&' if '?' in return_to else '?') + f'outlook=error&reason={urllib.parse.quote(str(exc)[:120])}')
 
 
+@app.route('/api/email/oauth/google/start')
+@login_required
+def api_email_oauth_google_start():
+    import secrets
+    from google_gmail_service import authorization_url, integration_info, is_configured
+    from user_email_connection_persistence import ensure_user_email_connection_schema
+    if not is_configured():
+        info = integration_info()
+        return jsonify({
+            'error': 'Google Gmail is not configured on this server.',
+            'setup': info,
+        }), 503
+    try:
+        uid = _resolve_email_settings_user_id(request.args.get('user_id', type=int) or current_user.id)
+    except PermissionError:
+        return jsonify({'error': 'Admin only'}), 403
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 404
+    ensure_user_email_connection_schema(db)
+    state = secrets.token_urlsafe(24)
+    session['email_oauth_state'] = state
+    session['email_oauth_user_id'] = uid
+    session['email_oauth_provider'] = 'google'
+    from project_security import safe_relative_redirect_url
+    default_return = url_for('email_page', settings=1)
+    session['email_oauth_return_to'] = safe_relative_redirect_url(request.args.get('return_to'), default_return)
+    redirect_uri = request.url_root.rstrip('/') + '/api/email/oauth/google/callback'
+    return jsonify({
+        'ok': True,
+        'authorization_url': authorization_url(redirect_uri=redirect_uri, state=state),
+        'user_id': uid,
+    })
+
+
+@app.route('/api/email/oauth/google/callback')
+@login_required
+def api_email_oauth_google_callback():
+    from google_gmail_service import exchange_code, get_user_profile
+    from user_email_connection_persistence import upsert_connection, ensure_user_email_connection_schema
+    expected_state = session.pop('email_oauth_state', None)
+    user_id = session.pop('email_oauth_user_id', None)
+    session.pop('email_oauth_provider', None)
+    from project_security import safe_relative_redirect_url
+    default_return = url_for('email_page', settings=1)
+    return_to = safe_relative_redirect_url(session.pop('email_oauth_return_to', None), default_return)
+    if not expected_state or request.args.get('state') != expected_state:
+        return redirect(return_to + ('&' if '?' in return_to else '?') + 'gmail=error&reason=state')
+    if request.args.get('error'):
+        reason = request.args.get('error_description') or request.args.get('error')
+        return redirect(return_to + ('&' if '?' in return_to else '?') + f'gmail=error&reason={urllib.parse.quote(str(reason)[:120])}')
+    code = request.args.get('code')
+    if not code or not user_id:
+        return redirect(return_to + ('&' if '?' in return_to else '?') + 'gmail=error&reason=missing_code')
+    redirect_uri = request.url_root.rstrip('/') + '/api/email/oauth/google/callback'
+    try:
+        ensure_user_email_connection_schema(db)
+        tokens = exchange_code(code, redirect_uri=redirect_uri)
+        profile = get_user_profile(tokens['access_token'])
+        email = (profile.get('email') or profile.get('emailAddress') or '').strip()
+        display = (profile.get('name') or '').strip()
+        upsert_connection(
+            int(user_id),
+            provider='google',
+            email_address=email,
+            display_name=display,
+            tokens=tokens,
+            scopes=None,
+            db=db,
+            UserEmailConnection=UserEmailConnection,
+        )
+        _sync_connected_mailbox(int(user_id))
+        write_audit(
+            'Connected Gmail mailbox',
+            f'User #{user_id} connected as {email}',
+            module='email',
+            category='settings',
+            commit=True,
+        )
+        return redirect(return_to + ('&' if '?' in return_to else '?') + 'gmail=connected')
+    except Exception as exc:
+        db.session.rollback()
+        return redirect(return_to + ('&' if '?' in return_to else '?') + f'gmail=error&reason={urllib.parse.quote(str(exc)[:120])}')
+
+
 @app.route('/api/email/test-connection', methods=['POST'])
 @login_required
 def api_email_test_connection():
-    from microsoft_graph_mail_service import ensure_fresh_tokens, integration_info, is_configured, test_connection
+    from microsoft_graph_mail_service import (
+        ensure_fresh_tokens as ms_ensure_fresh_tokens,
+        integration_info as ms_integration_info,
+        is_configured as ms_is_configured,
+        test_connection as ms_test_connection,
+    )
+    from google_gmail_service import (
+        ensure_fresh_tokens as google_ensure_fresh_tokens,
+        integration_info as google_integration_info,
+        is_configured as google_is_configured,
+        test_connection as google_test_connection,
+    )
     from user_email_connection_persistence import connection_status, ensure_user_email_connection_schema
     body = request.get_json(silent=True) or {}
     try:
@@ -16100,19 +16215,28 @@ def api_email_test_connection():
     ensure_user_email_connection_schema(db)
     conn = connection_status(uid, UserEmailConnection=UserEmailConnection, User=User)
     if conn.get('connected') and conn.get('provider') == 'microsoft':
-        if not is_configured():
-            return jsonify({'error': 'Microsoft 365 not configured', 'setup': integration_info()}), 503
+        if not ms_is_configured():
+            return jsonify({'error': 'Microsoft 365 not configured', 'setup': ms_integration_info()}), 503
         try:
-            tokens = ensure_fresh_tokens(uid, db=db, UserEmailConnection=UserEmailConnection)
-            result = test_connection(tokens['access_token'])
+            tokens = ms_ensure_fresh_tokens(uid, db=db, UserEmailConnection=UserEmailConnection)
+            result = ms_test_connection(tokens['access_token'])
             return jsonify({'ok': True, 'mode': 'microsoft_graph', **result})
+        except Exception as exc:
+            return jsonify({'error': str(exc)}), 400
+    if conn.get('connected') and conn.get('provider') == 'google':
+        if not google_is_configured():
+            return jsonify({'error': 'Google Gmail not configured', 'setup': google_integration_info()}), 503
+        try:
+            tokens = google_ensure_fresh_tokens(uid, db=db, UserEmailConnection=UserEmailConnection)
+            result = google_test_connection(tokens['access_token'])
+            return jsonify({'ok': True, 'mode': 'google_gmail', **result})
         except Exception as exc:
             return jsonify({'error': str(exc)}), 400
     settings = body.get('settings') or {}
     host = (settings.get('smtpHost') or '').strip()
     imap = (settings.get('imapHost') or '').strip()
     if not host and not imap:
-        return jsonify({'error': 'Connect Microsoft Outlook or enter SMTP/IMAP server details.'}), 400
+        return jsonify({'error': 'Connect Google or Microsoft, or enter SMTP/IMAP server details.'}), 400
     return jsonify({
         'ok': True,
         'mode': 'manual',
@@ -16125,7 +16249,6 @@ def api_email_test_connection():
 @app.route('/api/email/sync', methods=['POST'])
 @login_required
 def api_email_sync_mailbox():
-    from microsoft_graph_mail_service import sync_inbox_messages
     from user_email_connection_persistence import connection_status, ensure_user_email_connection_schema
     body = request.get_json(silent=True) or {}
     try:
@@ -16139,14 +16262,7 @@ def api_email_sync_mailbox():
     if not conn.get('connected'):
         return jsonify({'error': 'Mailbox is not connected.'}), 400
     try:
-        result = sync_inbox_messages(
-            uid,
-            db=db,
-            UserEmailConnection=UserEmailConnection,
-            UserEmailMailbox=UserEmailMailbox,
-            UserEmailSecurity=UserEmailSecurity,
-            limit=int(body.get('limit') or 40),
-        )
+        result = _sync_connected_mailbox(uid, limit=int(body.get('limit') or 40))
         return jsonify({'ok': True, 'user_id': uid, **result})
     except Exception as exc:
         return jsonify({'error': str(exc)}), 400
