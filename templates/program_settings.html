@@ -948,11 +948,12 @@
     <div id="tab-content-integrations" class="hidden">
         <div class="settings-panel">
             <h2 class="text-xl font-semibold mb-2">Integrations Status</h2>
-            <p class="text-sm text-zinc-500 mb-6">Read-only overview of external services. Credentials are set via environment variables or the Sage tab — not stored in the database.</p>
+            <p class="text-sm text-zinc-500 mb-6">External services overview. Sage uses the Sage tab or environment variables. Email OAuth (Google / Microsoft) can be saved below or set in <code class="text-emerald-400">security.env</code>.</p>
             <div id="integrationsStatusBody" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
                 <div class="settings-card text-zinc-400">Loading integration status…</div>
             </div>
-            <p class="text-xs text-zinc-500 mt-6">Configure Sage API URL and keys in <code class="text-emerald-400">security.env</code> or the Sage 300 tab. DocuSign and AIA settings use their respective service environment variables.</p>
+            <div id="emailOAuthSettingsHost" class="mt-8"></div>
+            <p class="text-xs text-zinc-500 mt-6">DocuSign and AIA use their respective service environment variables. Email OAuth secrets are stored in <code class="text-emerald-400">instance/program_settings.json</code> when saved here (admin-only API).</p>
         </div>
     </div>
 

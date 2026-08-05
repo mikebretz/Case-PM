@@ -15115,6 +15115,25 @@ def api_program_settings_integrations():
     })
 
 
+@app.route('/api/program-settings/email-oauth', methods=['GET', 'PUT'])
+@login_required
+@admin_required
+def api_program_settings_email_oauth():
+    from program_settings_persistence import load_email_oauth_settings, save_email_oauth_settings
+    if request.method == 'GET':
+        return jsonify({'ok': True, 'email_oauth': load_email_oauth_settings()})
+    body = request.get_json(silent=True) or {}
+    saved = save_email_oauth_settings(body.get('email_oauth') or body)
+    write_audit(
+        'Updated email OAuth settings',
+        'Program Settings email OAuth (Microsoft / Google)',
+        module='program_settings',
+        category='settings',
+        commit=True,
+    )
+    return jsonify({'ok': True, 'email_oauth': load_email_oauth_settings()})
+
+
 @app.route('/api/program-settings/sage/test', methods=['POST'])
 @login_required
 @admin_required
@@ -16023,6 +16042,32 @@ def _sync_connected_mailbox(uid: int, *, limit: int = 40) -> dict:
     )
 
 
+@app.route('/api/email/oauth/setup', methods=['GET'])
+@login_required
+def api_email_oauth_setup():
+    from email_oauth_credentials import credential_sources
+    from google_gmail_service import integration_info as google_info, is_configured as google_ok
+    from microsoft_graph_mail_service import integration_info as microsoft_info, is_configured as microsoft_ok
+    base = request.url_root.rstrip('/')
+    ms = dict(microsoft_info())
+    go = dict(google_info())
+    ms['redirect_uri'] = f'{base}/api/email/oauth/microsoft/callback'
+    go['redirect_uri'] = f'{base}/api/email/oauth/google/callback'
+    if ms.get('redirect_note'):
+        ms['redirect_note'] = str(ms['redirect_note']).replace('{base_url}', base)
+    if go.get('redirect_note'):
+        go['redirect_note'] = str(go['redirect_note']).replace('{base_url}', base)
+    ms['configured'] = microsoft_ok()
+    go['configured'] = google_ok()
+    return jsonify({
+        'ok': True,
+        'microsoft': ms,
+        'google': go,
+        'sources': credential_sources(),
+        'admin_configure_path': '/program-settings?tab=integrations',
+    })
+
+
 @app.route('/api/email/oauth/microsoft/start')
 @login_required
 def api_email_oauth_microsoft_start():
@@ -16031,8 +16076,12 @@ def api_email_oauth_microsoft_start():
     from user_email_connection_persistence import ensure_user_email_connection_schema
     if not is_configured():
         info = integration_info()
+        base = request.url_root.rstrip('/')
+        info['redirect_uri'] = f'{base}/api/email/oauth/microsoft/callback'
+        if info.get('redirect_note'):
+            info['redirect_note'] = str(info['redirect_note']).replace('{base_url}', base)
         return jsonify({
-            'error': 'Microsoft 365 is not configured on this server.',
+            'error': 'Microsoft 365 is not configured on this server. An admin must set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET (environment) or save them under Program Settings → Integrations → Email OAuth.',
             'setup': info,
         }), 503
     try:
@@ -16113,8 +16162,12 @@ def api_email_oauth_google_start():
     from user_email_connection_persistence import ensure_user_email_connection_schema
     if not is_configured():
         info = integration_info()
+        base = request.url_root.rstrip('/')
+        info['redirect_uri'] = f'{base}/api/email/oauth/google/callback'
+        if info.get('redirect_note'):
+            info['redirect_note'] = str(info['redirect_note']).replace('{base_url}', base)
         return jsonify({
-            'error': 'Google Gmail is not configured on this server.',
+            'error': 'Google Gmail is not configured on this server. An admin must set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (environment) or save them under Program Settings → Integrations → Email OAuth.',
             'setup': info,
         }), 503
     try:

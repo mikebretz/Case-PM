@@ -2,11 +2,17 @@
 from __future__ import annotations
 
 import json
-import os
 import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta
+
+from email_oauth_credentials import (
+    microsoft_client_id as client_id,
+    microsoft_client_secret as client_secret,
+    microsoft_configured as is_configured,
+    microsoft_tenant_id as tenant_id,
+)
 
 GRAPH_BASE = 'https://graph.microsoft.com/v1.0'
 DEFAULT_SCOPES = [
@@ -14,26 +20,6 @@ DEFAULT_SCOPES = [
     'User.Read', 'Mail.ReadWrite', 'Mail.Send',
     'Calendars.ReadWrite',
 ]
-
-
-def _env(name: str) -> str:
-    return (os.environ.get(name) or '').strip()
-
-
-def client_id() -> str:
-    return _env('MICROSOFT_CLIENT_ID') or _env('AZURE_CLIENT_ID')
-
-
-def client_secret() -> str:
-    return _env('MICROSOFT_CLIENT_SECRET') or _env('AZURE_CLIENT_SECRET')
-
-
-def tenant_id() -> str:
-    return _env('MICROSOFT_TENANT_ID') or _env('AZURE_TENANT_ID') or 'common'
-
-
-def is_configured() -> bool:
-    return bool(client_id() and client_secret())
 
 
 def integration_info() -> dict:
@@ -46,6 +32,7 @@ def integration_info() -> dict:
             'MICROSOFT_CLIENT_ID (or AZURE_CLIENT_ID)',
             'MICROSOFT_CLIENT_SECRET (or AZURE_CLIENT_SECRET)',
             'MICROSOFT_TENANT_ID (optional — default common/multi-tenant)',
+            'Or save the same values under Program Settings → Integrations → Email OAuth.',
         ],
         'redirect_note': 'Register redirect URI: {base_url}/api/email/oauth/microsoft/callback',
         'scopes': DEFAULT_SCOPES,

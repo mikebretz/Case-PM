@@ -727,9 +727,84 @@
             <div class="text-zinc-500">Deployment: ${escapeHtml(i.deployment_env || 'default')}</div>
           </div>
         </div>`;
+      await loadEmailOAuthForm();
     } catch (err) {
       host.innerHTML = `<div class="settings-card text-red-400">Could not load: ${escapeHtml(err.message)}</div>`;
     }
+  }
+
+  async function loadEmailOAuthForm() {
+    const host = document.getElementById('emailOAuthSettingsHost');
+    if (!host) return;
+    try {
+      const [oauthJson, setupJson] = await Promise.all([
+        api('/api/program-settings/email-oauth'),
+        fetch('/api/email/oauth/setup', { credentials: 'same-origin' }).then((r) => r.json()).catch(() => ({})),
+      ]);
+      const o = oauthJson.email_oauth || {};
+      const msUri = setupJson.microsoft?.redirect_uri || '';
+      const goUri = setupJson.google?.redirect_uri || '';
+      host.innerHTML = `
+        <div class="settings-card">
+          <h3 class="font-medium text-white mb-1">Email OAuth (personal mailboxes)</h3>
+          <p class="text-xs text-zinc-500 mb-4">Required before users can click Connect Google or Connect Outlook on the Email page. Environment variables override these fields when both are set.</p>
+          <form id="emailOAuthForm" class="grid grid-cols-1 lg:grid-cols-2 gap-6 text-sm" onsubmit="CasePMProgramSettings.saveEmailOAuthSettings(event)">
+            <div class="space-y-3">
+              <div class="text-sky-300 font-medium text-xs uppercase tracking-wide">Microsoft 365</div>
+              <div>
+                <label class="block text-xs text-zinc-400 mb-1">Client ID</label>
+                <input type="text" id="eo_microsoft_client_id" class="settings-input font-mono text-xs" value="${escapeHtml(o.microsoft_client_id || '')}" autocomplete="off">
+              </div>
+              <div>
+                <label class="block text-xs text-zinc-400 mb-1">Client secret</label>
+                <input type="password" id="eo_microsoft_client_secret" class="settings-input font-mono text-xs" value="${o._microsoft_client_secret_set ? '********' : ''}" placeholder="${o._microsoft_client_secret_set ? '********' : 'Paste secret'}" autocomplete="new-password">
+              </div>
+              <div>
+                <label class="block text-xs text-zinc-400 mb-1">Tenant ID (optional)</label>
+                <input type="text" id="eo_microsoft_tenant_id" class="settings-input font-mono text-xs" value="${escapeHtml(o.microsoft_tenant_id || 'common')}" placeholder="common">
+              </div>
+              ${msUri ? `<p class="text-[10px] text-zinc-500">Redirect URI: <code class="text-emerald-400/90">${escapeHtml(msUri)}</code></p>` : ''}
+            </div>
+            <div class="space-y-3">
+              <div class="text-amber-300 font-medium text-xs uppercase tracking-wide">Google Gmail</div>
+              <div>
+                <label class="block text-xs text-zinc-400 mb-1">Client ID</label>
+                <input type="text" id="eo_google_client_id" class="settings-input font-mono text-xs" value="${escapeHtml(o.google_client_id || '')}" autocomplete="off">
+              </div>
+              <div>
+                <label class="block text-xs text-zinc-400 mb-1">Client secret</label>
+                <input type="password" id="eo_google_client_secret" class="settings-input font-mono text-xs" value="${o._google_client_secret_set ? '********' : ''}" placeholder="${o._google_client_secret_set ? '********' : 'Paste secret'}" autocomplete="new-password">
+              </div>
+              ${goUri ? `<p class="text-[10px] text-zinc-500">Redirect URI: <code class="text-amber-400/90">${escapeHtml(goUri)}</code></p>` : ''}
+            </div>
+            <div class="lg:col-span-2 flex justify-end">
+              <button type="submit" class="settings-btn settings-btn-primary"><i class="fa-solid fa-save"></i> Save Email OAuth</button>
+            </div>
+          </form>
+        </div>`;
+    } catch (err) {
+      host.innerHTML = `<div class="settings-card text-red-400 text-sm">Could not load email OAuth settings: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  async function saveEmailOAuthSettings(e) {
+    e?.preventDefault();
+    const payload = {
+      microsoft_client_id: document.getElementById('eo_microsoft_client_id')?.value?.trim() || '',
+      microsoft_tenant_id: document.getElementById('eo_microsoft_tenant_id')?.value?.trim() || 'common',
+      google_client_id: document.getElementById('eo_google_client_id')?.value?.trim() || '',
+    };
+    const msSec = document.getElementById('eo_microsoft_client_secret')?.value;
+    const goSec = document.getElementById('eo_google_client_secret')?.value;
+    if (msSec && msSec !== '********') payload.microsoft_client_secret = msSec;
+    if (goSec && goSec !== '********') payload.google_client_secret = goSec;
+    await api('/api/program-settings/email-oauth', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email_oauth: payload }),
+    });
+    CasePMDialog?.alert('Email OAuth settings saved. Users can now connect Google or Microsoft from the Email page.', 'success');
+    await loadIntegrationsPanel();
   }
 
   function previewNumber(key, prefix, pad) {
@@ -1066,7 +1141,7 @@
     loadNotificationsForm, saveNotificationsForm,
     loadRegionalForm, saveRegionalForm,
     loadWorkflowForm, saveWorkflowForm,
-    loadIntegrationsPanel,
+    loadIntegrationsPanel, saveEmailOAuthSettings,
     renderEmailAdminTab, onEmailUserSelected,
     connectGmailForUser, connectOutlookForUser, disconnectOutlookForUser, syncOutlookForUser,
   };

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import urllib.error
 import urllib.parse
@@ -10,6 +9,12 @@ import urllib.request
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
 from email.utils import parsedate_to_datetime
+
+from email_oauth_credentials import (
+    google_client_id as client_id,
+    google_client_secret as client_secret,
+    google_configured as is_configured,
+)
 
 GMAIL_BASE = 'https://gmail.googleapis.com/gmail/v1'
 USERINFO_URL = 'https://www.googleapis.com/oauth2/v2/userinfo'
@@ -23,22 +28,6 @@ DEFAULT_SCOPES = [
 ]
 
 
-def _env(name: str) -> str:
-    return (os.environ.get(name) or '').strip()
-
-
-def client_id() -> str:
-    return _env('GOOGLE_CLIENT_ID') or _env('GMAIL_CLIENT_ID')
-
-
-def client_secret() -> str:
-    return _env('GOOGLE_CLIENT_SECRET') or _env('GMAIL_CLIENT_SECRET')
-
-
-def is_configured() -> bool:
-    return bool(client_id() and client_secret())
-
-
 def integration_info() -> dict:
     return {
         'configured': is_configured(),
@@ -47,6 +36,7 @@ def integration_info() -> dict:
         'required_env': [
             'GOOGLE_CLIENT_ID (or GMAIL_CLIENT_ID)',
             'GOOGLE_CLIENT_SECRET (or GMAIL_CLIENT_SECRET)',
+            'Or save the same values under Program Settings → Integrations → Email OAuth.',
         ],
         'redirect_note': 'Register redirect URI: {base_url}/api/email/oauth/google/callback',
         'scopes': DEFAULT_SCOPES,
