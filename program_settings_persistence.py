@@ -55,6 +55,14 @@ MAINTENANCE_DEFAULTS = {
     'notify_admin_on_backup_failure': True,
 }
 
+EMAIL_OAUTH_DEFAULTS = {
+    'microsoft_client_id': '',
+    'microsoft_client_secret': '',
+    'microsoft_tenant_id': 'common',
+    'google_client_id': '',
+    'google_client_secret': '',
+}
+
 # Document / record numbering — prefix, zero-pad width, scope (global|project)
 NUMBERING_DEFAULTS = {
     'project': {'label': 'Projects', 'prefix': 'PRJ', 'pad': 3, 'scope': 'global'},
@@ -436,6 +444,41 @@ def save_company_email_settings(payload):
         clean['smtpPassword'] = incoming_pwd
     clean['scope'] = 'company'
     return save_section('email', clean)
+
+
+def load_email_oauth_settings_raw() -> dict:
+    return dict(get_section('email_oauth', EMAIL_OAUTH_DEFAULTS))
+
+
+def load_email_oauth_settings(mask_secret: bool = True) -> dict:
+    section = load_email_oauth_settings_raw()
+    out = dict(section)
+    if mask_secret:
+        for key in ('microsoft_client_secret', 'google_client_secret'):
+            if out.get(key):
+                out[key] = '********'
+                out[f'_{key}_set'] = True
+    return out
+
+
+def save_email_oauth_settings(payload):
+    if not isinstance(payload, dict):
+        return load_email_oauth_settings(mask_secret=False)
+    existing = load_email_oauth_settings_raw()
+    clean = dict(existing)
+    for key in EMAIL_OAUTH_DEFAULTS:
+        if key in payload:
+            val = payload.get(key)
+            if key.endswith('_secret') and val in (None, '', '********'):
+                continue
+            clean[key] = (val or '').strip() if isinstance(val, str) else val
+    if payload.get('microsoft_client_secret') not in (None, '', '********'):
+        clean['microsoft_client_secret'] = str(payload.get('microsoft_client_secret') or '').strip()
+    if payload.get('google_client_secret') not in (None, '', '********'):
+        clean['google_client_secret'] = str(payload.get('google_client_secret') or '').strip()
+    if not (clean.get('microsoft_tenant_id') or '').strip():
+        clean['microsoft_tenant_id'] = 'common'
+    return save_section('email_oauth', clean, EMAIL_OAUTH_DEFAULTS)
 
 
 def load_numbering_config():

@@ -8,6 +8,7 @@
 
   let lastContainerId = 'emailSettingsModalBody';
   let renderOptions = { mode: 'user', userId: null, admin: false };
+  let oauthSetup = null;
 
   function setRenderOptions(options = {}) {
     renderOptions = { mode: options.mode || 'user', userId: options.userId || null, admin: !!options.admin };
@@ -31,6 +32,39 @@
     return `<div class="mb-4 rounded-md border border-zinc-700 bg-zinc-900/50 px-4 py-3 text-sm text-zinc-400">
       <i class="fa-solid fa-plug-circle-xmark mr-2 text-zinc-500"></i>Not connected. Use <strong class="text-zinc-300">Connect Google / Gmail</strong> or <strong class="text-zinc-300">Connect Microsoft / Outlook</strong> below, or enter IMAP/SMTP for other providers.
     </div>`;
+  }
+
+  function oauthSetupBanner() {
+    const setup = oauthSetup || renderOptions.oauthSetup;
+    if (!setup) return '';
+    const ms = setup.microsoft || {};
+    const go = setup.google || {};
+    if (ms.configured && go.configured) return '';
+    const adminPath = setup.admin_configure_path || '/program-settings?tab=integrations';
+    const parts = [];
+    if (!ms.configured) {
+      parts.push(`<li><strong class="text-zinc-300">Microsoft</strong> — register redirect <code class="text-emerald-400/90 text-[10px]">${escText(ms.redirect_uri || '')}</code></li>`);
+    }
+    if (!go.configured) {
+      parts.push(`<li><strong class="text-zinc-300">Google</strong> — register redirect <code class="text-amber-400/90 text-[10px]">${escText(go.redirect_uri || '')}</code></li>`);
+    }
+    return `<div class="mb-4 rounded-md border border-amber-900/50 bg-amber-950/25 px-4 py-3 text-sm text-zinc-400">
+      <div class="text-amber-200 font-medium text-xs uppercase tracking-wide mb-2"><i class="fa-solid fa-server mr-1"></i> OAuth not configured on this server</div>
+      <p class="text-xs mb-2">Connect buttons return <strong class="text-zinc-300">503</strong> until an admin adds Google and/or Microsoft OAuth app credentials (server environment variables <em>or</em> <a href="${escText(adminPath)}" class="text-emerald-400 hover:underline">Program Settings → Integrations</a>).</p>
+      <ul class="text-[11px] space-y-1 list-disc list-inside text-zinc-500">${parts.join('')}</ul>
+    </div>`;
+  }
+
+  function formatOAuthStartError(json, statusText) {
+    const lines = [json.error || statusText || 'Could not start sign-in.'];
+    const setup = json.setup || {};
+    if (setup.redirect_uri) lines.push('', `Redirect URI: ${setup.redirect_uri}`);
+    if (setup.required_env?.length) {
+      lines.push('', 'Setup checklist:');
+      setup.required_env.forEach((line) => lines.push(`• ${line}`));
+    }
+    lines.push('', 'Admins: Program Settings → Integrations → Email OAuth.');
+    return lines.join('\n');
   }
 
   function escText(s) {
@@ -100,6 +134,7 @@
     el.innerHTML = `
       <div class="space-y-2 max-h-[70vh] overflow-y-auto pr-1">
         ${!isCompany ? connectionBanner(conn) : ''}
+        ${!isCompany ? oauthSetupBanner() : ''}
         ${isCompany ? `<div class="mb-4 rounded-md border border-sky-900/40 bg-sky-950/20 px-4 py-3 text-sm text-zinc-400">
           <strong class="text-sky-300">Company workflow mailbox</strong> — used for automated module notifications (RFIs, pay apps, etc.). Personal inboxes are configured per user.
         </div>` : ''}
@@ -441,8 +476,23 @@
     return null;
   }
 
+  async function loadOAuthSetup() {
+    try {
+      const res = await fetch('/api/email/oauth/setup', { credentials: 'same-origin' });
+      if (!res.ok) return null;
+      const json = await res.json();
+      oauthSetup = json;
+      renderOptions.oauthSetup = json;
+      return json;
+    } catch (_) {
+      return null;
+    }
+  }
+
   async function ensureLoaded(options) {
+    if (options) setRenderOptions(options);
     const server = await loadFromServer(options);
+    await loadOAuthSetup();
     if (!server && (!options || options.mode !== 'company')) {
       const local = loadFromStorage();
       if (local && Object.keys(local).length) {
@@ -462,8 +512,7 @@
       const res = await fetch(`/api/email/oauth/google/start?${params}`, { credentials: 'same-origin' });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const setup = json.setup ? `\n\nSet environment variables:\n${(json.setup.required_env || []).join('\n')}` : '';
-        throw new Error((json.error || res.statusText) + setup);
+        throw new Error(formatOAuthStartError(json, res.statusText));
       }
       if (json.authorization_url) {
         window.location.href = json.authorization_url;
@@ -485,8 +534,7 @@
       const res = await fetch(`/api/email/oauth/microsoft/start?${params}`, { credentials: 'same-origin' });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const setup = json.setup ? `\n\nSet environment variables:\n${(json.setup.required_env || []).join('\n')}` : '';
-        throw new Error((json.error || res.statusText) + setup);
+        throw new Error(formatOAuthStartError(json, res.statusText));
       }
       if (json.authorization_url) {
         window.location.href = json.authorization_url;
@@ -533,7 +581,7 @@
   global.CasePMEmailSettingsUI = {
     render, save, collect, addSignature, removeSignature,
     connectGoogle, connectMicrosoft, testConnection,
-    loadFromStorage, loadFromServer, ensureLoaded, pushEmailToServer,
+    loadFromStorage, loadFromServer, loadOAuthSetup, ensureLoaded, pushEmailToServer,
     setRenderOptions,
   };
 
